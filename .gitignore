@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.env
+venv/
+.envrc
+
+# macOS
+.DS_Store
+
+# Project DB and artifacts
+casino_accounting.db
+dist/
+build/
+
+# Editor
+.vscode/

@@ -1,0 +1,10 @@
+# Casino Tracker Dependencies
+
+# Calendar date picker widget
+tkcalendar>=1.6.1
+
+# Charts and visualization
+matplotlib>=3.5.0
+
+# Note: tkinter comes with Python by default
+# All other dependencies are Python standard library
