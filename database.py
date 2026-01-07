@@ -94,6 +94,9 @@ class Database:
             _add_col("game_sessions", "dollar_value REAL")
             _add_col("game_sessions", "basis_bonus REAL")
             _add_col("game_sessions", "gameplay_pnl REAL")
+            _add_col("game_sessions", "game_name TEXT")
+            _add_col("game_sessions", "wager_amount REAL")
+            _add_col("game_sessions", "rtp REAL")
         ensure_core_columns()
         try:
             c.execute("UPDATE sites SET sc_rate = 1.0 WHERE sc_rate IS NULL")
@@ -227,6 +230,39 @@ class Database:
 
             self.set_schema_version(conn, 5)
             conn.commit()
+
+        # Migration 6: Add games tables and session fields
+        if current_version < 6:
+            c.execute('''CREATE TABLE IF NOT EXISTS game_types (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                active INTEGER DEFAULT 1)''')
+            c.execute('''CREATE TABLE IF NOT EXISTS games (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                game_type_id INTEGER,
+                rtp REAL,
+                notes TEXT,
+                active INTEGER DEFAULT 1,
+                FOREIGN KEY (game_type_id) REFERENCES game_types(id))''')
+
+            def _add_col(table, coldef):
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {coldef}")
+                except sqlite3.OperationalError:
+                    pass
+
+            _add_col("game_sessions", "game_name TEXT")
+            _add_col("game_sessions", "wager_amount REAL")
+            _add_col("game_sessions", "rtp REAL")
+
+            c.execute("SELECT COUNT(*) as cnt FROM game_types")
+            if c.fetchone()["cnt"] == 0:
+                for name in ("Slots", "Table Games", "Poker", "Other"):
+                    c.execute("INSERT OR IGNORE INTO game_types (name, active) VALUES (?, 1)", (name,))
+
+            self.set_schema_version(conn, 6)
+            conn.commit()
         
         conn.close()
     
@@ -265,6 +301,28 @@ class Database:
             user_id INTEGER,
             active INTEGER DEFAULT 1,
             FOREIGN KEY (user_id) REFERENCES users(id))''')
+
+        # Game types table
+        c.execute('''CREATE TABLE IF NOT EXISTS game_types (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            active INTEGER DEFAULT 1)''')
+
+        # Games table
+        c.execute('''CREATE TABLE IF NOT EXISTS games (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            game_type_id INTEGER,
+            rtp REAL,
+            notes TEXT,
+            active INTEGER DEFAULT 1,
+            FOREIGN KEY (game_type_id) REFERENCES game_types(id))''')
+
+        # Seed default game types if empty
+        c.execute("SELECT COUNT(*) as cnt FROM game_types")
+        if c.fetchone()["cnt"] == 0:
+            for name in ("Slots", "Table Games", "Poker", "Other"):
+                c.execute("INSERT OR IGNORE INTO game_types (name, active) VALUES (?, 1)", (name,))
         
         # Purchases table
         c.execute('''CREATE TABLE IF NOT EXISTS purchases (
@@ -342,6 +400,9 @@ class Database:
             site_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             game_type TEXT,
+            game_name TEXT,
+            wager_amount REAL,
+            rtp REAL,
             starting_sc_balance REAL DEFAULT 0.0,
             ending_sc_balance REAL,
             starting_redeemable_sc REAL,
