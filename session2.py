@@ -1214,64 +1214,12 @@ class CasinoApp:
             # (Free SC still needs to be sessioned to capture income, just doesn't consume basis)
             # SKIP this check when EDITING existing redemption (would double-count the redemption being edited)
             if not self.r_edit_id:
-                c.execute('''
-                    SELECT ending_sc_balance, session_date, end_time
-                    FROM game_sessions
-                    WHERE site_id = ? AND user_id = ? AND status = 'Closed'
-                    ORDER BY session_date DESC, end_time DESC
-                    LIMIT 1
-                ''', (site_id, user_id))
-                
-                last_session = c.fetchone()
-                
-                if last_session:
-                    last_ending = last_session['ending_sc_balance']
-                    last_date = last_session['session_date']
-                    last_time = last_session['end_time']
-                    
-                    # Get purchases after last session (use COST, not SC received)
-                    c.execute('''
-                        SELECT COALESCE(SUM(amount), 0) as total
-                        FROM purchases
-                        WHERE site_id = ? AND user_id = ?
-                        AND (purchase_date > ? OR (purchase_date = ? AND purchase_time > ?))
-                    ''', (site_id, user_id, last_date, last_date, last_time or '00:00:00'))
-                    
-                    purchases_after = c.fetchone()['total']
-                    
-                    # Get redemptions after last session
-                    c.execute('''
-                        SELECT COALESCE(SUM(amount), 0) as total
-                        FROM redemptions
-                        WHERE site_id = ? AND user_id = ?
-                        AND (redemption_date > ? OR (redemption_date = ? AND redemption_time > ?))
-                    ''', (site_id, user_id, last_date, last_date, last_time or '00:00:00'))
-                    
-                    redemptions_after = c.fetchone()['total']
-                    
-                    # Expected balance = last session + purchases (at cost) - redemptions
-                    expected_balance = last_ending + purchases_after - redemptions_after
-                    
-                else:
-                    # No previous sessions - only purchases at COST (no bonuses captured yet)
-                    c.execute('''
-                        SELECT COALESCE(SUM(amount), 0) as total
-                        FROM purchases
-                        WHERE site_id = ? AND user_id = ?
-                    ''', (site_id, user_id))
-                    
-                    purchases_total = c.fetchone()['total']
-                    
-                    c.execute('''
-                        SELECT COALESCE(SUM(amount), 0) as total
-                        FROM redemptions
-                        WHERE site_id = ? AND user_id = ?
-                    ''', (site_id, user_id))
-                    
-                    redemptions_total = c.fetchone()['total']
-                    
-                    expected_balance = purchases_total - redemptions_total
-                
+                expected_total, expected_redeemable = self.session_mgr.compute_expected_balances(
+                    site_id, user_id, rdate, rtime
+                )
+                sc_rate = self.session_mgr.get_sc_rate(site_id)
+                expected_balance = expected_redeemable * sc_rate
+
                 # If trying to redeem more than expected (unsessioned promotional value)
                 # Allow small tolerance for rounding (50 cents)
                 unsessioned_amount = amount - expected_balance
@@ -1328,10 +1276,10 @@ class CasinoApp:
                 c.execute('''
                     UPDATE redemptions 
                     SET site_session_id=?, site_id=?, redemption_date=?, redemption_time=?, amount=?, receipt_date=?, 
-                        redemption_method_id=?, is_free_sc=?, user_id=?, processed=?, notes=?
+                        redemption_method_id=?, is_free_sc=?, more_remaining=?, user_id=?, processed=?, notes=?
                     WHERE id=?
                 ''', (session_id, site_id, rdate, rtime, amount, receipt_date, method_id, 
-                      1 if free else 0, user_id, processed, notes, self.r_edit_id))
+                      1 if free else 0, 1 if more else 0, user_id, processed, notes, self.r_edit_id))
                 
                 # Reverse old session totals
                 if old_session_id:
@@ -1365,26 +1313,43 @@ class CasinoApp:
                 # Recalculate subsequent redemptions if any exist
                 if hasattr(self, 'r_has_subsequent') and self.r_has_subsequent and hasattr(self, 'r_subsequent_ids'):
                     self._recalculate_subsequent_redemptions(self.r_subsequent_ids, site_id, user_id)
-                
-                messagebox.showinfo("Success", "Redemption updated" + 
-                                   (f" (recalculated {len(self.r_subsequent_ids)} subsequent redemptions)" 
-                                    if hasattr(self, 'r_has_subsequent') and self.r_has_subsequent else ""))
+
+                # Canonical recompute for affected pairs
+                pairs_to_recalc = {(site_id, user_id)}
+                if old_site_id and old_user_id:
+                    pairs_to_recalc.add((old_site_id, old_user_id))
+                total_recalc = 0
+                for sid, uid in pairs_to_recalc:
+                    total_recalc += self.session_mgr.auto_recalculate_affected_sessions(sid, uid, rdate, rtime)
+
+                messagebox.showinfo(
+                    "Success",
+                    "Redemption updated" +
+                    (f" (recalculated {len(self.r_subsequent_ids)} subsequent redemptions)"
+                     if hasattr(self, 'r_has_subsequent') and self.r_has_subsequent else "") +
+                    (f" (recalculated {total_recalc} sessions)" if total_recalc else "")
+                )
             else:
                 # Insert new redemption
                 c.execute('''
                     INSERT INTO redemptions 
                     (site_session_id, site_id, redemption_date, redemption_time, amount, receipt_date,
-                     redemption_method_id, is_free_sc, user_id, processed, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (session_id, site_id, rdate, rtime, amount, receipt_date, method_id, 1 if free else 0, user_id, processed, notes))
+                     redemption_method_id, is_free_sc, more_remaining, user_id, processed, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (session_id, site_id, rdate, rtime, amount, receipt_date, method_id,
+                      1 if free else 0, 1 if more else 0, user_id, processed, notes))
                 rid = c.lastrowid
                 conn.commit()
                 conn.close()
                 
                 # Every redemption is a taxable event - always create tax_session
                 self.session_mgr.process_redemption(rid, site_id, amount, rdate, rtime, user_id, free, more)
-                
-                messagebox.showinfo("Success", "Redemption logged")
+
+                recalc_count = self.session_mgr.auto_recalculate_affected_sessions(site_id, user_id, rdate, rtime)
+                messagebox.showinfo(
+                    "Success",
+                    "Redemption logged" + (f" (recalculated {recalc_count} sessions)" if recalc_count else "")
+                )
             
             self.clear_redemption_form()
             self.refresh_all_views()
@@ -1618,18 +1583,31 @@ class CasinoApp:
         
         deleted_count = 0
         error_messages = []
+        pairs_to_recalc = set()
         
         for item in sel:
             tags = self.r_tree.item(item)['tags']
             rid = tags[1] if len(tags) > 1 else tags[0]  # ID is second tag now
+
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute('SELECT site_id, user_id, redemption_date, redemption_time FROM redemptions WHERE id = ?', (rid,))
+            row = c.fetchone()
+            conn.close()
             
             # Use business logic to properly reverse all accounting
             success = self.session_mgr.delete_redemption(int(rid))
             
             if success:
                 deleted_count += 1
+                if row:
+                    pairs_to_recalc.add((row['site_id'], row['user_id'], row['redemption_date'], row['redemption_time'] or '00:00:00'))
             else:
                 error_messages.append(f"Redemption ID {rid} not found")
+
+        total_recalc = 0
+        for site_id, user_id, rdate, rtime in pairs_to_recalc:
+            total_recalc += self.session_mgr.auto_recalculate_affected_sessions(site_id, user_id, rdate, rtime)
         
         self.refresh_all_views()
         
@@ -1639,9 +1617,15 @@ class CasinoApp:
                 f"Deleted {deleted_count} redemption(s).\n\nErrors:\n{error_text}")
         else:
             if deleted_count > 1:
-                messagebox.showinfo("Success", f"Deleted {deleted_count} redemptions")
+                messagebox.showinfo(
+                    "Success",
+                    f"Deleted {deleted_count} redemptions" + (f" (recalculated {total_recalc} sessions)" if total_recalc else "")
+                )
             else:
-                messagebox.showinfo("Success", "Redemption deleted")
+                messagebox.showinfo(
+                    "Success",
+                    "Redemption deleted" + (f" (recalculated {total_recalc} sessions)" if total_recalc else "")
+                )
     
     # ========================================================================
     # REFRESH METHODS
@@ -2803,7 +2787,7 @@ class CasinoApp:
         self.rep_tax_labels = {}
         
         # Left column
-        for metric in ['Total Basis Bonus', 'Total Gameplay P/L', 'Total Taxable Income']:
+        for metric in ['Total Net Taxable', 'Total Delta Total (SC)', 'Total Delta Redeemable (SC)']:
             metric_frame = ttk.Frame(tax_left)
             metric_frame.pack(fill='x', pady=5)
             ttk.Label(metric_frame, text=metric + ":", font=('Arial', 10)).pack(side='left')
@@ -3070,12 +3054,12 @@ class CasinoApp:
                   command=lambda: export_tree_to_csv(self.rep_monthly_tree, "monthly_performance", self.root),
                   width=15).pack(side='right', padx=5)
         
-        cols = ('Month', 'Sessions', 'Days Played', 'Win Rate', 'Session Basis', 'Net Taxable', 'Avg Per Day')
+        cols = ('Month', 'Sessions', 'Days Played', 'Win Rate', 'Basis Consumed', 'Net Taxable', 'Avg Per Day')
         self.rep_monthly_tree = ttk.Treeview(monthly_frame, columns=cols, show='headings', height=12)
         
         for col in cols:
             self.rep_monthly_tree.heading(col, text=col)
-            if col in ('Session Basis', 'Net Taxable', 'Avg Per Day'):
+            if col in ('Basis Consumed', 'Net Taxable', 'Avg Per Day'):
                 self.rep_monthly_tree.column(col, width=120)
             elif col == 'Win Rate':
                 self.rep_monthly_tree.column(col, width=80)
@@ -3411,7 +3395,7 @@ class CasinoApp:
         ttk.Button(tax_btn_row1, text="📊 Game Sessions Summary", 
                   command=self.export_game_sessions_summary,
                   width=25).pack(side='left', padx=5)
-        ttk.Label(tax_btn_row1, text="All game sessions with basis bonus & P/L",
+        ttk.Label(tax_btn_row1, text="All game sessions with deltas and net taxable",
                  font=('Arial', 9), foreground='gray').pack(side='left', padx=5)
         
         tax_btn_row2 = ttk.Frame(tax_export_frame)
@@ -3429,7 +3413,7 @@ class CasinoApp:
         ttk.Button(tax_btn_row3, text="💰 Income Summary", 
                   command=self.export_income_summary,
                   width=25).pack(side='left', padx=5)
-        ttk.Label(tax_btn_row3, text="Gambling winnings, basis bonuses, cashback",
+        ttk.Label(tax_btn_row3, text="Net taxable totals and cashback",
                  font=('Arial', 9), foreground='gray').pack(side='left', padx=5)
         
         tax_btn_row4 = ttk.Frame(tax_export_frame)
@@ -3707,7 +3691,7 @@ class CasinoApp:
                     c.execute("SELECT id FROM sites WHERE name = ?", (site_name,))
                     site_row = c.fetchone()
                     if not site_row:
-                        c.execute("INSERT INTO sites (name, active) VALUES (?, 1)", (site_name,))
+                        c.execute("INSERT INTO sites (name, sc_rate, active) VALUES (?, 1.0, 1)", (site_name,))
                         site_id = c.lastrowid
                         auto_created['sites'].add(site_name)
                     else:
@@ -3870,7 +3854,7 @@ class CasinoApp:
                 c.execute("SELECT id FROM sites WHERE name = ?", (site_name,))
                 site_row = c.fetchone()
                 if not site_row:
-                    c.execute("INSERT INTO sites (name, active) VALUES (?, 1)", (site_name,))
+                    c.execute("INSERT INTO sites (name, sc_rate, active) VALUES (?, 1.0, 1)", (site_name,))
                     site_id = c.lastrowid
                     auto_created['sites'].add(site_name)
                     conn.commit()
@@ -4070,7 +4054,7 @@ class CasinoApp:
         conn.close()
         
         msg = f"Imported {imported} sessions successfully (marked as unprocessed)\n\n"
-        msg += "⚠️ Important: Run 'Reconcile Imported Data' to calculate basis bonuses and finalize sessions."
+        msg += "⚠️ Important: Run 'Reconcile Imported Data' to recompute session metrics and finalize sessions."
         
         if auto_created['users'] or auto_created['sites']:
             msg += "\n\nAuto-created:"
@@ -4485,17 +4469,19 @@ class CasinoApp:
                 if is_closed and ending_sc is not None:
                     # Check if values that affect tax calculation changed
                     if old_starting_sc != starting_sc or old_starting_redeemable != starting_redeemable:
-                        # Trigger auto-recalculate for this session
-                        # This will use STRATEGY THREE calculation
+                        # Trigger canonical recompute for this session
                         conn.commit()
                         conn.close()
                         
                         # Auto-recalculate this session and any affected sessions
-                        self.session_mgr.auto_recalculate_affected_sessions(
+                        recalc_count = self.session_mgr.auto_recalculate_affected_sessions(
                             site_id, user_id, parsed_date, start_time
                         )
                         
-                        messagebox.showinfo("Success", "Session updated and tax recalculated")
+                        messagebox.showinfo(
+                            "Success",
+                            "Session updated" + (f" (recalculated {recalc_count} sessions)" if recalc_count else "")
+                        )
                         self.clear_game_session_form()
                         self.refresh_all_views()
                         return
@@ -4514,52 +4500,10 @@ class CasinoApp:
                 conn = self.db.get_connection()
                 c = conn.cursor()
                 
-                # Get last session ending balance
-                c.execute('''
-                    SELECT ending_sc_balance, session_date, end_time
-                    FROM game_sessions
-                    WHERE site_id = ? AND user_id = ? AND status = 'Closed'
-                    ORDER BY session_date DESC, end_time DESC
-                    LIMIT 1
-                ''', (site_id, user_id))
-                
-                last_session = c.fetchone()
-                
-                if last_session:
-                    last_ending = last_session['ending_sc_balance'] or 0
-                    last_date = last_session['session_date']
-                    last_time = last_session['end_time']
-                    
-                    # Get purchases since last session
-                    c.execute('''
-                        SELECT COALESCE(SUM(amount), 0) as total
-                        FROM purchases
-                        WHERE site_id = ? AND user_id = ?
-                        AND (purchase_date > ? OR (purchase_date = ? AND purchase_time > ?))
-                    ''', (site_id, user_id, last_date, last_date, last_time or '00:00:00'))
-                    
-                    purchases_since = c.fetchone()['total']
-                    
-                    # Get redemptions since last session
-                    c.execute('''
-                        SELECT COALESCE(SUM(amount), 0) as total
-                        FROM redemptions
-                        WHERE site_id = ? AND user_id = ?
-                        AND (redemption_date > ? OR (redemption_date = ? AND redemption_time > ?))
-                    ''', (site_id, user_id, last_date, last_date, last_time or '00:00:00'))
-                    
-                    redemptions_since = c.fetchone()['total']
-                    
-                    expected_sc = last_ending + purchases_since - redemptions_since
-                else:
-                    # First session - expected = purchases at cost
-                    c.execute('''
-                        SELECT COALESCE(SUM(amount), 0) as total
-                        FROM purchases
-                        WHERE site_id = ? AND user_id = ?
-                    ''', (site_id, user_id))
-                    
-                    expected_sc = c.fetchone()['total']
+                expected_total, expected_redeemable = self.session_mgr.compute_expected_balances(
+                    site_id, user_id, parsed_date, start_time
+                )
+                expected_sc = expected_total
                 
                 conn.close()
                 
@@ -4568,12 +4512,12 @@ class CasinoApp:
                     deficit = expected_sc - starting_sc
                     response = messagebox.askyesno(
                         "Starting Balance Warning",
-                        f"Starting SC (${starting_sc:.2f}) is ${deficit:.2f} LESS than expected (${expected_sc:.2f})\n\n"
+                        f"Starting SC ({starting_sc:.2f}) is {deficit:.2f} LESS than expected ({expected_sc:.2f})\n\n"
                         f"This usually means:\n"
-                        f"- You redeemed ${deficit:.2f} without recording it\n"
-                        f"- You lost ${deficit:.2f} playing without tracking\n"
+                        f"- You redeemed {deficit:.2f} SC without recording it\n"
+                        f"- You lost {deficit:.2f} SC playing without tracking\n"
                         f"- Data entry error\n\n"
-                        f"This will create a NEGATIVE basis bonus of -${deficit:.2f}\n\n"
+                        f"This will create a NEGATIVE starting delta of -{deficit:.2f} SC\n\n"
                         f"Continue anyway?",
                         icon='warning'
                     )
@@ -4624,7 +4568,7 @@ class CasinoApp:
         # Check if session is active
         conn = self.db.get_connection()
         c = conn.cursor()
-        c.execute("SELECT status, starting_sc_balance FROM game_sessions WHERE id = ?", (session_id,))
+        c.execute("SELECT status, starting_sc_balance, starting_redeemable_sc FROM game_sessions WHERE id = ?", (session_id,))
         session = c.fetchone()
         conn.close()
         
@@ -4650,6 +4594,10 @@ class CasinoApp:
         form_frame.pack(fill='both', expand=True)
         
         # Show starting balance
+        start_redeemable = session['starting_redeemable_sc']
+        if start_redeemable is None:
+            start_redeemable = session['starting_sc_balance']
+
         ttk.Label(form_frame, text=f"Starting SC: {session['starting_sc_balance']:.2f}",
                  font=('Arial', 10)).pack(pady=5)
         
@@ -4733,11 +4681,11 @@ class CasinoApp:
         def update_pnl(*args):
             try:
                 redeemable = float(redeemable_sc_var.get() or 0)
-                change = redeemable - session['starting_sc_balance']
+                change = redeemable - float(start_redeemable or 0)
                 if change >= 0:
-                    pnl_label.config(text=f"Gameplay P/L: +${change:.2f} WIN", foreground='green')
+                    pnl_label.config(text=f"Redeemable Change: +{change:.2f} SC", foreground='green')
                 else:
-                    pnl_label.config(text=f"Gameplay P/L: ${change:.2f} LOSS", foreground='red')
+                    pnl_label.config(text=f"Redeemable Change: {change:.2f} SC", foreground='red')
             except:
                 pnl_label.config(text="")
         
@@ -5198,13 +5146,16 @@ class CasinoApp:
                 conn.commit()
                 conn.close()
                 
-                # Recalculate tax fields using STRATEGY THREE
-                self.session_mgr.auto_recalculate_affected_sessions(
+                # Recalculate tax fields using the canonical engine
+                recalc_count = self.session_mgr.auto_recalculate_affected_sessions(
                     new_site_id, new_user_id, parsed_start_date, new_start_time
                 )
                 
                 dialog.destroy()
-                messagebox.showinfo("Success", "Session updated successfully")
+                messagebox.showinfo(
+                    "Success",
+                    "Session updated successfully" + (f" (recalculated {recalc_count} sessions)" if recalc_count else "")
+                )
                 self.refresh_all_views()
                 
             except Exception as e:
@@ -5294,8 +5245,10 @@ class CasinoApp:
             conn.commit()
             conn.close()
             
-            # Update daily tax session
-            self.session_mgr.update_daily_tax_session(session_date, user_id)
+            # Canonical recompute for this site/user pair
+            recalc_count = self.session_mgr.auto_recalculate_affected_sessions(
+                session['site_id'], session['user_id'], session_date, session['start_time'] or '00:00:00'
+            )
             
             # Clear form if it was loaded
             if self.gs_edit_id == session_id:
@@ -5304,7 +5257,10 @@ class CasinoApp:
             # Refresh views
             self.refresh_all_views()
             
-            messagebox.showinfo("Deleted", f"Session deleted successfully")
+            messagebox.showinfo(
+                "Deleted",
+                "Session deleted successfully" + (f" (recalculated {recalc_count} sessions)" if recalc_count else "")
+            )
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to delete session:\n{str(e)}")
@@ -5332,7 +5288,7 @@ class CasinoApp:
                 COALESCE(gs.ending_redeemable_sc, COALESCE(gs.ending_sc_balance,0)) as ending_redeem,
                 COALESCE(gs.delta_total, gs.ending_sc_balance - gs.starting_sc_balance) as delta_total,
                 COALESCE(gs.delta_redeem, gs.ending_redeemable_sc - gs.starting_redeemable_sc) as delta_redeem,
-                gs.session_basis,
+                COALESCE(gs.basis_consumed, gs.session_basis) as basis_consumed,
                 COALESCE(gs.net_taxable_pl, gs.total_taxable, 0) as net_pl,
                 gs.status,
                 gs.notes
@@ -5396,8 +5352,8 @@ class CasinoApp:
             delta_redeem_str = f"{delta_redeem:+.2f}"
 
             # Session basis
-            basis_val = row['session_basis']
-            session_basis_str = f"${float(basis_val):.2f}" if basis_val is not None else "-"
+            basis_val = row['basis_consumed']
+            basis_consumed_str = f"${float(basis_val):.2f}" if basis_val is not None else "-"
 
             # Net P/L (net taxable P/L per spec)
             net_val = row['net_pl']
@@ -5429,7 +5385,7 @@ class CasinoApp:
                 end_redeem,
                 delta_total_str,
                 delta_redeem_str,
-                session_basis_str,
+                basis_consumed_str,
                 net_pnl,
                 row['status'],
                 notes_display
@@ -5487,9 +5443,8 @@ class CasinoApp:
                 gs.game_type,
                 gs.start_time,
                 gs.end_time,
-                gs.basis_bonus,
-                gs.gameplay_pnl,
-                gs.total_taxable,
+                COALESCE(gs.delta_total, gs.ending_sc_balance - gs.starting_sc_balance) as delta_total,
+                COALESCE(gs.net_taxable_pl, gs.total_taxable, 0) as total_taxable,
                 gs.notes
             FROM game_sessions gs
             JOIN users u ON gs.user_id = u.id
@@ -5602,7 +5557,7 @@ class CasinoApp:
             # Parent row values with text for arrow
             parent_values = (
                 session_date,
-                f"${date_gameplay:+.2f}",
+                f"{date_gameplay:+.2f}",
                 f"${date_total:+.2f}" + (" ✓" if date_total >= 0 else " ✗"),
                 date_status,
                 f"{len(users_data)} users, {total_sessions} sessions",
@@ -5645,7 +5600,7 @@ class CasinoApp:
                 # User header
                 user_item = self.dt_tree.insert(parent_id, 'end', text='  ▶', values=(
                     user_name,
-                    f"${user_gameplay:+.2f}",
+                    f"{user_gameplay:+.2f}",
                     f"${user_total:+.2f}" + (" ✓" if user_total >= 0 else " ✗"),
                     user_status,
                     f"{user_sessions_count} sessions",
@@ -5668,7 +5623,7 @@ class CasinoApp:
                     
                     self.dt_tree.insert(user_item, 'end', text='    └─', values=(
                         f"{sess['site_name']} {sess['game_type']}",
-                        f"${_rowv(sess, 'delta_total', 0):+.2f}",
+                        f"{_rowv(sess, 'delta_total', 0):+.2f}",
                         f"${sess['total_taxable']:+.2f}" + (" ✓" if sess['total_taxable'] >= 0 else " ✗"),
                         sess_status,
                         time_range,
@@ -5863,8 +5818,9 @@ class CasinoApp:
             SELECT gs.id, gs.session_date, gs.start_time, gs.end_time,
                    s.name as site, u.name as user, gs.game_type,
                    gs.starting_sc_balance, gs.ending_sc_balance,
-                   gs.sc_change, gs.basis_bonus, gs.gameplay_pnl,
-                   gs.total_taxable, gs.notes, gs.status
+                   gs.sc_change, gs.delta_total, gs.delta_redeem,
+                   COALESCE(gs.net_taxable_pl, gs.total_taxable, 0) as total_taxable,
+                   gs.notes, gs.status
             FROM game_sessions gs
             JOIN sites s ON gs.site_id = s.id
             JOIN users u ON gs.user_id = u.id
@@ -5914,14 +5870,14 @@ class CasinoApp:
         
         add_row("Starting SC", f"${target_session['starting_sc_balance']:.2f}", row); row += 1
         add_row("Ending SC", f"${target_session['ending_sc_balance']:.2f}", row); row += 1
-        add_row("SC Change", f"${target_session['sc_change']:+.2f}", row); row += 1
+        add_row("SC Change", f"{target_session['sc_change']:+.2f}", row); row += 1
         
         ttk.Separator(details_frame, orient='horizontal').grid(row=row, column=0, columnspan=2, sticky='ew', pady=10)
         row += 1
         
-        add_row("Basis Bonus", f"${target_session['basis_bonus']:.2f}", row); row += 1
-        add_row("Gameplay P/L", f"${target_session['gameplay_pnl']:+.2f}", row); row += 1
-        add_row("Total Taxable", f"${target_session['total_taxable']:+.2f}", row); row += 1
+        add_row("Delta Total (SC)", f"{(target_session['delta_total'] or 0):+.2f}", row); row += 1
+        add_row("Delta Redeemable (SC)", f"{(target_session['delta_redeem'] or 0):+.2f}", row); row += 1
+        add_row("Net Taxable", f"${target_session['total_taxable']:+.2f}", row); row += 1
         
         if target_session['notes']:
             ttk.Separator(details_frame, orient='horizontal').grid(row=row, column=0, columnspan=2, sticky='ew', pady=10)
@@ -7416,7 +7372,7 @@ class CasinoApp:
                 strftime('%Y-%m', gs.session_date) as month,
                 COUNT(DISTINCT gs.session_date) as days_played,
                 COUNT(*) as sessions,
-                SUM(COALESCE(gs.session_basis,0)) as total_session_basis,
+                SUM(COALESCE(gs.basis_consumed, gs.session_basis, 0)) as total_basis_consumed,
                 SUM(COALESCE(gs.net_taxable_pl, gs.total_taxable, 0)) as total_net_taxable,
                 SUM(CASE WHEN COALESCE(gs.net_taxable_pl, gs.total_taxable, 0) >= 0 THEN 1 ELSE 0 END) as winning_sessions,
                 COUNT(*) as total_sessions
@@ -7443,7 +7399,7 @@ class CasinoApp:
                 str(row['sessions']),
                 str(row['days_played']),
                 f"{win_rate:.1f}%",
-                f"${row['total_session_basis']:,.2f}",
+                f"${row['total_basis_consumed']:,.2f}",
                 f"${row['total_net_taxable']:+,.2f}",
                 f"${avg_per_day:+,.2f}"
             )
@@ -7663,24 +7619,25 @@ class CasinoApp:
         
         # === SECTION 2: TAX METRICS ===
         
-        # Total basis bonus
+        # Total net taxable
         c.execute(f'''
-            SELECT COALESCE(SUM(basis_bonus), 0) as total
+            SELECT COALESCE(SUM(total_taxable), 0) as total
             FROM game_sessions
             WHERE status = 'Closed' AND {date_where}
         ''', date_params)
-        total_basis_bonus = c.fetchone()['total']
-        
-        # Total gameplay P/L
+        total_taxable = c.fetchone()['total']
+
+        # Total delta totals (SC) and redeemable delta (SC)
         c.execute(f'''
-            SELECT COALESCE(SUM(gameplay_pnl), 0) as total
+            SELECT
+                COALESCE(SUM(delta_total), 0) as total_delta,
+                COALESCE(SUM(delta_redeem), 0) as total_delta_redeem
             FROM game_sessions
             WHERE status = 'Closed' AND {date_where}
         ''', date_params)
-        total_gameplay = c.fetchone()['total']
-        
-        # Total taxable income
-        total_taxable = total_basis_bonus + total_gameplay
+        delta_row = c.fetchone()
+        total_delta_total = delta_row['total_delta']
+        total_delta_redeem = delta_row['total_delta_redeem']
         
         # Unrealized value (current positions)
         c.execute('SELECT COALESCE(SUM(remaining_amount), 0) as total FROM purchases')
@@ -7696,17 +7653,17 @@ class CasinoApp:
         avg_per_day = (total_taxable / days_played) if days_played > 0 else 0
         
         # Update labels
-        self.rep_tax_labels['Total Basis Bonus'].config(
-            text=f"${total_basis_bonus:,.2f}",
-            foreground='green' if total_basis_bonus > 0 else 'black'
-        )
-        self.rep_tax_labels['Total Gameplay P/L'].config(
-            text=f"${total_gameplay:+,.2f}",
-            foreground='green' if total_gameplay >= 0 else 'red'
-        )
-        self.rep_tax_labels['Total Taxable Income'].config(
+        self.rep_tax_labels['Total Net Taxable'].config(
             text=f"${total_taxable:+,.2f}",
             foreground='green' if total_taxable >= 0 else 'red'
+        )
+        self.rep_tax_labels['Total Delta Total (SC)'].config(
+            text=f"{total_delta_total:+,.2f}",
+            foreground='green' if total_delta_total >= 0 else 'red'
+        )
+        self.rep_tax_labels['Total Delta Redeemable (SC)'].config(
+            text=f"{total_delta_redeem:+,.2f}",
+            foreground='green' if total_delta_redeem >= 0 else 'red'
         )
         self.rep_tax_labels['Unrealized Value'].config(
             text=f"${unrealized_value:,.2f}",
@@ -8644,7 +8601,7 @@ class CasinoApp:
         
         session_where = " WHERE " + " AND ".join(session_where_clauses)
         
-        # Session P/L from game_sessions (basis_bonus + gameplay_pnl)
+        # Session P/L from game_sessions (net taxable)
         c.execute(f'''
             SELECT COALESCE(SUM(total_taxable), 0) as total 
             FROM game_sessions 
@@ -9426,9 +9383,9 @@ class CasinoApp:
             SELECT 
                 strftime('%Y-%m', gs.session_date) as Month,
                 COUNT(*) as "Game Sessions",
-                SUM(gs.basis_bonus) as "Total Basis Bonus",
-                SUM(gs.gameplay_pnl) as "Total Gameplay P/L",
-                SUM(gs.total_taxable) as "Total Taxable Income"
+                SUM(gs.delta_total) as "Total Delta Total",
+                SUM(gs.delta_redeem) as "Total Delta Redeemable",
+                SUM(gs.total_taxable) as "Total Net Taxable"
             FROM game_sessions gs
             WHERE gs.status = 'Closed' AND strftime('%Y', gs.session_date) = ?
             GROUP BY strftime('%Y-%m', gs.session_date)
@@ -9476,16 +9433,16 @@ class CasinoApp:
         
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['Month', 'Game Sessions', 'Basis Bonus', 'Gameplay P/L', 
-                           'Total Taxable', 'Cashback Earned', 'Redemptions'])
+            writer.writerow(['Month', 'Game Sessions', 'Delta Total (SC)', 'Delta Redeemable (SC)',
+                           'Net Taxable', 'Cashback Earned', 'Redemptions'])
             for row in game_rows:
                 month = row['Month']
                 writer.writerow([
                     month,
                     row['Game Sessions'],
-                    f"${row['Total Basis Bonus']:.2f}",
-                    f"${row['Total Gameplay P/L']:+.2f}",
-                    f"${row['Total Taxable Income']:+.2f}",
+                    f"{(row['Total Delta Total'] or 0):+.2f}",
+                    f"{(row['Total Delta Redeemable'] or 0):+.2f}",
+                    f"${(row['Total Net Taxable'] or 0):+.2f}",
                     f"${cashback.get(month, 0):.2f}",
                     f"${redemptions.get(month, 0):.2f}"
                 ])
@@ -9557,9 +9514,9 @@ class CasinoApp:
                 COUNT(*) as "Game Sessions",
                 SUM(CASE WHEN gs.total_taxable >= 0 THEN 1 ELSE 0 END) as Wins,
                 ROUND(CAST(SUM(CASE WHEN gs.total_taxable >= 0 THEN 1 ELSE 0 END) AS REAL) / COUNT(*) * 100, 1) as "Win Rate %",
-                SUM(gs.basis_bonus) as "Total Basis Bonus",
-                SUM(gs.gameplay_pnl) as "Total Gameplay P/L",
-                SUM(gs.total_taxable) as "Total Taxable",
+                SUM(gs.delta_total) as "Total Delta Total",
+                SUM(gs.delta_redeem) as "Total Delta Redeemable",
+                SUM(gs.total_taxable) as "Total Net Taxable",
                 AVG(gs.total_taxable) as "Avg Per Session"
             FROM game_sessions gs
             JOIN sites s ON gs.site_id = s.id
@@ -9583,12 +9540,13 @@ class CasinoApp:
         
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['Site', 'Sessions', 'Wins', 'Win Rate %', 'Basis Bonus', 
-                           'Gameplay P/L', 'Total Taxable', 'Avg Per Session'])
+            writer.writerow(['Site', 'Sessions', 'Wins', 'Win Rate %', 'Delta Total (SC)',
+                           'Delta Redeemable (SC)', 'Net Taxable', 'Avg Per Session'])
             for row in rows:
                 writer.writerow([
                     row[0], row[1], row[2], f"{row[3]:.1f}%",
-                    f"${row[4]:.2f}", f"${row[5]:+.2f}", f"${row[6]:+.2f}", f"${row[7]:+.2f}"
+                    f"{(row[4] or 0):+.2f}", f"{(row[5] or 0):+.2f}",
+                    f"${(row[6] or 0):+.2f}", f"${(row[7] or 0):+.2f}"
                 ])
         
         messagebox.showinfo("Success", f"Performance by site exported to:\n{filepath}")
@@ -9678,9 +9636,9 @@ class CasinoApp:
                 gs.game_type as "Game Type",
                 gs.starting_sc_balance as "Starting SC",
                 gs.ending_sc_balance as "Ending SC",
-                gs.basis_bonus as "Basis Bonus",
-                gs.gameplay_pnl as "Gameplay P/L",
-                gs.total_taxable as "Total Taxable",
+                gs.delta_total as "Delta Total",
+                gs.delta_redeem as "Delta Redeemable",
+                gs.total_taxable as "Net Taxable",
                 gs.notes as "Notes"
             FROM game_sessions gs
             JOIN sites s ON gs.site_id = s.id
@@ -9705,13 +9663,13 @@ class CasinoApp:
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(['Date', 'Start Time', 'End Time', 'User', 'Site', 'Game Type',
-                           'Starting SC', 'Ending SC', 'Basis Bonus', 'Gameplay P/L', 
-                           'Total Taxable', 'Notes'])
+                           'Starting SC', 'Ending SC', 'Delta Total (SC)', 'Delta Redeemable (SC)',
+                           'Net Taxable', 'Notes'])
             for row in rows:
                 writer.writerow([
                     row[0], row[1], row[2], row[3], row[4], row[5],
                     f"{row[6]:.2f}", f"{row[7]:.2f}", 
-                    f"{row[8]:.2f}", f"{row[9]:+.2f}", f"{row[10]:+.2f}",
+                    f"{(row[8] or 0):+.2f}", f"{(row[9] or 0):+.2f}", f"{(row[10] or 0):+.2f}",
                     row[11] or ''
                 ])
         
@@ -9736,23 +9694,16 @@ class CasinoApp:
             SELECT 
                 dts.session_date as "Date",
                 u.name as "User",
-                s.name as "Site",
-                dts.basis_bonus as "Basis Bonus",
-                dts.gameplay_pnl as "Gameplay P/L",
-                dts.total_taxable as "Total Taxable",
-                COUNT(*) as "Game Sessions"
+                dts.total_session_pnl as "Total Session P/L",
+                dts.total_other_income as "Other Income",
+                dts.net_daily_pnl as "Net Daily P/L",
+                dts.status as "Status",
+                dts.num_game_sessions as "Game Sessions",
+                dts.num_other_income_items as "Other Income Items"
             FROM daily_tax_sessions dts
-            JOIN sites s ON dts.site_id = s.id
             JOIN users u ON dts.user_id = u.id
-            LEFT JOIN game_sessions gs ON (
-                gs.session_date = dts.session_date AND
-                gs.site_id = dts.site_id AND
-                gs.user_id = dts.user_id AND
-                gs.status = 'Closed'
-            )
             WHERE strftime('%Y', dts.session_date) = ?
-            GROUP BY dts.session_date, dts.site_id, dts.user_id
-            ORDER BY dts.session_date ASC, s.name, u.name
+            ORDER BY dts.session_date ASC, u.name
         ''', (str(tax_year),))
         
         rows = c.fetchall()
@@ -9770,13 +9721,14 @@ class CasinoApp:
         
         with open(filepath, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['Date', 'User', 'Site', 'Basis Bonus', 'Gameplay P/L',
-                           'Total Taxable', 'Game Sessions'])
+            writer.writerow(['Date', 'User', 'Total Session P/L', 'Other Income',
+                           'Net Daily P/L', 'Status', 'Game Sessions', 'Other Income Items'])
             for row in rows:
                 writer.writerow([
-                    row[0], row[1], row[2],
-                    f"{row[3]:.2f}", f"{row[4]:+.2f}", f"{row[5]:+.2f}",
-                    row[6]
+                    row[0], row[1],
+                    f"{(row[2] or 0):+.2f}", f"{(row[3] or 0):+.2f}",
+                    f"{(row[4] or 0):+.2f}", row[5],
+                    row[6], row[7]
                 ])
         
         messagebox.showinfo("Success", 
@@ -9883,28 +9835,29 @@ class CasinoApp:
                 f"Game_Sessions_{tax_year}.csv",
                 '''SELECT gs.session_date, gs.start_time, gs.end_time,
                    u.name, s.name, gs.game_type, gs.starting_sc_balance, gs.ending_sc_balance,
-                   gs.basis_bonus, gs.gameplay_pnl, gs.total_taxable, gs.notes
+                   gs.delta_total, gs.delta_redeem, gs.total_taxable, gs.notes
                    FROM game_sessions gs
                    JOIN sites s ON gs.site_id = s.id
                    JOIN users u ON gs.user_id = u.id
                    WHERE gs.status = 'Closed' AND strftime('%Y', gs.session_date) = ?
                    ORDER BY gs.session_date, gs.start_time''',
                 ['Date', 'Start Time', 'End Time', 'User', 'Site', 'Game Type',
-                 'Starting SC', 'Ending SC', 'Basis Bonus', 'Gameplay P/L', 'Total Taxable', 'Notes'],
+                 'Starting SC', 'Ending SC', 'Delta Total (SC)', 'Delta Redeemable (SC)', 'Net Taxable', 'Notes'],
                 (str(tax_year),)
             )
             
             # Daily Tax Sessions
             counts['Daily Tax Sessions'] = write_csv(
                 f"Daily_Tax_Sessions_{tax_year}.csv",
-                '''SELECT dts.session_date, u.name, s.name,
-                   dts.basis_bonus, dts.gameplay_pnl, dts.total_taxable
+                '''SELECT dts.session_date, u.name,
+                   dts.total_session_pnl, dts.total_other_income, dts.net_daily_pnl,
+                   dts.status, dts.num_game_sessions, dts.num_other_income_items
                    FROM daily_tax_sessions dts
-                   JOIN sites s ON dts.site_id = s.id
                    JOIN users u ON dts.user_id = u.id
                    WHERE strftime('%Y', dts.session_date) = ?
-                   ORDER BY dts.session_date, s.name, u.name''',
-                ['Date', 'User', 'Site', 'Basis Bonus', 'Gameplay P/L', 'Total Taxable'],
+                   ORDER BY dts.session_date, u.name''',
+                ['Date', 'User', 'Total Session P/L', 'Other Income', 'Net Daily P/L',
+                 'Status', 'Game Sessions', 'Other Income Items'],
                 (str(tax_year),)
             )
             
@@ -9958,14 +9911,14 @@ class CasinoApp:
                 f"Income_Summary_{tax_year}.csv",
                 '''SELECT strftime('%Y-%m', session_date) as Month,
                    COUNT(*) as Sessions,
-                   SUM(basis_bonus) as "Total Basis Bonus",
-                   SUM(gameplay_pnl) as "Total Gameplay P/L",
-                   SUM(total_taxable) as "Total Taxable Income"
+                   SUM(delta_total) as "Total Delta Total",
+                   SUM(delta_redeem) as "Total Delta Redeemable",
+                   SUM(total_taxable) as "Total Net Taxable"
                    FROM game_sessions
                    WHERE status = 'Closed' AND strftime('%Y', session_date) = ?
                    GROUP BY strftime('%Y-%m', session_date)
                    ORDER BY Month''',
-                ['Month', 'Sessions', 'Basis Bonus', 'Gameplay P/L', 'Total Taxable'],
+                ['Month', 'Sessions', 'Delta Total (SC)', 'Delta Redeemable (SC)', 'Net Taxable'],
                 (str(tax_year),)
             )
             
@@ -10087,10 +10040,9 @@ class CasinoApp:
         1. Validates data integrity
         2. Processes purchases (creates FIFO basis)
         3. Processes redemptions (consumes FIFO basis)
-        4. Calculates basis_bonus for each session
-        5. Calculates gameplay_pnl for each session
-        6. Creates daily_tax_sessions
-        7. Marks everything as processed
+        4. Recomputes all session metrics (canonical engine)
+        5. Updates daily tax sessions
+        6. Marks everything as processed
         
         Use after importing CSV files to finalize all data.
         """
@@ -10132,9 +10084,8 @@ class CasinoApp:
                 "This will:\n"
                 "✓ Calculate FIFO cost basis for purchases\n"
                 "✓ Process redemptions in chronological order\n"
-                "✓ Calculate basis bonuses for sessions\n"
-                "✓ Calculate gameplay P/L for sessions\n"
-                "✓ Create daily tax sessions\n\n"
+                "✓ Recompute all session tax metrics\n"
+                "✓ Update daily tax sessions\n\n"
                 "Continue?"
             )
             
@@ -10230,131 +10181,25 @@ class CasinoApp:
             progress_bar['value'] = 3
             progress_window.update()
             
-            # === STEP 7: CALCULATE SESSION METRICS ===
-            detail_label.config(text="Step 4/5: Calculating session metrics...")
+            # === STEP 7: RECOMPUTE SESSION METRICS ===
+            detail_label.config(text="Step 4/5: Recomputing session metrics...")
             progress_window.update()
-            
-            # Get all unprocessed sessions in chronological order
-            c.execute('''
-                SELECT id, session_date, start_time, site_id, user_id, 
-                       starting_sc_balance, ending_sc_balance
-                FROM game_sessions
-                WHERE processed = 0 AND status = 'Closed'
-                ORDER BY session_date ASC, start_time ASC
-            ''')
-            sessions_to_process = c.fetchall()
-            
-            sessions_processed = 0
-            for session in sessions_to_process:
-                session_id = session['id']
-                site_id = session['site_id']
-                user_id = session['user_id']
-                session_date = session['session_date']
-                start_time = session['start_time']
-                starting_sc = session['starting_sc_balance']
-                ending_sc = session['ending_sc_balance']
-                
-                # Calculate basis bonus using business logic
-                # Check if this is first session for this site/user
-                c2 = conn.cursor()
-                c2.execute('''
-                    SELECT COUNT(*) as count
-                    FROM game_sessions
-                    WHERE site_id = ? AND user_id = ? AND status = 'Closed' 
-                    AND (session_date < ? OR (session_date = ? AND start_time < ?))
-                ''', (site_id, user_id, session_date, session_date, start_time))
-                
-                is_first_session = (c2.fetchone()['count'] == 0)
-                
-                if is_first_session:
-                    # First session: basis bonus = starting SC - purchase basis
-                    c2.execute('''
-                        SELECT COALESCE(SUM(amount), 0) as basis
-                        FROM purchases
-                        WHERE site_id = ? AND user_id = ?
-                        AND (purchase_date < ? OR (purchase_date = ? AND purchase_time <= ?))
-                    ''', (site_id, user_id, session_date, session_date, start_time))
-                    fifo_basis = float(c2.fetchone()['basis'])
-                    basis_bonus = starting_sc - fifo_basis
-                else:
-                    # Subsequent session: basis bonus = 0 (already captured in first session)
-                    basis_bonus = 0.0
-                
-                # Calculate gameplay P/L
-                gameplay_pnl = ending_sc - starting_sc
-                
-                # Total taxable
-                total_taxable = basis_bonus + gameplay_pnl
-                
-                # Update session
-                c.execute('''
-                    UPDATE game_sessions
-                    SET basis_bonus = ?, gameplay_pnl = ?, total_taxable = ?, processed = 1
-                    WHERE id = ?
-                ''', (basis_bonus, gameplay_pnl, total_taxable, session_id))
-                
-                sessions_processed += 1
-            
+
             conn.commit()
+            conn.close()
+
+            summary = self.session_mgr.rebuild_all_derived(rebuild_fifo=True, rebuild_sessions=True)
+            sessions_processed = summary.get("sessions_processed", 0) if isinstance(summary, dict) else 0
             progress_bar['value'] = 4
             progress_window.update()
             
-            # === STEP 8: CREATE/UPDATE DAILY TAX SESSIONS ===
-            detail_label.config(text="Step 5/5: Creating daily tax sessions...")
+            # === STEP 8: MARK PROCESSED FLAGS ===
+            detail_label.config(text="Step 5/5: Marking sessions as processed...")
             progress_window.update()
-            
-            # Get unique dates from processed sessions
-            c.execute('''
-                SELECT DISTINCT session_date, site_id, user_id
-                FROM game_sessions
-                WHERE status = 'Closed'
-                GROUP BY session_date, site_id, user_id
-            ''')
-            
-            daily_sessions_created = 0
-            for row in c.fetchall():
-                session_date = row['session_date']
-                site_id = row['site_id']
-                user_id = row['user_id']
-                
-                # Calculate totals for this day/site/user
-                c.execute('''
-                    SELECT 
-                        COALESCE(SUM(basis_bonus), 0) as total_basis_bonus,
-                        COALESCE(SUM(gameplay_pnl), 0) as total_gameplay_pnl,
-                        COALESCE(SUM(total_taxable), 0) as total_taxable
-                    FROM game_sessions
-                    WHERE session_date = ? AND site_id = ? AND user_id = ? AND status = 'Closed'
-                ''', (session_date, site_id, user_id))
-                
-                totals = c.fetchone()
-                
-                # Check if daily session already exists
-                c.execute('''
-                    SELECT id FROM daily_tax_sessions
-                    WHERE session_date = ? AND site_id = ? AND user_id = ?
-                ''', (session_date, site_id, user_id))
-                
-                existing = c.fetchone()
-                
-                if existing:
-                    # Update existing
-                    c.execute('''
-                        UPDATE daily_tax_sessions
-                        SET basis_bonus = ?, gameplay_pnl = ?, total_taxable = ?
-                        WHERE id = ?
-                    ''', (totals['total_basis_bonus'], totals['total_gameplay_pnl'], 
-                          totals['total_taxable'], existing['id']))
-                else:
-                    # Create new
-                    c.execute('''
-                        INSERT INTO daily_tax_sessions 
-                        (session_date, site_id, user_id, basis_bonus, gameplay_pnl, total_taxable)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ''', (session_date, site_id, user_id, totals['total_basis_bonus'],
-                          totals['total_gameplay_pnl'], totals['total_taxable']))
-                    daily_sessions_created += 1
-            
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute("UPDATE game_sessions SET processed = 1 WHERE status = 'Closed' AND processed = 0")
+            sessions_marked = c.rowcount
             conn.commit()
             conn.close()
             
@@ -10368,8 +10213,8 @@ class CasinoApp:
             result_msg += f"Processed:\n"
             result_msg += f"• {purchases_processed} purchases\n"
             result_msg += f"• {redemptions_processed} redemptions\n"
-            result_msg += f"• {sessions_processed} game sessions\n"
-            result_msg += f"• {daily_sessions_created} daily tax sessions created\n\n"
+            result_msg += f"• {sessions_processed} game sessions recalculated\n"
+            result_msg += f"• {sessions_marked} sessions marked processed\n\n"
             result_msg += "All data has been reconciled and is ready for tax reporting."
             
             messagebox.showinfo("Reconciliation Complete", result_msg)
@@ -11057,162 +10902,7 @@ class CasinoApp:
     
     def recalculate_game_sessions_silent(self):
         """Recalculate game sessions without showing success dialog (for use in batch operations)"""
-        conn = self.db.get_connection()
-        c = conn.cursor()
-        
-        # Get all closed game sessions ordered chronologically
-        c.execute('''
-            SELECT id, site_id, user_id, session_date, start_time, 
-                   starting_sc_balance, starting_redeemable_sc,
-                   ending_sc_balance, ending_redeemable_sc
-            FROM game_sessions
-            WHERE status = 'Closed'
-            ORDER BY session_date, start_time
-        ''')
-        
-        sessions = c.fetchall()
-        conn.close()
-        
-        # Process each session
-        for session in sessions:
-            session_id = session['id']
-            site_id = session['site_id']
-            user_id = session['user_id']
-            session_date = session['session_date']
-            start_time = session['start_time']
-            starting_sc = session['starting_sc_balance']
-            starting_redeemable = session['starting_redeemable_sc'] if session['starting_redeemable_sc'] is not None else starting_sc
-            ending_sc = session['ending_sc_balance']
-            ending_redeemable = session['ending_redeemable_sc'] if session['ending_redeemable_sc'] is not None else ending_sc
-            
-            # Get SC rate
-            sc_rate = self.session_mgr.get_sc_rate(site_id)
-            
-            # STRATEGY THREE: Basis per SC using locked SC only
-            starting_locked = starting_sc - starting_redeemable
-            ending_locked = ending_sc - ending_redeemable
-            
-            # Calculate available basis AS OF session start
-            # This accounts for redemptions AND unredeemed sessions
-            conn_temp = self.db.get_connection()
-            c_temp = conn_temp.cursor()
-            
-            # Get total original basis from purchases before/at session start
-            c_temp.execute('''
-                SELECT COALESCE(SUM(amount), 0) as total_original
-                FROM purchases
-                WHERE site_id = ? AND user_id = ?
-                  AND (purchase_date < ? OR 
-                       (purchase_date = ? AND (purchase_time IS NULL OR purchase_time <= ?)))
-            ''', (site_id, user_id, session_date, session_date, start_time))
-            total_original_basis = c_temp.fetchone()['total_original']
-            
-            # Get basis consumed by redemptions BEFORE session start
-            c_temp.execute('''
-                SELECT COALESCE(SUM(ts.cost_basis), 0) as consumed
-                FROM redemptions r
-                JOIN tax_sessions ts ON ts.redemption_id = r.id
-                WHERE r.site_id = ? AND r.user_id = ?
-                  AND (r.redemption_date < ? OR 
-                       (r.redemption_date = ? AND r.redemption_time < ?))
-            ''', (site_id, user_id, session_date, session_date, start_time))
-            basis_consumed_by_redemptions = c_temp.fetchone()['consumed']
-            
-            # Find last redemption before this session
-            c_temp.execute('''
-                SELECT redemption_date, redemption_time
-                FROM redemptions
-                WHERE site_id = ? AND user_id = ?
-                  AND (redemption_date < ? OR 
-                       (redemption_date = ? AND redemption_time < ?))
-                ORDER BY redemption_date DESC, redemption_time DESC
-                LIMIT 1
-            ''', (site_id, user_id, session_date, session_date, start_time))
-            
-            last_redemption = c_temp.fetchone()
-            
-            # Get basis consumed by sessions SINCE last redemption
-            if last_redemption:
-                c_temp.execute('''
-                    SELECT starting_sc_balance, starting_redeemable_sc, 
-                           ending_redeemable_sc, ending_sc_balance, total_taxable
-                    FROM game_sessions
-                    WHERE site_id = ? AND user_id = ? AND status = 'Closed'
-                      AND ((session_date > ? OR (session_date = ? AND start_time > ?))
-                      AND (session_date < ? OR (session_date = ? AND start_time < ?)))
-                    ORDER BY session_date, start_time
-                ''', (site_id, user_id, 
-                      last_redemption['redemption_date'], last_redemption['redemption_date'], last_redemption['redemption_time'],
-                      session_date, session_date, start_time))
-            else:
-                c_temp.execute('''
-                    SELECT starting_sc_balance, starting_redeemable_sc,
-                           ending_redeemable_sc, ending_sc_balance, total_taxable
-                    FROM game_sessions
-                    WHERE site_id = ? AND user_id = ? AND status = 'Closed'
-                      AND (session_date < ? OR (session_date = ? AND start_time < ?))
-                    ORDER BY session_date, start_time
-                ''', (site_id, user_id, session_date, session_date, start_time))
-            
-            # Calculate basis consumed by each prior unredeemed session
-            basis_consumed_by_prior_sessions = 0
-            for prior_session in c_temp.fetchall():
-                ending_redeemable_prior = prior_session['ending_redeemable_sc'] if prior_session['ending_redeemable_sc'] is not None else prior_session['ending_sc_balance']
-                starting_redeemable_prior = prior_session['starting_redeemable_sc'] if prior_session['starting_redeemable_sc'] is not None else 0
-                value_created_prior = ending_redeemable_prior - starting_redeemable_prior
-                basis_consumed_prior = value_created_prior - prior_session['total_taxable']
-                basis_consumed_by_prior_sessions += basis_consumed_prior
-            
-            # Available basis at session start
-            total_remaining_basis = total_original_basis - basis_consumed_by_redemptions - basis_consumed_by_prior_sessions
-            
-            c_temp.close()
-            
-            # SPECIAL CASE: Free SC (no purchases, all freebies)
-            if total_original_basis == 0:
-                basis_consumed = 0
-                value_created = ending_redeemable * sc_rate
-                total_taxable = value_created
-            else:
-                # Normal calculation
-                # Basis per SC for locked SC only
-                if starting_locked > 0:
-                    basis_per_sc = total_remaining_basis / starting_locked
-                else:
-                    basis_per_sc = 0
-                
-                # SC processed
-                sc_processed = starting_locked - ending_locked
-                
-                # Basis consumed (capped at available)
-                basis_consumed = min(sc_processed * basis_per_sc, total_remaining_basis)
-                
-                # Value created (newly redeemable)
-                value_created = (ending_redeemable - starting_redeemable) * sc_rate
-                
-                # Total taxable
-                total_taxable = value_created - basis_consumed
-            
-            # Gameplay P/L (total SC change)
-            sc_change = ending_sc - starting_sc
-            gameplay_pnl = sc_change * sc_rate
-            
-            # Update session with recalculated values
-            conn = self.db.get_connection()
-            c = conn.cursor()
-            c.execute('''
-                UPDATE game_sessions
-                SET sc_change = ?,
-                    gameplay_pnl = ?,
-                    total_taxable = ?,
-                    dollar_value = ?
-                WHERE id = ?
-            ''', (sc_change, gameplay_pnl, total_taxable, total_taxable, session_id))
-            conn.commit()
-            conn.close()
-            
-            # Update daily tax session for this date
-            self.session_mgr.update_daily_tax_session(session_date, user_id)
+        self.session_mgr.rebuild_all_derived(rebuild_fifo=False, rebuild_sessions=True)
     
     def recalculate_redemptions(self):
         """Recalculate FIFO cost basis for all redemptions"""
@@ -11341,13 +11031,13 @@ class CasinoApp:
             traceback.print_exc()
     
     def recalculate_game_sessions(self):
-        """Recalculate gameplay P/L and total taxable for all closed game sessions"""
+        """Recalculate session metrics for all closed game sessions"""
         from tkinter import messagebox
         
         response = messagebox.askyesno(
             "Recalculate Game Sessions",
-            "This will recalculate gameplay P/L and total taxable for ALL closed game sessions.\n\n"
-            "This uses the current STRATEGY THREE calculation method.\n\n"
+            "This will recalculate session metrics for ALL closed game sessions.\n\n"
+            "This uses the current canonical calculation method.\n\n"
             "Continue?"
         )
         
@@ -11364,7 +11054,7 @@ class CasinoApp:
             messagebox.showinfo(
                 "Recalculation Complete",
                 "✅ Successfully recalculated all game sessions!\n\n"
-                "Gameplay P/L and total taxable amounts have been updated.\n"
+                "Net taxable and delta amounts have been updated.\n"
                 "Daily tax sessions have been refreshed."
             )
             

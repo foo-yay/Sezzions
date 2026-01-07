@@ -450,7 +450,7 @@ def build_purchases_tab(app):
     
     cols = ('Date', 'Time', 'Site', 'User', 'Game Type', 'Duration',
             'Start Total', 'End Total', 'Start Redeem', 'End Redeem',
-            'Δ Total', 'Δ Redeem', 'Session Basis', 'Net P/L', 'Status', 'Notes')
+            'Δ Total', 'Δ Redeem', 'Basis Consumed', 'Net P/L', 'Status', 'Notes')
     app.p_tree = ttk.Treeview(list_frame, columns=cols, show='headings', height=15)
     for col in cols:
         app.p_tree.heading(col, text=col)
@@ -944,28 +944,35 @@ def build_sites_section(app, parent):
     form.pack(fill='x')
 
     ttk.Label(form, text="Site Name:").grid(row=0, column=0, sticky='w', padx=5, pady=5)
-    name_entry = ttk.Entry(form, width=30)
+    name_entry = ttk.Entry(form, width=24)
     name_entry.grid(row=0, column=1, sticky='w', padx=5, pady=5)
 
+    ttk.Label(form, text="SC Rate (USD/SC):").grid(row=0, column=2, sticky='w', padx=5, pady=5)
+    sc_rate_entry = ttk.Entry(form, width=10)
+    sc_rate_entry.grid(row=0, column=3, sticky='w', padx=5, pady=5)
+    sc_rate_entry.insert(0, "1.0")
+
     active_var = tk.IntVar(value=1)
-    ttk.Checkbutton(form, text="Active", variable=active_var).grid(row=0, column=2, sticky='w', padx=10, pady=5)
+    ttk.Checkbutton(form, text="Active", variable=active_var).grid(row=0, column=4, sticky='w', padx=10, pady=5)
 
     selected = {"site_id": None}
 
     def clear_form():
         name_entry.delete(0, tk.END)
+        sc_rate_entry.delete(0, tk.END)
+        sc_rate_entry.insert(0, "1.0")
         active_var.set(1)
         selected["site_id"] = None
 
     def refresh_list():
         conn = app.db.get_connection()
         c = conn.cursor()
-        rows = c.execute("SELECT id, name, active FROM sites ORDER BY name").fetchall()
+        rows = c.execute("SELECT id, name, sc_rate, active FROM sites ORDER BY name").fetchall()
         conn.close()
         
         data = []
         for r in rows:
-            values = (r["name"], "Yes" if r["active"] else "No")
+            values = (r["name"], f'{(r["sc_rate"] or 1.0):.4f}', "Yes" if r["active"] else "No")
             tags = (r["id"],)
             data.append((values, tags))
         
@@ -984,23 +991,35 @@ def build_sites_section(app, parent):
         sid = tree.item(sel[0])["tags"][0]
         conn = app.db.get_connection()
         c = conn.cursor()
-        r = c.execute("SELECT id, name, active FROM sites WHERE id=?", (sid,)).fetchone()
+        r = c.execute("SELECT id, name, sc_rate, active FROM sites WHERE id=?", (sid,)).fetchone()
         conn.close()
         if not r:
             return
         selected["site_id"] = r["id"]
         name_entry.delete(0, tk.END)
         name_entry.insert(0, r["name"])
+        sc_rate_entry.delete(0, tk.END)
+        sc_rate_entry.insert(0, str(r["sc_rate"] if r["sc_rate"] is not None else 1.0))
         active_var.set(int(r["active"] or 0))
 
     def add_site():
         name = name_entry.get().strip()
         if not name:
             return
+        sc_rate_str = sc_rate_entry.get().strip() or "1.0"
+        try:
+            sc_rate = float(sc_rate_str)
+            if sc_rate <= 0:
+                messagebox.showwarning("Invalid", "SC Rate must be greater than 0")
+                return
+        except ValueError:
+            messagebox.showwarning("Invalid", "SC Rate must be a number")
+            return
         conn = app.db.get_connection()
         c = conn.cursor()
         try:
-            c.execute("INSERT INTO sites (name, active) VALUES (?, ?)", (name, int(active_var.get())))
+            c.execute("INSERT INTO sites (name, sc_rate, active) VALUES (?, ?, ?)",
+                      (name, sc_rate, int(active_var.get())))
             conn.commit()
             clear_form()
             refresh_list()
@@ -1019,11 +1038,20 @@ def build_sites_section(app, parent):
         name = name_entry.get().strip()
         if not name:
             return
+        sc_rate_str = sc_rate_entry.get().strip() or "1.0"
+        try:
+            sc_rate = float(sc_rate_str)
+            if sc_rate <= 0:
+                messagebox.showwarning("Invalid", "SC Rate must be greater than 0")
+                return
+        except ValueError:
+            messagebox.showwarning("Invalid", "SC Rate must be a number")
+            return
         conn = app.db.get_connection()
         c = conn.cursor()
         try:
-            c.execute("UPDATE sites SET name=?, active=? WHERE id=?",
-                      (name, int(active_var.get()), selected["site_id"]))
+            c.execute("UPDATE sites SET name=?, sc_rate=?, active=? WHERE id=?",
+                      (name, sc_rate, int(active_var.get()), selected["site_id"]))
             conn.commit()
             refresh_list()
             app.refresh_dropdowns()
@@ -1133,10 +1161,12 @@ def build_sites_section(app, parent):
               command=lambda: export_tree_to_csv(tree, "sites", app.root),
               width=15).pack(side='right', padx=5)
 
-    tree = ttk.Treeview(list_frame, columns=("Name", "Active"), show="headings", height=15)
+    tree = ttk.Treeview(list_frame, columns=("Name", "SC Rate", "Active"), show="headings", height=15)
     tree.heading("Name", text="Name")
+    tree.heading("SC Rate", text="SC Rate")
     tree.heading("Active", text="Active")
     tree.column("Name", width=260)
+    tree.column("SC Rate", width=100)
     tree.column("Active", width=100)
 
     scroll = ttk.Scrollbar(list_frame, orient="vertical", command=tree.yview)
@@ -1146,7 +1176,7 @@ def build_sites_section(app, parent):
     
     # Add SearchableTreeview for sorting and searching
     from table_helpers import SearchableTreeview, enable_multi_select
-    searchable = SearchableTreeview(tree, ["Name", "Active"], search_frame)
+    searchable = SearchableTreeview(tree, ["Name", "SC Rate", "Active"], search_frame)
     enable_multi_select(tree)
 
     tree.bind('<Double-Button-1>', on_select)
@@ -2338,7 +2368,7 @@ def build_game_sessions_tab(app):
     
     cols = ('Date', 'Time', 'Site', 'User', 'Game Type', 'Duration', 'Start Total',
             'End Total', 'Start Redeem', 'End Redeem', 'Δ Total', 'Δ Redeem',
-            'Session Basis', 'Net P/L', 'Status', 'Notes')
+            'Basis Consumed', 'Net P/L', 'Status', 'Notes')
     
     app.gs_tree = ttk.Treeview(tree_frame, columns=cols, show='headings', height=15)
     
@@ -2348,7 +2378,7 @@ def build_game_sessions_tab(app):
             app.gs_tree.column(col, width=70)
         elif col == 'Notes':
             app.gs_tree.column(col, width=60)
-        elif col in ('Net P/L', 'Session Basis'):
+        elif col in ('Net P/L', 'Basis Consumed'):
             app.gs_tree.column(col, width=110)
         elif col in ('Start Total', 'End Total', 'Start Redeem', 'End Redeem', 'Δ Total', 'Δ Redeem'):
             app.gs_tree.column(col, width=95)
@@ -2578,7 +2608,7 @@ def build_daily_tax_tab(app):
     tree_frame = ttk.Frame(main_frame)
     tree_frame.pack(fill='both', expand=True)
     
-    cols = ('Date/User/Session', 'Session P/L', 'Net P/L', 'Status', 'Details', 'Notes')
+    cols = ('Date/User/Session', 'Delta Total (SC)', 'Net Taxable', 'Status', 'Details', 'Notes')
     app.dt_tree = ttk.Treeview(tree_frame, columns=cols, show='tree headings', height=20)
     
     # Initialize sort tracking
@@ -2605,7 +2635,7 @@ def build_daily_tax_tab(app):
         col_index = cols.index(col)
         try:
             # For currency columns, strip $ and commas
-            if col in ('Session P/L', 'Net P/L'):
+            if col in ('Delta Total (SC)', 'Net Taxable'):
                 items.sort(
                     key=lambda x: float(x[0][col_index].replace('$', '').replace(',', '').replace('+', '').replace('(', '-').replace(')', '') if x[0][col_index] != '-' else '0'),
                     reverse=app.dt_sort_reverse
@@ -2630,7 +2660,7 @@ def build_daily_tax_tab(app):
     
     for col in cols:
         app.dt_tree.heading(col, text=col, command=lambda col=col: sort_dt_column(col))
-        if col in ('Session P/L', 'Net P/L'):
+        if col in ('Delta Total (SC)', 'Net Taxable'):
             app.dt_tree.column(col, width=120)
         elif col == 'Notes':
             app.dt_tree.column(col, width=50)

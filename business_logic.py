@@ -215,52 +215,28 @@ class SessionManager:
 
         conn.close()
 
+        sessions_processed = 0
+
         for s_id, u_id in pairs:
             if rebuild_fifo:
                 self._rebuild_fifo_for_pair(s_id, u_id)
 
             if rebuild_sessions:
-                eff_from_date, eff_from_time = from_date, from_time
-                if eff_from_date is None:
-                    conn2 = self.db.get_connection()
-                    c2 = conn2.cursor()
-                    c2.execute("""
-                        SELECT session_date, COALESCE(start_time, '00:00:00') AS st
-                        FROM game_sessions
-                        WHERE site_id = ? AND user_id = ? AND status = 'Closed'
-                        ORDER BY session_date ASC, st ASC
-                        LIMIT 1
-                    """, (s_id, u_id))
-                    row = c2.fetchone()
-                    conn2.close()
-                    if row:
-                        eff_from_date, eff_from_time = row[0], row[1]
-                    else:
-                        eff_from_date, eff_from_time = None, None
+                if from_date is not None:
+                    _ = (from_date, from_time)
 
-                if eff_from_date is not None:
-                    self.auto_recalculate_affected_sessions(s_id, u_id, eff_from_date, eff_from_time)
+                session_count, touched_dates = self._rebuild_session_tax_fields_for_pair(s_id, u_id)
+                sessions_processed += session_count
 
-                    # Spec v1: recompute derived session tax fields (basis/deltas/expected starts)
-                    self._rebuild_session_tax_fields_for_pair(s_id, u_id)
-
-                    conn3 = self.db.get_connection()
-                    c3 = conn3.cursor()
-                    c3.execute("""
-                        SELECT DISTINCT COALESCE(end_date, session_date) AS d
-                        FROM game_sessions
-                        WHERE site_id = ? AND user_id = ? AND status = 'Closed'
-                    """, (s_id, u_id))
-                    dates = [r[0] for r in c3.fetchall()]
-                    conn3.close()
-                    for d in dates:
-                        self.update_daily_tax_session(d, u_id)
+                for d in touched_dates:
+                    self.update_daily_tax_session(d, u_id)
 
         return {
             "pairs": pairs,
             "pairs_processed": len(pairs),
             "rebuild_fifo": bool(rebuild_fifo),
             "rebuild_sessions": bool(rebuild_sessions),
+            "sessions_processed": sessions_processed,
         }
 
     def _rebuild_fifo_for_pair(self, site_id, user_id):
@@ -276,12 +252,6 @@ class SessionManager:
 
         c.execute("""
             DELETE FROM tax_sessions
-            WHERE site_id = ? AND user_id = ?
-        """, (site_id, user_id))
-
-        c.execute("""
-            UPDATE redemptions
-            SET processed = 0
             WHERE site_id = ? AND user_id = ?
         """, (site_id, user_id))
 
@@ -370,7 +340,7 @@ class SessionManager:
         c = conn.cursor()
 
         c.execute("""
-            SELECT COALESCE(amount, 0) AS sc
+            SELECT COALESCE(sc_received, amount, 0) AS sc
             FROM purchases
             WHERE site_id = ? AND user_id = ?
               AND (purchase_date > ? OR (purchase_date = ? AND COALESCE(purchase_time,'00:00:00') >= ?))
@@ -444,7 +414,7 @@ class SessionManager:
         """
         Process redemption: calculate FIFO, create tax session, update site session
         
-        FIXED VERSION: Now properly links redemptions to sessions and sets processed flag
+        FIXED VERSION: Links redemptions to sessions without overriding processed flags
         
         When more_remaining=False (final redemption), consumes ALL remaining cost basis
         When more_remaining=True, only uses FIFO for the redemption amount
@@ -772,17 +742,33 @@ class SessionManager:
         conn = self.db.get_connection()
         c = conn.cursor()
         
-        # Check site-specific rate
-        c.execute('SELECT rate FROM sc_conversion_rates WHERE site_id = ?', (site_id,))
-        row = c.fetchone()
-        
-        if row:
-            rate = row['rate']
-        else:
-            # Get default rate
-            c.execute("SELECT value FROM settings WHERE key = 'default_sc_rate'")
-            default_row = c.fetchone()
-            rate = float(default_row['value']) if default_row else 1.0
+        rate = None
+        try:
+            c.execute('SELECT sc_rate FROM sites WHERE id = ?', (site_id,))
+            row = c.fetchone()
+            if row and row['sc_rate'] is not None:
+                rate = float(row['sc_rate'])
+        except sqlite3.OperationalError:
+            rate = None
+
+        if rate is None:
+            # Fallback: legacy sc_conversion_rates table
+            try:
+                c.execute('SELECT rate FROM sc_conversion_rates WHERE site_id = ?', (site_id,))
+                row = c.fetchone()
+                if row and row['rate'] is not None:
+                    rate = float(row['rate'])
+            except sqlite3.OperationalError:
+                rate = None
+
+        if rate is None:
+            # Get default rate from settings if available
+            try:
+                c.execute("SELECT value FROM settings WHERE key = 'default_sc_rate'")
+                default_row = c.fetchone()
+                rate = float(default_row['value']) if default_row and default_row['value'] is not None else 1.0
+            except sqlite3.OperationalError:
+                rate = 1.0
         
         conn.close()
         return rate
@@ -860,12 +846,14 @@ class SessionManager:
 
     def _rebuild_session_tax_fields_for_pair(self, site_id, user_id):
         """
-        Recompute derived session fields per spec (v1):
+        Recompute derived session fields per spec (v2):
         - expected_start_total_sc / expected_start_redeemable_sc
-        - session_basis (cash purchases since last completed session)
+        - session_basis (cash purchases since last completed session end)
+        - basis_consumed (cash basis used in this session)
         - delta_total / delta_redeem
         - inferred_start deltas
-        - net_taxable_pl (and keep total_taxable in sync)
+        - net_taxable_pl (discoverable + delta_play - basis_consumed)
+        - pending basis pool (carry-forward cash basis consumed only on redeemable gains)
         """
         conn = self.db.get_connection()
         c = conn.cursor()
@@ -890,6 +878,9 @@ class SessionManager:
         last_end_total = 0.0
         last_end_redeem = 0.0
         checkpoint_end_dt = None  # None => beginning of history
+        pending_basis_pool = 0.0
+        sc_rate = float(self.get_sc_rate(site_id) or 1.0)
+        touched_dates = set()
 
         def in_window(dt, start_exclusive, end_inclusive):
             if dt is None:
@@ -913,11 +904,13 @@ class SessionManager:
             # Purchases SC received between checkpoint end and session start (for expected start total)
             pur_sc_to_start = sum(sc for (dt, amt, sc) in purchases if in_window(dt, checkpoint_end_dt, start_dt))
 
-            # Purchases cash between checkpoint end and session end (session basis)
+            # Purchases cash between checkpoint end and session end (session basis / pool additions)
             pur_cash_to_end = sum(amt for (dt, amt, sc) in purchases if in_window(dt, checkpoint_end_dt, end_dt))
 
             expected_start_total = (last_end_total - red_between) + pur_sc_to_start
             expected_start_redeem = (last_end_redeem - red_between)
+            expected_start_total = max(0.0, expected_start_total)
+            expected_start_redeem = max(0.0, expected_start_redeem)
 
             start_total = float(s['starting_sc_balance'] or 0)
             end_total = float(s['ending_sc_balance'] or 0)
@@ -932,13 +925,28 @@ class SessionManager:
 
             session_basis = float(pur_cash_to_end or 0)
 
-            net_taxable_pl = (end_red - expected_start_redeem) - session_basis
+            # Pending basis pool rolls forward; only redeemable gains consume basis
+            pending_basis_pool += session_basis
+            if pending_basis_pool < 0:
+                pending_basis_pool = 0.0
+
+            discoverable_sc = max(0.0, start_red - expected_start_redeem)
+            delta_play_sc = delta_redeem
+            locked_start = max(0.0, start_total - start_red)
+            locked_end = max(0.0, end_total - end_red)
+            locked_processed_sc = max(locked_start - locked_end, 0.0)
+            locked_processed_value = locked_processed_sc * sc_rate
+            basis_consumed = min(pending_basis_pool, locked_processed_value)
+            pending_basis_pool = max(0.0, pending_basis_pool - basis_consumed)
+
+            net_taxable_pl = ((discoverable_sc + delta_play_sc) * sc_rate) - basis_consumed
 
             # Write derived fields
             c.execute("""
                 UPDATE game_sessions
                 SET
                     session_basis=?,
+                    basis_consumed=?,
                     expected_start_total_sc=?,
                     expected_start_redeemable_sc=?,
                     inferred_start_total_delta=?,
@@ -949,19 +957,21 @@ class SessionManager:
                     total_taxable=?,
                     sc_change=?,
                     basis_bonus=NULL,
-                    gameplay_pnl=?
+                    gameplay_pnl=NULL
                 WHERE id=?
-            """, (session_basis, expected_start_total, expected_start_redeem,
+            """, (session_basis, basis_consumed, expected_start_total, expected_start_redeem,
                   inferred_start_total_delta, inferred_start_redeem_delta,
-                  delta_total, delta_redeem, net_taxable_pl, net_taxable_pl, delta_total, delta_total, sid))
+                  delta_total, delta_redeem, net_taxable_pl, net_taxable_pl, delta_total, sid))
 
             # Advance checkpoint
             last_end_total = end_total
             last_end_redeem = end_red
             checkpoint_end_dt = end_dt
+            touched_dates.add(s['session_date'])
 
         conn.commit()
         conn.close()
+        return len(sessions), touched_dates
 
     def start_game_session(self, site_id, user_id, game_type, starting_sc, starting_redeemable_sc=None, 
                           session_date=None, notes=None, start_time=None):
@@ -972,8 +982,7 @@ class SessionManager:
             starting_sc: Total SC balance
             starting_redeemable_sc: SC that has completed playthrough (defaults to starting_sc)
         
-        NOTE: Freebies are now handled via basis_bonus calculation when session ends.
-        This still detects freebies for informational purposes only.
+        NOTE: Freebies are informational only; tax is computed at session end.
         
         Returns: (session_id, freebies_detected_amount)
         """
@@ -1025,7 +1034,6 @@ class SessionManager:
         
         # Create game session
         # Note: freebies_detected is kept for reference but not used for tax
-        # Tax is calculated via basis_bonus when session ends
         c.execute('''
             INSERT INTO game_sessions 
             (session_date, start_time, site_id, user_id, game_type, 
@@ -1093,8 +1101,8 @@ class SessionManager:
         conn.commit()
         conn.close()
 
-        # Recompute derived fields for this pair (updates net_taxable_pl/total_taxable/session_basis/etc.)
-        self._rebuild_session_tax_fields_for_pair(site_id, user_id)
+        # Recompute derived fields for this pair (canonical path)
+        self.auto_recalculate_affected_sessions(site_id, user_id, end_date, end_time)
 
         conn2 = self.db.get_connection()
         c2 = conn2.cursor()
@@ -1105,87 +1113,27 @@ class SessionManager:
 
     def auto_recalculate_affected_sessions(self, site_id, user_id, changed_date, changed_time='00:00:00'):
         """
-        Recompute derived fields for closed sessions on/after the changed timestamp.
+        Canonical recompute path for a site/user pair.
 
-        New model:
-          - Taxable events are driven by *redeemable* SC.
-          - Recognize redeemable delta at session start as taxable (promo/bonus/untracked income).
-          - Gameplay component is (end_redeemable - start_redeemable).
+        This is a full recompute to keep basis pool and expected balances consistent.
         """
-        conn = self.db.get_connection()
-        c = conn.cursor()
+        if site_id is None or user_id is None:
+            return 0
 
-        c.execute("""
-            SELECT id, session_date, COALESCE(start_time,'00:00:00') AS st,
-                   COALESCE(end_date, session_date) AS eff_end_date,
-                   COALESCE(end_time,'23:59:59') AS eff_end_time,
-                   starting_sc_balance, ending_sc_balance,
-                   starting_redeemable_sc, ending_redeemable_sc
-            FROM game_sessions
-            WHERE site_id = ? AND user_id = ? AND status = 'Closed'
-              AND (
-                    session_date > ?
-                 OR (session_date = ? AND COALESCE(start_time,'00:00:00') >= ?)
-              )
-            ORDER BY session_date ASC, st ASC, id ASC
-        """, (site_id, user_id, changed_date, changed_date, changed_time))
-        sessions = c.fetchall()
+        if changed_date is not None:
+            _ = (changed_date, changed_time)
 
-        sc_rate = float(self.get_sc_rate(site_id) or 1.0)
-        affected_completion_dates = set()
-
-        for s in sessions:
-            session_id = s[0]
-            s_date = s[1]
-            s_time = s[2]
-            completion_date = s[3]
-
-            start_total = float(s[5] or 0.0)
-            end_total = float(s[6] or 0.0)
-
-            start_red = s[7]
-            end_red = s[8]
-            start_red = float(start_red if start_red is not None else start_total)
-            end_red = float(end_red if end_red is not None else end_total)
-
-            expected_total, expected_red = self.compute_expected_balances(site_id, user_id, s_date, s_time)
-
-            # freebies_detected is "extra total SC" above principal expectation
-            delta_total = start_total - expected_total
-            freebies_sc = max(0.0, delta_total)
-
-            # Session net taxable P/L (in SC) = redeemable at end minus expected total basis at start.
-            # expected_total already includes any expected carry-in balance, so do NOT subtract expected_red separately.
-            total_taxable_sc = (end_red - expected_total)
-
-            total_taxable = total_taxable_sc * sc_rate
-            gameplay_pnl = (end_red - start_red) * sc_rate
-            sc_change = end_total - start_total
-            dollar_value = sc_change * sc_rate
-            c.execute("""
-                UPDATE game_sessions
-                SET sc_change = ?,
-                    freebies_detected = ?,
-                    basis_bonus = 0,
-                    gameplay_pnl = ?,
-                    total_taxable = ?,
-                    dollar_value = ?
-                WHERE id = ?
-            """, (sc_change, freebies_sc, gameplay_pnl, total_taxable, dollar_value, session_id))
-
-            affected_completion_dates.add(completion_date)
-
-        conn.commit()
-        conn.close()
-
-        for d in affected_completion_dates:
+        self._rebuild_fifo_for_pair(site_id, user_id)
+        session_count, touched_dates = self._rebuild_session_tax_fields_for_pair(site_id, user_id)
+        for d in touched_dates:
             self.update_daily_tax_session(d, user_id)
+        return session_count
 
     def update_daily_tax_session(self, session_date, user_id):
         """
         Recalculate daily tax session totals from game sessions and other income
-        
-        Now uses total_taxable (basis_bonus + gameplay_pnl) for accurate tax calculation
+
+        Uses total_taxable (net taxable P/L) for accurate tax calculation
         """
         conn = self.db.get_connection()
         c = conn.cursor()
@@ -1202,7 +1150,7 @@ class SessionManager:
         total_other_income = other_income_row['total_other_income']
         num_other_income = other_income_row['num_items']
         
-        # Sum game session total_taxable for this day (includes basis bonus + gameplay)
+        # Sum game session total_taxable for this day (net taxable P/L)
         c.execute('''
             SELECT COALESCE(SUM(total_taxable), 0) as total_session_pnl,
                    COUNT(*) as num_sessions
@@ -1214,8 +1162,7 @@ class SessionManager:
         total_session_pnl = session_row['total_session_pnl']
         num_sessions = session_row['num_sessions']
         
-        # Calculate net (Other Income is now only from manual entries, not auto-freebies)
-        # Most freebies are captured in basis_bonus during first session
+        # Calculate net (Other Income is now only from manual entries)
         net_daily_pnl = total_other_income + total_session_pnl
         status = 'Win' if net_daily_pnl >= 0 else 'Loss'
         
@@ -1244,4 +1191,3 @@ class SessionManager:
         
         conn.commit()
         conn.close()
-

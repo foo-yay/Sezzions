@@ -66,6 +66,7 @@ class Database:
                 except sqlite3.OperationalError:
                     pass
             _add_col("game_sessions", "session_basis REAL")
+            _add_col("game_sessions", "basis_consumed REAL")
             _add_col("game_sessions", "expected_start_total_sc REAL")
             _add_col("game_sessions", "expected_start_redeemable_sc REAL")
             _add_col("game_sessions", "inferred_start_total_delta REAL")
@@ -74,6 +75,30 @@ class Database:
             _add_col("game_sessions", "delta_redeem REAL")
             _add_col("game_sessions", "net_taxable_pl REAL")
         ensure_derived_session_columns()
+        # ensure core columns that may be missing in older DBs
+        def ensure_core_columns():
+            def _add_col(table, coldef):
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {coldef}")
+                except sqlite3.OperationalError:
+                    pass
+            _add_col("sites", "sc_rate REAL DEFAULT 1.0")
+            _add_col("cards", "last_four TEXT")
+            _add_col("purchases", "notes TEXT")
+            _add_col("purchases", "processed INTEGER DEFAULT 0")
+            _add_col("purchases", "status TEXT DEFAULT 'active'")
+            _add_col("redemptions", "more_remaining INTEGER DEFAULT 0")
+            _add_col("redemptions", "notes TEXT")
+            _add_col("game_sessions", "total_taxable REAL")
+            _add_col("game_sessions", "sc_change REAL")
+            _add_col("game_sessions", "dollar_value REAL")
+            _add_col("game_sessions", "basis_bonus REAL")
+            _add_col("game_sessions", "gameplay_pnl REAL")
+        ensure_core_columns()
+        try:
+            c.execute("UPDATE sites SET sc_rate = 1.0 WHERE sc_rate IS NULL")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
         
@@ -142,6 +167,7 @@ class Database:
                     pass  # column likely exists
 
             _add_col("game_sessions", "session_basis REAL")
+            _add_col("game_sessions", "basis_consumed REAL")
             _add_col("game_sessions", "expected_start_total_sc REAL")
             _add_col("game_sessions", "expected_start_redeemable_sc REAL")
             _add_col("game_sessions", "inferred_start_total_delta REAL")
@@ -151,6 +177,55 @@ class Database:
             _add_col("game_sessions", "net_taxable_pl REAL")
 
             self.set_schema_version(conn, 4)
+            conn.commit()
+
+        # Migration 5: Add missing core columns used by the app
+        if current_version < 5:
+            def _add_col(table, coldef):
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {coldef}")
+                except sqlite3.OperationalError:
+                    pass
+
+            _add_col("sites", "sc_rate REAL DEFAULT 1.0")
+            _add_col("cards", "last_four TEXT")
+
+            _add_col("purchases", "notes TEXT")
+            _add_col("purchases", "processed INTEGER DEFAULT 0")
+            _add_col("purchases", "status TEXT DEFAULT 'active'")
+
+            _add_col("redemptions", "more_remaining INTEGER DEFAULT 0")
+            _add_col("redemptions", "notes TEXT")
+
+            _add_col("game_sessions", "start_time TEXT DEFAULT '00:00:00'")
+            _add_col("game_sessions", "end_date DATE")
+            _add_col("game_sessions", "end_time TEXT")
+            _add_col("game_sessions", "freebies_detected REAL")
+            _add_col("game_sessions", "status TEXT DEFAULT 'Active'")
+            _add_col("game_sessions", "notes TEXT")
+            _add_col("game_sessions", "processed INTEGER DEFAULT 0")
+            _add_col("game_sessions", "total_taxable REAL")
+            _add_col("game_sessions", "sc_change REAL")
+            _add_col("game_sessions", "dollar_value REAL")
+            _add_col("game_sessions", "basis_bonus REAL")
+            _add_col("game_sessions", "gameplay_pnl REAL")
+
+            _add_col("daily_tax_sessions", "total_other_income REAL DEFAULT 0.0")
+            _add_col("daily_tax_sessions", "total_session_pnl REAL DEFAULT 0.0")
+            _add_col("daily_tax_sessions", "net_daily_pnl REAL DEFAULT 0.0")
+            _add_col("daily_tax_sessions", "status TEXT")
+            _add_col("daily_tax_sessions", "num_game_sessions INTEGER DEFAULT 0")
+            _add_col("daily_tax_sessions", "num_other_income_items INTEGER DEFAULT 0")
+            _add_col("daily_tax_sessions", "notes TEXT")
+
+            _add_col("other_income", "notes TEXT")
+
+            try:
+                c.execute("UPDATE sites SET sc_rate = 1.0 WHERE sc_rate IS NULL")
+            except sqlite3.OperationalError:
+                pass
+
+            self.set_schema_version(conn, 5)
             conn.commit()
         
         conn.close()
@@ -170,12 +245,14 @@ class Database:
         c.execute('''CREATE TABLE IF NOT EXISTS sites (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
+            sc_rate REAL DEFAULT 1.0,
             active INTEGER DEFAULT 1)''')
         
         # Cards table
         c.execute('''CREATE TABLE IF NOT EXISTS cards (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
+            last_four TEXT,
             cashback_rate REAL DEFAULT 0.0,
             user_id INTEGER,
             active INTEGER DEFAULT 1)''')
@@ -201,6 +278,9 @@ class Database:
             card_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             remaining_amount REAL NOT NULL,
+            notes TEXT,
+            processed INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'active',
             FOREIGN KEY (site_id) REFERENCES sites(id),
             FOREIGN KEY (card_id) REFERENCES cards(id),
             FOREIGN KEY (user_id) REFERENCES users(id))''')
@@ -214,6 +294,7 @@ class Database:
             status TEXT DEFAULT 'Active',
             total_buyin REAL DEFAULT 0.0,
             total_redeemed REAL DEFAULT 0.0,
+            notes TEXT,
             FOREIGN KEY (site_id) REFERENCES sites(id),
             FOREIGN KEY (user_id) REFERENCES users(id))''')
         
@@ -229,7 +310,9 @@ class Database:
             redemption_method_id INTEGER,
             processed INTEGER DEFAULT 0,
             is_free_sc INTEGER DEFAULT 0,
+            more_remaining INTEGER DEFAULT 0,
             user_id INTEGER NOT NULL,
+            notes TEXT,
             FOREIGN KEY (site_session_id) REFERENCES site_sessions(id),
             FOREIGN KEY (site_id) REFERENCES sites(id),
             FOREIGN KEY (redemption_method_id) REFERENCES redemption_methods(id),
@@ -248,6 +331,78 @@ class Database:
             FOREIGN KEY (site_id) REFERENCES sites(id),
             FOREIGN KEY (redemption_id) REFERENCES redemptions(id),
             FOREIGN KEY (user_id) REFERENCES users(id))''')
+
+        # Game sessions table
+        c.execute('''CREATE TABLE IF NOT EXISTS game_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_date DATE NOT NULL,
+            start_time TEXT DEFAULT '00:00:00',
+            end_date DATE,
+            end_time TEXT,
+            site_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            game_type TEXT,
+            starting_sc_balance REAL DEFAULT 0.0,
+            ending_sc_balance REAL,
+            starting_redeemable_sc REAL,
+            ending_redeemable_sc REAL,
+            freebies_detected REAL,
+            status TEXT DEFAULT 'Active',
+            notes TEXT,
+            processed INTEGER DEFAULT 0,
+            session_basis REAL,
+            basis_consumed REAL,
+            expected_start_total_sc REAL,
+            expected_start_redeemable_sc REAL,
+            inferred_start_total_delta REAL,
+            inferred_start_redeemable_delta REAL,
+            delta_total REAL,
+            delta_redeem REAL,
+            net_taxable_pl REAL,
+            total_taxable REAL,
+            sc_change REAL,
+            dollar_value REAL,
+            basis_bonus REAL,
+            gameplay_pnl REAL,
+            FOREIGN KEY (site_id) REFERENCES sites(id),
+            FOREIGN KEY (user_id) REFERENCES users(id))''')
+
+        # Other income table
+        c.execute('''CREATE TABLE IF NOT EXISTS other_income (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date DATE NOT NULL,
+            amount REAL NOT NULL,
+            description TEXT,
+            user_id INTEGER,
+            game_session_id INTEGER,
+            notes TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (game_session_id) REFERENCES game_sessions(id))''')
+
+        # Daily tax sessions table
+        c.execute('''CREATE TABLE IF NOT EXISTS daily_tax_sessions (
+            session_date DATE NOT NULL,
+            user_id INTEGER NOT NULL,
+            total_other_income REAL DEFAULT 0.0,
+            total_session_pnl REAL DEFAULT 0.0,
+            net_daily_pnl REAL DEFAULT 0.0,
+            status TEXT,
+            num_game_sessions INTEGER DEFAULT 0,
+            num_other_income_items INTEGER DEFAULT 0,
+            notes TEXT,
+            PRIMARY KEY (session_date, user_id),
+            FOREIGN KEY (user_id) REFERENCES users(id))''')
+
+        # Settings table
+        c.execute('''CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT)''')
+
+        # Legacy SC conversion rates table (optional fallback)
+        c.execute('''CREATE TABLE IF NOT EXISTS sc_conversion_rates (
+            site_id INTEGER PRIMARY KEY,
+            rate REAL NOT NULL,
+            FOREIGN KEY (site_id) REFERENCES sites(id))''')
         
         # Expenses table
         c.execute('''CREATE TABLE IF NOT EXISTS expenses (
