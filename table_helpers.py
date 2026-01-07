@@ -539,23 +539,51 @@ class FilterDialog:
         y = parent.winfo_rooty() + (parent.winfo_height() // 2) - (self.dialog.winfo_height() // 2)
         self.dialog.geometry(f"+{x}+{y}")
     
+    def _parse_date_value(self, value):
+        """Parse date/time values into components"""
+        import re
+        from datetime import datetime
+        
+        text = str(value).strip()
+        if not text:
+            return None
+        
+        m = re.match(r'^(\d{4}-\d{2}-\d{2})(?:\s+(\d{1,2}:\d{2}(?::\d{2})?))?', text)
+        date_fmt = None
+        if m:
+            date_part = m.group(1)
+            time_part = m.group(2)
+            date_fmt = "%Y-%m-%d"
+        else:
+            m = re.match(r'^(\d{1,2}/\d{1,2}/\d{2})(?:\s+(\d{1,2}:\d{2}(?::\d{2})?))?', text)
+            if not m:
+                return None
+            date_part = m.group(1)
+            time_part = m.group(2)
+            date_fmt = "%m/%d/%y"
+        
+        try:
+            date_obj = datetime.strptime(date_part, date_fmt).date()
+        except ValueError:
+            return None
+        
+        suffix = text[m.end():].strip()
+        return date_obj, time_part, suffix, text
+
     def _detect_date_column(self, values):
-        """Detect if values are dates (YYYY-MM-DD format)"""
+        """Detect if values are dates or datetimes"""
         if not values:
             return False
         
-        import re
-        date_pattern = re.compile(r'^\d{4}-\d{2}-\d{2}')
-        
         # Check first few values
         sample = list(values)[:min(10, len(values))]
-        matches = sum(1 for v in sample if date_pattern.match(str(v)))
+        matches = sum(1 for v in sample if self._parse_date_value(v))
         
-        # If >70% match date pattern, treat as date column
+        # If >70% parse as date, treat as date column
         return matches / len(sample) > 0.7
     
     def _create_date_tree(self, parent):
-        """Create hierarchical date tree (Year > Month > Day)"""
+        """Create hierarchical date tree (Year > Month > Day > Time)"""
         # Frame for treeview
         tree_frame = ttk.Frame(parent)
         tree_frame.pack(fill='both', expand=True)
@@ -569,25 +597,37 @@ class FilterDialog:
         self.tree.pack(side='left', fill='both', expand=True)
         
         # Organize dates hierarchically
-        date_hierarchy = {}  # {year: {month: [dates]}}
-        
+        date_hierarchy = {}  # {year: {month: {day: [(time_label, full_value)]}}}
+        parsed_entries = []
         for date_str in self.unique_values:
-            try:
-                parts = str(date_str).split('-')
-                if len(parts) >= 2:
-                    year = parts[0]
-                    month = parts[1]
-                    
-                    if year not in date_hierarchy:
-                        date_hierarchy[year] = {}
-                    if month not in date_hierarchy[year]:
-                        date_hierarchy[year][month] = []
-                    
-                    date_hierarchy[year][month].append(date_str)
-            except:
+            parsed = self._parse_date_value(date_str)
+            if not parsed:
                 continue
+            parsed_entries.append(parsed)
         
-        # Track checkboxes: {item_id: (type, value, var)}
+        self.has_time_values = any(entry[1] for entry in parsed_entries)
+        
+        for date_obj, time_part, suffix, full_value in parsed_entries:
+            year = str(date_obj.year)
+            month = f"{date_obj.month:02d}"
+            day = f"{date_obj.day:02d}"
+            
+            if year not in date_hierarchy:
+                date_hierarchy[year] = {}
+            if month not in date_hierarchy[year]:
+                date_hierarchy[year][month] = {}
+            if day not in date_hierarchy[year][month]:
+                date_hierarchy[year][month][day] = []
+            
+            if self.has_time_values:
+                time_label = time_part or "00:00"
+                if suffix:
+                    time_label = f"{time_label}{suffix}"
+                date_hierarchy[year][month][day].append((time_label, full_value))
+            else:
+                date_hierarchy[year][month][day].append((None, full_value))
+        
+        # Track checkboxes: {item_id: (type, value, values)}
         self.tree_items = {}
         self.check_vars = {}
         
@@ -600,32 +640,42 @@ class FilterDialog:
         
         # Build tree
         for year in sorted(date_hierarchy.keys(), reverse=True):
-            # Determine if year should be checked
-            year_dates = []
-            for month in date_hierarchy[year].values():
-                year_dates.extend(month)
-            year_checked = all(d in self.current_selection or not self.current_selection for d in year_dates)
+            year_values = []
+            for month_map in date_hierarchy[year].values():
+                for day_entries in month_map.values():
+                    year_values.extend([full for _, full in day_entries])
             
             year_id = self.tree.insert('', 'end', text=f"â˜ {year}", tags=('year', year))
-            self.tree_items[year_id] = ('year', year, year_dates)
+            self.tree_items[year_id] = ('year', year, year_values)
             
             for month in sorted(date_hierarchy[year].keys()):
-                month_dates = date_hierarchy[year][month]
-                month_checked = all(d in self.current_selection or not self.current_selection for d in month_dates)
-                
                 month_name = month_names.get(month, month)
-                month_id = self.tree.insert(year_id, 'end', text=f"â˜ {month_name}", tags=('month', f"{year}-{month}"))
-                self.tree_items[month_id] = ('month', f"{year}-{month}", month_dates)
+                month_values = []
+                for day_entries in date_hierarchy[year][month].values():
+                    month_values.extend([full for _, full in day_entries])
                 
-                for date_str in sorted(month_dates, reverse=True):
-                    date_checked = date_str in self.current_selection or not self.current_selection
-                    day = date_str.split('-')[2] if len(date_str.split('-')) > 2 else date_str
-                    date_id = self.tree.insert(month_id, 'end', text=f"â˜ {day}", tags=('date', date_str))
-                    self.tree_items[date_id] = ('date', date_str, [date_str])
-            
-            # Update year checkbox based on children
-            if year_checked:
-                self.tree.item(year_id, text=f"â˜‘ {year}")
+                month_id = self.tree.insert(year_id, 'end', text=f"â˜ {month_name}", tags=('month', f"{year}-{month}"))
+                self.tree_items[month_id] = ('month', f"{year}-{month}", month_values)
+                
+                for day in sorted(date_hierarchy[year][month].keys(), reverse=True):
+                    day_entries = date_hierarchy[year][month][day]
+                    day_values = [full for _, full in day_entries]
+                    
+                    if self.has_time_values:
+                        day_id = self.tree.insert(month_id, 'end', text=f"â˜ {day}", tags=('day', f"{year}-{month}-{day}"))
+                        self.tree_items[day_id] = ('day', f"{year}-{month}-{day}", day_values)
+                        
+                        def _time_key(item):
+                            label = item[0] or ""
+                            return label
+                        
+                        for time_label, full_value in sorted(day_entries, key=_time_key):
+                            label = time_label or "00:00"
+                            time_id = self.tree.insert(day_id, 'end', text=f"â˜ {label}", tags=('time', full_value))
+                            self.tree_items[time_id] = ('time', full_value, [full_value])
+                    else:
+                        date_id = self.tree.insert(month_id, 'end', text=f"â˜ {day}", tags=('date', f"{year}-{month}-{day}"))
+                        self.tree_items[date_id] = ('date', f"{year}-{month}-{day}", day_values)
         
         # Update month/year checkboxes based on dates
         self._update_tree_checkboxes()
@@ -744,9 +794,10 @@ class FilterDialog:
         if not self.is_date_column:
             return
         
-        for item_id, (item_type, value, dates) in self.tree_items.items():
-            if item_type == 'date':
-                checked = dates[0] in self.current_selection or not self.current_selection
+        for item_id, (item_type, value, values) in self.tree_items.items():
+            if item_type in ('date', 'time'):
+                checked = (all(v in self.current_selection for v in values)
+                           if self.current_selection else True)
                 symbol = 'â˜‘' if checked else 'â˜'
                 current_text = self.tree.item(item_id, 'text')
                 display_text = current_text.replace('â˜‘', '').replace('â˜', '').strip()
@@ -868,20 +919,20 @@ class FilterDialog:
         self.dialog.destroy()
     
     def _get_selected_dates(self):
-        """Get all selected date values from tree"""
+        """Get all selected date/time values from tree"""
         selected = set()
         
-        for item_id, (item_type, value, dates) in self.tree_items.items():
-            if item_type == 'date':
+        for item_id, (item_type, value, values) in self.tree_items.items():
+            if item_type in ('date', 'time'):
                 # Check if this date is selected
                 text = self.tree.item(item_id, 'text')
                 if 'â˜‘' in text:
-                    selected.add(dates[0])
+                    for val in values:
+                        selected.add(val)
         
         return selected
     
     def on_cancel(self):
         """Close without changes"""
         self.dialog.destroy()
-
 

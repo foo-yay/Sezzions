@@ -5324,21 +5324,33 @@ class CasinoApp:
         data_with_tags = []  # Collect data for SearchableTreeview
         
         for row in c.fetchall():
-            # Calculate duration
-            if row['end_time']:
-                from datetime import datetime
-                start = datetime.strptime(row['start_time'], '%H:%M:%S')
-                end = datetime.strptime(row['end_time'], '%H:%M:%S')
-                duration = end - start
-                hours = duration.seconds // 3600
-                minutes = (duration.seconds % 3600) // 60
-                duration_str = f"{hours}h {minutes}m"
-            else:
-                duration_str = "Active"
+            if row['status'] != 'Closed':
                 active_count += 1
-            
-            # Format time
-            time_str = row['start_time'][:5] if row['start_time'] else "-"  # HH:MM
+
+            # Format date/time with multi-day indicator
+            time_str = row['start_time'][:5] if row['start_time'] else ""
+            raw_date = row['session_date'] or ""
+            display_date = raw_date
+            if raw_date:
+                try:
+                    from datetime import datetime
+                    display_date = datetime.strptime(raw_date, '%Y-%m-%d').strftime('%m/%d/%y')
+                except Exception:
+                    display_date = raw_date
+            date_time_str = display_date
+            if time_str:
+                date_time_str = f"{display_date} {time_str}"
+
+            if row['status'] == 'Closed' and row['end_date'] and row['session_date']:
+                try:
+                    from datetime import datetime
+                    start_date = datetime.strptime(row['session_date'], '%Y-%m-%d').date()
+                    end_date = datetime.strptime(row['end_date'], '%Y-%m-%d').date()
+                    day_span = (end_date - start_date).days
+                    if day_span > 0:
+                        date_time_str = f"{date_time_str} (+{day_span}d)"
+                except Exception:
+                    pass
             
             # Format values
             start_total = f"{float(row['starting_total'] or 0):.2f}"
@@ -5373,12 +5385,10 @@ class CasinoApp:
             notes_display = '📝' if row['notes'] else ''
 
             values = (
-                row['session_date'],
-                time_str,
+                date_time_str,
                 row['site_name'],
                 row['user_name'],
                 row['game_type'],
-                duration_str,
                 start_total,
                 end_total,
                 start_redeem,

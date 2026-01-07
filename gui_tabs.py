@@ -448,7 +448,7 @@ def build_purchases_tab(app):
               command=lambda: export_tree_to_csv(app.p_tree, "purchases", app.root),
               width=15).pack(side='right', padx=5)
     
-    cols = ('Date', 'Time', 'Site', 'User', 'Game Type', 'Duration',
+    cols = ('Date/Time', 'Site', 'User', 'Game Type',
             'Start Total', 'End Total', 'Start Redeem', 'End Redeem',
             'Δ Total', 'Δ Redeem', 'Basis Consumed', 'Net P/L', 'Status', 'Notes')
     app.p_tree = ttk.Treeview(list_frame, columns=cols, show='headings', height=15)
@@ -2366,9 +2366,9 @@ def build_game_sessions_tab(app):
     tree_frame = ttk.Frame(table_section)
     tree_frame.pack(fill='both', expand=True)
     
-    cols = ('Date', 'Time', 'Site', 'User', 'Game Type', 'Duration', 'Start Total',
-            'End Total', 'Start Redeem', 'End Redeem', 'Δ Total', 'Δ Redeem',
-            'Basis Consumed', 'Net P/L', 'Status', 'Notes')
+    cols = ('Date/Time', 'Site', 'User', 'Game Type',
+            'Start Total', 'End Total', 'Start Redeem', 'End Redeem',
+            'Δ Total', 'Δ Redeem', 'Basis Consumed', 'Net P/L', 'Status', 'Notes')
     
     app.gs_tree = ttk.Treeview(tree_frame, columns=cols, show='headings', height=15)
     
@@ -2382,8 +2382,8 @@ def build_game_sessions_tab(app):
             app.gs_tree.column(col, width=110)
         elif col in ('Start Total', 'End Total', 'Start Redeem', 'End Redeem', 'Δ Total', 'Δ Redeem'):
             app.gs_tree.column(col, width=95)
-        elif col in ('Time', 'Duration'):
-            app.gs_tree.column(col, width=85)
+        elif col == 'Date/Time':
+            app.gs_tree.column(col, width=130)
         elif col in ('Site', 'User', 'Game Type'):
             app.gs_tree.column(col, width=100)
         else:
