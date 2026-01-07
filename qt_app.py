@@ -917,7 +917,6 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.cancel_btn.clicked.connect(self.reject)
         self.user_combo.currentTextChanged.connect(self._on_user_change)
 
-        self._is_free_sc = False
         if redemption:
             self._load_redemption()
         else:
@@ -1048,7 +1047,6 @@ class RedemptionDialog(QtWidgets.QDialog):
             self.partial_radio.setChecked(True)
         else:
             self.final_radio.setChecked(True)
-        self._is_free_sc = bool(self.redemption["is_free_sc"])
         self.processed_check.setChecked(bool(self.redemption["processed"]))
         self.notes_edit.setPlainText(self.redemption["notes"] or "")
 
@@ -1076,7 +1074,6 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.receipt_edit.clear()
         self.partial_radio.setChecked(False)
         self.final_radio.setChecked(False)
-        self._is_free_sc = False
         self.processed_check.setChecked(False)
         self.notes_edit.clear()
         self._set_today()
@@ -1137,7 +1134,6 @@ class RedemptionDialog(QtWidgets.QDialog):
             "amount": amount,
             "receipt_date": receipt_date.strftime("%Y-%m-%d") if receipt_date else None,
             "more_remaining": self.partial_radio.isChecked(),
-            "is_free_sc": bool(self._is_free_sc),
             "processed": self.processed_check.isChecked(),
             "notes": notes,
         }, None
@@ -2095,7 +2091,7 @@ class RedemptionsTab(QtWidgets.QWidget):
         search_row.addWidget(self.clear_filters_btn)
         layout.addLayout(search_row)
 
-        self.table = QtWidgets.QTableWidget(0, 9)
+        self.table = QtWidgets.QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels(
             [
                 "Date/Time",
@@ -2104,7 +2100,6 @@ class RedemptionsTab(QtWidgets.QWidget):
                 "Amount",
                 "Receipt",
                 "Method",
-                "Free",
                 "Processed",
                 "Notes",
             ]
@@ -2166,7 +2161,7 @@ class RedemptionsTab(QtWidgets.QWidget):
         c.execute(
             """
             SELECT r.id, r.redemption_date, r.redemption_time, s.name as site, u.name as user_name,
-                   r.amount, r.receipt_date, rm.name as method, r.is_free_sc, r.processed,
+                   r.amount, r.receipt_date, rm.name as method, r.processed,
                    r.more_remaining, r.notes
             FROM redemptions r
             JOIN sites s ON r.site_id = s.id
@@ -2185,8 +2180,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                 )
             except ValueError:
                 dt_value = None
-            is_free = bool(row["is_free_sc"])
-            is_total_loss = float(row["amount"] or 0) == 0 and not is_free
+            is_total_loss = float(row["amount"] or 0) == 0
             receipt_date = row["receipt_date"] or ""
             is_pending = receipt_date == ""
             if is_total_loss:
@@ -2197,14 +2191,14 @@ class RedemptionsTab(QtWidgets.QWidget):
                 receipt_display = receipt_date
             notes = row["notes"] or ""
             notes_display = notes[:120]
+            method_display = "Loss" if is_total_loss else (row["method"] or "")
             display = [
                 format_date_time(row["redemption_date"], time_value),
                 row["user_name"],
                 row["site"],
-                f"{format_currency(row['amount'])}{' (LOSS)' if is_total_loss else ''}",
+                format_currency(row["amount"]),
                 receipt_display,
-                row["method"] or "",
-                "Yes" if is_free else "No",
+                method_display,
                 "✓" if row["processed"] else "",
                 notes_display,
             ]
@@ -2219,11 +2213,10 @@ class RedemptionsTab(QtWidgets.QWidget):
                     "amount": float(row["amount"] or 0),
                     "receipt_date": receipt_date,
                     "method": row["method"] or "",
-                    "is_free_sc": is_free,
                     "processed": bool(row["processed"]),
                     "more_remaining": bool(row["more_remaining"]),
                     "notes": notes,
-                    "status": "total_loss" if is_total_loss else ("pending" if is_pending else ("free_sc" if is_free else "normal")),
+                    "status": "total_loss" if is_total_loss else ("pending" if is_pending else "normal"),
                     "display": display,
                     "search_blob": " ".join(str(v).lower() for v in display),
                 }
@@ -2271,8 +2264,6 @@ class RedemptionsTab(QtWidgets.QWidget):
                     item.setForeground(QtGui.QBrush(QtGui.QColor("#c0392b")))
                 elif status == "pending":
                     item.setForeground(QtGui.QBrush(QtGui.QColor("#e67e22")))
-                elif status == "free_sc":
-                    item.setForeground(QtGui.QBrush(QtGui.QColor("#2e7d32")))
                 self.table.setItem(r_idx, c_idx, item)
         self._update_action_visibility()
 
@@ -2296,10 +2287,8 @@ class RedemptionsTab(QtWidgets.QWidget):
             if col == 5:
                 return row["method"].lower()
             if col == 6:
-                return row["is_free_sc"]
-            if col == 7:
                 return row["processed"]
-            if col == 8:
+            if col == 7:
                 return row["notes"].lower()
             return row["display"][col]
 
@@ -2560,8 +2549,6 @@ class RedemptionsTab(QtWidgets.QWidget):
         return row
 
     def _confirm_redemption_flags(self, data, redemption_id):
-        if data.get("is_free_sc"):
-            return True
         if data.get("more_remaining"):
             return True
 
@@ -2646,7 +2633,6 @@ class RedemptionsTab(QtWidgets.QWidget):
         amount = data["amount"]
         receipt_date = data["receipt_date"]
         more_remaining = data["more_remaining"]
-        is_free_sc = data["is_free_sc"]
         processed = 1 if data["processed"] else 0
         notes = data["notes"]
 
@@ -2677,7 +2663,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                 (site_id, user_id),
             )
             active_session = c.fetchone()
-            if active_session and not is_free_sc:
+            if active_session:
                 conn.close()
                 return (
                     False,
@@ -2715,18 +2701,17 @@ class RedemptionsTab(QtWidgets.QWidget):
                 method_id = method_row["id"]
 
         session_id = None
-        if not is_free_sc:
-            c.execute(
-                """
-                SELECT id FROM site_sessions
-                WHERE site_id = ? AND user_id = ? AND status IN ('Active', 'Redeeming')
-                ORDER BY start_date DESC LIMIT 1
-                """,
-                (site_id, user_id),
-            )
-            result = c.fetchone()
-            if result:
-                session_id = result["id"]
+        c.execute(
+            """
+            SELECT id FROM site_sessions
+            WHERE site_id = ? AND user_id = ? AND status IN ('Active', 'Redeeming')
+            ORDER BY start_date DESC LIMIT 1
+            """,
+            (site_id, user_id),
+        )
+        result = c.fetchone()
+        if result:
+            session_id = result["id"]
 
         if redemption_id:
             c.execute(
@@ -2750,7 +2735,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                 """
                 UPDATE redemptions
                 SET site_session_id=?, site_id=?, redemption_date=?, redemption_time=?, amount=?, receipt_date=?,
-                    redemption_method_id=?, is_free_sc=?, more_remaining=?, user_id=?, processed=?, notes=?
+                    redemption_method_id=?, more_remaining=?, user_id=?, processed=?, notes=?
                 WHERE id=?
                 """,
                 (
@@ -2761,7 +2746,6 @@ class RedemptionsTab(QtWidgets.QWidget):
                     amount,
                     receipt_date,
                     method_id,
-                    1 if is_free_sc else 0,
                     1 if more_remaining else 0,
                     user_id,
                     processed,
@@ -2790,7 +2774,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                 self.session_mgr.fifo_calc.reverse_cost_basis(old_site_id, old_user_id, old_cost_basis)
 
             self.session_mgr.process_redemption(
-                redemption_id, site_id, amount, rdate, rtime, user_id, is_free_sc, more_remaining, is_edit=True
+                redemption_id, site_id, amount, rdate, rtime, user_id, False, more_remaining, is_edit=True
             )
 
             if self._has_subsequent and self._subsequent_ids:
@@ -2814,8 +2798,8 @@ class RedemptionsTab(QtWidgets.QWidget):
             """
             INSERT INTO redemptions
             (site_session_id, site_id, redemption_date, redemption_time, amount, receipt_date,
-             redemption_method_id, is_free_sc, more_remaining, user_id, processed, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             redemption_method_id, more_remaining, user_id, processed, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 session_id,
@@ -2825,7 +2809,6 @@ class RedemptionsTab(QtWidgets.QWidget):
                 amount,
                 receipt_date,
                 method_id,
-                1 if is_free_sc else 0,
                 1 if more_remaining else 0,
                 user_id,
                 processed,
@@ -2836,7 +2819,7 @@ class RedemptionsTab(QtWidgets.QWidget):
         conn.commit()
         conn.close()
 
-        self.session_mgr.process_redemption(rid, site_id, amount, rdate, rtime, user_id, is_free_sc, more_remaining)
+        self.session_mgr.process_redemption(rid, site_id, amount, rdate, rtime, user_id, False, more_remaining)
         recalc_count = self.session_mgr.auto_recalculate_affected_sessions(site_id, user_id, rdate, rtime)
         message = "Redemption logged"
         if recalc_count:
@@ -2849,7 +2832,7 @@ class RedemptionsTab(QtWidgets.QWidget):
             c = conn.cursor()
             c.execute(
                 """
-                SELECT amount, redemption_date, redemption_time, is_free_sc
+                SELECT amount, redemption_date, redemption_time
                 FROM redemptions
                 WHERE id = ?
                 """,
@@ -2862,7 +2845,6 @@ class RedemptionsTab(QtWidgets.QWidget):
             amount = float(redemption["amount"])
             rdate = redemption["redemption_date"]
             rtime = redemption["redemption_time"] or "00:00:00"
-            is_free_sc = bool(redemption["is_free_sc"])
             c.execute("SELECT cost_basis FROM tax_sessions WHERE redemption_id = ?", (rid,))
             old_tax = c.fetchone()
             old_cost_basis = float(old_tax["cost_basis"]) if old_tax and old_tax["cost_basis"] else 0.0
@@ -2878,7 +2860,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                 rdate,
                 rtime,
                 user_id,
-                is_free_sc,
+                False,
                 more_remaining=True,
                 is_edit=True,
             )
