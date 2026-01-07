@@ -3,10 +3,9 @@
 qt_app.py - PySide6/Qt UI for Session
 Run: python3 qt_app.py
 """
-import os
 import sys
 from datetime import date, datetime, timedelta
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from database import Database
 from business_logic import FIFOCalculator, SessionManager
@@ -450,16 +449,6 @@ class ComboCompleterFilter(QtCore.QObject):
 
     def _handle_commit(self, obj, key, event_type):
         focus_widget = QtWidgets.QApplication.focusWidget()
-        if os.environ.get("QT_DEBUG_COMPLETER") == "1":
-            print(
-                "[CompleterDebug] key=%s obj=%s focus=%s type=%s"
-                % (
-                    key,
-                    obj.__class__.__name__,
-                    focus_widget.__class__.__name__ if focus_widget else "None",
-                    obj.metaObject().className() if hasattr(obj, "metaObject") else type(obj).__name__,
-                )
-            )
         combo = None
         if isinstance(focus_widget, QtWidgets.QLineEdit):
             combo = self._combo_for_line_edit(focus_widget)
@@ -469,8 +458,6 @@ class ComboCompleterFilter(QtCore.QObject):
             line_edit = combo.lineEdit()
             text = line_edit.text() if line_edit is not None else combo.currentText()
             committed = self._commit_from_combo(combo, text)
-            if os.environ.get("QT_DEBUG_COMPLETER") == "1":
-                print("[CompleterDebug] committed=%s" % committed)
             if committed:
                 if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
                     return True
@@ -494,13 +481,15 @@ class ComboCompleterFilter(QtCore.QObject):
             return False
         model = combo.model()
         column = combo.modelColumn()
+        text_lower = text.lower()
         for row in range(model.rowCount()):
             idx = model.index(row, column)
             data = model.data(idx)
             if data is None:
                 continue
-            if text.lower() in str(data).lower():
-                combo.setCurrentText(str(data))
+            data_text = str(data)
+            if data_text.lower().startswith(text_lower):
+                combo.setCurrentText(data_text)
                 completer = combo.completer()
                 if completer is not None and completer.popup() is not None:
                     completer.popup().hide()
@@ -617,7 +606,7 @@ class PurchaseDialog(QtWidgets.QDialog):
         for combo in (self.user_combo, self.site_combo, self.card_combo):
             completer = QtWidgets.QCompleter(combo.model())
             completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
-            completer.setFilterMode(QtCore.Qt.MatchContains)
+            completer.setFilterMode(QtCore.Qt.MatchStartsWith)
             completer.setCompletionMode(QtWidgets.QCompleter.PopupCompletion)
             popup = QtWidgets.QListView()
             popup.setStyleSheet(
@@ -790,6 +779,369 @@ class PurchaseDialog(QtWidgets.QDialog):
             "starting_sc_balance": start_sc,
             "notes": notes,
         }, None
+
+
+class RedemptionDialog(QtWidgets.QDialog):
+    def __init__(self, db, user_names, site_names, method_names, redemption=None, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.redemption = redemption
+        self.setWindowTitle("Edit Redemption" if redemption else "Add Redemption")
+        self.resize(540, 500)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+
+        self.date_edit = QtWidgets.QLineEdit()
+        self.date_edit.setPlaceholderText("MM/DD/YY")
+        self.today_btn = QtWidgets.QPushButton("Today")
+        self.calendar_btn = QtWidgets.QPushButton("📅")
+        self.calendar_btn.setFixedWidth(44)
+        self.today_btn.clicked.connect(self._set_today)
+        self.calendar_btn.clicked.connect(self._pick_date)
+
+        date_row = QtWidgets.QHBoxLayout()
+        date_row.setSpacing(8)
+        date_row.addWidget(self.date_edit, 1)
+        date_row.addWidget(self.calendar_btn)
+        date_row.addWidget(self.today_btn)
+
+        self.time_edit = QtWidgets.QLineEdit()
+        self.time_edit.setPlaceholderText("HH:MM")
+        self.now_btn = QtWidgets.QPushButton("Now")
+        self.now_btn.clicked.connect(self._set_now)
+        time_row = QtWidgets.QHBoxLayout()
+        time_row.setSpacing(8)
+        time_row.addWidget(self.time_edit, 1)
+        time_row.addWidget(self.now_btn)
+
+        self.user_combo = QtWidgets.QComboBox()
+        self.user_combo.setEditable(True)
+        self.user_combo.addItems(user_names)
+        self.site_combo = QtWidgets.QComboBox()
+        self.site_combo.setEditable(True)
+        self.site_combo.addItems(site_names)
+        self.method_combo = QtWidgets.QComboBox()
+        self.method_combo.setEditable(True)
+        self.method_combo.addItems(method_names)
+
+        self.amount_edit = QtWidgets.QLineEdit()
+        self.receipt_edit = QtWidgets.QLineEdit()
+        self.receipt_edit.setPlaceholderText("MM/DD/YY")
+        self.receipt_btn = QtWidgets.QPushButton("📅")
+        self.receipt_btn.setFixedWidth(44)
+        self.receipt_btn.clicked.connect(self._pick_receipt_date)
+        receipt_row = QtWidgets.QHBoxLayout()
+        receipt_row.setSpacing(8)
+        receipt_row.addWidget(self.receipt_edit, 1)
+        receipt_row.addWidget(self.receipt_btn)
+
+        self.partial_radio = QtWidgets.QRadioButton("Partial (balance remains)")
+        self.final_radio = QtWidgets.QRadioButton("Full (close basis)")
+        self.redemption_group = QtWidgets.QButtonGroup(self)
+        self.redemption_group.addButton(self.partial_radio)
+        self.redemption_group.addButton(self.final_radio)
+
+        self.type_info_btn = QtWidgets.QToolButton()
+        self.type_info_btn.setObjectName("InfoButton")
+        self.type_info_btn.setText("?")
+        self.type_info_btn.setToolTip("What do Partial and Full mean?")
+        self.type_info_btn.clicked.connect(self._show_redemption_type_info)
+
+        type_row = QtWidgets.QHBoxLayout()
+        type_row.setSpacing(12)
+        type_row.addWidget(self.partial_radio)
+        type_row.addWidget(self.final_radio)
+        type_row.addWidget(self.type_info_btn)
+        type_row.addStretch(1)
+
+        self.processed_check = QtWidgets.QCheckBox("Processed")
+        self.processed_info_btn = QtWidgets.QToolButton()
+        self.processed_info_btn.setObjectName("InfoButton")
+        self.processed_info_btn.setText("?")
+        self.processed_info_btn.setToolTip("What does Processed mean?")
+        self.processed_info_btn.clicked.connect(self._show_processed_info)
+
+        checkbox_row = QtWidgets.QHBoxLayout()
+        checkbox_row.setSpacing(12)
+        checkbox_row.addWidget(self.processed_check)
+        checkbox_row.addWidget(self.processed_info_btn)
+        checkbox_row.addStretch(1)
+
+        self.notes_edit = QtWidgets.QPlainTextEdit()
+        self.notes_edit.setObjectName("NotesField")
+        self.notes_edit.setPlaceholderText("Notes...")
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+
+        form.addWidget(QtWidgets.QLabel("Date"), 0, 0)
+        form.addLayout(date_row, 0, 1)
+        form.addWidget(QtWidgets.QLabel("Time"), 1, 0)
+        form.addLayout(time_row, 1, 1)
+        form.addWidget(QtWidgets.QLabel("User"), 2, 0)
+        form.addWidget(self.user_combo, 2, 1)
+        form.addWidget(QtWidgets.QLabel("Site"), 3, 0)
+        form.addWidget(self.site_combo, 3, 1)
+        form.addWidget(QtWidgets.QLabel("Method"), 4, 0)
+        form.addWidget(self.method_combo, 4, 1)
+        form.addWidget(QtWidgets.QLabel("Amount"), 5, 0)
+        form.addWidget(self.amount_edit, 5, 1)
+        form.addWidget(QtWidgets.QLabel("Receipt Date"), 6, 0)
+        form.addLayout(receipt_row, 6, 1)
+        form.addWidget(QtWidgets.QLabel("Redemption Type"), 7, 0)
+        form.addLayout(type_row, 7, 1)
+        form.addWidget(QtWidgets.QLabel("Flags"), 8, 0)
+        form.addLayout(checkbox_row, 8, 1)
+        form.addWidget(QtWidgets.QLabel("Notes"), 9, 0)
+        form.addWidget(self.notes_edit, 9, 1)
+
+        layout.addLayout(form)
+        layout.addSpacing(8)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        self.cancel_btn = QtWidgets.QPushButton("Cancel")
+        self.clear_btn = QtWidgets.QPushButton("Clear")
+        self.save_btn = QtWidgets.QPushButton("Save")
+        self.save_btn.setObjectName("PrimaryButton")
+        btn_row.addWidget(self.cancel_btn)
+        btn_row.addWidget(self.clear_btn)
+        btn_row.addWidget(self.save_btn)
+        layout.addLayout(btn_row)
+
+        self.clear_btn.clicked.connect(self._clear_form)
+        self.cancel_btn.clicked.connect(self.reject)
+        self.user_combo.currentTextChanged.connect(self._on_user_change)
+
+        self._is_free_sc = False
+        if redemption:
+            self._load_redemption()
+        else:
+            self._clear_form()
+
+        self._update_completers()
+
+    def _update_completers(self):
+        for combo in (self.user_combo, self.site_combo, self.method_combo):
+            completer = QtWidgets.QCompleter(combo.model())
+            completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+            completer.setFilterMode(QtCore.Qt.MatchStartsWith)
+            completer.setCompletionMode(QtWidgets.QCompleter.PopupCompletion)
+            popup = QtWidgets.QListView()
+            popup.setStyleSheet(
+                "QListView { background: #fdfdfe; color: #1e1f24; }"
+                "QListView::item:selected { background: #d0dfff; color: #1e1f24; }"
+            )
+            completer.setPopup(popup)
+            combo.setCompleter(completer)
+            line_edit = combo.lineEdit()
+            if line_edit is not None:
+                line_edit.setCompleter(completer)
+                app = QtWidgets.QApplication.instance()
+                if app is not None and hasattr(app, "_completer_filter"):
+                    line_edit.installEventFilter(app._completer_filter)
+
+    def _set_today(self):
+        self.date_edit.setText(date.today().strftime("%m/%d/%y"))
+
+    def _set_now(self):
+        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+
+    def _pick_date(self):
+        self._open_calendar(self.date_edit)
+
+    def _pick_receipt_date(self):
+        self._open_calendar(self.receipt_edit)
+
+    def _open_calendar(self, target_edit):
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Select Date")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        calendar = QtWidgets.QCalendarWidget()
+        calendar.setSelectedDate(QtCore.QDate.currentDate())
+        layout.addWidget(calendar)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        ok_btn = QtWidgets.QPushButton("Select")
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+        cancel_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            target_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+
+    def _show_redemption_type_info(self):
+        message = (
+            "Partial keeps remaining balance open and only applies FIFO basis to this amount.\n"
+            "Full closes out remaining basis up to this timestamp and can record a cashflow loss.\n\n"
+            "Game Session taxable P/L is not affected either way."
+        )
+        QtWidgets.QMessageBox.information(self, "Redemption Type", message)
+
+    def _show_processed_info(self):
+        message = "Processed is a tracking flag for your workflow. It does not change calculations."
+        QtWidgets.QMessageBox.information(self, "Processed Flag", message)
+
+    def _on_user_change(self, value):
+        user_name = value.strip()
+        if not user_name:
+            self.method_combo.clear()
+            self.method_combo.setCurrentIndex(-1)
+            self.method_combo.setEditText("")
+            return
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id FROM users WHERE name = ?", (user_name,))
+        user_row = c.fetchone()
+        if not user_row:
+            conn.close()
+            self.method_combo.clear()
+            self.method_combo.setCurrentIndex(-1)
+            self.method_combo.setEditText("")
+            return
+        user_id = user_row["id"]
+        c.execute(
+            """
+            SELECT name FROM redemption_methods
+            WHERE active = 1 AND (user_id IS NULL OR user_id = ?)
+            ORDER BY name
+            """,
+            (user_id,),
+        )
+        methods = [r["name"] for r in c.fetchall()]
+        conn.close()
+        preserve = getattr(self, "_preserve_method_selection", False)
+        current = self.method_combo.currentText().strip()
+        self.method_combo.blockSignals(True)
+        self.method_combo.clear()
+        self.method_combo.addItems(methods)
+        if preserve and current in methods:
+            self.method_combo.setCurrentText(current)
+        else:
+            self.method_combo.setCurrentIndex(-1)
+            self.method_combo.setEditText("")
+        self.method_combo.blockSignals(False)
+        self._update_completers()
+
+    def _load_redemption(self):
+        self.date_edit.setText(self._format_date_for_input(self.redemption["redemption_date"]))
+        self.time_edit.setText(self._format_time_for_input(self.redemption["redemption_time"]))
+        self._preserve_method_selection = True
+        self.user_combo.setCurrentText(self.redemption["user_name"])
+        self._preserve_method_selection = False
+        self.site_combo.setCurrentText(self.redemption["site_name"])
+        if self.redemption["method_name"]:
+            self.method_combo.setCurrentText(self.redemption["method_name"])
+        else:
+            self.method_combo.setCurrentIndex(-1)
+            self.method_combo.setEditText("")
+        self.amount_edit.setText(str(self.redemption["amount"]))
+        if self.redemption["receipt_date"]:
+            self.receipt_edit.setText(self._format_date_for_input(self.redemption["receipt_date"]))
+        if self.redemption["more_remaining"]:
+            self.partial_radio.setChecked(True)
+        else:
+            self.final_radio.setChecked(True)
+        self._is_free_sc = bool(self.redemption["is_free_sc"])
+        self.processed_check.setChecked(bool(self.redemption["processed"]))
+        self.notes_edit.setPlainText(self.redemption["notes"] or "")
+
+    def _format_date_for_input(self, date_str):
+        if not date_str:
+            return ""
+        try:
+            parsed = datetime.strptime(date_str, "%Y-%m-%d").date()
+            return parsed.strftime("%m/%d/%y")
+        except ValueError:
+            return date_str
+
+    def _format_time_for_input(self, time_str):
+        if not time_str:
+            return ""
+        return time_str[:5]
+
+    def _clear_form(self):
+        self.date_edit.clear()
+        self.time_edit.clear()
+        for combo in (self.user_combo, self.site_combo, self.method_combo):
+            combo.setCurrentIndex(-1)
+            combo.setEditText("")
+        self.amount_edit.clear()
+        self.receipt_edit.clear()
+        self.partial_radio.setChecked(False)
+        self.final_radio.setChecked(False)
+        self._is_free_sc = False
+        self.processed_check.setChecked(False)
+        self.notes_edit.clear()
+        self._set_today()
+
+    def collect_data(self):
+        user_name = self.user_combo.currentText().strip()
+        site_name = self.site_combo.currentText().strip()
+        if not user_name or not site_name:
+            return None, "Please select User and Site."
+
+        date_str = self.date_edit.text().strip()
+        if not date_str:
+            return None, "Please enter a redemption date."
+        try:
+            rdate = parse_date_input(date_str)
+        except ValueError:
+            return None, "Please enter a valid redemption date."
+
+        time_str = self.time_edit.text().strip()
+        try:
+            rtime = parse_time_input(time_str)
+        except ValueError:
+            return None, "Please enter a valid time (HH:MM or HH:MM:SS)."
+
+        if not self.partial_radio.isChecked() and not self.final_radio.isChecked():
+            return None, "Please choose Partial or Full for the redemption type."
+
+        receipt_str = self.receipt_edit.text().strip()
+        receipt_date = None
+        if receipt_str:
+            try:
+                receipt_date = parse_date_input(receipt_str)
+                if receipt_date < rdate:
+                    return None, "Receipt date cannot be before redemption date."
+            except ValueError:
+                return None, "Please enter a valid receipt date."
+
+        amount_str = self.amount_edit.text().strip()
+        if not amount_str:
+            return None, "Please enter a redemption amount."
+        valid, result = validate_currency(amount_str)
+        if not valid:
+            return None, result
+        amount = result
+
+        method_name = self.method_combo.currentText().strip()
+        if amount > 0 and not method_name:
+            return None, "Please select a redemption method."
+
+        notes = self.notes_edit.toPlainText().strip()
+
+        return {
+            "user_name": user_name,
+            "site_name": site_name,
+            "method_name": method_name,
+            "redemption_date": rdate.strftime("%Y-%m-%d"),
+            "redemption_time": rtime,
+            "amount": amount,
+            "receipt_date": receipt_date.strftime("%Y-%m-%d") if receipt_date else None,
+            "more_remaining": self.partial_radio.isChecked(),
+            "is_free_sc": bool(self._is_free_sc),
+            "processed": self.processed_check.isChecked(),
+            "notes": notes,
+        }, None
+
 
 class StatsBar(QtWidgets.QFrame):
     def __init__(self, parent=None):
@@ -1659,6 +2011,988 @@ class PurchasesTab(QtWidgets.QWidget):
                 writer.writerow(row["display"])
 
 
+class RedemptionsTab(QtWidgets.QWidget):
+    def __init__(self, db, session_mgr, on_data_changed=None, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.session_mgr = session_mgr
+        self.on_data_changed = on_data_changed
+        self.all_rows = []
+        self.filtered_rows = []
+        self.header_filters = {}
+        self.sort_column = None
+        self.sort_order = QtCore.Qt.AscendingOrder
+        self.active_date_filter = (None, None)
+        self._has_subsequent = False
+        self._subsequent_ids = []
+        self.setMinimumSize(0, 0)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        actions = QtWidgets.QHBoxLayout()
+        actions.setSpacing(8)
+        self.add_btn = QtWidgets.QPushButton("Add Redemption")
+        self.edit_btn = QtWidgets.QPushButton("Edit Redemption")
+        self.delete_btn = QtWidgets.QPushButton("Delete Redemption")
+        self.export_btn = QtWidgets.QPushButton("Export CSV")
+        self.refresh_btn = QtWidgets.QPushButton("Refresh")
+        self.add_btn.setObjectName("PrimaryButton")
+        self.edit_btn.setVisible(False)
+        self.delete_btn.setVisible(False)
+        actions.addWidget(self.add_btn)
+        actions.addWidget(self.edit_btn)
+        actions.addWidget(self.delete_btn)
+        actions.addStretch(1)
+        actions.addWidget(self.refresh_btn)
+        actions.addWidget(self.export_btn)
+        layout.addLayout(actions)
+
+        date_row = QtWidgets.QHBoxLayout()
+        date_row.setSpacing(6)
+        date_row.addWidget(QtWidgets.QLabel("From"))
+        self.from_edit = QtWidgets.QLineEdit()
+        self.from_edit.setPlaceholderText("MM/DD/YY")
+        self.from_calendar = QtWidgets.QPushButton("📅")
+        self.from_calendar.setFixedWidth(44)
+        date_row.addWidget(self.from_edit)
+        date_row.addWidget(self.from_calendar)
+        date_row.addWidget(QtWidgets.QLabel("To"))
+        self.to_edit = QtWidgets.QLineEdit()
+        self.to_edit.setPlaceholderText("MM/DD/YY")
+        self.to_calendar = QtWidgets.QPushButton("📅")
+        self.to_calendar.setFixedWidth(44)
+        date_row.addWidget(self.to_edit)
+        date_row.addWidget(self.to_calendar)
+        self.apply_date_btn = QtWidgets.QPushButton("Apply")
+        self.clear_date_btn = QtWidgets.QPushButton("Clear")
+        self.today_btn = QtWidgets.QPushButton("Today")
+        self.last30_btn = QtWidgets.QPushButton("Last 30 Days")
+        self.this_month_btn = QtWidgets.QPushButton("This Month")
+        self.this_year_btn = QtWidgets.QPushButton("This Year")
+        self.all_time_btn = QtWidgets.QPushButton("All Time")
+        date_row.addWidget(self.apply_date_btn)
+        date_row.addWidget(self.clear_date_btn)
+        date_row.addWidget(self.today_btn)
+        date_row.addWidget(self.last30_btn)
+        date_row.addWidget(self.this_month_btn)
+        date_row.addWidget(self.this_year_btn)
+        date_row.addWidget(self.all_time_btn)
+        date_row.addStretch(1)
+        layout.addLayout(date_row)
+
+        search_row = QtWidgets.QHBoxLayout()
+        search_row.setSpacing(8)
+        self.search_edit = QtWidgets.QLineEdit()
+        self.search_edit.setPlaceholderText("Search redemptions...")
+        self.search_edit.textChanged.connect(self.apply_filters)
+        self.search_clear_btn = QtWidgets.QPushButton("Clear")
+        self.clear_filters_btn = QtWidgets.QPushButton("Clear All Filters")
+        search_row.addWidget(self.search_edit, 1)
+        search_row.addWidget(self.search_clear_btn)
+        search_row.addWidget(self.clear_filters_btn)
+        layout.addLayout(search_row)
+
+        self.table = QtWidgets.QTableWidget(0, 9)
+        self.table.setHorizontalHeaderLabels(
+            [
+                "Date/Time",
+                "User",
+                "Site",
+                "Amount",
+                "Receipt",
+                "Method",
+                "Free",
+                "Processed",
+                "Notes",
+            ]
+        )
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.table.setAlternatingRowColors(True)
+        self.table.setMinimumSize(0, 0)
+        self.table.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding)
+        self.table.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustIgnored)
+        self.table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        header.setMinimumSectionSize(40)
+        header.setSectionsClickable(False)
+        self.header = header
+        header.viewport().installEventFilter(self)
+        self.table.verticalHeader().setVisible(False)
+        self.table.itemDoubleClicked.connect(self._edit_selected)
+        layout.addWidget(self.table)
+
+        self.table.selectionModel().selectionChanged.connect(self._update_action_visibility)
+
+        self.add_btn.clicked.connect(self._add_redemption)
+        self.edit_btn.clicked.connect(self._edit_selected)
+        self.delete_btn.clicked.connect(self._delete_selected)
+        self.export_btn.clicked.connect(self.export_csv)
+        self.refresh_btn.clicked.connect(self.load_data)
+        self.search_clear_btn.clicked.connect(self._clear_search)
+        self.clear_filters_btn.clicked.connect(self.clear_all_filters)
+        self.apply_date_btn.clicked.connect(self.apply_date_filter)
+        self.clear_date_btn.clicked.connect(self.clear_date_filter)
+        self.today_btn.clicked.connect(lambda: self.set_quick_range("today"))
+        self.last30_btn.clicked.connect(lambda: self.set_quick_range("last30"))
+        self.this_month_btn.clicked.connect(lambda: self.set_quick_range("month"))
+        self.this_year_btn.clicked.connect(lambda: self.set_quick_range("year"))
+        self.all_time_btn.clicked.connect(lambda: self.set_quick_range("all"))
+        self.from_calendar.clicked.connect(lambda: self.pick_date(self.from_edit))
+        self.to_calendar.clicked.connect(lambda: self.pick_date(self.to_edit))
+
+        self._update_action_visibility()
+        self.load_data()
+
+    def eventFilter(self, obj, event):
+        if getattr(self, "header", None) and obj is self.header.viewport():
+            if event.type() == QtCore.QEvent.MouseButtonRelease and event.button() == QtCore.Qt.LeftButton:
+                pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                index = self.header.logicalIndexAt(pos)
+                if index >= 0:
+                    self._show_header_menu(index)
+                    return True
+        return super().eventFilter(obj, event)
+
+    def load_data(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT r.id, r.redemption_date, r.redemption_time, s.name as site, u.name as user_name,
+                   r.amount, r.receipt_date, rm.name as method, r.is_free_sc, r.processed,
+                   r.more_remaining, r.notes
+            FROM redemptions r
+            JOIN sites s ON r.site_id = s.id
+            JOIN users u ON r.user_id = u.id
+            LEFT JOIN redemption_methods rm ON r.redemption_method_id = rm.id
+            ORDER BY r.redemption_date DESC, r.redemption_time DESC
+            """
+        )
+        self.all_rows = []
+        for row in c.fetchall():
+            time_value = row["redemption_time"] or "00:00:00"
+            dt_value = None
+            try:
+                dt_value = datetime.strptime(
+                    f"{row['redemption_date']} {time_value}", "%Y-%m-%d %H:%M:%S"
+                )
+            except ValueError:
+                dt_value = None
+            is_free = bool(row["is_free_sc"])
+            is_total_loss = float(row["amount"] or 0) == 0 and not is_free
+            receipt_date = row["receipt_date"] or ""
+            is_pending = receipt_date == ""
+            if is_total_loss:
+                receipt_display = row["redemption_date"]
+            elif is_pending:
+                receipt_display = "PENDING"
+            else:
+                receipt_display = receipt_date
+            notes = row["notes"] or ""
+            notes_display = notes[:120]
+            display = [
+                format_date_time(row["redemption_date"], time_value),
+                row["user_name"],
+                row["site"],
+                f"{format_currency(row['amount'])}{' (LOSS)' if is_total_loss else ''}",
+                receipt_display,
+                row["method"] or "",
+                "Yes" if is_free else "No",
+                "✓" if row["processed"] else "",
+                notes_display,
+            ]
+            self.all_rows.append(
+                {
+                    "id": row["id"],
+                    "redemption_date": row["redemption_date"],
+                    "redemption_time": time_value,
+                    "redemption_dt": dt_value,
+                    "user_name": row["user_name"],
+                    "site": row["site"],
+                    "amount": float(row["amount"] or 0),
+                    "receipt_date": receipt_date,
+                    "method": row["method"] or "",
+                    "is_free_sc": is_free,
+                    "processed": bool(row["processed"]),
+                    "more_remaining": bool(row["more_remaining"]),
+                    "notes": notes,
+                    "status": "total_loss" if is_total_loss else ("pending" if is_pending else ("free_sc" if is_free else "normal")),
+                    "display": display,
+                    "search_blob": " ".join(str(v).lower() for v in display),
+                }
+            )
+        conn.close()
+        self.apply_filters()
+
+    def apply_filters(self):
+        rows = self._filter_rows()
+        rows = self.sort_rows(rows)
+        self.filtered_rows = rows
+        self.refresh_table(rows)
+
+    def _filter_rows(self, exclude_col=None):
+        rows = list(self.all_rows)
+        start_date, end_date = self.active_date_filter
+        if start_date:
+            rows = [r for r in rows if r["redemption_date"] >= start_date]
+        if end_date:
+            rows = [r for r in rows if r["redemption_date"] <= end_date]
+
+        term = self.search_edit.text().strip().lower()
+        if term:
+            rows = [r for r in rows if term in r["search_blob"]]
+
+        for col, values in self.header_filters.items():
+            if col == exclude_col:
+                continue
+            if values:
+                rows = [r for r in rows if r["display"][col] in values]
+        return rows
+
+    def refresh_table(self, rows):
+        numeric_cols = {3}
+        self.table.setRowCount(len(rows))
+        for r_idx, row in enumerate(rows):
+            status = row["status"]
+            for c_idx, value in enumerate(row["display"]):
+                item = QtWidgets.QTableWidgetItem(str(value))
+                if c_idx in numeric_cols:
+                    item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                if c_idx == 0:
+                    item.setData(QtCore.Qt.UserRole, row["id"])
+                if status == "total_loss":
+                    item.setForeground(QtGui.QBrush(QtGui.QColor("#c0392b")))
+                elif status == "pending":
+                    item.setForeground(QtGui.QBrush(QtGui.QColor("#e67e22")))
+                elif status == "free_sc":
+                    item.setForeground(QtGui.QBrush(QtGui.QColor("#2e7d32")))
+                self.table.setItem(r_idx, c_idx, item)
+        self._update_action_visibility()
+
+    def sort_rows(self, rows):
+        if self.sort_column is None:
+            return rows
+        reverse = self.sort_order == QtCore.Qt.DescendingOrder
+
+        def sort_key(row):
+            col = self.sort_column
+            if col == 0:
+                return row["redemption_dt"] or datetime.min
+            if col == 1:
+                return row["user_name"].lower()
+            if col == 2:
+                return row["site"].lower()
+            if col == 3:
+                return row["amount"]
+            if col == 4:
+                return row["receipt_date"]
+            if col == 5:
+                return row["method"].lower()
+            if col == 6:
+                return row["is_free_sc"]
+            if col == 7:
+                return row["processed"]
+            if col == 8:
+                return row["notes"].lower()
+            return row["display"][col]
+
+        return sorted(rows, key=sort_key, reverse=reverse)
+
+    def _show_header_menu(self, col_index):
+        menu = QtWidgets.QMenu(self)
+        sort_asc = menu.addAction("Sort Ascending")
+        sort_desc = menu.addAction("Sort Descending")
+        clear_sort = menu.addAction("Clear Sort")
+        menu.addSeparator()
+        filter_action = menu.addAction("Filter...")
+        pos_x = self.header.sectionPosition(col_index)
+        pos = self.header.mapToGlobal(QtCore.QPoint(pos_x, self.header.height()))
+        action = menu.exec(pos)
+        if action == sort_asc:
+            self.set_sort(col_index, QtCore.Qt.AscendingOrder)
+        elif action == sort_desc:
+            self.set_sort(col_index, QtCore.Qt.DescendingOrder)
+        elif action == clear_sort:
+            self.clear_sort()
+        elif action == filter_action:
+            filter_rows = self._filter_rows(exclude_col=col_index)
+            values = sorted({r["display"][col_index] for r in filter_rows})
+            selected = self.header_filters.get(col_index, set())
+            if col_index == 0:
+                dialog = DateTimeFilterDialog(values, selected, self)
+            else:
+                dialog = ColumnFilterDialog(values, selected, self)
+            if dialog.exec() == QtWidgets.QDialog.Accepted:
+                selected_values = dialog.selected_values()
+                if selected_values:
+                    self.header_filters[col_index] = selected_values
+                else:
+                    self.header_filters.pop(col_index, None)
+                self.apply_filters()
+
+    def set_sort(self, column, order):
+        self.sort_column = column
+        self.sort_order = order
+        header = self.table.horizontalHeader()
+        header.setSortIndicatorShown(True)
+        header.setSortIndicator(column, order)
+        self.apply_filters()
+
+    def clear_sort(self):
+        self.sort_column = None
+        header = self.table.horizontalHeader()
+        header.setSortIndicatorShown(False)
+        self.apply_filters()
+
+    def clear_all_filters(self):
+        self.header_filters = {}
+        self.search_edit.clear()
+        self.clear_sort()
+        self.clear_date_filter()
+        self._clear_selection()
+
+    def apply_date_filter(self):
+        from_text = self.from_edit.text().strip()
+        to_text = self.to_edit.text().strip()
+        start_date = None
+        end_date = None
+        try:
+            if from_text:
+                start_date = parse_date_input(from_text).strftime("%Y-%m-%d")
+            if to_text:
+                end_date = parse_date_input(to_text).strftime("%Y-%m-%d")
+        except ValueError:
+            QtWidgets.QMessageBox.warning(self, "Invalid Date", "Please enter a valid date.")
+            return
+        if start_date and end_date and start_date > end_date:
+            QtWidgets.QMessageBox.warning(self, "Invalid Range", "From date is after To date.")
+            return
+        self.active_date_filter = (start_date, end_date)
+        self.apply_filters()
+
+    def clear_date_filter(self):
+        self.from_edit.clear()
+        self.to_edit.clear()
+        self.active_date_filter = (None, None)
+        self.apply_filters()
+
+    def set_quick_range(self, mode):
+        today = date.today()
+        if mode == "today":
+            start = today
+            end = today
+        elif mode == "last30":
+            start = today - timedelta(days=30)
+            end = today
+        elif mode == "month":
+            start = today.replace(day=1)
+            end = today
+        elif mode == "year":
+            start = today.replace(month=1, day=1)
+            end = today
+        else:
+            self.clear_date_filter()
+            return
+        self.from_edit.setText(start.strftime("%m/%d/%y"))
+        self.to_edit.setText(end.strftime("%m/%d/%y"))
+        self.active_date_filter = (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+        self.apply_filters()
+
+    def pick_date(self, target_edit):
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Select Date")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        calendar = QtWidgets.QCalendarWidget()
+        calendar.setSelectedDate(QtCore.QDate.currentDate())
+        layout.addWidget(calendar)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        ok_btn = QtWidgets.QPushButton("Select")
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+        cancel_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            target_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+
+    def _fetch_lookup_data(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT name FROM users WHERE active = 1 ORDER BY name")
+        users = [r["name"] for r in c.fetchall()]
+        c.execute("SELECT name FROM sites WHERE active = 1 ORDER BY name")
+        sites = [r["name"] for r in c.fetchall()]
+        c.execute("SELECT name FROM redemption_methods WHERE active = 1 ORDER BY name")
+        methods = [r["name"] for r in c.fetchall()]
+        conn.close()
+        return users, sites, methods
+
+    def _add_redemption(self):
+        users, sites, methods = self._fetch_lookup_data()
+        dialog = RedemptionDialog(self.db, users, sites, methods, parent=self)
+
+        def handle_save():
+            self._save_from_dialog(dialog, None)
+
+        dialog.save_btn.clicked.connect(handle_save)
+        dialog.exec()
+
+    def _edit_selected(self, *_args):
+        selected_ids = self._selected_ids()
+        if not selected_ids:
+            QtWidgets.QMessageBox.warning(self, "No Selection", "Select a redemption to edit.")
+            return
+        if len(selected_ids) > 1:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Multiple Selection",
+                "Please select only one redemption to edit.",
+            )
+            return
+        redemption_id = selected_ids[0]
+        if not self._check_subsequent_redemptions(redemption_id):
+            return
+        redemption = self._fetch_redemption(redemption_id)
+        if not redemption:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected redemption was not found.")
+            return
+        users, sites, methods = self._fetch_lookup_data()
+        dialog = RedemptionDialog(self.db, users, sites, methods, redemption=redemption, parent=self)
+
+        def handle_save():
+            self._save_from_dialog(dialog, redemption_id)
+
+        dialog.save_btn.clicked.connect(handle_save)
+        dialog.exec()
+
+    def _check_subsequent_redemptions(self, redemption_id):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT redemption_date, site_id, user_id
+            FROM redemptions
+            WHERE id = ?
+            """,
+            (redemption_id,),
+        )
+        this_redemption = c.fetchone()
+        self._has_subsequent = False
+        self._subsequent_ids = []
+        if this_redemption:
+            c.execute(
+                """
+                SELECT id, redemption_date, amount
+                FROM redemptions
+                WHERE site_id = ?
+                  AND user_id = ?
+                  AND redemption_date >= ?
+                  AND id != ?
+                ORDER BY redemption_date ASC, id ASC
+                """,
+                (
+                    this_redemption["site_id"],
+                    this_redemption["user_id"],
+                    this_redemption["redemption_date"],
+                    redemption_id,
+                ),
+            )
+            subsequent = c.fetchall()
+            if subsequent:
+                self._has_subsequent = True
+                self._subsequent_ids = [row["id"] for row in subsequent]
+                warning_msg = (
+                    f"WARNING: This redemption has {len(subsequent)} subsequent redemption(s).\n\n"
+                    "Editing this will recalculate their FIFO cost basis.\n\n"
+                    "Continue with edit?"
+                )
+                if (
+                    QtWidgets.QMessageBox.question(self, "Subsequent Redemptions", warning_msg)
+                    != QtWidgets.QMessageBox.Yes
+                ):
+                    conn.close()
+                    return False
+        conn.close()
+        return True
+
+    def _save_from_dialog(self, dialog, redemption_id):
+        data, error = dialog.collect_data()
+        if error:
+            QtWidgets.QMessageBox.warning(self, "Invalid Entry", error)
+            return
+        if not self._confirm_redemption_flags(data, redemption_id):
+            return
+        ok, message = self._save_redemption_record(data, redemption_id)
+        if not ok:
+            QtWidgets.QMessageBox.warning(self, "Error", message)
+            return
+        dialog.accept()
+        self.load_data()
+        if self.on_data_changed:
+            self.on_data_changed()
+        QtWidgets.QMessageBox.information(self, "Success", message)
+
+    def _fetch_redemption(self, redemption_id):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT r.*, s.name as site_name, rm.name as method_name, u.name as user_name
+            FROM redemptions r
+            JOIN sites s ON r.site_id = s.id
+            LEFT JOIN redemption_methods rm ON r.redemption_method_id = rm.id
+            JOIN users u ON r.user_id = u.id
+            WHERE r.id = ?
+            """,
+            (redemption_id,),
+        )
+        row = c.fetchone()
+        conn.close()
+        return row
+
+    def _confirm_redemption_flags(self, data, redemption_id):
+        if data.get("is_free_sc"):
+            return True
+        if data.get("more_remaining"):
+            return True
+
+        user_name = data["user_name"]
+        site_name = data["site_name"]
+        rdate = data["redemption_date"]
+        rtime = data["redemption_time"]
+        amount = float(data["amount"] or 0.0)
+
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id FROM users WHERE name = ?", (user_name,))
+        user_row = c.fetchone()
+        c.execute("SELECT id FROM sites WHERE name = ?", (site_name,))
+        site_row = c.fetchone()
+        if not user_row or not site_row:
+            conn.close()
+            return True
+        user_id = user_row["id"]
+        site_id = site_row["id"]
+
+        expected_total, expected_redeemable = self.session_mgr.compute_expected_balances(
+            site_id, user_id, rdate, rtime
+        )
+        sc_rate = float(self.session_mgr.get_sc_rate(site_id) or 1.0)
+        expected_balance = float(expected_redeemable or 0.0) * sc_rate
+
+        if redemption_id:
+            c.execute(
+                """
+                SELECT site_id, user_id, redemption_date,
+                       COALESCE(redemption_time,'00:00:00') as redemption_time,
+                       amount
+                FROM redemptions
+                WHERE id = ?
+                """,
+                (redemption_id,),
+            )
+            old = c.fetchone()
+            if old and old["site_id"] == site_id and old["user_id"] == user_id:
+                try:
+                    old_dt = datetime.fromisoformat(
+                        f"{old['redemption_date']} {old['redemption_time']}"
+                    )
+                    new_dt = datetime.fromisoformat(f"{rdate} {rtime or '00:00:00'}")
+                except ValueError:
+                    old_dt = None
+                    new_dt = None
+                if old_dt and new_dt and old_dt < new_dt:
+                    expected_balance += float(old["amount"] or 0.0)
+
+        conn.close()
+
+        remaining_balance = expected_balance - amount
+        if remaining_balance <= 0.01:
+            return True
+
+        message = (
+            "You selected Full redemption, but there appears to be a remaining balance.\n\n"
+            f"Expected redeemable balance: {format_currency(expected_balance)}\n"
+            f"Redemption amount: {format_currency(amount)}\n"
+            f"Remaining balance: {format_currency(remaining_balance)}\n\n"
+            "Full will consume all remaining cost basis and record the remainder as a cashflow loss.\n"
+            "Game Session taxable P/L is not affected.\n\n"
+            "Continue as Full?"
+        )
+        response = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Full Redemption",
+            message,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        return response == QtWidgets.QMessageBox.Yes
+
+    def _save_redemption_record(self, data, redemption_id):
+        user_name = data["user_name"]
+        site_name = data["site_name"]
+        method_name = data["method_name"]
+        rdate = data["redemption_date"]
+        rtime = data["redemption_time"]
+        amount = data["amount"]
+        receipt_date = data["receipt_date"]
+        more_remaining = data["more_remaining"]
+        is_free_sc = data["is_free_sc"]
+        processed = 1 if data["processed"] else 0
+        notes = data["notes"]
+
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id FROM users WHERE name = ?", (user_name,))
+        user_row = c.fetchone()
+        if not user_row:
+            conn.close()
+            return False, f"User '{user_name}' not found."
+        user_id = user_row["id"]
+        c.execute("SELECT id FROM sites WHERE name = ?", (site_name,))
+        site_row = c.fetchone()
+        if not site_row:
+            conn.close()
+            return False, f"Site '{site_name}' not found."
+        site_id = site_row["id"]
+
+        if not redemption_id:
+            c.execute(
+                """
+                SELECT id, starting_sc_balance
+                FROM game_sessions
+                WHERE site_id = ? AND user_id = ? AND status = 'Active'
+                ORDER BY session_date DESC, start_time DESC
+                LIMIT 1
+                """,
+                (site_id, user_id),
+            )
+            active_session = c.fetchone()
+            if active_session and not is_free_sc:
+                conn.close()
+                return (
+                    False,
+                    "Cannot create a new redemption while a session is active.",
+                )
+
+            expected_total, expected_redeemable = self.session_mgr.compute_expected_balances(
+                site_id, user_id, rdate, rtime
+            )
+            sc_rate = self.session_mgr.get_sc_rate(site_id)
+            expected_balance = expected_redeemable * sc_rate
+            unsessioned_amount = amount - expected_balance
+            if unsessioned_amount > 0.50:
+                conn.close()
+                return (
+                    False,
+                    "This redemption exceeds the balance we can verify from recorded sessions.\n\n"
+                    f"Redemption amount: ${amount:,.2f}\n"
+                    f"Expected sessioned balance: ${expected_balance:,.2f}\n"
+                    f"Unsessioned amount: ${unsessioned_amount:,.2f}\n\n"
+                    "What this means:\n"
+                    "• We only allow redemptions against balances that were recorded in Game Sessions.\n"
+                    "• This helps keep your session-based totals accurate.\n\n"
+                    "What to do:\n"
+                    "1) Start or end a Game Session for this site to record the current balance.\n"
+                    "2) Then try the redemption again.\n\n"
+                    "If this was a bonus or freeplay not captured in sessions, record it in a Game Session first.",
+                )
+
+        method_id = None
+        if method_name:
+            c.execute("SELECT id FROM redemption_methods WHERE name = ?", (method_name,))
+            method_row = c.fetchone()
+            if method_row:
+                method_id = method_row["id"]
+
+        session_id = None
+        if not is_free_sc:
+            c.execute(
+                """
+                SELECT id FROM site_sessions
+                WHERE site_id = ? AND user_id = ? AND status IN ('Active', 'Redeeming')
+                ORDER BY start_date DESC LIMIT 1
+                """,
+                (site_id, user_id),
+            )
+            result = c.fetchone()
+            if result:
+                session_id = result["id"]
+
+        if redemption_id:
+            c.execute(
+                """
+                SELECT r.amount, r.site_session_id, r.site_id, r.user_id,
+                       ts.cost_basis
+                FROM redemptions r
+                LEFT JOIN tax_sessions ts ON ts.redemption_id = r.id
+                WHERE r.id = ?
+                """,
+                (redemption_id,),
+            )
+            old_data = c.fetchone()
+            old_amount = float(old_data["amount"]) if old_data else 0.0
+            old_session_id = old_data["site_session_id"] if old_data else None
+            old_site_id = old_data["site_id"] if old_data else None
+            old_user_id = old_data["user_id"] if old_data else None
+            old_cost_basis = float(old_data["cost_basis"] or 0.0) if old_data else 0.0
+
+            c.execute(
+                """
+                UPDATE redemptions
+                SET site_session_id=?, site_id=?, redemption_date=?, redemption_time=?, amount=?, receipt_date=?,
+                    redemption_method_id=?, is_free_sc=?, more_remaining=?, user_id=?, processed=?, notes=?
+                WHERE id=?
+                """,
+                (
+                    session_id,
+                    site_id,
+                    rdate,
+                    rtime,
+                    amount,
+                    receipt_date,
+                    method_id,
+                    1 if is_free_sc else 0,
+                    1 if more_remaining else 0,
+                    user_id,
+                    processed,
+                    notes,
+                    redemption_id,
+                ),
+            )
+
+            if old_session_id:
+                c.execute(
+                    "UPDATE site_sessions SET total_redeemed = total_redeemed - ? WHERE id = ?",
+                    (old_amount, old_session_id),
+                )
+
+            if session_id and session_id != old_session_id:
+                c.execute(
+                    "UPDATE site_sessions SET total_redeemed = total_redeemed + ? WHERE id = ?",
+                    (amount, session_id),
+                )
+
+            c.execute("DELETE FROM tax_sessions WHERE redemption_id = ?", (redemption_id,))
+            conn.commit()
+            conn.close()
+
+            if old_cost_basis > 0 and old_site_id and old_user_id:
+                self.session_mgr.fifo_calc.reverse_cost_basis(old_site_id, old_user_id, old_cost_basis)
+
+            self.session_mgr.process_redemption(
+                redemption_id, site_id, amount, rdate, rtime, user_id, is_free_sc, more_remaining, is_edit=True
+            )
+
+            if self._has_subsequent and self._subsequent_ids:
+                self._recalculate_subsequent_redemptions(self._subsequent_ids, site_id, user_id)
+
+            pairs_to_recalc = {(site_id, user_id)}
+            if old_site_id and old_user_id:
+                pairs_to_recalc.add((old_site_id, old_user_id))
+            total_recalc = 0
+            for sid, uid in pairs_to_recalc:
+                total_recalc += self.session_mgr.auto_recalculate_affected_sessions(sid, uid, rdate, rtime)
+
+            message = "Redemption updated"
+            if self._has_subsequent:
+                message += f" (recalculated {len(self._subsequent_ids)} subsequent redemptions)"
+            if total_recalc:
+                message += f" (recalculated {total_recalc} sessions)"
+            return True, message
+
+        c.execute(
+            """
+            INSERT INTO redemptions
+            (site_session_id, site_id, redemption_date, redemption_time, amount, receipt_date,
+             redemption_method_id, is_free_sc, more_remaining, user_id, processed, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                site_id,
+                rdate,
+                rtime,
+                amount,
+                receipt_date,
+                method_id,
+                1 if is_free_sc else 0,
+                1 if more_remaining else 0,
+                user_id,
+                processed,
+                notes,
+            ),
+        )
+        rid = c.lastrowid
+        conn.commit()
+        conn.close()
+
+        self.session_mgr.process_redemption(rid, site_id, amount, rdate, rtime, user_id, is_free_sc, more_remaining)
+        recalc_count = self.session_mgr.auto_recalculate_affected_sessions(site_id, user_id, rdate, rtime)
+        message = "Redemption logged"
+        if recalc_count:
+            message += f" (recalculated {recalc_count} sessions)"
+        return True, message
+
+    def _recalculate_subsequent_redemptions(self, redemption_ids, site_id, user_id):
+        for rid in redemption_ids:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT amount, redemption_date, redemption_time, is_free_sc
+                FROM redemptions
+                WHERE id = ?
+                """,
+                (rid,),
+            )
+            redemption = c.fetchone()
+            if not redemption:
+                conn.close()
+                continue
+            amount = float(redemption["amount"])
+            rdate = redemption["redemption_date"]
+            rtime = redemption["redemption_time"] or "00:00:00"
+            is_free_sc = bool(redemption["is_free_sc"])
+            c.execute("SELECT cost_basis FROM tax_sessions WHERE redemption_id = ?", (rid,))
+            old_tax = c.fetchone()
+            old_cost_basis = float(old_tax["cost_basis"]) if old_tax and old_tax["cost_basis"] else 0.0
+            c.execute("DELETE FROM tax_sessions WHERE redemption_id = ?", (rid,))
+            conn.commit()
+            conn.close()
+            if old_cost_basis > 0:
+                self.session_mgr.fifo_calc.reverse_cost_basis(site_id, user_id, old_cost_basis)
+            self.session_mgr.process_redemption(
+                rid,
+                site_id,
+                amount,
+                rdate,
+                rtime,
+                user_id,
+                is_free_sc,
+                more_remaining=True,
+                is_edit=True,
+            )
+
+    def _selected_ids(self):
+        ids = []
+        for idx in self.table.selectionModel().selectedRows():
+            item = self.table.item(idx.row(), 0)
+            if item is not None:
+                value = item.data(QtCore.Qt.UserRole)
+                if value is not None:
+                    ids.append(value)
+        return ids
+
+    def _delete_selected(self):
+        selected_ids = self._selected_ids()
+        if not selected_ids:
+            QtWidgets.QMessageBox.warning(self, "No Selection", "Select redemption(s) to delete.")
+            return
+        if len(selected_ids) > 1:
+            confirm = QtWidgets.QMessageBox.question(
+                self, "Confirm", f"Delete {len(selected_ids)} redemptions?"
+            )
+        else:
+            confirm = QtWidgets.QMessageBox.question(self, "Confirm", "Delete this redemption?")
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+
+        deleted_count = 0
+        error_messages = []
+        pairs_to_recalc = set()
+
+        for redemption_id in selected_ids:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute(
+                "SELECT site_id, user_id, redemption_date, redemption_time FROM redemptions WHERE id = ?",
+                (redemption_id,),
+            )
+            row = c.fetchone()
+            conn.close()
+
+            success = self.session_mgr.delete_redemption(int(redemption_id))
+            if success:
+                deleted_count += 1
+                if row:
+                    pairs_to_recalc.add(
+                        (
+                            row["site_id"],
+                            row["user_id"],
+                            row["redemption_date"],
+                            row["redemption_time"] or "00:00:00",
+                        )
+                    )
+            else:
+                error_messages.append(f"Redemption ID {redemption_id} not found")
+
+        total_recalc = 0
+        for site_id, user_id, rdate, rtime in pairs_to_recalc:
+            total_recalc += self.session_mgr.auto_recalculate_affected_sessions(site_id, user_id, rdate, rtime)
+
+        self.load_data()
+        if self.on_data_changed:
+            self.on_data_changed()
+
+        if error_messages:
+            error_text = "\n".join(error_messages)
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Partial Success",
+                f"Deleted {deleted_count} redemption(s).\n\nErrors:\n{error_text}",
+            )
+        else:
+            message = f"Deleted {deleted_count} redemption{'s' if deleted_count != 1 else ''}"
+            if total_recalc:
+                message += f" (recalculated {total_recalc} sessions)"
+            QtWidgets.QMessageBox.information(self, "Success", message)
+
+    def _update_action_visibility(self):
+        has_selection = bool(self.table.selectionModel().selectedRows())
+        self.edit_btn.setVisible(has_selection)
+        self.delete_btn.setVisible(has_selection)
+
+    def _clear_search(self):
+        self.search_edit.clear()
+        self._clear_selection()
+
+    def _clear_selection(self):
+        self.table.clearSelection()
+        self._update_action_visibility()
+
+    def export_csv(self):
+        import csv
+
+        default_name = f"redemptions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Redemptions",
+            default_name,
+            "CSV Files (*.csv)",
+        )
+        if not path:
+            return
+        headers = [
+            self.table.horizontalHeaderItem(i).text()
+            for i in range(self.table.columnCount())
+        ]
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+            for row in self.filtered_rows:
+                writer.writerow(row["display"])
+
+
 class PlaceholderTab(QtWidgets.QWidget):
     def __init__(self, label, parent=None):
         super().__init__(parent)
@@ -1713,7 +3047,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         tabs = [
             ("Purchases", PurchasesTab(self.db, self.session_mgr, self.refresh_stats)),
-            ("Redemptions", PlaceholderTab("Redemptions")),
+            ("Redemptions", RedemptionsTab(self.db, self.session_mgr, self.refresh_stats)),
             ("Game Sessions", PlaceholderTab("Game Sessions")),
             ("Daily Sessions", PlaceholderTab("Daily Sessions")),
             ("Unrealized", PlaceholderTab("Unrealized")),
@@ -1910,6 +3244,41 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: white;
             }
             QPushButton#PrimaryButton:hover { background: #3657c3; }
+            QToolButton#InfoButton {
+                background: #edf2fe;
+                border: 1px solid #dfeaff;
+                border-radius: 9px;
+                min-width: 18px;
+                min-height: 18px;
+                padding: 0;
+                font-weight: 600;
+            }
+            QToolButton#InfoButton:hover { background: #dfeaff; }
+            QCheckBox, QRadioButton {
+                spacing: 6px;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #a6bff9;
+                border-radius: 4px;
+                background: #fdfdfe;
+            }
+            QCheckBox::indicator:checked {
+                background: #3d63dd;
+                border: 1px solid #3657c3;
+            }
+            QRadioButton::indicator {
+                width: 16px;
+                height: 16px;
+                border: 1px solid #a6bff9;
+                border-radius: 8px;
+                background: #fdfdfe;
+            }
+            QRadioButton::indicator:checked {
+                background: #3d63dd;
+                border: 1px solid #3657c3;
+            }
 
             QTableWidget {
                 background: #f7f9ff;
@@ -1964,8 +3333,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
 def main():
     app = QtWidgets.QApplication(sys.argv)
-    if os.environ.get("QT_DEBUG_COMPLETER") == "1":
-        print("[CompleterDebug] enabled")
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
