@@ -4,6 +4,7 @@ qt_app.py - PySide6/Qt UI for Session
 Run: python3 qt_app.py
 """
 import sys
+import re
 from datetime import date, datetime, timedelta
 from PySide6 import QtCore, QtGui, QtWidgets
 
@@ -64,6 +65,16 @@ def parse_time_input(value):
         except ValueError:
             continue
     raise ValueError(f"Invalid time: {value}")
+
+
+TIME_24H_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d(?:\:[0-5]\d)?$")
+
+
+def is_valid_time_24h(value, allow_blank=True):
+    value = value.strip()
+    if not value:
+        return allow_blank
+    return bool(TIME_24H_RE.match(value))
 
 
 def validate_currency(value_str, allow_zero=True):
@@ -548,6 +559,8 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.card_combo = QtWidgets.QComboBox()
         self.card_combo.setEditable(True)
         self.card_combo.addItems(card_names)
+        self._user_lookup = {name.lower(): name for name in user_names}
+        self._site_lookup = {name.lower(): name for name in site_names}
 
         self.amount_edit = QtWidgets.QLineEdit()
         self.sc_edit = QtWidgets.QLineEdit()
@@ -596,6 +609,14 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.cancel_btn.clicked.connect(self.reject)
 
         self.user_combo.currentTextChanged.connect(self._on_user_change)
+        self.date_edit.textChanged.connect(self._validate_inline)
+        self.time_edit.textChanged.connect(self._validate_inline)
+        self.user_combo.currentTextChanged.connect(self._validate_inline)
+        self.site_combo.currentTextChanged.connect(self._validate_inline)
+        self.card_combo.currentTextChanged.connect(self._validate_inline)
+        self.amount_edit.textChanged.connect(self._validate_inline)
+        self.sc_edit.textChanged.connect(self._validate_inline)
+        self.start_sc_edit.textChanged.connect(self._validate_inline)
 
         if purchase:
             self._load_purchase()
@@ -603,6 +624,7 @@ class PurchaseDialog(QtWidgets.QDialog):
             self._clear_form()
 
         self._update_completers()
+        self._validate_inline()
 
     def _update_completers(self):
         for combo in (self.user_combo, self.site_combo, self.card_combo):
@@ -685,6 +707,92 @@ class PurchaseDialog(QtWidgets.QDialog):
             self.card_combo.setEditText("")
         self.card_combo.blockSignals(False)
         self._update_completers()
+        self._validate_inline()
+
+    def _set_invalid(self, widget, message):
+        widget.setProperty("invalid", True)
+        widget.setToolTip(message)
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _set_valid(self, widget):
+        widget.setProperty("invalid", False)
+        widget.setToolTip("")
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _validate_inline(self):
+        date_text = self.date_edit.text().strip()
+        if not date_text:
+            self._set_invalid(self.date_edit, "Date is required.")
+        else:
+            try:
+                parsed = parse_date_input(date_text)
+                if parsed > date.today():
+                    self._set_invalid(self.date_edit, "Date cannot be in the future.")
+                else:
+                    self._set_valid(self.date_edit)
+            except ValueError:
+                self._set_invalid(self.date_edit, "Enter a valid date.")
+
+        time_text = self.time_edit.text().strip()
+        if not is_valid_time_24h(time_text, allow_blank=True):
+            self._set_invalid(self.time_edit, "Use 24-hour time HH:MM or HH:MM:SS.")
+        else:
+            self._set_valid(self.time_edit)
+
+        user_text = self.user_combo.currentText().strip()
+        if not user_text or user_text.lower() not in self._user_lookup:
+            self._set_invalid(self.user_combo, "Select a valid User.")
+        else:
+            self._set_valid(self.user_combo)
+
+        site_text = self.site_combo.currentText().strip()
+        if not site_text or site_text.lower() not in self._site_lookup:
+            self._set_invalid(self.site_combo, "Select a valid Site.")
+        else:
+            self._set_valid(self.site_combo)
+
+        card_text = self.card_combo.currentText().strip()
+        valid_cards = {
+            self.card_combo.itemText(i).lower()
+            for i in range(self.card_combo.count())
+            if self.card_combo.itemText(i)
+        }
+        if not card_text or card_text.lower() not in valid_cards:
+            self._set_invalid(self.card_combo, "Select a valid Card for the chosen User.")
+        else:
+            self._set_valid(self.card_combo)
+
+        amount_text = self.amount_edit.text().strip()
+        if not amount_text:
+            self._set_invalid(self.amount_edit, "Amount is required.")
+        else:
+            valid, _result = validate_currency(amount_text)
+            if not valid:
+                self._set_invalid(self.amount_edit, "Enter a valid amount (max 2 decimals).")
+            else:
+                self._set_valid(self.amount_edit)
+
+        sc_text = self.sc_edit.text().strip()
+        if not sc_text:
+            self._set_invalid(self.sc_edit, "SC Received is required.")
+        else:
+            valid, _result = validate_currency(sc_text)
+            if not valid:
+                self._set_invalid(self.sc_edit, "Enter a valid SC amount (max 2 decimals).")
+            else:
+                self._set_valid(self.sc_edit)
+
+        start_sc_text = self.start_sc_edit.text().strip()
+        if not start_sc_text:
+            self._set_invalid(self.start_sc_edit, "Starting SC is required.")
+        else:
+            valid, _result = validate_currency(start_sc_text)
+            if not valid:
+                self._set_invalid(self.start_sc_edit, "Enter a valid Starting SC (max 2 decimals).")
+            else:
+                self._set_valid(self.start_sc_edit)
 
     def _load_purchase(self):
         self.date_edit.setText(self._format_date_for_input(self.purchase["purchase_date"]))
@@ -724,6 +832,7 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.start_sc_edit.clear()
         self.notes_edit.clear()
         self._set_today()
+        self._validate_inline()
 
     def collect_data(self):
         user_name = self.user_combo.currentText().strip()
@@ -744,6 +853,8 @@ class PurchaseDialog(QtWidgets.QDialog):
             return None, "Purchase date cannot be in the future."
 
         time_str = self.time_edit.text().strip()
+        if time_str and not is_valid_time_24h(time_str, allow_blank=False):
+            return None, "Please enter a valid time (HH:MM or HH:MM:SS, 24-hour)."
         try:
             ptime = parse_time_input(time_str)
         except ValueError:
@@ -765,7 +876,9 @@ class PurchaseDialog(QtWidgets.QDialog):
             return None, result
         sc_received = result
 
-        start_sc_str = self.start_sc_edit.text().strip() or "0"
+        start_sc_str = self.start_sc_edit.text().strip()
+        if not start_sc_str:
+            return None, "Please enter Starting SC."
         valid, result = validate_currency(start_sc_str)
         if not valid:
             return None, result
@@ -784,6 +897,75 @@ class PurchaseDialog(QtWidgets.QDialog):
             "starting_sc_balance": start_sc,
             "notes": notes,
         }, None
+
+
+class PurchaseViewDialog(QtWidgets.QDialog):
+    def __init__(self, purchase, parent=None):
+        super().__init__(parent)
+        self.purchase = purchase
+        self.setWindowTitle("View Purchase")
+        self.resize(540, 520)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+
+        def add_row(label_text, value, row, wrap=False):
+            label = QtWidgets.QLabel(label_text)
+            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label = QtWidgets.QLabel(value)
+            value_label.setObjectName("InfoField")
+            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label.setWordWrap(wrap)
+            form.addWidget(label, row, 0)
+            form.addWidget(value_label, row, 1)
+            return row + 1
+
+        def format_date(value):
+            if not value:
+                return "—"
+            try:
+                return datetime.strptime(value, "%Y-%m-%d").strftime("%m/%d/%y")
+            except ValueError:
+                return value
+
+        def format_time(value):
+            return value[:5] if value else "—"
+
+        row = 0
+        row = add_row("Date", format_date(purchase["purchase_date"]), row)
+        row = add_row("Time", format_time(purchase["purchase_time"]), row)
+        row = add_row("User", purchase["user_name"] or "—", row)
+        row = add_row("Site", purchase["site_name"] or "—", row)
+        row = add_row("Card", purchase["card_name"] or "—", row)
+        row = add_row("Amount", format_currency(purchase["amount"]), row)
+        row = add_row("SC Received", f"{float(purchase['sc_received'] or 0):.2f}", row)
+        row = add_row("Starting SC", f"{float(purchase['starting_sc_balance'] or 0):.2f}", row)
+        row = add_row("Remaining", format_currency(purchase["remaining_amount"]), row)
+
+        notes_label = QtWidgets.QLabel("Notes")
+        notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        notes_edit = QtWidgets.QPlainTextEdit()
+        notes_edit.setObjectName("NotesField")
+        notes_edit.setReadOnly(True)
+        notes_edit.setPlainText(purchase["notes"] or "")
+        notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+        form.addWidget(notes_label, row, 0)
+        form.addWidget(notes_edit, row, 1)
+
+        layout.addLayout(form)
+        layout.addSpacing(8)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        close_btn = QtWidgets.QPushButton("Close")
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+        close_btn.clicked.connect(self.accept)
 
 
 class RedemptionDialog(QtWidgets.QDialog):
@@ -834,6 +1016,8 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.method_combo = QtWidgets.QComboBox()
         self.method_combo.setEditable(True)
         self.method_combo.addItems(method_names)
+        self._user_lookup = {name.lower(): name for name in user_names}
+        self._site_lookup = {name.lower(): name for name in site_names}
 
         self.amount_edit = QtWidgets.QLineEdit()
         self.receipt_edit = QtWidgets.QLineEdit()
@@ -923,6 +1107,15 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.clear_btn.clicked.connect(self._clear_form)
         self.cancel_btn.clicked.connect(self.reject)
         self.user_combo.currentTextChanged.connect(self._on_user_change)
+        self.date_edit.textChanged.connect(self._validate_inline)
+        self.time_edit.textChanged.connect(self._validate_inline)
+        self.user_combo.currentTextChanged.connect(self._validate_inline)
+        self.site_combo.currentTextChanged.connect(self._validate_inline)
+        self.method_combo.currentTextChanged.connect(self._validate_inline)
+        self.amount_edit.textChanged.connect(self._validate_inline)
+        self.receipt_edit.textChanged.connect(self._validate_inline)
+        self.partial_radio.toggled.connect(self._validate_inline)
+        self.final_radio.toggled.connect(self._validate_inline)
 
         if redemption:
             self._load_redemption()
@@ -930,6 +1123,7 @@ class RedemptionDialog(QtWidgets.QDialog):
             self._clear_form()
 
         self._update_completers()
+        self._validate_inline()
 
     def _update_completers(self):
         for combo in (self.user_combo, self.site_combo, self.method_combo):
@@ -1034,6 +1228,99 @@ class RedemptionDialog(QtWidgets.QDialog):
             self.method_combo.setEditText("")
         self.method_combo.blockSignals(False)
         self._update_completers()
+        self._validate_inline()
+
+    def _set_invalid(self, widget, message):
+        widget.setProperty("invalid", True)
+        widget.setToolTip(message)
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _set_valid(self, widget):
+        widget.setProperty("invalid", False)
+        widget.setToolTip("")
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _validate_inline(self):
+        date_text = self.date_edit.text().strip()
+        if not date_text:
+            self._set_invalid(self.date_edit, "Date is required.")
+            redemption_date = None
+        else:
+            try:
+                redemption_date = parse_date_input(date_text)
+                self._set_valid(self.date_edit)
+            except ValueError:
+                redemption_date = None
+                self._set_invalid(self.date_edit, "Enter a valid date.")
+
+        time_text = self.time_edit.text().strip()
+        if not is_valid_time_24h(time_text, allow_blank=True):
+            self._set_invalid(self.time_edit, "Use 24-hour time HH:MM or HH:MM:SS.")
+        else:
+            self._set_valid(self.time_edit)
+
+        user_text = self.user_combo.currentText().strip()
+        if not user_text or user_text.lower() not in self._user_lookup:
+            self._set_invalid(self.user_combo, "Select a valid User.")
+        else:
+            self._set_valid(self.user_combo)
+
+        site_text = self.site_combo.currentText().strip()
+        if not site_text or site_text.lower() not in self._site_lookup:
+            self._set_invalid(self.site_combo, "Select a valid Site.")
+        else:
+            self._set_valid(self.site_combo)
+
+        amount_text = self.amount_edit.text().strip()
+        amount_value = None
+        if not amount_text:
+            self._set_invalid(self.amount_edit, "Amount is required.")
+        else:
+            valid, result = validate_currency(amount_text)
+            if not valid:
+                self._set_invalid(self.amount_edit, "Enter a valid amount (max 2 decimals).")
+            else:
+                amount_value = result
+                self._set_valid(self.amount_edit)
+
+        receipt_text = self.receipt_edit.text().strip()
+        if receipt_text:
+            try:
+                receipt_date = parse_date_input(receipt_text)
+                if redemption_date and receipt_date < redemption_date:
+                    self._set_invalid(self.receipt_edit, "Receipt date cannot be before redemption date.")
+                else:
+                    self._set_valid(self.receipt_edit)
+            except ValueError:
+                self._set_invalid(self.receipt_edit, "Enter a valid receipt date.")
+        else:
+            self._set_valid(self.receipt_edit)
+
+        method_text = self.method_combo.currentText().strip()
+        valid_methods = {
+            self.method_combo.itemText(i).lower()
+            for i in range(self.method_combo.count())
+            if self.method_combo.itemText(i)
+        }
+        if amount_value is None or amount_value > 0:
+            if not method_text or method_text.lower() not in valid_methods:
+                self._set_invalid(self.method_combo, "Select a valid Method for the chosen User.")
+            else:
+                self._set_valid(self.method_combo)
+        else:
+            if method_text and method_text.lower() not in valid_methods:
+                self._set_invalid(self.method_combo, "Select a valid Method for the chosen User.")
+            else:
+                self._set_valid(self.method_combo)
+
+        if not self.partial_radio.isChecked() and not self.final_radio.isChecked():
+            self._set_invalid(self.partial_radio, "Select Partial or Full.")
+            self._set_invalid(self.final_radio, "Select Partial or Full.")
+        else:
+            self._set_valid(self.partial_radio)
+            self._set_valid(self.final_radio)
 
     def _load_redemption(self):
         self.date_edit.setText(self._format_date_for_input(self.redemption["redemption_date"]))
@@ -1084,6 +1371,7 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.processed_check.setChecked(False)
         self.notes_edit.clear()
         self._set_today()
+        self._validate_inline()
 
     def collect_data(self):
         user_name = self.user_combo.currentText().strip()
@@ -1100,6 +1388,8 @@ class RedemptionDialog(QtWidgets.QDialog):
             return None, "Please enter a valid redemption date."
 
         time_str = self.time_edit.text().strip()
+        if time_str and not is_valid_time_24h(time_str, allow_blank=False):
+            return None, "Please enter a valid time (HH:MM or HH:MM:SS, 24-hour)."
         try:
             rtime = parse_time_input(time_str)
         except ValueError:
@@ -1146,6 +1436,91 @@ class RedemptionDialog(QtWidgets.QDialog):
         }, None
 
 
+class RedemptionViewDialog(QtWidgets.QDialog):
+    def __init__(self, redemption, parent=None):
+        super().__init__(parent)
+        self.redemption = redemption
+        self.setWindowTitle("View Redemption")
+        self.resize(560, 560)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+
+        def add_row(label_text, value, row, wrap=False):
+            label = QtWidgets.QLabel(label_text)
+            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label = QtWidgets.QLabel(value)
+            value_label.setObjectName("InfoField")
+            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label.setWordWrap(wrap)
+            form.addWidget(label, row, 0)
+            form.addWidget(value_label, row, 1)
+            return row + 1
+
+        def format_date(value):
+            if not value:
+                return "—"
+            try:
+                return datetime.strptime(value, "%Y-%m-%d").strftime("%m/%d/%y")
+            except ValueError:
+                return value
+
+        def format_time(value):
+            return value[:5] if value else "—"
+
+        amount = float(redemption["amount"] or 0.0)
+        method_name = redemption["method_name"] or ""
+        if amount == 0:
+            method_name = "Loss"
+
+        receipt_date = redemption["receipt_date"] or ""
+        if amount == 0:
+            receipt_display = "N/A"
+        elif receipt_date:
+            receipt_display = format_date(receipt_date)
+        else:
+            receipt_display = "PENDING"
+
+        redemption_type = "Partial" if redemption["more_remaining"] else "Full"
+        processed_display = "Yes" if redemption["processed"] else "No"
+
+        row = 0
+        row = add_row("Date", format_date(redemption["redemption_date"]), row)
+        row = add_row("Time", format_time(redemption["redemption_time"]), row)
+        row = add_row("User", redemption["user_name"] or "—", row)
+        row = add_row("Site", redemption["site_name"] or "—", row)
+        row = add_row("Amount", format_currency(amount), row)
+        row = add_row("Receipt Date", receipt_display, row)
+        row = add_row("Method", method_name or "—", row)
+        row = add_row("Redemption Type", redemption_type, row)
+        row = add_row("Processed", processed_display, row)
+
+        notes_label = QtWidgets.QLabel("Notes")
+        notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        notes_edit = QtWidgets.QPlainTextEdit()
+        notes_edit.setObjectName("NotesField")
+        notes_edit.setReadOnly(True)
+        notes_edit.setPlainText(redemption["notes"] or "")
+        notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+        form.addWidget(notes_label, row, 0)
+        form.addWidget(notes_edit, row, 1)
+
+        layout.addLayout(form)
+        layout.addSpacing(8)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        close_btn = QtWidgets.QPushButton("Close")
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+        close_btn.clicked.connect(self.accept)
+
+
 class GameSessionStartDialog(QtWidgets.QDialog):
     def __init__(
         self,
@@ -1163,6 +1538,9 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         self.session_mgr = session_mgr
         self.session = session
         self.game_names_by_type = game_names_by_type or {}
+        self._user_lookup = {name.lower(): name for name in user_names}
+        self._site_lookup = {name.lower(): name for name in site_names}
+        self._game_type_lookup = {name.lower(): name for name in game_types}
         self.setWindowTitle("Edit Session" if session else "Start Session")
         self.resize(640, 560)
 
@@ -1210,8 +1588,14 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         self.game_type_combo.addItems(game_types)
 
         self.game_name_combo = QtWidgets.QComboBox()
-        self.game_name_combo.setEditable(False)
-        self.game_name_combo.addItems(self._all_game_names())
+        self.game_name_combo.setEditable(True)
+        self.game_name_combo.addItems([""] + self._all_game_names())
+        self.game_helper = QtWidgets.QLabel("Game Name requires a Game Type.")
+        self.game_helper.setObjectName("HelperText")
+        self.game_helper.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self.game_helper = QtWidgets.QLabel("Game Name requires a Game Type.")
+        self.game_helper.setObjectName("HelperText")
+        self.game_helper.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
         self.start_total_edit = QtWidgets.QLineEdit()
         self.start_redeem_edit = QtWidgets.QLineEdit()
@@ -1248,16 +1632,17 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         form.addWidget(self.game_type_combo, 4, 1)
         form.addWidget(QtWidgets.QLabel("Game Name"), 5, 0)
         form.addWidget(self.game_name_combo, 5, 1)
-        form.addWidget(QtWidgets.QLabel("Starting Total SC"), 6, 0)
-        form.addWidget(self.start_total_edit, 6, 1)
-        form.addWidget(QtWidgets.QLabel("Starting Redeemable"), 7, 0)
-        form.addWidget(self.start_redeem_edit, 7, 1)
-        form.addWidget(self.balance_label, 8, 0)
-        form.addWidget(self.freebie_label, 8, 1)
+        form.addWidget(self.game_helper, 6, 0, 1, 2)
+        form.addWidget(QtWidgets.QLabel("Starting Total SC"), 7, 0)
+        form.addWidget(self.start_total_edit, 7, 1)
+        form.addWidget(QtWidgets.QLabel("Starting Redeemable"), 8, 0)
+        form.addWidget(self.start_redeem_edit, 8, 1)
+        form.addWidget(self.balance_label, 9, 0)
+        form.addWidget(self.freebie_label, 9, 1)
         notes_label = QtWidgets.QLabel("Notes")
         notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.addWidget(notes_label, 9, 0)
-        form.addWidget(self.notes_edit, 9, 1)
+        form.addWidget(notes_label, 10, 0)
+        form.addWidget(self.notes_edit, 10, 1)
 
         layout.addLayout(form)
         layout.addSpacing(8)
@@ -1276,11 +1661,19 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         self.clear_btn.clicked.connect(self._clear_form)
         self.cancel_btn.clicked.connect(self.reject)
         self.game_type_combo.currentTextChanged.connect(self._update_game_names)
+        self.game_type_combo.currentTextChanged.connect(self._validate_inline)
+        self.game_name_combo.currentTextChanged.connect(self._validate_inline)
         self.site_combo.currentTextChanged.connect(self._update_freebie_label)
         self.user_combo.currentTextChanged.connect(self._update_freebie_label)
         self.start_total_edit.textChanged.connect(self._update_freebie_label)
         self.date_edit.textChanged.connect(self._update_freebie_label)
         self.time_edit.textChanged.connect(self._update_freebie_label)
+        self.date_edit.textChanged.connect(self._validate_inline)
+        self.time_edit.textChanged.connect(self._validate_inline)
+        self.user_combo.currentTextChanged.connect(self._validate_inline)
+        self.site_combo.currentTextChanged.connect(self._validate_inline)
+        self.start_total_edit.textChanged.connect(self._validate_inline)
+        self.start_redeem_edit.textChanged.connect(self._validate_inline)
 
         if session:
             self._load_session()
@@ -1288,25 +1681,28 @@ class GameSessionStartDialog(QtWidgets.QDialog):
             self._clear_form()
 
         self._update_completers()
+        self._validate_inline()
 
     def _all_game_names(self):
         names = set()
         for game_list in self.game_names_by_type.values():
             names.update(game_list)
-        return [""] + sorted(names)
+        return sorted(names)
 
     def _update_game_names(self):
         game_type = self.game_type_combo.currentText().strip()
-        names = []
-        if game_type and game_type in self.game_names_by_type:
-            names = list(self.game_names_by_type.get(game_type, []))
+        type_key = None
+        if game_type:
+            for key in self.game_names_by_type:
+                if key.lower() == game_type.lower():
+                    type_key = key
+                    break
+            names = list(self.game_names_by_type.get(type_key, [])) if type_key else []
         else:
             names = self._all_game_names()
         current = self.game_name_combo.currentText().strip()
         if "" not in names:
             names.insert(0, "")
-        if current and current not in names:
-            names.insert(1, current)
         self.game_name_combo.blockSignals(True)
         self.game_name_combo.clear()
         self.game_name_combo.addItems(names)
@@ -1314,8 +1710,97 @@ class GameSessionStartDialog(QtWidgets.QDialog):
             self.game_name_combo.setCurrentText(current)
         else:
             self.game_name_combo.setCurrentIndex(0)
+            self.game_name_combo.setEditText("")
         self.game_name_combo.blockSignals(False)
         self._update_completers()
+        self._validate_inline()
+
+    def _set_invalid(self, widget, message):
+        widget.setProperty("invalid", True)
+        widget.setToolTip(message)
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _set_valid(self, widget):
+        widget.setProperty("invalid", False)
+        widget.setToolTip("")
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _validate_inline(self):
+        date_text = self.date_edit.text().strip()
+        if not date_text:
+            self._set_invalid(self.date_edit, "Date is required.")
+        else:
+            try:
+                parse_date_input(date_text)
+                self._set_valid(self.date_edit)
+            except ValueError:
+                self._set_invalid(self.date_edit, "Enter a valid date.")
+
+        time_text = self.time_edit.text().strip()
+        if not is_valid_time_24h(time_text, allow_blank=True):
+            self._set_invalid(self.time_edit, "Use 24-hour time HH:MM or HH:MM:SS.")
+        else:
+            self._set_valid(self.time_edit)
+
+        user_text = self.user_combo.currentText().strip()
+        if not user_text or user_text.lower() not in self._user_lookup:
+            self._set_invalid(self.user_combo, "Select a valid User.")
+        else:
+            self._set_valid(self.user_combo)
+
+        site_text = self.site_combo.currentText().strip()
+        if not site_text or site_text.lower() not in self._site_lookup:
+            self._set_invalid(self.site_combo, "Select a valid Site.")
+        else:
+            self._set_valid(self.site_combo)
+
+        game_type_text = self.game_type_combo.currentText().strip()
+        if game_type_text and game_type_text.lower() not in self._game_type_lookup:
+            self._set_invalid(self.game_type_combo, "Select a valid Game Type.")
+        else:
+            self._set_valid(self.game_type_combo)
+
+        game_name_text = self.game_name_combo.currentText().strip()
+        if game_name_text:
+            if not game_type_text:
+                self._set_invalid(self.game_type_combo, "Select a Game Type for this Game Name.")
+                self._set_invalid(self.game_name_combo, "Select a valid Game Name for the chosen type.")
+            else:
+                type_key = None
+                for key in self.game_names_by_type:
+                    if key.lower() == game_type_text.lower():
+                        type_key = key
+                        break
+                valid_names = self.game_names_by_type.get(type_key, []) if type_key else []
+                valid_lookup = {name.lower(): name for name in valid_names if name}
+                if game_name_text.lower() not in valid_lookup:
+                    self._set_invalid(self.game_name_combo, "Select a valid Game Name for the chosen type.")
+                else:
+                    self._set_valid(self.game_name_combo)
+        else:
+            self._set_valid(self.game_name_combo)
+
+        start_total_text = self.start_total_edit.text().strip()
+        if not start_total_text:
+            self._set_invalid(self.start_total_edit, "Starting Total SC is required.")
+        else:
+            valid, _result = validate_currency(start_total_text)
+            if not valid:
+                self._set_invalid(self.start_total_edit, "Enter a valid amount (max 2 decimals).")
+            else:
+                self._set_valid(self.start_total_edit)
+
+        start_redeem_text = self.start_redeem_edit.text().strip()
+        if not start_redeem_text:
+            self._set_invalid(self.start_redeem_edit, "Starting Redeemable is required.")
+        else:
+            valid, _result = validate_currency(start_redeem_text)
+            if not valid:
+                self._set_invalid(self.start_redeem_edit, "Enter a valid amount (max 2 decimals).")
+            else:
+                self._set_valid(self.start_redeem_edit)
 
     def _update_completers(self):
         for combo in (
@@ -1495,14 +1980,17 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         self.freebie_label.setProperty("status", "neutral")
         self.freebie_label.style().unpolish(self.freebie_label)
         self.freebie_label.style().polish(self.freebie_label)
+        self._validate_inline()
 
     def collect_data(self):
         user_name = self.user_combo.currentText().strip()
         site_name = self.site_combo.currentText().strip()
         game_type = self.game_type_combo.currentText().strip()
         game_name = self.game_name_combo.currentText().strip()
-        if not user_name or not site_name or not game_type:
-            return None, "Please select Date, User, Site, and Game Type."
+        if not user_name or not site_name:
+            return None, "Please select Date, User, and Site."
+        if game_name and not game_type:
+            return None, "Please select a Game Type when entering a Game Name."
 
         date_str = self.date_edit.text().strip()
         if not date_str:
@@ -1513,6 +2001,8 @@ class GameSessionStartDialog(QtWidgets.QDialog):
             return None, "Please enter a valid session date."
 
         time_str = self.time_edit.text().strip()
+        if time_str and not is_valid_time_24h(time_str, allow_blank=False):
+            return None, "Please enter a valid start time (HH:MM or HH:MM:SS, 24-hour)."
         try:
             stime = parse_time_input(time_str)
         except ValueError:
@@ -1527,20 +2017,19 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         start_total = result
 
         start_redeem_str = self.start_redeem_edit.text().strip()
-        if start_redeem_str:
-            valid, result = validate_currency(start_redeem_str)
-            if not valid:
-                return None, result
-            start_redeem = result
-        else:
-            start_redeem = 0.0
+        if not start_redeem_str:
+            return None, "Please enter Starting Redeemable SC."
+        valid, result = validate_currency(start_redeem_str)
+        if not valid:
+            return None, result
+        start_redeem = result
 
         if start_redeem > start_total:
             return None, "Starting Redeemable SC cannot exceed Starting Total SC."
 
         wager_amount = None
-        if self.session and self.session.get("wager_amount") is not None:
-            wager_amount = float(self.session.get("wager_amount") or 0.0)
+        if self.session is not None and self.session["wager_amount"] is not None:
+            wager_amount = float(self.session["wager_amount"] or 0.0)
 
         notes = self.notes_edit.toPlainText().strip()
 
@@ -1664,11 +2153,17 @@ class GameSessionEndDialog(QtWidgets.QDialog):
         self.end_total_edit.textChanged.connect(lambda: self._update_locked(start_redeem))
         self.end_redeem_edit.textChanged.connect(lambda: self._update_locked(start_redeem))
         self.end_redeem_edit.textChanged.connect(lambda: self._update_pnl(start_redeem))
+        self.date_edit.textChanged.connect(self._validate_inline)
+        self.time_edit.textChanged.connect(self._validate_inline)
+        self.end_total_edit.textChanged.connect(self._validate_inline)
+        self.end_redeem_edit.textChanged.connect(self._validate_inline)
+        self.wager_edit.textChanged.connect(self._validate_inline)
 
         self._set_today()
         self._set_now()
         if session["wager_amount"] is not None:
             self.wager_edit.setText(str(session["wager_amount"]))
+        self._validate_inline()
 
     def _set_today(self):
         self.date_edit.setText(date.today().strftime("%m/%d/%y"))
@@ -1737,6 +2232,65 @@ class GameSessionEndDialog(QtWidgets.QDialog):
         self.pnl_label.style().unpolish(self.pnl_label)
         self.pnl_label.style().polish(self.pnl_label)
 
+    def _set_invalid(self, widget, message):
+        widget.setProperty("invalid", True)
+        widget.setToolTip(message)
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _set_valid(self, widget):
+        widget.setProperty("invalid", False)
+        widget.setToolTip("")
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _validate_inline(self):
+        date_text = self.date_edit.text().strip()
+        if not date_text:
+            self._set_invalid(self.date_edit, "End date is required.")
+        else:
+            try:
+                parse_date_input(date_text)
+                self._set_valid(self.date_edit)
+            except ValueError:
+                self._set_invalid(self.date_edit, "Enter a valid end date.")
+
+        time_text = self.time_edit.text().strip()
+        if not is_valid_time_24h(time_text, allow_blank=True):
+            self._set_invalid(self.time_edit, "Use 24-hour time HH:MM or HH:MM:SS.")
+        else:
+            self._set_valid(self.time_edit)
+
+        end_total_text = self.end_total_edit.text().strip()
+        if not end_total_text:
+            self._set_invalid(self.end_total_edit, "Ending Total SC is required.")
+        else:
+            valid, _result = validate_currency(end_total_text)
+            if not valid:
+                self._set_invalid(self.end_total_edit, "Enter a valid amount (max 2 decimals).")
+            else:
+                self._set_valid(self.end_total_edit)
+
+        end_redeem_text = self.end_redeem_edit.text().strip()
+        if not end_redeem_text:
+            self._set_invalid(self.end_redeem_edit, "Ending Redeemable is required.")
+        else:
+            valid, _result = validate_currency(end_redeem_text)
+            if not valid:
+                self._set_invalid(self.end_redeem_edit, "Enter a valid amount (max 2 decimals).")
+            else:
+                self._set_valid(self.end_redeem_edit)
+
+        wager_text = self.wager_edit.text().strip()
+        if wager_text:
+            valid, _result = validate_currency(wager_text)
+            if not valid:
+                self._set_invalid(self.wager_edit, "Enter a valid wager (max 2 decimals).")
+            else:
+                self._set_valid(self.wager_edit)
+        else:
+            self._set_valid(self.wager_edit)
+
     def collect_data(self):
         date_str = self.date_edit.text().strip()
         if not date_str:
@@ -1747,6 +2301,8 @@ class GameSessionEndDialog(QtWidgets.QDialog):
             return None, "Please enter a valid end date."
 
         time_str = self.time_edit.text().strip()
+        if time_str and not is_valid_time_24h(time_str, allow_blank=False):
+            return None, "Please enter a valid end time (HH:MM or HH:MM:SS, 24-hour)."
         try:
             end_time = parse_time_input(time_str)
         except ValueError:
@@ -1808,6 +2364,9 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         self.session_mgr = session_mgr
         self.session = session
         self.game_names_by_type = game_names_by_type or {}
+        self._user_lookup = {name.lower(): name for name in user_names}
+        self._site_lookup = {name.lower(): name for name in site_names}
+        self._game_type_lookup = {name.lower(): name for name in game_types}
         self.setWindowTitle("Edit Closed Session")
         self.resize(640, 640)
 
@@ -1870,8 +2429,8 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         self.game_type_combo.addItems(game_types)
 
         self.game_name_combo = QtWidgets.QComboBox()
-        self.game_name_combo.setEditable(False)
-        self.game_name_combo.addItems(self._all_game_names())
+        self.game_name_combo.setEditable(True)
+        self.game_name_combo.addItems([""] + self._all_game_names())
 
         self.start_total_edit = QtWidgets.QLineEdit()
         self.start_redeem_edit = QtWidgets.QLineEdit()
@@ -1914,20 +2473,21 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         form.addWidget(self.game_type_combo, 6, 1)
         form.addWidget(QtWidgets.QLabel("Game Name"), 7, 0)
         form.addWidget(self.game_name_combo, 7, 1)
-        form.addWidget(QtWidgets.QLabel("Starting Total SC"), 8, 0)
-        form.addWidget(self.start_total_edit, 8, 1)
-        form.addWidget(QtWidgets.QLabel("Starting Redeemable"), 9, 0)
-        form.addWidget(self.start_redeem_edit, 9, 1)
-        form.addWidget(self.balance_label, 10, 0)
-        form.addWidget(self.balance_value, 10, 1)
-        form.addWidget(QtWidgets.QLabel("Ending Total SC"), 11, 0)
-        form.addWidget(self.end_total_edit, 11, 1)
-        form.addWidget(QtWidgets.QLabel("Ending Redeemable"), 12, 0)
-        form.addWidget(self.end_redeem_edit, 12, 1)
+        form.addWidget(self.game_helper, 8, 0, 1, 2)
+        form.addWidget(QtWidgets.QLabel("Starting Total SC"), 9, 0)
+        form.addWidget(self.start_total_edit, 9, 1)
+        form.addWidget(QtWidgets.QLabel("Starting Redeemable"), 10, 0)
+        form.addWidget(self.start_redeem_edit, 10, 1)
+        form.addWidget(self.balance_label, 11, 0)
+        form.addWidget(self.balance_value, 11, 1)
+        form.addWidget(QtWidgets.QLabel("Ending Total SC"), 12, 0)
+        form.addWidget(self.end_total_edit, 12, 1)
+        form.addWidget(QtWidgets.QLabel("Ending Redeemable"), 13, 0)
+        form.addWidget(self.end_redeem_edit, 13, 1)
         notes_label = QtWidgets.QLabel("Notes")
         notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.addWidget(notes_label, 13, 0)
-        form.addWidget(self.notes_edit, 13, 1)
+        form.addWidget(notes_label, 14, 0)
+        form.addWidget(self.notes_edit, 14, 1)
 
         layout.addLayout(form)
         layout.addSpacing(8)
@@ -1948,28 +2508,43 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         self.start_total_edit.textChanged.connect(self._update_balance_label)
         self.start_date_edit.textChanged.connect(self._update_balance_label)
         self.start_time_edit.textChanged.connect(self._update_balance_label)
+        self.game_type_combo.currentTextChanged.connect(self._validate_inline)
+        self.game_name_combo.currentTextChanged.connect(self._validate_inline)
+        self.start_date_edit.textChanged.connect(self._validate_inline)
+        self.start_time_edit.textChanged.connect(self._validate_inline)
+        self.end_date_edit.textChanged.connect(self._validate_inline)
+        self.end_time_edit.textChanged.connect(self._validate_inline)
+        self.user_combo.currentTextChanged.connect(self._validate_inline)
+        self.site_combo.currentTextChanged.connect(self._validate_inline)
+        self.start_total_edit.textChanged.connect(self._validate_inline)
+        self.start_redeem_edit.textChanged.connect(self._validate_inline)
+        self.end_total_edit.textChanged.connect(self._validate_inline)
+        self.end_redeem_edit.textChanged.connect(self._validate_inline)
 
         self._load_session()
         self._update_completers()
+        self._validate_inline()
 
     def _all_game_names(self):
         names = set()
         for game_list in self.game_names_by_type.values():
             names.update(game_list)
-        return [""] + sorted(names)
+        return sorted(names)
 
     def _update_game_names(self):
         game_type = self.game_type_combo.currentText().strip()
-        names = []
-        if game_type and game_type in self.game_names_by_type:
-            names = list(self.game_names_by_type.get(game_type, []))
+        type_key = None
+        if game_type:
+            for key in self.game_names_by_type:
+                if key.lower() == game_type.lower():
+                    type_key = key
+                    break
+            names = list(self.game_names_by_type.get(type_key, [])) if type_key else []
         else:
             names = self._all_game_names()
         current = self.game_name_combo.currentText().strip()
         if "" not in names:
             names.insert(0, "")
-        if current and current not in names:
-            names.insert(1, current)
         self.game_name_combo.blockSignals(True)
         self.game_name_combo.clear()
         self.game_name_combo.addItems(names)
@@ -1977,8 +2552,133 @@ class GameSessionEditDialog(QtWidgets.QDialog):
             self.game_name_combo.setCurrentText(current)
         else:
             self.game_name_combo.setCurrentIndex(0)
+            self.game_name_combo.setEditText("")
         self.game_name_combo.blockSignals(False)
         self._update_completers()
+        self._validate_inline()
+
+    def _set_invalid(self, widget, message):
+        widget.setProperty("invalid", True)
+        widget.setToolTip(message)
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _set_valid(self, widget):
+        widget.setProperty("invalid", False)
+        widget.setToolTip("")
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _validate_inline(self):
+        start_date_text = self.start_date_edit.text().strip()
+        if not start_date_text:
+            self._set_invalid(self.start_date_edit, "Start date is required.")
+        else:
+            try:
+                parse_date_input(start_date_text)
+                self._set_valid(self.start_date_edit)
+            except ValueError:
+                self._set_invalid(self.start_date_edit, "Enter a valid start date.")
+
+        end_date_text = self.end_date_edit.text().strip()
+        if not end_date_text:
+            self._set_invalid(self.end_date_edit, "End date is required.")
+        else:
+            try:
+                parse_date_input(end_date_text)
+                self._set_valid(self.end_date_edit)
+            except ValueError:
+                self._set_invalid(self.end_date_edit, "Enter a valid end date.")
+
+        start_time_text = self.start_time_edit.text().strip()
+        if not is_valid_time_24h(start_time_text, allow_blank=True):
+            self._set_invalid(self.start_time_edit, "Use 24-hour time HH:MM or HH:MM:SS.")
+        else:
+            self._set_valid(self.start_time_edit)
+
+        end_time_text = self.end_time_edit.text().strip()
+        if not is_valid_time_24h(end_time_text, allow_blank=True):
+            self._set_invalid(self.end_time_edit, "Use 24-hour time HH:MM or HH:MM:SS.")
+        else:
+            self._set_valid(self.end_time_edit)
+
+        user_text = self.user_combo.currentText().strip()
+        if not user_text or user_text.lower() not in self._user_lookup:
+            self._set_invalid(self.user_combo, "Select a valid User.")
+        else:
+            self._set_valid(self.user_combo)
+
+        site_text = self.site_combo.currentText().strip()
+        if not site_text or site_text.lower() not in self._site_lookup:
+            self._set_invalid(self.site_combo, "Select a valid Site.")
+        else:
+            self._set_valid(self.site_combo)
+
+        game_type_text = self.game_type_combo.currentText().strip()
+        if game_type_text and game_type_text.lower() not in self._game_type_lookup:
+            self._set_invalid(self.game_type_combo, "Select a valid Game Type.")
+        else:
+            self._set_valid(self.game_type_combo)
+
+        game_name_text = self.game_name_combo.currentText().strip()
+        if game_name_text:
+            if not game_type_text:
+                self._set_invalid(self.game_type_combo, "Select a Game Type for this Game Name.")
+                self._set_invalid(self.game_name_combo, "Select a valid Game Name for the chosen type.")
+            else:
+                type_key = None
+                for key in self.game_names_by_type:
+                    if key.lower() == game_type_text.lower():
+                        type_key = key
+                        break
+                valid_names = self.game_names_by_type.get(type_key, []) if type_key else []
+                valid_lookup = {name.lower(): name for name in valid_names if name}
+                if game_name_text.lower() not in valid_lookup:
+                    self._set_invalid(self.game_name_combo, "Select a valid Game Name for the chosen type.")
+                else:
+                    self._set_valid(self.game_name_combo)
+        else:
+            self._set_valid(self.game_name_combo)
+
+        start_total_text = self.start_total_edit.text().strip()
+        if not start_total_text:
+            self._set_invalid(self.start_total_edit, "Starting Total SC is required.")
+        else:
+            valid, _result = validate_currency(start_total_text)
+            if not valid:
+                self._set_invalid(self.start_total_edit, "Enter a valid amount (max 2 decimals).")
+            else:
+                self._set_valid(self.start_total_edit)
+
+        start_redeem_text = self.start_redeem_edit.text().strip()
+        if not start_redeem_text:
+            self._set_invalid(self.start_redeem_edit, "Starting Redeemable is required.")
+        else:
+            valid, _result = validate_currency(start_redeem_text)
+            if not valid:
+                self._set_invalid(self.start_redeem_edit, "Enter a valid amount (max 2 decimals).")
+            else:
+                self._set_valid(self.start_redeem_edit)
+
+        end_total_text = self.end_total_edit.text().strip()
+        if not end_total_text:
+            self._set_invalid(self.end_total_edit, "Ending Total SC is required.")
+        else:
+            valid, _result = validate_currency(end_total_text)
+            if not valid:
+                self._set_invalid(self.end_total_edit, "Enter a valid amount (max 2 decimals).")
+            else:
+                self._set_valid(self.end_total_edit)
+
+        end_redeem_text = self.end_redeem_edit.text().strip()
+        if not end_redeem_text:
+            self._set_invalid(self.end_redeem_edit, "Ending Redeemable is required.")
+        else:
+            valid, _result = validate_currency(end_redeem_text)
+            if not valid:
+                self._set_invalid(self.end_redeem_edit, "Enter a valid amount (max 2 decimals).")
+            else:
+                self._set_valid(self.end_redeem_edit)
 
     def _update_completers(self):
         for combo in (
@@ -2162,8 +2862,14 @@ class GameSessionEditDialog(QtWidgets.QDialog):
             return None, "Please enter valid start/end dates."
 
         try:
-            start_time = parse_time_input(self.start_time_edit.text().strip())
-            end_time = parse_time_input(self.end_time_edit.text().strip())
+            start_time_str = self.start_time_edit.text().strip()
+            end_time_str = self.end_time_edit.text().strip()
+            if start_time_str and not is_valid_time_24h(start_time_str, allow_blank=False):
+                return None, "Please enter a valid start time (HH:MM or HH:MM:SS, 24-hour)."
+            if end_time_str and not is_valid_time_24h(end_time_str, allow_blank=False):
+                return None, "Please enter a valid end time (HH:MM or HH:MM:SS, 24-hour)."
+            start_time = parse_time_input(start_time_str)
+            end_time = parse_time_input(end_time_str)
         except ValueError:
             return None, "Please enter valid start/end times."
 
@@ -2171,8 +2877,10 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         site_name = self.site_combo.currentText().strip()
         game_type = self.game_type_combo.currentText().strip()
         game_name = self.game_name_combo.currentText().strip()
-        if not user_name or not site_name or not game_type:
-            return None, "Please select User, Site, and Game Type."
+        if not user_name or not site_name:
+            return None, "Please select User and Site."
+        if game_name and not game_type:
+            return None, "Please select a Game Type when entering a Game Name."
 
         valid, result = validate_currency(self.start_total_edit.text().strip() or "")
         if not valid:
@@ -2221,6 +2929,158 @@ class GameSessionEditDialog(QtWidgets.QDialog):
             "ending_redeemable_sc": end_redeem,
             "notes": notes,
         }, None
+
+
+class GameSessionViewDialog(QtWidgets.QDialog):
+    def __init__(self, session, parent=None):
+        super().__init__(parent)
+        self.session = session
+        self.setWindowTitle("View Game Session")
+        self.resize(700, 520)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        def build_group(title):
+            group = QtWidgets.QGroupBox(title)
+            group_layout = QtWidgets.QGridLayout(group)
+            group_layout.setHorizontalSpacing(10)
+            group_layout.setVerticalSpacing(8)
+            group_layout.setColumnStretch(1, 1)
+            group_layout.setColumnStretch(3, 1)
+            return group, group_layout
+
+        def add_pair(grid, row, col, label_text, value):
+            label = QtWidgets.QLabel(label_text)
+            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label = QtWidgets.QLabel(value)
+            value_label.setObjectName("InfoField")
+            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            grid.addWidget(label, row, col * 2)
+            grid.addWidget(value_label, row, col * 2 + 1)
+
+        def format_date(value):
+            if not value:
+                return "—"
+            try:
+                return datetime.strptime(value, "%Y-%m-%d").strftime("%m/%d/%y")
+            except ValueError:
+                return value
+
+        def format_time(value):
+            return value[:5] if value else "—"
+
+        def format_dt(date_value, time_value):
+            if not date_value and not time_value:
+                return "—"
+            date_part = format_date(date_value)
+            time_part = format_time(time_value)
+            if date_part == "—":
+                return time_part
+            if time_part == "—":
+                return date_part
+            return f"{date_part} {time_part}"
+
+        def format_sc(value):
+            return f"{float(value):.2f}" if value is not None else "—"
+
+        def format_delta(value):
+            if value is None:
+                return "—"
+            return f"{float(value):+.2f}"
+
+        wager_display = format_currency(session["wager_amount"]) if session["wager_amount"] else "—"
+        rtp_display = f"{float(session['rtp']):.2f}%" if session["rtp"] is not None else "—"
+        start_total = session["starting_sc_balance"]
+        end_total = session["ending_sc_balance"]
+        start_redeem = (
+            session["starting_redeemable_sc"]
+            if session["starting_redeemable_sc"] is not None
+            else session["starting_sc_balance"]
+        )
+        end_redeem = (
+            session["ending_redeemable_sc"]
+            if session["ending_redeemable_sc"] is not None
+            else session["ending_sc_balance"]
+        )
+        delta_total = session["delta_total"]
+        if delta_total is None and start_total is not None and end_total is not None:
+            delta_total = float(end_total or 0) - float(start_total or 0)
+        delta_redeem = session["delta_redeem"]
+        if delta_redeem is None and start_redeem is not None and end_redeem is not None:
+            delta_redeem = float(end_redeem or 0) - float(start_redeem or 0)
+        basis_val = (
+            session["basis_consumed"]
+            if session["basis_consumed"] is not None
+            else session["session_basis"]
+        )
+        net_val = session["net_taxable_pl"]
+        if net_val is None:
+            net_val = session["total_taxable"] if session["total_taxable"] is not None else 0.0
+        net_display = f"+${float(net_val):.2f}" if float(net_val) >= 0 else f"${float(net_val):.2f}"
+
+        session_group, session_grid = build_group("Session")
+        add_pair(
+            session_grid,
+            0,
+            0,
+            "Start",
+            format_dt(session["session_date"], session["start_time"]),
+        )
+        add_pair(
+            session_grid,
+            0,
+            1,
+            "End",
+            format_dt(session["end_date"], session["end_time"]),
+        )
+        add_pair(session_grid, 1, 0, "Site", session["site_name"] or "—")
+        add_pair(session_grid, 1, 1, "User", session["user_name"] or "—")
+        add_pair(session_grid, 2, 0, "Status", session["status"] or "Active")
+        layout.addWidget(session_group)
+
+        game_group, game_grid = build_group("Game")
+        add_pair(game_grid, 0, 0, "Game Type", session["game_type"] or "—")
+        add_pair(game_grid, 0, 1, "Game Name", session["game_name"] or "—")
+        add_pair(game_grid, 1, 0, "Wager Amount", wager_display)
+        add_pair(game_grid, 1, 1, "RTP", rtp_display)
+        layout.addWidget(game_group)
+
+        balance_group, balance_grid = build_group("Balances")
+        add_pair(balance_grid, 0, 0, "Start SC", format_sc(start_total))
+        add_pair(balance_grid, 0, 1, "End SC", format_sc(end_total))
+        add_pair(balance_grid, 1, 0, "Start Redeem", format_sc(start_redeem))
+        add_pair(balance_grid, 1, 1, "End Redeem", format_sc(end_redeem))
+        add_pair(balance_grid, 2, 0, "Δ Total", format_delta(delta_total))
+        add_pair(balance_grid, 2, 1, "Δ Redeem", format_delta(delta_redeem))
+        add_pair(
+            balance_grid,
+            3,
+            0,
+            "Δ Basis",
+            format_currency(basis_val) if basis_val is not None else "—",
+        )
+        add_pair(balance_grid, 3, 1, "Net P/L", net_display if net_val is not None else "—")
+        layout.addWidget(balance_group)
+
+        notes_group = QtWidgets.QGroupBox("Notes")
+        notes_layout = QtWidgets.QVBoxLayout(notes_group)
+        notes_edit = QtWidgets.QPlainTextEdit()
+        notes_edit.setObjectName("NotesField")
+        notes_edit.setReadOnly(True)
+        notes_edit.setPlainText(session["notes"] or "")
+        notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 4 + 16)
+        notes_layout.addWidget(notes_edit)
+        layout.addWidget(notes_group)
+        layout.addSpacing(4)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        close_btn = QtWidgets.QPushButton("Close")
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+        close_btn.clicked.connect(self.accept)
 
 
 class StatsBar(QtWidgets.QFrame):
@@ -2281,14 +3141,17 @@ class PurchasesTab(QtWidgets.QWidget):
         actions = QtWidgets.QHBoxLayout()
         actions.setSpacing(8)
         self.add_btn = QtWidgets.QPushButton("Add Purchase")
+        self.view_btn = QtWidgets.QPushButton("View Purchase")
         self.edit_btn = QtWidgets.QPushButton("Edit Purchase")
         self.delete_btn = QtWidgets.QPushButton("Delete Purchase")
         self.export_btn = QtWidgets.QPushButton("Export CSV")
         self.refresh_btn = QtWidgets.QPushButton("Refresh")
         self.add_btn.setObjectName("PrimaryButton")
+        self.view_btn.setVisible(False)
         self.edit_btn.setVisible(False)
         self.delete_btn.setVisible(False)
         actions.addWidget(self.add_btn)
+        actions.addWidget(self.view_btn)
         actions.addWidget(self.edit_btn)
         actions.addWidget(self.delete_btn)
         actions.addStretch(1)
@@ -2371,12 +3234,13 @@ class PurchasesTab(QtWidgets.QWidget):
         self.header = header
         header.viewport().installEventFilter(self)
         self.table.verticalHeader().setVisible(False)
-        self.table.itemDoubleClicked.connect(self._edit_selected)
+        self.table.itemDoubleClicked.connect(self._view_selected)
         layout.addWidget(self.table)
 
         self.table.selectionModel().selectionChanged.connect(self._update_action_visibility)
 
         self.add_btn.clicked.connect(self._add_purchase)
+        self.view_btn.clicked.connect(self._view_selected)
         self.edit_btn.clicked.connect(self._edit_selected)
         self.delete_btn.clicked.connect(self._delete_selected)
         self.export_btn.clicked.connect(self.export_csv)
@@ -2502,7 +3366,9 @@ class PurchasesTab(QtWidgets.QWidget):
         return super().eventFilter(obj, event)
 
     def _update_action_visibility(self):
-        has_selection = bool(self.table.selectionModel().selectedRows())
+        selected = self.table.selectionModel().selectedRows()
+        has_selection = bool(selected)
+        self.view_btn.setVisible(len(selected) == 1)
         self.edit_btn.setVisible(has_selection)
         self.delete_btn.setVisible(has_selection)
 
@@ -2709,6 +3575,26 @@ class PurchasesTab(QtWidgets.QWidget):
             self._save_from_dialog(dialog, purchase_id)
 
         dialog.save_btn.clicked.connect(handle_save)
+        dialog.exec()
+
+    def _view_selected(self, *_args):
+        selected_ids = self._selected_ids()
+        if not selected_ids:
+            QtWidgets.QMessageBox.warning(self, "No Selection", "Select a purchase to view.")
+            return
+        if len(selected_ids) > 1:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Multiple Selection",
+                "Please select only one purchase to view.",
+            )
+            return
+        purchase_id = selected_ids[0]
+        purchase = self._fetch_purchase(purchase_id)
+        if not purchase:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected purchase was not found.")
+            return
+        dialog = PurchaseViewDialog(purchase, parent=self)
         dialog.exec()
 
     def _save_from_dialog(self, dialog, purchase_id):
@@ -3115,14 +4001,17 @@ class RedemptionsTab(QtWidgets.QWidget):
         actions = QtWidgets.QHBoxLayout()
         actions.setSpacing(8)
         self.add_btn = QtWidgets.QPushButton("Add Redemption")
+        self.view_btn = QtWidgets.QPushButton("View Redemption")
         self.edit_btn = QtWidgets.QPushButton("Edit Redemption")
         self.delete_btn = QtWidgets.QPushButton("Delete Redemption")
         self.export_btn = QtWidgets.QPushButton("Export CSV")
         self.refresh_btn = QtWidgets.QPushButton("Refresh")
         self.add_btn.setObjectName("PrimaryButton")
+        self.view_btn.setVisible(False)
         self.edit_btn.setVisible(False)
         self.delete_btn.setVisible(False)
         actions.addWidget(self.add_btn)
+        actions.addWidget(self.view_btn)
         actions.addWidget(self.edit_btn)
         actions.addWidget(self.delete_btn)
         actions.addStretch(1)
@@ -3204,12 +4093,13 @@ class RedemptionsTab(QtWidgets.QWidget):
         self.header = header
         header.viewport().installEventFilter(self)
         self.table.verticalHeader().setVisible(False)
-        self.table.itemDoubleClicked.connect(self._edit_selected)
+        self.table.itemDoubleClicked.connect(self._view_selected)
         layout.addWidget(self.table)
 
         self.table.selectionModel().selectionChanged.connect(self._update_action_visibility)
 
         self.add_btn.clicked.connect(self._add_redemption)
+        self.view_btn.clicked.connect(self._view_selected)
         self.edit_btn.clicked.connect(self._edit_selected)
         self.delete_btn.clicked.connect(self._delete_selected)
         self.export_btn.clicked.connect(self.export_csv)
@@ -3545,6 +4435,26 @@ class RedemptionsTab(QtWidgets.QWidget):
             self._save_from_dialog(dialog, redemption_id)
 
         dialog.save_btn.clicked.connect(handle_save)
+        dialog.exec()
+
+    def _view_selected(self, *_args):
+        selected_ids = self._selected_ids()
+        if not selected_ids:
+            QtWidgets.QMessageBox.warning(self, "No Selection", "Select a redemption to view.")
+            return
+        if len(selected_ids) > 1:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Multiple Selection",
+                "Please select only one redemption to view.",
+            )
+            return
+        redemption_id = selected_ids[0]
+        redemption = self._fetch_redemption(redemption_id)
+        if not redemption:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected redemption was not found.")
+            return
+        dialog = RedemptionViewDialog(redemption, parent=self)
         dialog.exec()
 
     def _check_subsequent_redemptions(self, redemption_id):
@@ -4024,7 +4934,9 @@ class RedemptionsTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.information(self, "Success", message)
 
     def _update_action_visibility(self):
-        has_selection = bool(self.table.selectionModel().selectedRows())
+        selected = self.table.selectionModel().selectedRows()
+        has_selection = bool(selected)
+        self.view_btn.setVisible(len(selected) == 1)
         self.edit_btn.setVisible(has_selection)
         self.delete_btn.setVisible(has_selection)
 
@@ -4081,6 +4993,7 @@ class GameSessionsTab(QtWidgets.QWidget):
         actions = QtWidgets.QHBoxLayout()
         actions.setSpacing(8)
         self.add_btn = QtWidgets.QPushButton("Start Session")
+        self.view_btn = QtWidgets.QPushButton("View Session")
         self.end_btn = QtWidgets.QPushButton("End Session")
         self.edit_btn = QtWidgets.QPushButton("Edit Session")
         self.delete_btn = QtWidgets.QPushButton("Delete Session")
@@ -4088,11 +5001,13 @@ class GameSessionsTab(QtWidgets.QWidget):
         self.refresh_btn = QtWidgets.QPushButton("Refresh")
         self.active_label = QtWidgets.QLabel("Active Sessions: 0")
         self.add_btn.setObjectName("PrimaryButton")
+        self.view_btn.setVisible(False)
         self.end_btn.setVisible(False)
         self.edit_btn.setVisible(False)
         self.delete_btn.setVisible(False)
         actions.addWidget(self.add_btn)
         actions.addWidget(self.end_btn)
+        actions.addWidget(self.view_btn)
         actions.addWidget(self.edit_btn)
         actions.addWidget(self.delete_btn)
         actions.addStretch(1)
@@ -4152,15 +5067,12 @@ class GameSessionsTab(QtWidgets.QWidget):
             "User",
             "Game Type",
             "Game",
-            "Wager",
-            "RTP",
-            "Start Total",
-            "End Total",
+            "Start SC",
+            "End SC",
             "Start Redeem",
             "End Redeem",
-            "Δ Total",
             "Δ Redeem",
-            "Basis Consumed",
+            "Δ Basis",
             "Net P/L",
             "Status",
             "Notes",
@@ -4184,12 +5096,13 @@ class GameSessionsTab(QtWidgets.QWidget):
         self.header = header
         header.viewport().installEventFilter(self)
         self.table.verticalHeader().setVisible(False)
-        self.table.itemDoubleClicked.connect(self._edit_selected)
+        self.table.itemDoubleClicked.connect(self._view_selected)
         layout.addWidget(self.table)
 
         self.table.selectionModel().selectionChanged.connect(self._update_action_visibility)
 
         self.add_btn.clicked.connect(self._add_session)
+        self.view_btn.clicked.connect(self._view_selected)
         self.end_btn.clicked.connect(self._end_selected)
         self.edit_btn.clicked.connect(self._edit_selected)
         self.delete_btn.clicked.connect(self._delete_selected)
@@ -4338,11 +5251,6 @@ class GameSessionsTab(QtWidgets.QWidget):
                 net_val = None
                 net_display = "-"
 
-            wager_display = (
-                f"{float(row['wager_amount']):.2f}" if row["wager_amount"] is not None else ""
-            )
-            rtp_display = f"{float(row['rtp']):.2f}%" if row["rtp"] is not None else ""
-
             notes = row["notes"] or ""
             notes_display = notes[:120]
 
@@ -4352,13 +5260,10 @@ class GameSessionsTab(QtWidgets.QWidget):
                 row["user_name"],
                 row["game_type"] or "",
                 row["game_name"] or "",
-                wager_display,
-                rtp_display,
                 f"{start_total:.2f}",
                 end_total_display,
                 f"{start_redeem:.2f}",
                 end_redeem_display,
-                delta_total_str,
                 delta_redeem_str,
                 basis_display,
                 net_display,
@@ -4436,7 +5341,7 @@ class GameSessionsTab(QtWidgets.QWidget):
         return rows
 
     def refresh_table(self, rows):
-        numeric_cols = {5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
+        numeric_cols = {5, 6, 7, 8, 9, 10, 11}
         self.table.setRowCount(len(rows))
         for r_idx, row in enumerate(rows):
             status_tag = row["tag"]
@@ -4466,16 +5371,21 @@ class GameSessionsTab(QtWidgets.QWidget):
         return super().eventFilter(obj, event)
 
     def _update_action_visibility(self):
-        has_selection = bool(self.table.selectionModel().selectedRows())
-        self.edit_btn.setVisible(has_selection)
+        selected = self.table.selectionModel().selectedRows()
+        has_selection = bool(selected)
+        single_selected = len(selected) == 1
+        multi_selected = len(selected) > 1
+        self.view_btn.setVisible(single_selected)
+        self.edit_btn.setVisible(single_selected)
         self.delete_btn.setVisible(has_selection)
         show_end = False
-        selected = self.table.selectionModel().selectedRows()
-        if len(selected) == 1:
+        if single_selected:
             status_item = self.table.item(selected[0].row(), self.columns.index("Status"))
             if status_item and status_item.text() == "Active":
                 show_end = True
-        self.end_btn.setVisible(show_end)
+        self.end_btn.setVisible(show_end and not multi_selected)
+        if multi_selected:
+            self.end_btn.setVisible(False)
 
     def _clear_search(self):
         self.search_edit.clear()
@@ -4503,28 +5413,22 @@ class GameSessionsTab(QtWidgets.QWidget):
             if col == 4:
                 return row["game_name"].lower()
             if col == 5:
-                return row["wager_amount"] or 0.0
-            if col == 6:
-                return row["rtp"] or 0.0
-            if col == 7:
                 return row["start_total"]
-            if col == 8:
+            if col == 6:
                 return row["end_total"] or 0.0
-            if col == 9:
+            if col == 7:
                 return row["start_redeem"]
-            if col == 10:
+            if col == 8:
                 return row["end_redeem"] or 0.0
-            if col == 11:
-                return row["delta_total"] if row["delta_total"] is not None else 0.0
-            if col == 12:
+            if col == 9:
                 return row["delta_redeem"] if row["delta_redeem"] is not None else 0.0
-            if col == 13:
+            if col == 10:
                 return row["basis_consumed"] if row["basis_consumed"] is not None else 0.0
-            if col == 14:
+            if col == 11:
                 return row["net_pl"] if row["net_pl"] is not None else 0.0
-            if col == 15:
+            if col == 12:
                 return row["status"].lower()
-            if col == 16:
+            if col == 13:
                 return row["notes"].lower()
             return row["display"][col]
 
@@ -4685,6 +5589,56 @@ class GameSessionsTab(QtWidgets.QWidget):
         conn.close()
         return row
 
+    def _validate_game_name(self, game_type, game_name):
+        name = (game_name or "").strip()
+        if not name:
+            return None, ""
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT g.name, gt.name as type_name
+            FROM games g
+            LEFT JOIN game_types gt ON g.game_type_id = gt.id
+            WHERE lower(g.name) = ?
+              AND g.active = 1
+            """,
+            (name.lower(),),
+        )
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            return (
+                "Game name not found. Add it in Setup → Games, then return and save again.",
+                None,
+            )
+        type_name = (row["type_name"] or "Other").strip()
+        if game_type and type_name.lower() != game_type.lower():
+            return (
+                "Game name not found for the selected Game Type. Add it in Setup → Games, then return and save again.",
+                None,
+            )
+        return None, row["name"]
+
+    def _validate_game_type(self, game_type):
+        name = (game_type or "").strip()
+        if not name:
+            return None, ""
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT name FROM game_types WHERE lower(name) = ? AND active = 1",
+            (name.lower(),),
+        )
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            return (
+                "Game Type not found. Add it in Setup → Game Types, then return and save again.",
+                None,
+            )
+        return None, row["name"]
+
     def _edit_selected(self, *_args):
         selected_ids = self._selected_ids()
         if not selected_ids:
@@ -4735,6 +5689,22 @@ class GameSessionsTab(QtWidgets.QWidget):
             dialog.save_btn.clicked.connect(handle_save)
             dialog.exec()
 
+    def _view_selected(self, *_args):
+        selected_ids = self._selected_ids()
+        if not selected_ids:
+            QtWidgets.QMessageBox.warning(self, "No Selection", "Select a session to view.")
+            return
+        if len(selected_ids) > 1:
+            QtWidgets.QMessageBox.warning(self, "Multiple Selection", "Select one session to view.")
+            return
+        session_id = selected_ids[0]
+        session = self._fetch_session(session_id)
+        if not session:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected session was not found.")
+            return
+        dialog = GameSessionViewDialog(session, parent=self)
+        dialog.exec()
+
     def _save_start_session(self, dialog, session_id):
         data, error = dialog.collect_data()
         if error:
@@ -4765,6 +5735,20 @@ class GameSessionsTab(QtWidgets.QWidget):
         site_id = site_row["id"]
         user_id = user_row["id"]
 
+        type_error, canonical_type = self._validate_game_type(game_type)
+        if type_error:
+            conn.close()
+            QtWidgets.QMessageBox.warning(self, "Not Found", type_error)
+            return
+        game_type = canonical_type
+
+        game_error, canonical_game = self._validate_game_name(game_type, game_name)
+        if game_error:
+            conn.close()
+            QtWidgets.QMessageBox.warning(self, "Not Found", game_error)
+            return
+        game_name = canonical_game
+
         if session_id:
             c.execute(
                 """
@@ -4781,7 +5765,6 @@ class GameSessionsTab(QtWidgets.QWidget):
                     "Another active session already exists for this site and user.",
                 )
                 return
-
             c.execute(
                 """
                 UPDATE game_sessions
@@ -4811,7 +5794,9 @@ class GameSessionsTab(QtWidgets.QWidget):
             self.load_data()
             if self.on_data_changed:
                 self.on_data_changed()
-            QtWidgets.QMessageBox.information(self, "Success", "Session updated")
+            QtCore.QTimer.singleShot(
+                0, lambda: QtWidgets.QMessageBox.information(self, "Success", "Session updated")
+            )
             return
 
         c.execute(
@@ -4887,12 +5872,13 @@ class GameSessionsTab(QtWidgets.QWidget):
             message_parts.append(f"\n\nRecovered ${reactivated_basis:.2f} from dormant balance")
         if freebies_amount and freebies_amount > 0:
             message_parts.append(f"\nDetected ${freebies_amount:.2f} in extra SC")
-        QtWidgets.QMessageBox.information(self, "Success", "".join(message_parts))
-
         dialog.accept()
         self.load_data()
         if self.on_data_changed:
             self.on_data_changed()
+        QtCore.QTimer.singleShot(
+            0, lambda: QtWidgets.QMessageBox.information(self, "Success", "".join(message_parts))
+        )
 
     def _end_selected(self):
         selected_ids = self._selected_ids()
@@ -4949,7 +5935,9 @@ class GameSessionsTab(QtWidgets.QWidget):
                 message = f"Session ended!\n\nProfit: +${pnl:.2f}"
             else:
                 message = f"Session ended!\n\nLoss: ${pnl:.2f}"
-            QtWidgets.QMessageBox.information(self, "Success", message)
+            QtCore.QTimer.singleShot(
+                0, lambda: QtWidgets.QMessageBox.information(self, "Success", message)
+            )
 
         dialog.save_btn.clicked.connect(handle_save)
         dialog.exec()
@@ -4970,6 +5958,18 @@ class GameSessionsTab(QtWidgets.QWidget):
             conn.close()
             QtWidgets.QMessageBox.warning(self, "Not Found", "User or site not found.")
             return
+        type_error, canonical_type = self._validate_game_type(data["game_type"])
+        if type_error:
+            conn.close()
+            QtWidgets.QMessageBox.warning(self, "Not Found", type_error)
+            return
+        data["game_type"] = canonical_type
+        game_error, canonical_game = self._validate_game_name(data["game_type"], data["game_name"])
+        if game_error:
+            conn.close()
+            QtWidgets.QMessageBox.warning(self, "Not Found", game_error)
+            return
+        data["game_name"] = canonical_game
         new_site_id = site_row["id"]
         new_user_id = user_row["id"]
         old_site_id = old_session["site_id"]
@@ -5038,7 +6038,9 @@ class GameSessionsTab(QtWidgets.QWidget):
         message = "Session updated"
         if total_recalc:
             message += f" (recalculated {total_recalc} sessions)"
-        QtWidgets.QMessageBox.information(self, "Success", message)
+        QtCore.QTimer.singleShot(
+            0, lambda: QtWidgets.QMessageBox.information(self, "Success", message)
+        )
 
     def _selected_ids(self):
         ids = []
@@ -5306,6 +6308,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 padding: 6px 10px;
                 min-height: 26px;
             }
+            QLineEdit[invalid="true"], QTextEdit[invalid="true"], QPlainTextEdit[invalid="true"], QComboBox[invalid="true"] {
+                border: 1px solid #c0392b;
+            }
             QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus {
                 border: 1px solid #a6bff9;
             }
@@ -5351,6 +6356,8 @@ class MainWindow(QtWidgets.QMainWindow):
             QLabel#InfoField[status="positive"] { color: #2e7d32; }
             QLabel#InfoField[status="negative"] { color: #c0392b; }
             QLabel#InfoField[status="neutral"] { color: #62636c; }
+            QLabel#HelperText { color: #62636c; font-size: 11px; }
+            QRadioButton[invalid="true"] { color: #c0392b; }
             QMenu {
                 background: #fdfdfe;
                 color: #1e1f24;
