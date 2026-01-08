@@ -8092,6 +8092,793 @@ class UnrealizedTab(QtWidgets.QWidget):
                 writer.writerow(row["display"])
 
 
+class RealizedNotesDialog(QtWidgets.QDialog):
+    def __init__(self, notes, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Transaction Notes")
+        self.resize(520, 320)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        header = QtWidgets.QLabel("Transaction Notes")
+        header.setObjectName("SectionTitle")
+        layout.addWidget(header)
+
+        self.notes_edit = QtWidgets.QPlainTextEdit()
+        self.notes_edit.setObjectName("NotesField")
+        self.notes_edit.setPlainText(notes or "")
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 5 + 18)
+        layout.addWidget(self.notes_edit, 1)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        save_btn = QtWidgets.QPushButton("Save")
+        save_btn.setObjectName("PrimaryButton")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(save_btn)
+        layout.addLayout(btn_row)
+
+        cancel_btn.clicked.connect(self.reject)
+        save_btn.clicked.connect(self.accept)
+
+    def notes_text(self):
+        return self.notes_edit.toPlainText().strip()
+
+
+class RealizedTab(QtWidgets.QWidget):
+    def __init__(self, db, on_data_changed=None, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.on_data_changed = on_data_changed
+        self.all_transactions = []
+        self.filtered_transactions = []
+        self.column_filters = {}
+        self.date_filter = set()
+        self.sort_column = None
+        self.sort_reverse = False
+        self.active_date_filter = (None, None)
+        self.selected_users = set()
+        self.selected_sites = set()
+        self.has_tax_session_notes = self._tax_sessions_has_notes()
+
+        self.columns = [
+            "Date",
+            "Site",
+            "User",
+            "Transaction",
+            "Cost Basis",
+            "Net P/L",
+            "Notes",
+        ]
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        date_row = QtWidgets.QHBoxLayout()
+        date_row.setSpacing(6)
+        date_row.addWidget(QtWidgets.QLabel("From"))
+        self.from_edit = QtWidgets.QLineEdit()
+        self.from_edit.setPlaceholderText("MM/DD/YY")
+        self.from_calendar = QtWidgets.QPushButton("📅")
+        self.from_calendar.setFixedWidth(44)
+        date_row.addWidget(self.from_edit)
+        date_row.addWidget(self.from_calendar)
+        date_row.addWidget(QtWidgets.QLabel("To"))
+        self.to_edit = QtWidgets.QLineEdit()
+        self.to_edit.setPlaceholderText("MM/DD/YY")
+        self.to_calendar = QtWidgets.QPushButton("📅")
+        self.to_calendar.setFixedWidth(44)
+        date_row.addWidget(self.to_edit)
+        date_row.addWidget(self.to_calendar)
+        self.apply_date_btn = QtWidgets.QPushButton("Apply")
+        self.clear_date_btn = QtWidgets.QPushButton("Clear")
+        self.today_btn = QtWidgets.QPushButton("Today")
+        self.last30_btn = QtWidgets.QPushButton("Last 30 Days")
+        self.this_month_btn = QtWidgets.QPushButton("This Month")
+        self.this_year_btn = QtWidgets.QPushButton("This Year")
+        self.all_time_btn = QtWidgets.QPushButton("All Time")
+        date_row.addWidget(self.apply_date_btn)
+        date_row.addWidget(self.clear_date_btn)
+        date_row.addWidget(self.today_btn)
+        date_row.addWidget(self.last30_btn)
+        date_row.addWidget(self.this_month_btn)
+        date_row.addWidget(self.this_year_btn)
+        date_row.addWidget(self.all_time_btn)
+        date_row.addStretch(1)
+        layout.addLayout(date_row)
+
+        filter_row = QtWidgets.QHBoxLayout()
+        filter_row.setSpacing(6)
+        filter_row.addWidget(QtWidgets.QLabel("Users"))
+        self.user_filter_btn = QtWidgets.QPushButton("Filter Users...")
+        filter_row.addWidget(self.user_filter_btn)
+        self.user_filter_label = QtWidgets.QLabel("All")
+        self._set_filter_label(self.user_filter_label, set())
+        filter_row.addWidget(self.user_filter_label)
+        filter_row.addSpacing(12)
+        filter_row.addWidget(QtWidgets.QLabel("Sites"))
+        self.site_filter_btn = QtWidgets.QPushButton("Filter Sites...")
+        filter_row.addWidget(self.site_filter_btn)
+        self.site_filter_label = QtWidgets.QLabel("All")
+        self._set_filter_label(self.site_filter_label, set())
+        filter_row.addWidget(self.site_filter_label)
+        filter_row.addStretch(1)
+        layout.addLayout(filter_row)
+
+        search_row = QtWidgets.QHBoxLayout()
+        search_row.setSpacing(8)
+        self.search_edit = QtWidgets.QLineEdit()
+        self.search_edit.setPlaceholderText("Search realized sessions...")
+        self.search_clear_btn = QtWidgets.QPushButton("Clear")
+        self.clear_filters_btn = QtWidgets.QPushButton("Clear All Filters")
+        search_row.addWidget(self.search_edit, 1)
+        search_row.addWidget(self.search_clear_btn)
+        search_row.addWidget(self.clear_filters_btn)
+        search_row.addStretch(1)
+
+        self.notes_btn = QtWidgets.QPushButton("Add Notes")
+        self.notes_btn.setObjectName("PrimaryButton")
+        dynamic_width = self.notes_btn.sizeHint().width()
+        self.notes_btn.setFixedWidth(dynamic_width)
+        self.notes_placeholder = QtWidgets.QWidget()
+        self.notes_placeholder.setFixedWidth(dynamic_width)
+        self.notes_placeholder.setSizePolicy(
+            QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed
+        )
+        self.notes_container = QtWidgets.QWidget()
+        self.notes_container.setFixedWidth(dynamic_width)
+        self.notes_container.setSizePolicy(
+            QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed
+        )
+        self.notes_stack = QtWidgets.QStackedLayout(self.notes_container)
+        self.notes_stack.setContentsMargins(0, 0, 0, 0)
+        self.notes_stack.addWidget(self.notes_placeholder)
+        self.notes_stack.addWidget(self.notes_btn)
+        self.notes_stack.setCurrentWidget(self.notes_placeholder)
+
+        self.expand_btn = QtWidgets.QPushButton("Expand All")
+        self.collapse_btn = QtWidgets.QPushButton("Collapse All")
+        self.refresh_btn = QtWidgets.QPushButton("Refresh")
+        self.export_btn = QtWidgets.QPushButton("Export CSV")
+        for btn in (self.expand_btn, self.collapse_btn, self.refresh_btn, self.export_btn):
+            btn.setFixedWidth(btn.sizeHint().width())
+
+        self.actions_container = QtWidgets.QWidget()
+        actions_layout = QtWidgets.QHBoxLayout(self.actions_container)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(8)
+        actions_layout.addWidget(self.notes_container)
+        actions_layout.addWidget(self.expand_btn)
+        actions_layout.addWidget(self.collapse_btn)
+        actions_layout.addWidget(self.refresh_btn)
+        actions_layout.addWidget(self.export_btn)
+        total_width = dynamic_width + sum(btn.sizeHint().width() for btn in (
+            self.expand_btn,
+            self.collapse_btn,
+            self.refresh_btn,
+            self.export_btn,
+        ))
+        total_width += actions_layout.spacing() * 4
+        self.actions_container.setFixedWidth(total_width)
+        self.actions_container.setSizePolicy(
+            QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed
+        )
+        search_row.addWidget(self.actions_container, 0, QtCore.Qt.AlignRight)
+        layout.addLayout(search_row)
+
+        self.tree = QtWidgets.QTreeWidget()
+        self.tree.setColumnCount(len(self.columns))
+        self.tree.setHeaderLabels(self.columns)
+        self.tree.setAlternatingRowColors(True)
+        self.tree.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.tree.setUniformRowHeights(True)
+        self.tree.setRootIsDecorated(True)
+        header = self.tree.header()
+        header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        header.setStretchLastSection(True)
+        self.tree.setColumnWidth(0, 140)
+        self.tree.setColumnWidth(1, 200)
+        self.tree.setColumnWidth(2, 130)
+        self.tree.setColumnWidth(3, 200)
+        self.tree.setColumnWidth(4, 110)
+        self.tree.setColumnWidth(5, 110)
+        self.tree.setColumnWidth(6, 200)
+        self.header = header
+        header.viewport().installEventFilter(self)
+        layout.addWidget(self.tree, 1)
+
+        self.tree.itemSelectionChanged.connect(self._update_action_buttons)
+        self.tree.itemDoubleClicked.connect(lambda *_args: self._add_notes())
+
+        self.search_edit.textChanged.connect(self.refresh_view)
+        self.search_clear_btn.clicked.connect(self._clear_search)
+        self.clear_filters_btn.clicked.connect(self.clear_all_filters)
+        self.notes_btn.clicked.connect(self._add_notes)
+        self.expand_btn.clicked.connect(self.tree.expandAll)
+        self.collapse_btn.clicked.connect(self.tree.collapseAll)
+        self.refresh_btn.clicked.connect(self.refresh_view)
+        self.export_btn.clicked.connect(self.export_csv)
+        self.apply_date_btn.clicked.connect(self.apply_date_filter)
+        self.clear_date_btn.clicked.connect(self.clear_date_filter)
+        self.today_btn.clicked.connect(lambda: self.set_quick_range("today"))
+        self.last30_btn.clicked.connect(lambda: self.set_quick_range("last30"))
+        self.this_month_btn.clicked.connect(lambda: self.set_quick_range("month"))
+        self.this_year_btn.clicked.connect(lambda: self.set_quick_range("year"))
+        self.all_time_btn.clicked.connect(lambda: self.set_quick_range("all"))
+        self.from_calendar.clicked.connect(lambda: self.pick_date(self.from_edit))
+        self.to_calendar.clicked.connect(lambda: self.pick_date(self.to_edit))
+        self.user_filter_btn.clicked.connect(self._show_user_filter)
+        self.site_filter_btn.clicked.connect(self._show_site_filter)
+
+        self.refresh_view()
+
+    def _tax_sessions_has_notes(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute("PRAGMA table_info(tax_sessions)")
+            has_notes = any(row["name"] == "notes" for row in c.fetchall())
+        finally:
+            conn.close()
+        return has_notes
+
+    def eventFilter(self, obj, event):
+        if getattr(self, "tree", None) is not None and obj is self.tree.header().viewport():
+            header = self.tree.header()
+            if event.type() == QtCore.QEvent.MouseButtonDblClick and event.button() == QtCore.Qt.LeftButton:
+                pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                handle = header_resize_section_index(header, pos)
+                if handle is not None:
+                    self._suppress_header_menu = True
+                    self.tree.resizeColumnToContents(handle)
+                    return True
+            if event.type() == QtCore.QEvent.MouseButtonRelease and event.button() == QtCore.Qt.LeftButton:
+                pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                if getattr(self, "_suppress_header_menu", False):
+                    self._suppress_header_menu = False
+                    return True
+                if header_resize_section_index(header, pos) is not None:
+                    return False
+                index = header.logicalIndexAt(pos)
+                if index >= 0:
+                    self._show_header_menu(index)
+                    return True
+        return super().eventFilter(obj, event)
+
+    def _set_filter_label(self, label, selected):
+        if not selected:
+            label.setText("All")
+            label.setStyleSheet("color: #62636c;")
+        else:
+            label.setText(f"{len(selected)} selected")
+            label.setStyleSheet("color: #3657c3;")
+
+    def _current_meta(self):
+        item = self.tree.currentItem()
+        if not item:
+            return None
+        return item.data(0, QtCore.Qt.UserRole) or {}
+
+    def _update_action_buttons(self):
+        meta = self._current_meta() or {}
+        kind = meta.get("kind")
+        if kind == "transaction" and self.has_tax_session_notes:
+            self.notes_stack.setCurrentWidget(self.notes_btn)
+        else:
+            self.notes_stack.setCurrentWidget(self.notes_placeholder)
+
+    def pick_date(self, target_edit):
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Select Date")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        calendar = QtWidgets.QCalendarWidget()
+        calendar.setSelectedDate(QtCore.QDate.currentDate())
+        layout.addWidget(calendar)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        ok_btn = QtWidgets.QPushButton("Select")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+        cancel_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            target_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+
+    def set_quick_range(self, mode):
+        today = date.today()
+        if mode == "all":
+            self.clear_date_filter()
+            return
+        if mode == "today":
+            start = today
+            end = today
+        elif mode == "last30":
+            start = today - timedelta(days=30)
+            end = today
+        elif mode == "month":
+            start = today.replace(day=1)
+            end = today
+        elif mode == "year":
+            start = today.replace(month=1, day=1)
+            end = today
+        else:
+            return
+        self.from_edit.setText(start.strftime("%m/%d/%y"))
+        self.to_edit.setText(end.strftime("%m/%d/%y"))
+        self.active_date_filter = (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+        self.refresh_view()
+
+    def apply_date_filter(self):
+        start_date = None
+        end_date = None
+        start_text = self.from_edit.text().strip()
+        end_text = self.to_edit.text().strip()
+        if start_text:
+            try:
+                start_date = parse_date_input(start_text)
+            except ValueError:
+                QtWidgets.QMessageBox.warning(self, "Invalid Date", "Enter a valid start date.")
+                return
+        if end_text:
+            try:
+                end_date = parse_date_input(end_text)
+            except ValueError:
+                QtWidgets.QMessageBox.warning(self, "Invalid Date", "Enter a valid end date.")
+                return
+        if start_date and end_date and start_date > end_date:
+            QtWidgets.QMessageBox.warning(self, "Invalid Range", "From date is after To date.")
+            return
+        self.active_date_filter = (
+            start_date.strftime("%Y-%m-%d") if start_date else None,
+            end_date.strftime("%Y-%m-%d") if end_date else None,
+        )
+        self.refresh_view()
+
+    def clear_date_filter(self):
+        self.from_edit.clear()
+        self.to_edit.clear()
+        self.active_date_filter = (None, None)
+        self.refresh_view()
+
+    def clear_all_filters(self):
+        self.from_edit.clear()
+        self.to_edit.clear()
+        self.active_date_filter = (None, None)
+        self.selected_users = set()
+        self.selected_sites = set()
+        self.date_filter = set()
+        self.column_filters = {}
+        self._set_filter_label(self.user_filter_label, self.selected_users)
+        self._set_filter_label(self.site_filter_label, self.selected_sites)
+        self.search_edit.clear()
+        self._clear_selection()
+        self.refresh_view()
+
+    def _clear_search(self):
+        self.search_edit.clear()
+        self._clear_selection()
+
+    def _clear_selection(self):
+        self.tree.clearSelection()
+        self._update_action_buttons()
+
+    def _show_user_filter(self):
+        users = self._fetch_lookup("users")
+        if not users:
+            QtWidgets.QMessageBox.information(self, "No Users", "No users found.")
+            return
+        dialog = ColumnFilterDialog(users, self.selected_users, self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            self.selected_users = dialog.selected_values()
+            self._set_filter_label(self.user_filter_label, self.selected_users)
+            self.refresh_view()
+
+    def _show_site_filter(self):
+        sites = self._fetch_lookup("sites")
+        if not sites:
+            QtWidgets.QMessageBox.information(self, "No Sites", "No sites found.")
+            return
+        dialog = ColumnFilterDialog(sites, self.selected_sites, self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            self.selected_sites = dialog.selected_values()
+            self._set_filter_label(self.site_filter_label, self.selected_sites)
+            self.refresh_view()
+
+    def _fetch_lookup(self, table_name):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(f"SELECT name FROM {table_name} WHERE active = 1 ORDER BY name")
+        values = [row["name"] for row in c.fetchall()]
+        conn.close()
+        return values
+
+    def _show_header_menu(self, col_index):
+        menu = QtWidgets.QMenu(self)
+        sort_asc = menu.addAction("Sort Ascending")
+        sort_desc = menu.addAction("Sort Descending")
+        clear_sort = menu.addAction("Clear Sort")
+        menu.addSeparator()
+        filter_action = menu.addAction("Filter...")
+        action = menu.exec(QtGui.QCursor.pos())
+        if action == sort_asc:
+            self.sort_column = col_index
+            self.sort_reverse = False
+            self.refresh_view()
+        elif action == sort_desc:
+            self.sort_column = col_index
+            self.sort_reverse = True
+            self.refresh_view()
+        elif action == clear_sort:
+            self.sort_column = None
+            self.sort_reverse = False
+            self.refresh_view()
+        elif filter_action and action == filter_action:
+            transactions = self._filter_transactions(
+                self._last_transactions, exclude_col=col_index, include_search=True
+            )
+            if col_index == 0:
+                values = sorted({t["session_date"] for t in transactions})
+                dialog = DateTimeFilterDialog(values, self.date_filter, self, show_time=False)
+                if dialog.exec() == QtWidgets.QDialog.Accepted:
+                    self.date_filter = dialog.selected_values()
+                    self.refresh_view()
+            else:
+                values = sorted({self._transaction_value_for_column(t, col_index) for t in transactions})
+                selected = self.column_filters.get(col_index, set())
+                dialog = ColumnFilterDialog(values, selected, self)
+                if dialog.exec() == QtWidgets.QDialog.Accepted:
+                    selected_values = dialog.selected_values()
+                    if selected_values:
+                        self.column_filters[col_index] = selected_values
+                    else:
+                        self.column_filters.pop(col_index, None)
+                    self.refresh_view()
+
+    def _format_signed_currency(self, value):
+        if value is None:
+            return "-"
+        val = float(value)
+        return f"+${val:.2f}" if val >= 0 else f"${val:.2f}"
+
+    def _format_currency_or_dash(self, value):
+        if value is None:
+            return "-"
+        return format_currency(value)
+
+    def _transaction_value_for_column(self, tx, col_index):
+        if col_index == 0:
+            return tx["session_date"]
+        if col_index == 1:
+            return tx["site_name"]
+        if col_index == 2:
+            return tx["user_name"]
+        if col_index == 3:
+            return self._transaction_label(tx)
+        if col_index == 4:
+            return self._format_currency_or_dash(tx["cost_basis"])
+        if col_index == 5:
+            return self._format_signed_currency(tx["net_pl"])
+        if col_index == 6:
+            return tx["notes"] or ""
+        return ""
+
+    def _align_numeric(self, item):
+        for col in (4, 5):
+            item.setTextAlignment(col, QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+
+    def _apply_status_color(self, item, value):
+        if value is None:
+            return
+        color = "#2e7d32" if value >= 0 else "#c0392b"
+        brush = QtGui.QBrush(QtGui.QColor(color))
+        for col in range(item.columnCount()):
+            item.setForeground(col, brush)
+
+    def _transaction_label(self, tx):
+        redemption_amount = tx.get("redemption_amount") or 0.0
+        if tx.get("is_free_sc"):
+            return "Free SC Redemption"
+        if redemption_amount == 0:
+            return "Total Loss"
+        return f"Redemption (${redemption_amount:.2f})"
+
+    def _fetch_transactions(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        notes_select = "ts.notes as notes" if self.has_tax_session_notes else "NULL as notes"
+        query = f"""
+            SELECT
+                ts.id as tax_session_id,
+                ts.session_date,
+                ts.cost_basis,
+                ts.net_pl,
+                ts.site_id,
+                s.name as site_name,
+                ts.user_id,
+                u.name as user_name,
+                r.amount as redemption_amount,
+                r.is_free_sc,
+                {notes_select}
+            FROM tax_sessions ts
+            JOIN sites s ON ts.site_id = s.id
+            JOIN users u ON ts.user_id = u.id
+            LEFT JOIN redemptions r ON ts.redemption_id = r.id
+        """
+        params = []
+        conditions = []
+        if self.selected_sites:
+            placeholders = ",".join("?" * len(self.selected_sites))
+            conditions.append(f"s.name IN ({placeholders})")
+            params.extend(list(self.selected_sites))
+        if self.selected_users:
+            placeholders = ",".join("?" * len(self.selected_users))
+            conditions.append(f"u.name IN ({placeholders})")
+            params.extend(list(self.selected_users))
+        start_date, end_date = self.active_date_filter
+        if start_date:
+            conditions.append("ts.session_date >= ?")
+            params.append(start_date)
+        if end_date:
+            conditions.append("ts.session_date <= ?")
+            params.append(end_date)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY ts.session_date DESC, s.name ASC, u.name ASC, ts.id ASC"
+        c.execute(query, params)
+        transactions = []
+        for row in c.fetchall():
+            notes = row["notes"] or ""
+            redemption_amount = row["redemption_amount"] or 0.0
+            search_blob = " ".join(
+                [
+                    row["session_date"],
+                    row["site_name"],
+                    row["user_name"],
+                    f"{row['cost_basis']:.2f}",
+                    f"{row['net_pl']:.2f}",
+                    f"{redemption_amount:.2f}",
+                    notes,
+                ]
+            ).lower()
+            transactions.append(
+                {
+                    "tax_session_id": row["tax_session_id"],
+                    "session_date": row["session_date"],
+                    "site_id": row["site_id"],
+                    "site_name": row["site_name"],
+                    "user_id": row["user_id"],
+                    "user_name": row["user_name"],
+                    "cost_basis": row["cost_basis"],
+                    "net_pl": row["net_pl"],
+                    "redemption_amount": redemption_amount,
+                    "is_free_sc": bool(row["is_free_sc"]),
+                    "notes": notes,
+                    "search_blob": search_blob,
+                }
+            )
+        conn.close()
+        return transactions
+
+    def _filter_transactions(self, transactions, exclude_col=None, include_search=True):
+        if self.date_filter and exclude_col != 0:
+            transactions = [t for t in transactions if t["session_date"] in self.date_filter]
+        for col_index, values in self.column_filters.items():
+            if col_index == exclude_col:
+                continue
+            if values:
+                transactions = [
+                    t for t in transactions if self._transaction_value_for_column(t, col_index) in values
+                ]
+        if include_search:
+            term = self.search_edit.text().strip().lower()
+            if term:
+                transactions = [t for t in transactions if term in t["search_blob"]]
+        return transactions
+
+    def _group_transactions(self, transactions):
+        from collections import defaultdict
+
+        dates = defaultdict(lambda: defaultdict(list))
+        for tx in transactions:
+            dates[tx["session_date"]][(tx["site_id"], tx["user_id"])].append(tx)
+
+        data = []
+        for session_date in sorted(dates.keys(), reverse=True):
+            site_groups = []
+            date_transactions = dates[session_date]
+            for (site_id, user_id), txs in sorted(
+                date_transactions.items(),
+                key=lambda item: (
+                    item[1][0]["site_name"].lower(),
+                    item[1][0]["user_name"].lower(),
+                ),
+            ):
+                total_cost = sum(tx["cost_basis"] for tx in txs)
+                total_net = sum(tx["net_pl"] for tx in txs)
+                site_groups.append(
+                    {
+                        "site_id": site_id,
+                        "user_id": user_id,
+                        "site_name": txs[0]["site_name"],
+                        "user_name": txs[0]["user_name"],
+                        "total_cost": total_cost,
+                        "total_net": total_net,
+                        "transactions": txs,
+                    }
+                )
+            date_cost = sum(group["total_cost"] for group in site_groups)
+            date_net = sum(group["total_net"] for group in site_groups)
+            total_transactions = sum(len(group["transactions"]) for group in site_groups)
+            notes_count = sum(1 for group in site_groups for tx in group["transactions"] if tx["notes"])
+            data.append(
+                {
+                    "date": session_date,
+                    "date_cost": date_cost,
+                    "date_net": date_net,
+                    "site_count": len(site_groups),
+                    "transaction_count": total_transactions,
+                    "notes_count": notes_count,
+                    "groups": site_groups,
+                }
+            )
+        return self._sort_data(data)
+
+    def _sort_data(self, data):
+        if self.sort_column is None:
+            return data
+        reverse = self.sort_reverse
+
+        def sort_key(item):
+            if self.sort_column == 0:
+                return item["date"]
+            if self.sort_column == 1:
+                return item["site_count"]
+            if self.sort_column == 3:
+                return item["transaction_count"]
+            if self.sort_column == 4:
+                return item["date_cost"]
+            if self.sort_column == 5:
+                return item["date_net"]
+            if self.sort_column == 6:
+                return item["notes_count"]
+            return item["date"]
+
+        return sorted(data, key=sort_key, reverse=reverse)
+
+    def _render_tree(self, data):
+        self.tree.clear()
+        for day in data:
+            date_values = [
+                day["date"],
+                f"{day['site_count']} site(s)",
+                "",
+                f"{day['transaction_count']} transaction(s)",
+                self._format_currency_or_dash(day["date_cost"]),
+                self._format_signed_currency(day["date_net"]),
+                "",
+            ]
+            date_item = QtWidgets.QTreeWidgetItem(date_values)
+            date_item.setData(0, QtCore.Qt.UserRole, {"kind": "date", "date": day["date"]})
+            self._align_numeric(date_item)
+            self._apply_status_color(date_item, day["date_net"])
+            self.tree.addTopLevelItem(date_item)
+
+            for group in day["groups"]:
+                site_values = [
+                    "",
+                    group["site_name"],
+                    group["user_name"],
+                    "",
+                    self._format_currency_or_dash(group["total_cost"]),
+                    self._format_signed_currency(group["total_net"]),
+                    "",
+                ]
+                site_item = QtWidgets.QTreeWidgetItem(site_values)
+                site_item.setData(
+                    0,
+                    QtCore.Qt.UserRole,
+                    {"kind": "site", "site_id": group["site_id"], "user_id": group["user_id"]},
+                )
+                self._align_numeric(site_item)
+                self._apply_status_color(site_item, group["total_net"])
+                date_item.addChild(site_item)
+
+                for tx in group["transactions"]:
+                    tx_values = [
+                        "",
+                        "",
+                        "",
+                        self._transaction_label(tx),
+                        self._format_currency_or_dash(tx["cost_basis"]),
+                        self._format_signed_currency(tx["net_pl"]),
+                        tx["notes"] or "",
+                    ]
+                    tx_item = QtWidgets.QTreeWidgetItem(tx_values)
+                    tx_item.setData(
+                        0,
+                        QtCore.Qt.UserRole,
+                        {"kind": "transaction", "tax_session_id": tx["tax_session_id"]},
+                    )
+                    self._align_numeric(tx_item)
+                    self._apply_status_color(tx_item, tx["net_pl"])
+                    site_item.addChild(tx_item)
+
+    def refresh_view(self):
+        transactions = self._fetch_transactions()
+        self._last_transactions = transactions
+        transactions = self._filter_transactions(transactions)
+        data = self._group_transactions(transactions)
+        self._render_tree(data)
+        self._update_action_buttons()
+
+    def _add_notes(self):
+        if not self.has_tax_session_notes:
+            QtWidgets.QMessageBox.information(
+                self, "Notes Unavailable", "Notes are not enabled for Realized transactions."
+            )
+            return
+        meta = self._current_meta() or {}
+        if meta.get("kind") != "transaction":
+            QtWidgets.QMessageBox.information(
+                self, "Select Transaction", "Select an individual transaction to add notes."
+            )
+            return
+        session_id = meta.get("tax_session_id")
+        if not session_id:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Transaction ID not found.")
+            return
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT notes FROM tax_sessions WHERE id = ?", (session_id,))
+        row = c.fetchone()
+        conn.close()
+        current_notes = row["notes"] if row and row["notes"] else ""
+
+        dialog = RealizedNotesDialog(current_notes, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        new_notes = dialog.notes_text()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "UPDATE tax_sessions SET notes = ? WHERE id = ?",
+            (new_notes if new_notes else None, session_id),
+        )
+        conn.commit()
+        conn.close()
+        self.refresh_view()
+
+    def export_csv(self):
+        import csv
+
+        default_name = f"realized_sessions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Realized Sessions",
+            default_name,
+            "CSV Files (*.csv)",
+        )
+        if not path:
+            return
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(self.columns)
+
+            def write_item(item):
+                writer.writerow([item.text(col) for col in range(len(self.columns))])
+                for idx in range(item.childCount()):
+                    write_item(item.child(idx))
+
+            for idx in range(self.tree.topLevelItemCount()):
+                write_item(self.tree.topLevelItem(idx))
+
+
 class PlaceholderTab(QtWidgets.QWidget):
     def __init__(self, label, parent=None):
         super().__init__(parent)
@@ -8155,6 +8942,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.edit_game_session,
         )
         self.unrealized_tab = UnrealizedTab(self.db, self.session_mgr, self.refresh_stats)
+        self.realized_tab = RealizedTab(self.db, self.refresh_stats)
 
         tabs = [
             ("Purchases", self.purchases_tab),
@@ -8162,7 +8950,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ("Game Sessions", self.game_sessions_tab),
             ("Daily Sessions", self.daily_sessions_tab),
             ("Unrealized", self.unrealized_tab),
-            ("Realized", PlaceholderTab("Realized")),
+            ("Realized", self.realized_tab),
             ("Expenses", PlaceholderTab("Expenses")),
             ("Reports", PlaceholderTab("Reports")),
             ("Setup", PlaceholderTab("Setup")),

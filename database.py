@@ -89,6 +89,7 @@ class Database:
             _add_col("purchases", "status TEXT DEFAULT 'active'")
             _add_col("redemptions", "more_remaining INTEGER DEFAULT 0")
             _add_col("redemptions", "notes TEXT")
+            _add_col("tax_sessions", "notes TEXT")
             _add_col("game_sessions", "total_taxable REAL")
             _add_col("game_sessions", "sc_change REAL")
             _add_col("game_sessions", "dollar_value REAL")
@@ -386,6 +387,7 @@ class Database:
             payout REAL NOT NULL,
             net_pl REAL NOT NULL,
             user_id INTEGER NOT NULL,
+            notes TEXT,
             FOREIGN KEY (site_id) REFERENCES sites(id),
             FOREIGN KEY (redemption_id) REFERENCES redemptions(id),
             FOREIGN KEY (user_id) REFERENCES users(id))''')
