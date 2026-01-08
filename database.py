@@ -392,6 +392,20 @@ class Database:
             FOREIGN KEY (redemption_id) REFERENCES redemptions(id),
             FOREIGN KEY (user_id) REFERENCES users(id))''')
 
+        # Redemption allocation table (links redemptions to purchases for basis tracking)
+        c.execute('''CREATE TABLE IF NOT EXISTS redemption_allocations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            redemption_id INTEGER NOT NULL,
+            purchase_id INTEGER NOT NULL,
+            allocated_amount REAL NOT NULL,
+            FOREIGN KEY (redemption_id) REFERENCES redemptions(id),
+            FOREIGN KEY (purchase_id) REFERENCES purchases(id))''')
+
+        # Realized daily notes table
+        c.execute('''CREATE TABLE IF NOT EXISTS realized_daily_notes (
+            session_date DATE PRIMARY KEY,
+            notes TEXT)''')
+
         # Game sessions table
         c.execute('''CREATE TABLE IF NOT EXISTS game_sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

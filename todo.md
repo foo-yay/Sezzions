@@ -4,6 +4,7 @@
 - [ ] Finalize UI redesign in qt_app.py
 - [ ] Remove or deprecate session2.py safely
 - [ ] Finish remaining tab incorporations
+- [ ] Add a one-click "Recalculate Everything" action in qt_app.py to rebuild FIFO + derived data across the entire database
 - [ ] Why does deleting a Purchase appear to take so much time & compute power?
 
 ## Medium Priority
@@ -28,4 +29,3 @@
 - [ ] Export/Backup to Google Sheets/Drive/etc. for Database and Reports, including automated/scheduled backups?
 - [ ] Support ticket/bug submissions/error reporting
 - [ ] Web and/or mobile platforms
-

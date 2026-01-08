@@ -548,6 +548,7 @@ class PurchaseDialog(QtWidgets.QDialog):
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
         form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
 
         self.date_edit = QtWidgets.QLineEdit()
         self.date_edit.setPlaceholderText("MM/DD/YY")
@@ -936,6 +937,7 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
         form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
 
         def add_row(label_text, value, row, wrap=False):
             label = QtWidgets.QLabel(label_text)
@@ -971,14 +973,24 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         row = add_row("Remaining", format_currency(purchase["remaining_amount"]), row)
 
         notes_label = QtWidgets.QLabel("Notes")
-        notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        notes_edit = QtWidgets.QPlainTextEdit()
-        notes_edit.setObjectName("NotesField")
-        notes_edit.setReadOnly(True)
-        notes_edit.setPlainText(purchase["notes"] or "")
-        notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+        notes_value = purchase["notes"] or ""
+        notes_label.setAlignment(
+            QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
+        )
         form.addWidget(notes_label, row, 0)
-        form.addWidget(notes_edit, row, 1)
+        if notes_value:
+            notes_edit = QtWidgets.QPlainTextEdit()
+            notes_edit.setObjectName("NotesField")
+            notes_edit.setReadOnly(True)
+            notes_edit.setPlainText(notes_value)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+            form.addWidget(notes_edit, row, 1)
+        else:
+            notes_field = QtWidgets.QLabel("-")
+            notes_field.setObjectName("InfoField")
+            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+            form.addWidget(notes_field, row, 1)
 
         layout.addLayout(form)
         layout.addSpacing(8)
@@ -1470,12 +1482,17 @@ class RedemptionDialog(QtWidgets.QDialog):
 
 
 class RedemptionViewDialog(QtWidgets.QDialog):
-    def __init__(self, redemption, parent=None, on_edit=None):
+    def __init__(
+        self, redemption, allocations=None, parent=None, on_edit=None, on_open=None, on_open_purchase=None
+    ):
         super().__init__(parent)
         self.redemption = redemption
+        self.allocations = allocations or []
         self._on_edit = on_edit
+        self._on_open = on_open
+        self.on_open_purchase = on_open_purchase
         self.setWindowTitle("View Redemption")
-        self.resize(560, 560)
+        self.resize(600, 620)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -1535,26 +1552,85 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         row = add_row("Processed", processed_display, row)
 
         notes_label = QtWidgets.QLabel("Notes")
-        notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        notes_edit = QtWidgets.QPlainTextEdit()
-        notes_edit.setObjectName("NotesField")
-        notes_edit.setReadOnly(True)
-        notes_edit.setPlainText(redemption["notes"] or "")
-        notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+        notes_value = redemption["notes"] or ""
+        notes_label.setAlignment(
+            QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
+        )
         form.addWidget(notes_label, row, 0)
-        form.addWidget(notes_edit, row, 1)
+        if notes_value:
+            notes_edit = QtWidgets.QPlainTextEdit()
+            notes_edit.setObjectName("NotesField")
+            notes_edit.setReadOnly(True)
+            notes_edit.setPlainText(notes_value)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+            form.addWidget(notes_edit, row, 1)
+        else:
+            notes_field = QtWidgets.QLabel("-")
+            notes_field.setObjectName("InfoField")
+            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+            form.addWidget(notes_field, row, 1)
 
         layout.addLayout(form)
         layout.addSpacing(8)
 
+        allocations_group = QtWidgets.QGroupBox("Purchase Allocations")
+        allocations_layout = QtWidgets.QVBoxLayout(allocations_group)
+        allocations_layout.setContentsMargins(8, 10, 8, 8)
+
+        if not self.allocations:
+            note = QtWidgets.QLabel(
+                "No purchase allocation info available. Run FIFO rebuilds to backfill allocations."
+            )
+            note.setWordWrap(True)
+            allocations_layout.addWidget(note)
+        else:
+            self.allocations_table = QtWidgets.QTableWidget(0, 6)
+            self.allocations_table.setHorizontalHeaderLabels(
+                ["Purchase Date", "Amount", "SC", "Allocated", "Remaining", "View"]
+            )
+            self.allocations_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            self.allocations_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+            self.allocations_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+            self.allocations_table.setAlternatingRowColors(True)
+            self.allocations_table.setMinimumSize(0, 0)
+            self.allocations_table.setSizePolicy(
+                QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding
+            )
+            self.allocations_table.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustIgnored)
+            self.allocations_table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            header = self.allocations_table.horizontalHeader()
+            header.setStretchLastSection(False)
+            header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+            header.setMinimumSectionSize(40)
+            self.allocations_table.verticalHeader().setVisible(False)
+            self.allocations_table.setColumnWidth(0, 160)
+            self.allocations_table.setColumnWidth(1, 90)
+            self.allocations_table.setColumnWidth(2, 80)
+            self.allocations_table.setColumnWidth(3, 90)
+            self.allocations_table.setColumnWidth(4, 90)
+            self.allocations_table.setColumnWidth(5, 120)
+            row_height = self.allocations_table.verticalHeader().defaultSectionSize()
+            min_height = self.allocations_table.horizontalHeader().height() + row_height * 3 + 10
+            self.allocations_table.setMinimumHeight(min_height)
+            allocations_layout.addWidget(self.allocations_table)
+            self._populate_allocations()
+
+        layout.addWidget(allocations_group, 1)
+
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
+        if self._on_open:
+            open_btn = QtWidgets.QPushButton("View in Redemptions")
+            btn_row.addWidget(open_btn)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
             btn_row.addWidget(edit_btn)
         close_btn = QtWidgets.QPushButton("Close")
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
+        if self._on_open:
+            open_btn.clicked.connect(self._handle_open)
         if self._on_edit:
             edit_btn.clicked.connect(self._handle_edit)
         close_btn.clicked.connect(self.accept)
@@ -1563,6 +1639,52 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         if self._on_edit:
             self.accept()
             QtCore.QTimer.singleShot(0, self._on_edit)
+
+    def _handle_open(self):
+        if self._on_open:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_open)
+
+    def _populate_allocations(self):
+        self.allocations_table.setRowCount(len(self.allocations))
+        for row_idx, row in enumerate(self.allocations):
+            purchase_time = row.get("purchase_time") or "00:00:00"
+            date_display = format_date_time(row["purchase_date"], purchase_time)
+            amount = format_currency(row["amount"])
+            sc_received = f"{float(row['sc_received'] or 0.0):.2f}"
+            allocated = format_currency(row["allocated_amount"])
+            remaining = format_currency(row["remaining_amount"])
+
+            values = [date_display, amount, sc_received, allocated, remaining]
+            for col_idx, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(str(value))
+                if col_idx in (1, 2, 3, 4):
+                    item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.allocations_table.setItem(row_idx, col_idx, item)
+
+            view_btn = QtWidgets.QPushButton("View Purchase")
+            view_btn.setObjectName("MiniButton")
+            view_btn.setFixedHeight(24)
+            view_btn.setFixedWidth(120)
+            view_btn.clicked.connect(
+                lambda _checked=False, pid=row["purchase_id"]: self._open_purchase(pid)
+            )
+            view_container = QtWidgets.QWidget()
+            view_layout = QtWidgets.QHBoxLayout(view_container)
+            view_layout.setContentsMargins(0, 0, 0, 0)
+            view_layout.addStretch(1)
+            view_layout.addWidget(view_btn)
+            view_layout.addStretch(1)
+            self.allocations_table.setCellWidget(row_idx, 5, view_container)
+
+    def _open_purchase(self, purchase_id):
+        if not self.on_open_purchase:
+            QtWidgets.QMessageBox.information(
+                self, "Purchases Unavailable", "Purchase view is not available here."
+            )
+            return
+        self.accept()
+        QtCore.QTimer.singleShot(0, lambda: self.on_open_purchase(purchase_id))
 
 
 class GameSessionStartDialog(QtWidgets.QDialog):
@@ -3148,12 +3270,19 @@ class GameSessionViewDialog(QtWidgets.QDialog):
 
         notes_group = QtWidgets.QGroupBox("Notes")
         notes_layout = QtWidgets.QVBoxLayout(notes_group)
-        notes_edit = QtWidgets.QPlainTextEdit()
-        notes_edit.setObjectName("NotesField")
-        notes_edit.setReadOnly(True)
-        notes_edit.setPlainText(session["notes"] or "")
-        notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 4 + 16)
-        notes_layout.addWidget(notes_edit)
+        notes_value = session["notes"] or ""
+        if notes_value:
+            notes_edit = QtWidgets.QPlainTextEdit()
+            notes_edit.setObjectName("NotesField")
+            notes_edit.setReadOnly(True)
+            notes_edit.setPlainText(notes_value)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 4 + 16)
+            notes_layout.addWidget(notes_edit)
+        else:
+            notes_field = QtWidgets.QLabel("-")
+            notes_field.setObjectName("InfoField")
+            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_layout.addWidget(notes_field)
         layout.addWidget(notes_group)
         layout.addSpacing(4)
 
@@ -3961,6 +4090,56 @@ class PurchasesTab(QtWidgets.QWidget):
                     ids.append(value)
         return ids
 
+    def select_purchase_by_id(self, purchase_id):
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item is not None and item.data(QtCore.Qt.UserRole) == purchase_id:
+                self.table.selectRow(row)
+                self.table.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtCenter)
+                self._update_action_visibility()
+                return True
+        return False
+
+    def _needs_purchase_recalc(self, site_id, user_id, purchase_date, purchase_time):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT 1
+            FROM redemptions
+            WHERE site_id = ? AND user_id = ?
+              AND (redemption_date > ? OR (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') >= ?))
+            LIMIT 1
+            """,
+            (site_id, user_id, purchase_date, purchase_date, purchase_time),
+        )
+        if c.fetchone():
+            conn.close()
+            return True
+        c.execute(
+            """
+            SELECT 1
+            FROM game_sessions
+            WHERE site_id = ? AND user_id = ? AND status = 'Closed'
+              AND (COALESCE(end_date, session_date) > ? OR (COALESCE(end_date, session_date) = ? AND COALESCE(end_time,'00:00:00') >= ?))
+            LIMIT 1
+            """,
+            (site_id, user_id, purchase_date, purchase_date, purchase_time),
+        )
+        has_sessions = c.fetchone() is not None
+        conn.close()
+        return has_sessions
+
+    def view_purchase_by_id(self, purchase_id):
+        purchase = self._fetch_purchase(purchase_id)
+        if not purchase:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected purchase was not found.")
+            return
+        dialog = PurchaseViewDialog(
+            purchase, parent=self, on_edit=lambda: self.edit_purchase_by_id(purchase_id)
+        )
+        dialog.exec()
+
     def _delete_selected(self):
         selected_ids = self._selected_ids()
         if not selected_ids:
@@ -3979,7 +4158,7 @@ class PurchasesTab(QtWidgets.QWidget):
         c = conn.cursor()
         deleted_count = 0
         error_messages = []
-        affected = set()
+        affected = {}
 
         for purchase_id in selected_ids:
             c.execute(
@@ -4002,7 +4181,10 @@ class PurchasesTab(QtWidgets.QWidget):
             user_id = purchase["user_id"]
             pdate = purchase["purchase_date"]
             ptime = purchase["purchase_time"] or "00:00:00"
-            affected.add((site_id, user_id, pdate, ptime))
+            key = (site_id, user_id)
+            current = affected.get(key)
+            if current is None or (pdate, ptime) < current:
+                affected[key] = (pdate, ptime)
 
             if consumed > 0:
                 error_messages.append(
@@ -4053,7 +4235,9 @@ class PurchasesTab(QtWidgets.QWidget):
         conn.close()
 
         total_recalc = 0
-        for site_id, user_id, pdate, ptime in affected:
+        for (site_id, user_id), (pdate, ptime) in affected.items():
+            if not self._needs_purchase_recalc(site_id, user_id, pdate, ptime):
+                continue
             total_recalc += self.session_mgr.auto_recalculate_affected_sessions(
                 site_id, user_id, pdate, ptime
             )
@@ -4098,11 +4282,12 @@ class PurchasesTab(QtWidgets.QWidget):
 
 
 class RedemptionsTab(QtWidgets.QWidget):
-    def __init__(self, db, session_mgr, on_data_changed=None, parent=None):
+    def __init__(self, db, session_mgr, on_data_changed=None, on_open_purchase=None, parent=None):
         super().__init__(parent)
         self.db = db
         self.session_mgr = session_mgr
         self.on_data_changed = on_data_changed
+        self.on_open_purchase = on_open_purchase
         self.all_rows = []
         self.filtered_rows = []
         self.header_filters = {}
@@ -4588,8 +4773,13 @@ class RedemptionsTab(QtWidgets.QWidget):
         if not redemption:
             QtWidgets.QMessageBox.warning(self, "Not Found", "Selected redemption was not found.")
             return
+        allocations = self._fetch_redemption_allocations(redemption_id)
         dialog = RedemptionViewDialog(
-            redemption, parent=self, on_edit=lambda: self.edit_redemption_by_id(redemption_id)
+            redemption,
+            allocations,
+            parent=self,
+            on_edit=lambda: self.edit_redemption_by_id(redemption_id),
+            on_open_purchase=self.on_open_purchase,
         )
         dialog.exec()
 
@@ -4677,6 +4867,30 @@ class RedemptionsTab(QtWidgets.QWidget):
         row = c.fetchone()
         conn.close()
         return row
+
+    def _fetch_redemption_allocations(self, redemption_id):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT
+                ra.purchase_id,
+                ra.allocated_amount,
+                p.purchase_date,
+                p.purchase_time,
+                p.amount,
+                p.sc_received,
+                p.remaining_amount
+            FROM redemption_allocations ra
+            JOIN purchases p ON ra.purchase_id = p.id
+            WHERE ra.redemption_id = ?
+            ORDER BY p.purchase_date ASC, COALESCE(p.purchase_time,'00:00:00') ASC, p.id ASC
+            """,
+            (redemption_id,),
+        )
+        allocations = [dict(row) for row in c.fetchall()]
+        conn.close()
+        return allocations
 
     def _confirm_redemption_flags(self, data, redemption_id):
         if data.get("more_remaining"):
@@ -5004,6 +5218,31 @@ class RedemptionsTab(QtWidgets.QWidget):
                 if value is not None:
                     ids.append(value)
         return ids
+
+    def select_redemption_by_id(self, redemption_id):
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item is not None and item.data(QtCore.Qt.UserRole) == redemption_id:
+                self.table.selectRow(row)
+                self.table.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtCenter)
+                self._update_action_visibility()
+                return True
+        return False
+
+    def view_redemption_by_id(self, redemption_id):
+        redemption = self._fetch_redemption(redemption_id)
+        if not redemption:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected redemption was not found.")
+            return
+        allocations = self._fetch_redemption_allocations(redemption_id)
+        dialog = RedemptionViewDialog(
+            redemption,
+            allocations,
+            parent=self,
+            on_edit=lambda: self.edit_redemption_by_id(redemption_id),
+            on_open_purchase=self.on_open_purchase,
+        )
+        dialog.exec()
 
     def _delete_selected(self):
         selected_ids = self._selected_ids()
@@ -6214,6 +6453,16 @@ class GameSessionsTab(QtWidgets.QWidget):
                 return True
         return False
 
+    def view_session_by_id(self, session_id):
+        session = self._fetch_session(session_id)
+        if not session:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected session was not found.")
+            return
+        dialog = GameSessionViewDialog(
+            session, parent=self, on_edit=lambda: self.edit_session_by_id(session_id)
+        )
+        dialog.exec()
+
     def _delete_selected(self):
         selected_ids = self._selected_ids()
         if not selected_ids:
@@ -7299,12 +7548,215 @@ class UnrealizedNotesDialog(QtWidgets.QDialog):
         return self.notes_edit.toPlainText().strip()
 
 
+class UnrealizedPositionDialog(QtWidgets.QDialog):
+    def __init__(
+        self,
+        summary,
+        purchases,
+        parent=None,
+        on_open_purchase=None,
+        on_close_position=None,
+    ):
+        super().__init__(parent)
+        self.summary = summary
+        self.purchases = purchases or []
+        self.on_open_purchase = on_open_purchase
+        self.on_close_position = on_close_position
+        self.setWindowTitle("Unrealized Position")
+        self.resize(600, 520)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+
+        def build_group(title):
+            group = QtWidgets.QGroupBox(title)
+            group_layout = QtWidgets.QGridLayout(group)
+            group_layout.setHorizontalSpacing(10)
+            group_layout.setVerticalSpacing(6)
+            group_layout.setColumnStretch(1, 1)
+            group_layout.setColumnStretch(3, 1)
+            return group, group_layout
+
+        def add_pair(grid, row, col, label_text, value):
+            label = QtWidgets.QLabel(label_text)
+            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label = QtWidgets.QLabel(value)
+            value_label.setObjectName("InfoField")
+            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            grid.addWidget(label, row, col * 2)
+            grid.addWidget(value_label, row, col * 2 + 1)
+
+        def format_date(value):
+            if not value:
+                return "—"
+            try:
+                return datetime.strptime(value, "%Y-%m-%d").strftime("%m/%d/%y")
+            except ValueError:
+                return value
+
+        position_group, position_grid = build_group("Position")
+        add_pair(position_grid, 0, 0, "Site", summary.get("site_name", "—"))
+        add_pair(position_grid, 0, 1, "User", summary.get("user_name", "—"))
+        add_pair(position_grid, 1, 0, "Start Date", format_date(summary.get("start_date")))
+        add_pair(position_grid, 1, 1, "Last Activity", format_date(summary.get("last_activity")))
+        layout.addWidget(position_group)
+
+        balance_group, balance_grid = build_group("Balances")
+        add_pair(
+            balance_grid,
+            0,
+            0,
+            "Remaining Basis",
+            format_currency(summary.get("remaining_basis", 0.0)),
+        )
+        add_pair(balance_grid, 0, 1, "Current SC", f"{summary.get('current_sc', 0.0):.2f}")
+        add_pair(
+            balance_grid,
+            1,
+            0,
+            "Current Value",
+            format_currency(summary.get("current_value", 0.0)),
+        )
+        add_pair(
+            balance_grid,
+            1,
+            1,
+            "Unrealized P/L",
+            self._format_signed_currency(summary.get("unrealized_pnl")),
+        )
+        layout.addWidget(balance_group)
+
+        notes_group = QtWidgets.QGroupBox("Notes")
+        notes_layout = QtWidgets.QVBoxLayout(notes_group)
+        notes_value = summary.get("notes") or ""
+        if notes_value:
+            notes_edit = QtWidgets.QPlainTextEdit()
+            notes_edit.setObjectName("NotesField")
+            notes_edit.setReadOnly(True)
+            notes_edit.setPlainText(notes_value)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+            notes_layout.addWidget(notes_edit)
+        else:
+            notes_field = QtWidgets.QLabel("-")
+            notes_field.setObjectName("InfoField")
+            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_layout.addWidget(notes_field)
+        layout.addWidget(notes_group)
+
+        purchases_group = QtWidgets.QGroupBox("Open Purchases")
+        purchases_layout = QtWidgets.QVBoxLayout(purchases_group)
+        purchases_layout.setContentsMargins(8, 10, 8, 8)
+
+        self.table = QtWidgets.QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(
+            ["Purchase Date", "Amount", "SC", "View"]
+        )
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.table.setAlternatingRowColors(True)
+        self.table.setMinimumSize(0, 0)
+        self.table.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding)
+        self.table.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustIgnored)
+        self.table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.Fixed)
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.Fixed)
+        header.setMinimumSectionSize(40)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(44)
+        self.table.setColumnWidth(1, 120)
+        self.table.setColumnWidth(2, 100)
+        self.table.setColumnWidth(3, 160)
+        row_height = self.table.verticalHeader().defaultSectionSize()
+        min_height = self.table.horizontalHeader().height() + row_height * 3 + 10
+        self.table.setMinimumHeight(min_height)
+        purchases_layout.addWidget(self.table)
+        layout.addWidget(purchases_group, 1)
+        self._populate_purchases()
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        if self.on_close_position:
+            close_position_btn = QtWidgets.QPushButton("Close Position")
+            close_position_btn.setObjectName("PrimaryButton")
+            btn_row.addWidget(close_position_btn)
+        close_btn = QtWidgets.QPushButton("Close")
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+        if self.on_close_position:
+            close_position_btn.clicked.connect(self._handle_close_position)
+        close_btn.clicked.connect(self.accept)
+
+    def _format_signed_currency(self, value):
+        if value is None:
+            return "-"
+        val = float(value)
+        return f"+${val:.2f}" if val >= 0 else f"${val:.2f}"
+
+    def _populate_purchases(self):
+        self.table.setRowCount(len(self.purchases))
+        for row_idx, row in enumerate(self.purchases):
+            purchase_time = row.get("purchase_time") or "00:00:00"
+            date_display = format_date_time(row["purchase_date"], purchase_time)
+            amount = format_currency(row["amount"])
+            sc_received = f"{float(row['sc_received'] or 0.0):.2f}"
+
+            values = [date_display, amount, sc_received]
+            for col_idx, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(str(value))
+                if col_idx in (1, 2):
+                    item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row_idx, col_idx, item)
+
+            view_btn = QtWidgets.QPushButton("View Purchase")
+            view_btn.setObjectName("MiniButton")
+            view_btn.setFixedHeight(24)
+            view_btn.setFixedWidth(132)
+            view_btn.clicked.connect(
+                lambda _checked=False, pid=row["id"]: self._open_purchase(pid)
+            )
+            view_container = QtWidgets.QWidget()
+            view_container.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+            )
+            view_layout = QtWidgets.QGridLayout(view_container)
+            view_layout.setContentsMargins(6, 4, 6, 4)
+            view_layout.addWidget(view_btn, 0, 0, QtCore.Qt.AlignCenter)
+            self.table.setCellWidget(row_idx, 3, view_container)
+            self.table.setRowHeight(
+                row_idx,
+                max(self.table.rowHeight(row_idx), view_btn.sizeHint().height() + 16),
+            )
+
+    def _open_purchase(self, purchase_id):
+        if not self.on_open_purchase:
+            QtWidgets.QMessageBox.information(
+                self, "Purchases Unavailable", "Purchase view is not available here."
+            )
+            return
+        self.accept()
+        QtCore.QTimer.singleShot(0, lambda: self.on_open_purchase(purchase_id))
+
+    def _handle_close_position(self):
+        if not self.on_close_position:
+            return
+        self.accept()
+        QtCore.QTimer.singleShot(0, self.on_close_position)
+
+
 class UnrealizedTab(QtWidgets.QWidget):
-    def __init__(self, db, session_mgr, on_data_changed=None, parent=None):
+    def __init__(self, db, session_mgr, on_data_changed=None, on_open_purchase=None, parent=None):
         super().__init__(parent)
         self.db = db
         self.session_mgr = session_mgr
         self.on_data_changed = on_data_changed
+        self.on_open_purchase = on_open_purchase
         self.all_rows = []
         self.filtered_rows = []
         self.header_filters = {}
@@ -7368,34 +7820,44 @@ class UnrealizedTab(QtWidgets.QWidget):
         self.search_clear_btn = QtWidgets.QPushButton("Clear")
         self.clear_filters_btn = QtWidgets.QPushButton("Clear All Filters")
         self.notes_btn = QtWidgets.QPushButton("Add Notes")
-        self.notes_btn.setObjectName("PrimaryButton")
         self.notes_btn.setVisible(False)
         self.close_balance_btn = QtWidgets.QPushButton("Close Position")
+        self.close_balance_btn.setObjectName("PrimaryButton")
         self.close_balance_btn.setVisible(False)
+        self.view_position_btn = QtWidgets.QPushButton("View Position")
+        self.view_position_btn.setVisible(False)
         self.refresh_btn = QtWidgets.QPushButton("Refresh")
         self.export_btn = QtWidgets.QPushButton("Export CSV")
         search_row.addWidget(self.search_edit, 1)
         search_row.addWidget(self.search_clear_btn)
         search_row.addWidget(self.clear_filters_btn)
         search_row.addStretch(1)
-        for btn in (self.notes_btn, self.close_balance_btn, self.refresh_btn, self.export_btn):
+        for btn in (
+            self.notes_btn,
+            self.close_balance_btn,
+            self.view_position_btn,
+            self.refresh_btn,
+            self.export_btn,
+        ):
             btn.setFixedWidth(btn.sizeHint().width())
         self.actions_container = QtWidgets.QWidget()
         actions_layout = QtWidgets.QHBoxLayout(self.actions_container)
         actions_layout.setContentsMargins(0, 0, 0, 0)
         actions_layout.setSpacing(8)
         actions_layout.addStretch(1)
-        actions_layout.addWidget(self.notes_btn)
         actions_layout.addWidget(self.close_balance_btn)
+        actions_layout.addWidget(self.notes_btn)
+        actions_layout.addWidget(self.view_position_btn)
         actions_layout.addWidget(self.refresh_btn)
         actions_layout.addWidget(self.export_btn)
         total_width = sum(btn.sizeHint().width() for btn in (
             self.notes_btn,
             self.close_balance_btn,
+            self.view_position_btn,
             self.refresh_btn,
             self.export_btn,
         ))
-        total_width += actions_layout.spacing() * 3
+        total_width += actions_layout.spacing() * 4
         self.actions_container.setFixedWidth(total_width)
         self.actions_container.setSizePolicy(
             QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed
@@ -7421,7 +7883,7 @@ class UnrealizedTab(QtWidgets.QWidget):
         self.header = header
         header.viewport().installEventFilter(self)
         self.table.verticalHeader().setVisible(False)
-        self.table.itemDoubleClicked.connect(self._add_notes)
+        self.table.itemDoubleClicked.connect(self._view_position)
         layout.addWidget(self.table, 1)
         self.table.selectionModel().selectionChanged.connect(self._update_action_buttons)
 
@@ -7432,6 +7894,7 @@ class UnrealizedTab(QtWidgets.QWidget):
         self.export_btn.clicked.connect(self.export_csv)
         self.close_balance_btn.clicked.connect(self._close_balance)
         self.notes_btn.clicked.connect(self._add_notes)
+        self.view_position_btn.clicked.connect(self._view_position)
         self.apply_date_btn.clicked.connect(self.apply_date_filter)
         self.clear_date_btn.clicked.connect(self.clear_date_filter)
         self.today_btn.clicked.connect(lambda: self.set_quick_range("today"))
@@ -7448,6 +7911,7 @@ class UnrealizedTab(QtWidgets.QWidget):
         has_selection = bool(self.table.selectionModel().selectedRows())
         self.notes_btn.setVisible(has_selection)
         self.close_balance_btn.setVisible(has_selection)
+        self.view_position_btn.setVisible(has_selection)
 
     def pick_date(self, target_edit):
         dialog = QtWidgets.QDialog(self)
@@ -7915,6 +8379,198 @@ class UnrealizedTab(QtWidgets.QWidget):
         conn.close()
         self.load_data()
 
+    def _view_position(self):
+        site_id, user_id = self._selected_ids()
+        if site_id is None or user_id is None:
+            QtWidgets.QMessageBox.warning(
+                self, "No Selection", "Please select a position to view."
+            )
+            return
+        summary = self._fetch_position_summary(site_id, user_id)
+        if not summary:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Position not found.")
+            return
+        purchases = self._fetch_position_purchases(site_id, user_id)
+        dialog = UnrealizedPositionDialog(
+            summary,
+            purchases,
+            parent=self,
+            on_open_purchase=self.on_open_purchase,
+            on_close_position=self._close_balance,
+        )
+        dialog.exec()
+
+    def _fetch_position_summary(self, site_id, user_id):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT name FROM sites WHERE id = ?", (site_id,))
+        site_row = c.fetchone()
+        c.execute("SELECT name FROM users WHERE id = ?", (user_id,))
+        user_row = c.fetchone()
+
+        c.execute(
+            """
+            SELECT 
+                MIN(purchase_date) as start_date,
+                SUM(remaining_amount) as remaining_basis,
+                SUM(sc_received) as total_sc_purchased
+            FROM purchases
+            WHERE site_id = ? AND user_id = ?
+              AND (status IS NULL OR status = 'active')
+              AND remaining_amount > 0.001
+            """,
+            (site_id, user_id),
+        )
+        purchase_data = c.fetchone()
+        remaining_basis = purchase_data["remaining_basis"] or 0.0
+        total_sc_purchased = purchase_data["total_sc_purchased"] or 0.0
+        if remaining_basis < 0.01:
+            conn.close()
+            return None
+
+        c.execute(
+            """
+            SELECT ending_sc_balance, ending_redeemable_sc, session_date, end_time
+            FROM game_sessions
+            WHERE site_id = ? AND user_id = ? AND ending_sc_balance IS NOT NULL
+            ORDER BY session_date DESC, end_time DESC
+            LIMIT 1
+            """,
+            (site_id, user_id),
+        )
+        last_session = c.fetchone()
+
+        if last_session:
+            current_sc = (
+                last_session["ending_redeemable_sc"]
+                if last_session["ending_redeemable_sc"] is not None
+                else last_session["ending_sc_balance"]
+            )
+            last_activity = last_session["session_date"]
+            last_time = last_session["end_time"]
+
+            c.execute(
+                """
+                SELECT COALESCE(SUM(amount), 0) as total_redeemed
+                FROM redemptions
+                WHERE site_id = ? AND user_id = ?
+                AND (redemption_date > ? OR (redemption_date = ? AND redemption_time > ?))
+                """,
+                (site_id, user_id, last_activity, last_activity, last_time or "00:00:00"),
+            )
+            redemptions_since = c.fetchone()["total_redeemed"]
+
+            if redemptions_since >= current_sc:
+                c.execute(
+                    """
+                    SELECT COALESCE(SUM(sc_received), 0) as new_sc
+                    FROM purchases
+                    WHERE site_id = ? AND user_id = ?
+                    AND (purchase_date > ? OR (purchase_date = ? AND purchase_time > ?))
+                    """,
+                    (site_id, user_id, last_activity, last_activity, last_time or "00:00:00"),
+                )
+                new_purchases = c.fetchone()["new_sc"]
+
+                if new_purchases > 0:
+                    c.execute(
+                        """
+                        SELECT starting_sc_balance, SUM(sc_received) as total_sc_received
+                        FROM purchases
+                        WHERE site_id = ? AND user_id = ?
+                        AND (purchase_date > ? OR (purchase_date = ? AND purchase_time > ?))
+                        ORDER BY purchase_date DESC, purchase_time DESC
+                        LIMIT 1
+                        """,
+                        (site_id, user_id, last_activity, last_activity, last_time or "00:00:00"),
+                    )
+                    recent_purchase = c.fetchone()
+                    if recent_purchase and recent_purchase["starting_sc_balance"] is not None:
+                        current_sc = recent_purchase["starting_sc_balance"] + recent_purchase[
+                            "total_sc_received"
+                        ]
+                    else:
+                        current_sc = new_purchases
+                    last_activity = purchase_data["start_date"]
+                else:
+                    current_sc = 0
+            else:
+                current_sc -= redemptions_since
+        else:
+            c.execute(
+                """
+                SELECT starting_sc_balance
+                FROM purchases
+                WHERE site_id = ? AND user_id = ?
+                  AND (status IS NULL OR status = 'active')
+                ORDER BY purchase_date DESC, purchase_time DESC
+                LIMIT 1
+                """,
+                (site_id, user_id),
+            )
+            recent_purchase = c.fetchone()
+            if recent_purchase and recent_purchase["starting_sc_balance"] is not None:
+                current_sc = recent_purchase["starting_sc_balance"] + total_sc_purchased
+            else:
+                current_sc = total_sc_purchased
+
+            c.execute(
+                """
+                SELECT MAX(purchase_date) as last_date
+                FROM purchases
+                WHERE site_id = ? AND user_id = ?
+                """,
+                (site_id, user_id),
+            )
+            last_activity = c.fetchone()["last_date"] or purchase_data["start_date"]
+
+        sc_rate = self.session_mgr.get_sc_rate(site_id)
+        current_value = current_sc * sc_rate if current_sc is not None else 0.0
+        unrealized_pnl = current_value - remaining_basis
+
+        c.execute(
+            """
+            SELECT notes FROM site_sessions
+            WHERE site_id = ? AND user_id = ? AND status IN ('Active', 'Redeeming')
+            ORDER BY start_date DESC
+            LIMIT 1
+            """,
+            (site_id, user_id),
+        )
+        notes_row = c.fetchone()
+        notes = notes_row["notes"] if notes_row and notes_row["notes"] else ""
+        conn.close()
+
+        return {
+            "site_name": site_row["name"] if site_row else "",
+            "user_name": user_row["name"] if user_row else "",
+            "start_date": purchase_data["start_date"],
+            "remaining_basis": remaining_basis,
+            "current_sc": current_sc or 0.0,
+            "current_value": current_value,
+            "unrealized_pnl": unrealized_pnl,
+            "last_activity": last_activity,
+            "notes": notes,
+        }
+
+    def _fetch_position_purchases(self, site_id, user_id):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT id, purchase_date, purchase_time, amount, sc_received, remaining_amount
+            FROM purchases
+            WHERE site_id = ? AND user_id = ?
+              AND (status IS NULL OR status = 'active')
+              AND remaining_amount > 0.001
+            ORDER BY purchase_date ASC, COALESCE(purchase_time,'00:00:00') ASC, id ASC
+            """,
+            (site_id, user_id),
+        )
+        purchases = [dict(row) for row in c.fetchall()]
+        conn.close()
+        return purchases
+
     def _close_balance(self):
         site_id, user_id = self._selected_ids()
         if site_id is None or user_id is None:
@@ -8128,11 +8784,239 @@ class RealizedNotesDialog(QtWidgets.QDialog):
         return self.notes_edit.toPlainText().strip()
 
 
+class RealizedDateNotesDialog(QtWidgets.QDialog):
+    def __init__(self, session_date, notes, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Realized Notes - {session_date}")
+        self.resize(520, 360)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        header = QtWidgets.QLabel(f"Notes for {session_date}")
+        header.setObjectName("SectionTitle")
+        layout.addWidget(header)
+
+        self.notes_edit = QtWidgets.QPlainTextEdit()
+        self.notes_edit.setObjectName("NotesField")
+        self.notes_edit.setPlainText(notes or "")
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 6 + 18)
+        layout.addWidget(self.notes_edit, 1)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        save_btn = QtWidgets.QPushButton("Save")
+        save_btn.setObjectName("PrimaryButton")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(save_btn)
+        layout.addLayout(btn_row)
+
+        cancel_btn.clicked.connect(self.reject)
+        save_btn.clicked.connect(self.accept)
+
+    def notes_text(self):
+        return self.notes_edit.toPlainText().strip()
+
+
+class RealizedPositionDialog(QtWidgets.QDialog):
+    def __init__(
+        self,
+        position,
+        allocations,
+        parent=None,
+        on_open_purchase=None,
+        on_open_redemption=None,
+    ):
+        super().__init__(parent)
+        self.position = position
+        self.allocations = allocations or []
+        self.on_open_purchase = on_open_purchase
+        self.on_open_redemption = on_open_redemption
+        self.setWindowTitle("Realized Position")
+        self.resize(720, 520)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+
+        def build_group(title):
+            group = QtWidgets.QGroupBox(title)
+            group_layout = QtWidgets.QGridLayout(group)
+            group_layout.setHorizontalSpacing(10)
+            group_layout.setVerticalSpacing(6)
+            group_layout.setColumnStretch(1, 1)
+            group_layout.setColumnStretch(3, 1)
+            return group, group_layout
+
+        def add_pair(grid, row, col, label_text, value):
+            label = QtWidgets.QLabel(label_text)
+            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label = QtWidgets.QLabel(value)
+            value_label.setObjectName("InfoField")
+            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            grid.addWidget(label, row, col * 2)
+            grid.addWidget(value_label, row, col * 2 + 1)
+
+        def format_date(value):
+            if not value:
+                return "—"
+            try:
+                return datetime.strptime(value, "%Y-%m-%d").strftime("%m/%d/%y")
+            except ValueError:
+                return value
+
+        amount = float(position["redemption_amount"] or 0.0)
+        position_group, position_grid = build_group("Position")
+        add_pair(position_grid, 0, 0, "Date", format_date(position["session_date"]))
+        add_pair(position_grid, 0, 1, "User", position["user_name"] or "—")
+        add_pair(position_grid, 1, 0, "Site", position["site_name"] or "—")
+        layout.addWidget(position_group)
+
+        results_group, results_grid = build_group("Results")
+        add_pair(results_grid, 0, 0, "Redemption Amount", format_currency(amount))
+        add_pair(results_grid, 0, 1, "Cost Basis", format_currency(position["cost_basis"]))
+        add_pair(results_grid, 1, 0, "Net P/L", self._format_signed_currency(position["net_pl"]))
+        layout.addWidget(results_group)
+
+        notes_group = QtWidgets.QGroupBox("Notes")
+        notes_layout = QtWidgets.QVBoxLayout(notes_group)
+        notes_value = position["redemption_notes"] or ""
+        if notes_value:
+            notes_edit = QtWidgets.QPlainTextEdit()
+            notes_edit.setObjectName("NotesField")
+            notes_edit.setReadOnly(True)
+            notes_edit.setPlainText(notes_value)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+            notes_layout.addWidget(notes_edit)
+        else:
+            notes_field = QtWidgets.QLabel("-")
+            notes_field.setObjectName("InfoField")
+            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_layout.addWidget(notes_field)
+        layout.addWidget(notes_group)
+
+        allocations_group = QtWidgets.QGroupBox("Purchase Allocations")
+        allocations_layout = QtWidgets.QVBoxLayout(allocations_group)
+        allocations_layout.setContentsMargins(8, 10, 8, 8)
+
+        if not self.allocations:
+            note = QtWidgets.QLabel(
+                "No purchase allocation info available. Run FIFO rebuilds to backfill allocations."
+            )
+            note.setWordWrap(True)
+            allocations_layout.addWidget(note)
+        else:
+            self.table = QtWidgets.QTableWidget(0, 6)
+            self.table.setHorizontalHeaderLabels(
+                ["Purchase Date", "Amount", "SC", "Allocated", "Remaining", "View"]
+            )
+            self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+            self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+            self.table.setAlternatingRowColors(True)
+            self.table.setMinimumSize(0, 0)
+            self.table.setSizePolicy(
+                QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding
+            )
+            self.table.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustIgnored)
+            self.table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            header = self.table.horizontalHeader()
+            header.setStretchLastSection(False)
+            header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+            header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+            header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(5, QtWidgets.QHeaderView.Fixed)
+            header.setMinimumSectionSize(40)
+            self.table.verticalHeader().setVisible(False)
+            self.table.setColumnWidth(5, 120)
+            row_height = self.table.verticalHeader().defaultSectionSize()
+            min_height = self.table.horizontalHeader().height() + row_height * 3 + 10
+            self.table.setMinimumHeight(min_height)
+            allocations_layout.addWidget(self.table)
+            self._populate_allocations()
+
+        layout.addWidget(allocations_group, 1)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        if self.on_open_redemption:
+            open_btn = QtWidgets.QPushButton("View in Redemptions")
+            btn_row.addWidget(open_btn)
+        close_btn = QtWidgets.QPushButton("Close")
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+        if self.on_open_redemption:
+            open_btn.clicked.connect(self._handle_open_redemption)
+        close_btn.clicked.connect(self.accept)
+
+    def _format_signed_currency(self, value):
+        if value is None:
+            return "-"
+        val = float(value)
+        return f"+${val:.2f}" if val >= 0 else f"${val:.2f}"
+
+    def _populate_allocations(self):
+        self.table.setRowCount(len(self.allocations))
+        for row_idx, row in enumerate(self.allocations):
+            purchase_time = row.get("purchase_time") or "00:00:00"
+            date_display = format_date_time(row["purchase_date"], purchase_time)
+            amount = format_currency(row["amount"])
+            sc_received = f"{float(row['sc_received'] or 0.0):.2f}"
+            allocated = format_currency(row["allocated_amount"])
+            remaining = format_currency(row["remaining_amount"])
+
+            values = [date_display, amount, sc_received, allocated, remaining]
+            for col_idx, value in enumerate(values):
+                item = QtWidgets.QTableWidgetItem(str(value))
+                if col_idx in (1, 2, 3, 4):
+                    item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row_idx, col_idx, item)
+
+            view_btn = QtWidgets.QPushButton("View Purchase")
+            view_btn.setObjectName("MiniButton")
+            view_btn.setFixedHeight(24)
+            view_btn.setFixedWidth(120)
+            view_btn.clicked.connect(
+                lambda _checked=False, pid=row["purchase_id"]: self._open_purchase(pid)
+            )
+            view_container = QtWidgets.QWidget()
+            view_layout = QtWidgets.QHBoxLayout(view_container)
+            view_layout.setContentsMargins(0, 0, 0, 0)
+            view_layout.addStretch(1)
+            view_layout.addWidget(view_btn)
+            view_layout.addStretch(1)
+            self.table.setCellWidget(row_idx, 5, view_container)
+
+    def _open_purchase(self, purchase_id):
+        if not self.on_open_purchase:
+            QtWidgets.QMessageBox.information(
+                self, "Purchases Unavailable", "Purchase view is not available here."
+            )
+            return
+        self.accept()
+        QtCore.QTimer.singleShot(0, lambda: self.on_open_purchase(purchase_id))
+
+    def _handle_open_redemption(self):
+        redemption_id = self.position["redemption_id"] if "redemption_id" in self.position.keys() else None
+        if not redemption_id:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Redemption ID not found.")
+            return
+        self.accept()
+        QtCore.QTimer.singleShot(0, lambda: self.on_open_redemption(redemption_id))
+
+
 class RealizedTab(QtWidgets.QWidget):
-    def __init__(self, db, on_data_changed=None, parent=None):
+    def __init__(self, db, on_data_changed=None, on_open_redemption=None, on_open_purchase=None, parent=None):
         super().__init__(parent)
         self.db = db
         self.on_data_changed = on_data_changed
+        self.on_open_redemption = on_open_redemption
+        self.on_open_purchase = on_open_purchase
         self.all_transactions = []
         self.filtered_transactions = []
         self.column_filters = {}
@@ -8146,8 +9030,8 @@ class RealizedTab(QtWidgets.QWidget):
 
         self.columns = [
             "Date",
-            "Site",
             "User",
+            "Site",
             "Transaction",
             "Cost Basis",
             "Net P/L",
@@ -8220,25 +9104,46 @@ class RealizedTab(QtWidgets.QWidget):
         search_row.addWidget(self.clear_filters_btn)
         search_row.addStretch(1)
 
-        self.notes_btn = QtWidgets.QPushButton("Add Notes")
-        self.notes_btn.setObjectName("PrimaryButton")
-        dynamic_width = self.notes_btn.sizeHint().width()
-        self.notes_btn.setFixedWidth(dynamic_width)
-        self.notes_placeholder = QtWidgets.QWidget()
-        self.notes_placeholder.setFixedWidth(dynamic_width)
-        self.notes_placeholder.setSizePolicy(
+        self.date_notes_btn = QtWidgets.QPushButton("Add Notes")
+        self.date_notes_btn.setObjectName("PrimaryButton")
+        self.view_position_btn = QtWidgets.QPushButton("View Position")
+        self.view_position_btn.setObjectName("PrimaryButton")
+        for btn in (self.date_notes_btn, self.view_position_btn):
+            btn.setFixedWidth(btn.sizeHint().width())
+
+        self.date_notes_wrapper = QtWidgets.QWidget()
+        date_notes_layout = QtWidgets.QHBoxLayout(self.date_notes_wrapper)
+        date_notes_layout.setContentsMargins(0, 0, 0, 0)
+        date_notes_layout.addStretch(1)
+        date_notes_layout.addWidget(self.date_notes_btn)
+
+        self.transaction_actions = QtWidgets.QWidget()
+        transaction_layout = QtWidgets.QHBoxLayout(self.transaction_actions)
+        transaction_layout.setContentsMargins(0, 0, 0, 0)
+        transaction_layout.setSpacing(8)
+        transaction_layout.addStretch(1)
+        transaction_layout.addWidget(self.view_position_btn)
+
+        dynamic_width = max(
+            self.date_notes_btn.sizeHint().width(),
+            self.view_position_btn.sizeHint().width(),
+        )
+        self.dynamic_placeholder = QtWidgets.QWidget()
+        self.dynamic_placeholder.setFixedWidth(dynamic_width)
+        self.dynamic_placeholder.setSizePolicy(
             QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed
         )
-        self.notes_container = QtWidgets.QWidget()
-        self.notes_container.setFixedWidth(dynamic_width)
-        self.notes_container.setSizePolicy(
+        self.dynamic_container = QtWidgets.QWidget()
+        self.dynamic_container.setFixedWidth(dynamic_width)
+        self.dynamic_container.setSizePolicy(
             QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed
         )
-        self.notes_stack = QtWidgets.QStackedLayout(self.notes_container)
-        self.notes_stack.setContentsMargins(0, 0, 0, 0)
-        self.notes_stack.addWidget(self.notes_placeholder)
-        self.notes_stack.addWidget(self.notes_btn)
-        self.notes_stack.setCurrentWidget(self.notes_placeholder)
+        self.dynamic_stack = QtWidgets.QStackedLayout(self.dynamic_container)
+        self.dynamic_stack.setContentsMargins(0, 0, 0, 0)
+        self.dynamic_stack.addWidget(self.dynamic_placeholder)
+        self.dynamic_stack.addWidget(self.date_notes_wrapper)
+        self.dynamic_stack.addWidget(self.transaction_actions)
+        self.dynamic_stack.setCurrentWidget(self.dynamic_placeholder)
 
         self.expand_btn = QtWidgets.QPushButton("Expand All")
         self.collapse_btn = QtWidgets.QPushButton("Collapse All")
@@ -8251,7 +9156,7 @@ class RealizedTab(QtWidgets.QWidget):
         actions_layout = QtWidgets.QHBoxLayout(self.actions_container)
         actions_layout.setContentsMargins(0, 0, 0, 0)
         actions_layout.setSpacing(8)
-        actions_layout.addWidget(self.notes_container)
+        actions_layout.addWidget(self.dynamic_container)
         actions_layout.addWidget(self.expand_btn)
         actions_layout.addWidget(self.collapse_btn)
         actions_layout.addWidget(self.refresh_btn)
@@ -8281,8 +9186,8 @@ class RealizedTab(QtWidgets.QWidget):
         header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
         header.setStretchLastSection(True)
         self.tree.setColumnWidth(0, 140)
-        self.tree.setColumnWidth(1, 200)
-        self.tree.setColumnWidth(2, 130)
+        self.tree.setColumnWidth(1, 150)
+        self.tree.setColumnWidth(2, 220)
         self.tree.setColumnWidth(3, 200)
         self.tree.setColumnWidth(4, 110)
         self.tree.setColumnWidth(5, 110)
@@ -8292,12 +9197,13 @@ class RealizedTab(QtWidgets.QWidget):
         layout.addWidget(self.tree, 1)
 
         self.tree.itemSelectionChanged.connect(self._update_action_buttons)
-        self.tree.itemDoubleClicked.connect(lambda *_args: self._add_notes())
+        self.tree.itemDoubleClicked.connect(self._handle_double_click)
 
         self.search_edit.textChanged.connect(self.refresh_view)
         self.search_clear_btn.clicked.connect(self._clear_search)
         self.clear_filters_btn.clicked.connect(self.clear_all_filters)
-        self.notes_btn.clicked.connect(self._add_notes)
+        self.date_notes_btn.clicked.connect(self._edit_date_notes)
+        self.view_position_btn.clicked.connect(self._view_position)
         self.expand_btn.clicked.connect(self.tree.expandAll)
         self.collapse_btn.clicked.connect(self.tree.collapseAll)
         self.refresh_btn.clicked.connect(self.refresh_view)
@@ -8366,10 +9272,20 @@ class RealizedTab(QtWidgets.QWidget):
     def _update_action_buttons(self):
         meta = self._current_meta() or {}
         kind = meta.get("kind")
-        if kind == "transaction" and self.has_tax_session_notes:
-            self.notes_stack.setCurrentWidget(self.notes_btn)
+        if kind == "date":
+            self.dynamic_stack.setCurrentWidget(self.date_notes_wrapper)
+        elif kind == "transaction":
+            self.dynamic_stack.setCurrentWidget(self.transaction_actions)
         else:
-            self.notes_stack.setCurrentWidget(self.notes_placeholder)
+            self.dynamic_stack.setCurrentWidget(self.dynamic_placeholder)
+
+    def _handle_double_click(self, *_args):
+        meta = self._current_meta() or {}
+        kind = meta.get("kind")
+        if kind == "date":
+            self._edit_date_notes()
+        elif kind == "transaction":
+            self._view_position()
 
     def pick_date(self, target_edit):
         dialog = QtWidgets.QDialog(self)
@@ -8555,9 +9471,9 @@ class RealizedTab(QtWidgets.QWidget):
         if col_index == 0:
             return tx["session_date"]
         if col_index == 1:
-            return tx["site_name"]
-        if col_index == 2:
             return tx["user_name"]
+        if col_index == 2:
+            return tx["site_name"]
         if col_index == 3:
             return self._transaction_label(tx)
         if col_index == 4:
@@ -8582,8 +9498,6 @@ class RealizedTab(QtWidgets.QWidget):
 
     def _transaction_label(self, tx):
         redemption_amount = tx.get("redemption_amount") or 0.0
-        if tx.get("is_free_sc"):
-            return "Free SC Redemption"
         if redemption_amount == 0:
             return "Total Loss"
         return f"Redemption (${redemption_amount:.2f})"
@@ -8591,11 +9505,12 @@ class RealizedTab(QtWidgets.QWidget):
     def _fetch_transactions(self):
         conn = self.db.get_connection()
         c = conn.cursor()
-        notes_select = "ts.notes as notes" if self.has_tax_session_notes else "NULL as notes"
+        notes_select = "ts.notes as session_notes" if self.has_tax_session_notes else "NULL as session_notes"
         query = f"""
             SELECT
                 ts.id as tax_session_id,
                 ts.session_date,
+                ts.redemption_id as redemption_id,
                 ts.cost_basis,
                 ts.net_pl,
                 ts.site_id,
@@ -8604,6 +9519,7 @@ class RealizedTab(QtWidgets.QWidget):
                 u.name as user_name,
                 r.amount as redemption_amount,
                 r.is_free_sc,
+                r.notes as redemption_notes,
                 {notes_select}
             FROM tax_sessions ts
             JOIN sites s ON ts.site_id = s.id
@@ -8633,7 +9549,9 @@ class RealizedTab(QtWidgets.QWidget):
         c.execute(query, params)
         transactions = []
         for row in c.fetchall():
-            notes = row["notes"] or ""
+            redemption_notes = row["redemption_notes"] or ""
+            session_notes = row["session_notes"] or ""
+            notes = redemption_notes or session_notes
             redemption_amount = row["redemption_amount"] or 0.0
             search_blob = " ".join(
                 [
@@ -8649,6 +9567,7 @@ class RealizedTab(QtWidgets.QWidget):
             transactions.append(
                 {
                     "tax_session_id": row["tax_session_id"],
+                    "redemption_id": row["redemption_id"],
                     "session_date": row["session_date"],
                     "site_id": row["site_id"],
                     "site_name": row["site_name"],
@@ -8659,6 +9578,7 @@ class RealizedTab(QtWidgets.QWidget):
                     "redemption_amount": redemption_amount,
                     "is_free_sc": bool(row["is_free_sc"]),
                     "notes": notes,
+                    "redemption_notes": redemption_notes,
                     "search_blob": search_blob,
                 }
             )
@@ -8684,47 +9604,82 @@ class RealizedTab(QtWidgets.QWidget):
     def _group_transactions(self, transactions):
         from collections import defaultdict
 
-        dates = defaultdict(lambda: defaultdict(list))
+        dates = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         for tx in transactions:
-            dates[tx["session_date"]][(tx["site_id"], tx["user_id"])].append(tx)
+            dates[tx["session_date"]][tx["user_id"]][tx["site_id"]].append(tx)
 
+        notes_by_date = self._fetch_notes_for_dates(dates.keys())
         data = []
         for session_date in sorted(dates.keys(), reverse=True):
-            site_groups = []
-            date_transactions = dates[session_date]
-            for (site_id, user_id), txs in sorted(
-                date_transactions.items(),
-                key=lambda item: (
-                    item[1][0]["site_name"].lower(),
-                    item[1][0]["user_name"].lower(),
-                ),
+            user_groups = []
+            date_site_ids = set()
+            total_transactions = 0
+            date_cost = 0.0
+            date_net = 0.0
+            notes_count = 0
+            users_map = dates[session_date]
+            for user_id in sorted(
+                users_map.keys(),
+                key=lambda uid: list(users_map[uid].values())[0][0]["user_name"].lower(),
             ):
-                total_cost = sum(tx["cost_basis"] for tx in txs)
-                total_net = sum(tx["net_pl"] for tx in txs)
-                site_groups.append(
+                sites_map = users_map[user_id]
+                site_groups = []
+                user_cost = 0.0
+                user_net = 0.0
+                user_transactions = 0
+                for site_id in sorted(
+                    sites_map.keys(),
+                    key=lambda sid: sites_map[sid][0]["site_name"].lower(),
+                ):
+                    txs = sites_map[site_id]
+                    total_cost = sum(tx["cost_basis"] for tx in txs)
+                    total_net = sum(tx["net_pl"] for tx in txs)
+                    transaction_count = len(txs)
+                    site_groups.append(
+                        {
+                            "site_id": site_id,
+                            "site_name": txs[0]["site_name"],
+                            "total_cost": total_cost,
+                            "total_net": total_net,
+                            "transaction_count": transaction_count,
+                            "transactions": txs,
+                        }
+                    )
+                    user_cost += total_cost
+                    user_net += total_net
+                    user_transactions += transaction_count
+                    total_transactions += transaction_count
+                    date_site_ids.add(site_id)
+                    notes_count += sum(1 for tx in txs if tx["notes"])
+
+                user_groups.append(
                     {
-                        "site_id": site_id,
                         "user_id": user_id,
-                        "site_name": txs[0]["site_name"],
-                        "user_name": txs[0]["user_name"],
-                        "total_cost": total_cost,
-                        "total_net": total_net,
-                        "transactions": txs,
+                        "user_name": list(sites_map.values())[0][0]["user_name"],
+                        "total_cost": user_cost,
+                        "total_net": user_net,
+                        "transaction_count": user_transactions,
+                        "site_count": len(site_groups),
+                        "sites": site_groups,
                     }
                 )
-            date_cost = sum(group["total_cost"] for group in site_groups)
-            date_net = sum(group["total_net"] for group in site_groups)
-            total_transactions = sum(len(group["transactions"]) for group in site_groups)
-            notes_count = sum(1 for group in site_groups for tx in group["transactions"] if tx["notes"])
+                date_cost += user_cost
+                date_net += user_net
+
+            date_notes = notes_by_date.get(session_date, "")
+            if date_notes:
+                notes_count += 1
             data.append(
                 {
                     "date": session_date,
                     "date_cost": date_cost,
                     "date_net": date_net,
-                    "site_count": len(site_groups),
+                    "user_count": len(user_groups),
+                    "site_count": len(date_site_ids),
                     "transaction_count": total_transactions,
                     "notes_count": notes_count,
-                    "groups": site_groups,
+                    "notes": date_notes,
+                    "users": user_groups,
                 }
             )
         return self._sort_data(data)
@@ -8738,6 +9693,8 @@ class RealizedTab(QtWidgets.QWidget):
             if self.sort_column == 0:
                 return item["date"]
             if self.sort_column == 1:
+                return item["user_count"]
+            if self.sort_column == 2:
                 return item["site_count"]
             if self.sort_column == 3:
                 return item["transaction_count"]
@@ -8756,12 +9713,12 @@ class RealizedTab(QtWidgets.QWidget):
         for day in data:
             date_values = [
                 day["date"],
+                f"{day['user_count']} user(s)",
                 f"{day['site_count']} site(s)",
-                "",
                 f"{day['transaction_count']} transaction(s)",
                 self._format_currency_or_dash(day["date_cost"]),
                 self._format_signed_currency(day["date_net"]),
-                "",
+                day.get("notes", ""),
             ]
             date_item = QtWidgets.QTreeWidgetItem(date_values)
             date_item.setData(0, QtCore.Qt.UserRole, {"kind": "date", "date": day["date"]})
@@ -8769,45 +9726,72 @@ class RealizedTab(QtWidgets.QWidget):
             self._apply_status_color(date_item, day["date_net"])
             self.tree.addTopLevelItem(date_item)
 
-            for group in day["groups"]:
-                site_values = [
+            for user in day["users"]:
+                user_display = f"▸ {user['user_name']}"
+                user_values = [
                     "",
-                    group["site_name"],
-                    group["user_name"],
-                    "",
-                    self._format_currency_or_dash(group["total_cost"]),
-                    self._format_signed_currency(group["total_net"]),
+                    user_display,
+                    f"{user['site_count']} site(s)",
+                    f"{user['transaction_count']} transaction(s)",
+                    self._format_currency_or_dash(user["total_cost"]),
+                    self._format_signed_currency(user["total_net"]),
                     "",
                 ]
-                site_item = QtWidgets.QTreeWidgetItem(site_values)
-                site_item.setData(
+                user_item = QtWidgets.QTreeWidgetItem(user_values)
+                user_item.setData(
                     0,
                     QtCore.Qt.UserRole,
-                    {"kind": "site", "site_id": group["site_id"], "user_id": group["user_id"]},
+                    {"kind": "user", "user_id": user["user_id"]},
                 )
-                self._align_numeric(site_item)
-                self._apply_status_color(site_item, group["total_net"])
-                date_item.addChild(site_item)
+                self._align_numeric(user_item)
+                self._apply_status_color(user_item, user["total_net"])
+                date_item.addChild(user_item)
 
-                for tx in group["transactions"]:
-                    tx_values = [
+                for site in user["sites"]:
+                    site_display = f"  └─ {site['site_name']}"
+                    site_values = [
                         "",
                         "",
+                        site_display,
+                        f"{site['transaction_count']} transaction(s)",
+                        self._format_currency_or_dash(site["total_cost"]),
+                        self._format_signed_currency(site["total_net"]),
                         "",
-                        self._transaction_label(tx),
-                        self._format_currency_or_dash(tx["cost_basis"]),
-                        self._format_signed_currency(tx["net_pl"]),
-                        tx["notes"] or "",
                     ]
-                    tx_item = QtWidgets.QTreeWidgetItem(tx_values)
-                    tx_item.setData(
+                    site_item = QtWidgets.QTreeWidgetItem(site_values)
+                    site_item.setData(
                         0,
                         QtCore.Qt.UserRole,
-                        {"kind": "transaction", "tax_session_id": tx["tax_session_id"]},
+                        {"kind": "site", "site_id": site["site_id"], "user_id": user["user_id"]},
                     )
-                    self._align_numeric(tx_item)
-                    self._apply_status_color(tx_item, tx["net_pl"])
-                    site_item.addChild(tx_item)
+                    self._align_numeric(site_item)
+                    self._apply_status_color(site_item, site["total_net"])
+                    user_item.addChild(site_item)
+
+                    for tx in site["transactions"]:
+                        transaction_display = f"    └─ {self._transaction_label(tx)}"
+                        tx_values = [
+                            "",
+                            "",
+                            "",
+                            transaction_display,
+                            self._format_currency_or_dash(tx["cost_basis"]),
+                            self._format_signed_currency(tx["net_pl"]),
+                            tx["notes"] or "",
+                        ]
+                        tx_item = QtWidgets.QTreeWidgetItem(tx_values)
+                        tx_item.setData(
+                            0,
+                            QtCore.Qt.UserRole,
+                            {
+                                "kind": "transaction",
+                                "tax_session_id": tx["tax_session_id"],
+                                "redemption_id": tx["redemption_id"],
+                            },
+                        )
+                        self._align_numeric(tx_item)
+                        self._apply_status_color(tx_item, tx["net_pl"])
+                        site_item.addChild(tx_item)
 
     def refresh_view(self):
         transactions = self._fetch_transactions()
@@ -8817,42 +9801,133 @@ class RealizedTab(QtWidgets.QWidget):
         self._render_tree(data)
         self._update_action_buttons()
 
-    def _add_notes(self):
-        if not self.has_tax_session_notes:
-            QtWidgets.QMessageBox.information(
-                self, "Notes Unavailable", "Notes are not enabled for Realized transactions."
-            )
+    def _fetch_notes_for_dates(self, dates):
+        dates = list(dates)
+        if not dates:
+            return {}
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        placeholders = ",".join("?" * len(dates))
+        c.execute(
+            f"""
+            SELECT session_date, notes
+            FROM realized_daily_notes
+            WHERE session_date IN ({placeholders})
+            """,
+            dates,
+        )
+        notes_by_date = {row["session_date"]: row["notes"] or "" for row in c.fetchall()}
+        conn.close()
+        return notes_by_date
+
+    def _edit_date_notes(self):
+        meta = self._current_meta() or {}
+        session_date = meta.get("date")
+        if not session_date:
+            QtWidgets.QMessageBox.information(self, "Select Date", "Select a date to add notes.")
             return
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT notes FROM realized_daily_notes WHERE session_date = ?",
+            (session_date,),
+        )
+        row = c.fetchone()
+        conn.close()
+        current_notes = row["notes"] if row and row["notes"] else ""
+
+        dialog = RealizedDateNotesDialog(session_date, current_notes, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        new_notes = dialog.notes_text()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        if new_notes:
+            c.execute(
+                "INSERT OR REPLACE INTO realized_daily_notes (session_date, notes) VALUES (?, ?)",
+                (session_date, new_notes),
+            )
+        else:
+            c.execute("DELETE FROM realized_daily_notes WHERE session_date = ?", (session_date,))
+        conn.commit()
+        conn.close()
+        self.refresh_view()
+
+    def _view_position(self):
         meta = self._current_meta() or {}
         if meta.get("kind") != "transaction":
             QtWidgets.QMessageBox.information(
-                self, "Select Transaction", "Select an individual transaction to add notes."
+                self, "Select Transaction", "Select an individual transaction to view."
             )
             return
         session_id = meta.get("tax_session_id")
         if not session_id:
             QtWidgets.QMessageBox.warning(self, "Not Found", "Transaction ID not found.")
             return
-        conn = self.db.get_connection()
-        c = conn.cursor()
-        c.execute("SELECT notes FROM tax_sessions WHERE id = ?", (session_id,))
-        row = c.fetchone()
-        conn.close()
-        current_notes = row["notes"] if row and row["notes"] else ""
-
-        dialog = RealizedNotesDialog(current_notes, parent=self)
-        if dialog.exec() != QtWidgets.QDialog.Accepted:
+        position = self._fetch_position_details(session_id)
+        if not position:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Transaction not found.")
             return
-        new_notes = dialog.notes_text()
+        allocations = self._fetch_redemption_allocations(position["redemption_id"])
+        dialog = RealizedPositionDialog(
+            position,
+            allocations,
+            parent=self,
+            on_open_purchase=self.on_open_purchase,
+            on_open_redemption=self.on_open_redemption,
+        )
+        dialog.exec()
+
+    def _fetch_position_details(self, tax_session_id):
         conn = self.db.get_connection()
         c = conn.cursor()
         c.execute(
-            "UPDATE tax_sessions SET notes = ? WHERE id = ?",
-            (new_notes if new_notes else None, session_id),
+            """
+            SELECT
+                ts.id as tax_session_id,
+                ts.session_date,
+                ts.cost_basis,
+                ts.net_pl,
+                ts.redemption_id,
+                r.amount as redemption_amount,
+                r.notes as redemption_notes,
+                s.name as site_name,
+                u.name as user_name
+            FROM tax_sessions ts
+            JOIN redemptions r ON ts.redemption_id = r.id
+            JOIN sites s ON ts.site_id = s.id
+            JOIN users u ON ts.user_id = u.id
+            WHERE ts.id = ?
+            """,
+            (tax_session_id,),
         )
-        conn.commit()
+        row = c.fetchone()
         conn.close()
-        self.refresh_view()
+        return row
+
+    def _fetch_redemption_allocations(self, redemption_id):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT
+                ra.purchase_id,
+                ra.allocated_amount,
+                p.purchase_date,
+                p.purchase_time,
+                p.amount,
+                p.sc_received,
+                p.remaining_amount
+            FROM redemption_allocations ra
+            JOIN purchases p ON ra.purchase_id = p.id
+            WHERE ra.redemption_id = ?
+            ORDER BY p.purchase_date ASC, COALESCE(p.purchase_time,'00:00:00') ASC, p.id ASC
+            """,
+            (redemption_id,),
+        )
+        allocations = [dict(row) for row in c.fetchall()]
+        conn.close()
+        return allocations
 
     def export_csv(self):
         import csv
@@ -8918,6 +9993,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.stats_bar = StatsBar()
         main_layout.addWidget(self.stats_bar)
+        rebuild_row = QtWidgets.QHBoxLayout()
+        rebuild_row.addStretch(1)
+        self.rebuild_all_btn = QtWidgets.QPushButton("Rebuild All (Temp)")
+        rebuild_row.addWidget(self.rebuild_all_btn)
+        main_layout.addLayout(rebuild_row)
 
         self.tab_bar = QtWidgets.QWidget()
         tab_bar_layout = FlowLayout(self.tab_bar, margin=0, spacing=8, align=QtCore.Qt.AlignCenter)
@@ -8932,7 +10012,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tab_buttons = []
 
         self.purchases_tab = PurchasesTab(self.db, self.session_mgr, self.refresh_stats)
-        self.redemptions_tab = RedemptionsTab(self.db, self.session_mgr, self.refresh_stats)
+        self.redemptions_tab = RedemptionsTab(
+            self.db,
+            self.session_mgr,
+            self.refresh_stats,
+            on_open_purchase=self.open_purchase,
+        )
         self.game_sessions_tab = GameSessionsTab(self.db, self.session_mgr, self.refresh_stats)
         self.daily_sessions_tab = DailySessionsTab(
             self.db,
@@ -8941,8 +10026,18 @@ class MainWindow(QtWidgets.QMainWindow):
             self.open_game_session,
             self.edit_game_session,
         )
-        self.unrealized_tab = UnrealizedTab(self.db, self.session_mgr, self.refresh_stats)
-        self.realized_tab = RealizedTab(self.db, self.refresh_stats)
+        self.unrealized_tab = UnrealizedTab(
+            self.db,
+            self.session_mgr,
+            self.refresh_stats,
+            on_open_purchase=self.open_purchase,
+        )
+        self.realized_tab = RealizedTab(
+            self.db,
+            self.refresh_stats,
+            on_open_redemption=self.open_redemption,
+            on_open_purchase=self.open_purchase,
+        )
 
         tabs = [
             ("Purchases", self.purchases_tab),
@@ -8995,6 +10090,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "Setup": "Manage users, sites, games, and other lookup lists.",
         }
 
+        self.rebuild_all_btn.clicked.connect(self._rebuild_all)
         self.refresh_stats()
         self._update_tab_tip(0)
 
@@ -9021,6 +10117,35 @@ class MainWindow(QtWidgets.QMainWindow):
             }
         )
 
+    def _rebuild_all(self):
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Rebuild All",
+            "Rebuild FIFO and session calculations for the entire database?\n\n"
+            "This may take a while and will refresh all tabs.",
+        )
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        try:
+            result = self.session_mgr.rebuild_all_derived()
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+
+        self.purchases_tab.load_data()
+        self.redemptions_tab.load_data()
+        self.game_sessions_tab.load_data()
+        self.daily_sessions_tab.refresh_view()
+        self.unrealized_tab.load_data()
+        self.realized_tab.refresh_view()
+        self.refresh_stats()
+
+        summary = (
+            f"Pairs processed: {result.get('pairs_processed', 0)}\n"
+            f"Sessions recalculated: {result.get('sessions_processed', 0)}"
+        )
+        QtWidgets.QMessageBox.information(self, "Rebuild Complete", summary)
+
     def open_game_session(self, session_id):
         target_index = self.stacked.indexOf(self.game_sessions_tab)
         if target_index < 0:
@@ -9032,6 +10157,36 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Not Found",
                 "Session not visible with current filters.",
             )
+            return
+        self.game_sessions_tab.view_session_by_id(session_id)
+
+    def open_redemption(self, redemption_id):
+        target_index = self.stacked.indexOf(self.redemptions_tab)
+        if target_index < 0:
+            return
+        self.stacked.setCurrentIndex(target_index)
+        if not self.redemptions_tab.select_redemption_by_id(redemption_id):
+            QtWidgets.QMessageBox.information(
+                self,
+                "Not Found",
+                "Redemption not visible with current filters.",
+            )
+            return
+        self.redemptions_tab.view_redemption_by_id(redemption_id)
+
+    def open_purchase(self, purchase_id):
+        target_index = self.stacked.indexOf(self.purchases_tab)
+        if target_index < 0:
+            return
+        self.stacked.setCurrentIndex(target_index)
+        if not self.purchases_tab.select_purchase_by_id(purchase_id):
+            QtWidgets.QMessageBox.information(
+                self,
+                "Not Found",
+                "Purchase not visible with current filters.",
+            )
+            return
+        self.purchases_tab.view_purchase_by_id(purchase_id)
 
     def edit_game_session(self, session_id):
         target_index = self.stacked.indexOf(self.game_sessions_tab)
@@ -9211,6 +10366,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: white;
             }
             QPushButton#PrimaryButton:hover { background: #3657c3; }
+            QPushButton#MiniButton {
+                padding: 4px 10px;
+                min-height: 20px;
+            }
             QToolButton#InfoButton {
                 background: #edf2fe;
                 border: 1px solid #dfeaff;
@@ -9252,6 +10411,18 @@ class MainWindow(QtWidgets.QMainWindow):
                 gridline-color: #dfeaff;
                 border: 1px solid #dfeaff;
                 border-radius: 8px;
+            }
+            QTreeWidget, QTreeView {
+                background: #f7f9ff;
+                border: 1px solid #dfeaff;
+                border-radius: 8px;
+            }
+            QTreeWidget::item, QTreeView::item {
+                padding: 4px 6px;
+                border-bottom: 1px solid #dfeaff;
+            }
+            QTreeWidget::item:selected, QTreeView::item:selected {
+                background: #d0dfff;
             }
             QHeaderView::section {
                 background: #edf2fe;

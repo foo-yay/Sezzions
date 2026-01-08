@@ -255,6 +255,13 @@ class SessionManager:
             WHERE site_id = ? AND user_id = ?
         """, (site_id, user_id))
 
+        c.execute("""
+            DELETE FROM redemption_allocations
+            WHERE redemption_id IN (
+                SELECT id FROM redemptions WHERE site_id = ? AND user_id = ?
+            )
+        """, (site_id, user_id))
+
         conn.commit()
 
         c.execute("""
@@ -471,7 +478,17 @@ class SessionManager:
         
         conn = self.db.get_connection()
         c = conn.cursor()
-        
+
+        c.execute("DELETE FROM redemption_allocations WHERE redemption_id = ?", (redemption_id,))
+        if allocations:
+            c.executemany(
+                """
+                INSERT INTO redemption_allocations (redemption_id, purchase_id, allocated_amount)
+                VALUES (?, ?, ?)
+                """,
+                [(redemption_id, purchase_id, allocated) for purchase_id, allocated in allocations],
+            )
+
         # Create tax session record
         c.execute('''
             INSERT INTO tax_sessions 
@@ -644,6 +661,7 @@ class SessionManager:
         is_free_sc = redemption['is_free_sc']
         
         # Delete tax_session and redemption
+        c.execute("DELETE FROM redemption_allocations WHERE redemption_id = ?", (redemption_id,))
         c.execute("DELETE FROM tax_sessions WHERE redemption_id = ?", (redemption_id,))
         c.execute("DELETE FROM redemptions WHERE id = ?", (redemption_id,))
         
