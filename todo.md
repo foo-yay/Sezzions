@@ -4,6 +4,7 @@
 - [ ] Finalize UI redesign in qt_app.py
 - [ ] Remove or deprecate session2.py safely
 - [ ] Finish remaining tab incorporations
+- [ ] Why does deleting a Purchase appear to take so much time & compute power?
 
 ## Medium Priority
 - [ ] Add free-tier usage limits
@@ -16,6 +17,7 @@
 - [ ] Re-integrate the Audit Log
 - [ ] Add a field for Redemption Fees, or just assume users will enter the amount they're actually going to get out?
 - [ ] Allow different currencies and denominations on Purchases and Redemptions (Fortune Coins 1:100, USDC, Crypto, etc.).  Need assistance strategizing incorporation
+- [ ] How do we limit the scope of recalculation when making changes?  Is there a way to do it reliably and automatically?  When we have 10,000 rows, it's going to be a nightmare making changes if we have to update ALL associated sessions with every change.
 
 ## Low Priority / Ideas
 - [ ] Export reports to CSV
