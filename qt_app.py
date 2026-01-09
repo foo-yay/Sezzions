@@ -134,6 +134,24 @@ def header_resize_section_index(header, pos, margin=4):
     return None
 
 
+def header_menu_position(header, col_index, menu):
+    try:
+        pos_x = header.sectionViewportPosition(col_index)
+    except AttributeError:
+        pos_x = header.sectionPosition(col_index) - header.offset()
+    anchor = header.viewport().mapToGlobal(QtCore.QPoint(pos_x, header.height()))
+    screen = QtGui.QGuiApplication.screenAt(anchor) or QtWidgets.QApplication.primaryScreen()
+    if screen is None:
+        return anchor
+    available = screen.availableGeometry()
+    menu_size = menu.sizeHint()
+    max_x = available.right() - menu_size.width() + 1
+    max_y = available.bottom() - menu_size.height() + 1
+    pos_x = min(max(anchor.x(), available.left()), max_x) if max_x >= available.left() else available.left()
+    pos_y = min(max(anchor.y(), available.top()), max_y) if max_y >= available.top() else available.top()
+    return QtCore.QPoint(pos_x, pos_y)
+
+
 class FlowLayout(QtWidgets.QLayout):
     def __init__(self, parent=None, margin=0, spacing=6, align=QtCore.Qt.AlignLeft):
         super().__init__(parent)
@@ -572,6 +590,7 @@ class PurchaseDialog(QtWidgets.QDialog):
         form.setHorizontalSpacing(10)
         form.setVerticalSpacing(8)
         form.setColumnStretch(1, 1)
+        form.setColumnStretch(3, 1)
 
         self.date_edit = QtWidgets.QLineEdit()
         self.date_edit.setPlaceholderText("MM/DD/YY")
@@ -7717,6 +7736,11 @@ class DailySessionsTab(QtWidgets.QWidget):
         self.tree.setColumnCount(len(self.columns))
         self.tree.setHeaderLabels(self.columns)
         self.tree.setAlternatingRowColors(True)
+        self.tree.setMinimumSize(0, 0)
+        self.tree.setSizePolicy(
+            QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding
+        )
+        self.tree.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustIgnored)
         self.tree.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.tree.setUniformRowHeights(True)
         self.tree.setRootIsDecorated(True)
@@ -10189,6 +10213,11 @@ class RealizedTab(QtWidgets.QWidget):
         self.tree.setColumnCount(len(self.columns))
         self.tree.setHeaderLabels(self.columns)
         self.tree.setAlternatingRowColors(True)
+        self.tree.setMinimumSize(0, 0)
+        self.tree.setSizePolicy(
+            QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding
+        )
+        self.tree.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustIgnored)
         self.tree.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.tree.setUniformRowHeights(True)
         self.tree.setRootIsDecorated(True)
@@ -10977,12 +11006,2423 @@ class PlaceholderTab(QtWidgets.QWidget):
         layout.addStretch(1)
 
 
+class SetupEditDialog(QtWidgets.QDialog):
+    def _set_invalid(self, widget, message):
+        widget.setProperty("invalid", True)
+        widget.setToolTip(message)
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _set_valid(self, widget):
+        widget.setProperty("invalid", False)
+        widget.setToolTip("")
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+
+class UserEditDialog(SetupEditDialog):
+    def __init__(self, user=None, parent=None):
+        super().__init__(parent)
+        self.user = user
+        self.setWindowTitle("Edit User" if user else "Add User")
+        self.resize(420, 200)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+
+        self.name_edit = QtWidgets.QLineEdit()
+        self.active_check = QtWidgets.QCheckBox()
+        self.active_check.setChecked(True)
+        self.notes_edit = QtWidgets.QPlainTextEdit()
+        self.notes_edit.setObjectName("NotesField")
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+
+        form.addWidget(QtWidgets.QLabel("User Name"), 0, 0)
+        form.addWidget(self.name_edit, 0, 1)
+        form.addWidget(QtWidgets.QLabel("Active"), 0, 2)
+        form.addWidget(self.active_check, 0, 3)
+        form.addWidget(QtWidgets.QLabel("Notes"), 1, 0, QtCore.Qt.AlignTop)
+        form.addWidget(self.notes_edit, 1, 1, 1, 3)
+        layout.addLayout(form)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        self.save_btn = QtWidgets.QPushButton("Save")
+        self.save_btn.setObjectName("PrimaryButton")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(self.save_btn)
+        layout.addLayout(btn_row)
+
+        cancel_btn.clicked.connect(self.reject)
+        self.save_btn.clicked.connect(self._handle_save)
+        self.name_edit.textChanged.connect(self._validate_inline)
+
+        if user:
+            self.name_edit.setText(user["name"])
+            self.active_check.setChecked(bool(user["active"]))
+            self.notes_edit.setPlainText(user["notes"] or "")
+            self._set_valid(self.name_edit)
+
+    def _validate_inline(self):
+        if not self.name_edit.text().strip():
+            self._set_invalid(self.name_edit, "User name is required.")
+            return False
+        self._set_valid(self.name_edit)
+        return True
+
+    def _handle_save(self):
+        if self._validate_inline():
+            self.accept()
+
+    def data(self):
+        return {
+            "name": self.name_edit.text().strip(),
+            "notes": self.notes_edit.toPlainText().strip() or None,
+            "active": 1 if self.active_check.isChecked() else 0,
+        }
+
+
+class UserViewDialog(QtWidgets.QDialog):
+    def __init__(self, user, parent=None, on_edit=None):
+        super().__init__(parent)
+        self.user = user
+        self._on_edit = on_edit
+        self.setWindowTitle("View User")
+        self.resize(420, 200)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+
+        def add_value(label_text, value, row, col):
+            label = QtWidgets.QLabel(label_text)
+            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label = QtWidgets.QLabel(value)
+            value_label.setObjectName("InfoField")
+            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            fixed_height = max(value_label.sizeHint().height(), 26)
+            value_label.setFixedHeight(fixed_height)
+            form.addWidget(label, row, col)
+            form.addWidget(value_label, row, col + 1)
+
+        row = 0
+        add_value("User Name", user["name"], row, 0)
+        active_label = QtWidgets.QLabel("Active")
+        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        active_check = QtWidgets.QCheckBox()
+        active_check.setChecked(bool(user["active"]))
+        active_check.setEnabled(False)
+        form.addWidget(active_label, row, 2)
+        form.addWidget(active_check, row, 3)
+
+        notes_value = user["notes"] or ""
+        notes_label = QtWidgets.QLabel("Notes")
+        notes_label.setAlignment(
+            QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
+        )
+        form.addWidget(notes_label, row + 1, 0)
+        if notes_value:
+            notes_edit = QtWidgets.QPlainTextEdit()
+            notes_edit.setObjectName("NotesField")
+            notes_edit.setReadOnly(True)
+            notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
+            notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
+            notes_edit.setPlainText(notes_value)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+            form.addWidget(notes_edit, row + 1, 1, 1, 3)
+        else:
+            notes_field = QtWidgets.QLabel("—")
+            notes_field.setObjectName("InfoField")
+            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_field.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            fixed_height = max(notes_field.sizeHint().height(), 26)
+            notes_field.setFixedHeight(fixed_height)
+            form.addWidget(notes_field, row + 1, 1, 1, 3)
+
+        layout.addLayout(form)
+        layout.addSpacing(8)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        if self._on_edit:
+            edit_btn = QtWidgets.QPushButton("Edit")
+            btn_row.addWidget(edit_btn)
+        close_btn = QtWidgets.QPushButton("Close")
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        if self._on_edit:
+            edit_btn.clicked.connect(self._handle_edit)
+        close_btn.clicked.connect(self.accept)
+
+    def _handle_edit(self):
+        if self._on_edit:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_edit)
+
+
+class SiteEditDialog(SetupEditDialog):
+    def __init__(self, site=None, parent=None):
+        super().__init__(parent)
+        self.site = site
+        self.setWindowTitle("Edit Site" if site else "Add Site")
+        self.resize(480, 220)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+
+        self.name_edit = QtWidgets.QLineEdit()
+        self.sc_rate_edit = QtWidgets.QLineEdit()
+        self.sc_rate_edit.setPlaceholderText("1.0")
+        self.active_check = QtWidgets.QCheckBox()
+        self.active_check.setChecked(True)
+        self.notes_edit = QtWidgets.QPlainTextEdit()
+        self.notes_edit.setObjectName("NotesField")
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+
+        form.addWidget(QtWidgets.QLabel("Site Name"), 0, 0)
+        form.addWidget(self.name_edit, 0, 1)
+        form.addWidget(QtWidgets.QLabel("Active"), 0, 2)
+        form.addWidget(self.active_check, 0, 3)
+        form.addWidget(QtWidgets.QLabel("SC Rate (USD/SC)"), 1, 0)
+        form.addWidget(self.sc_rate_edit, 1, 1)
+        form.addWidget(QtWidgets.QLabel("Notes"), 2, 0, QtCore.Qt.AlignTop)
+        form.addWidget(self.notes_edit, 2, 1, 1, 3)
+        layout.addLayout(form)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        self.save_btn = QtWidgets.QPushButton("Save")
+        self.save_btn.setObjectName("PrimaryButton")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(self.save_btn)
+        layout.addLayout(btn_row)
+
+        cancel_btn.clicked.connect(self.reject)
+        self.save_btn.clicked.connect(self._handle_save)
+        self.name_edit.textChanged.connect(self._validate_inline)
+        self.sc_rate_edit.textChanged.connect(self._validate_inline)
+
+        if site:
+            self.name_edit.setText(site["name"])
+            self.sc_rate_edit.setText(f"{float(site['sc_rate'] or 1.0):.4f}")
+            self.active_check.setChecked(bool(site["active"]))
+            self.notes_edit.setPlainText(site["notes"] or "")
+        else:
+            self.sc_rate_edit.setText("1.0")
+        self._validate_inline()
+
+    def _validate_inline(self):
+        ok = True
+        if not self.name_edit.text().strip():
+            self._set_invalid(self.name_edit, "Site name is required.")
+            ok = False
+        else:
+            self._set_valid(self.name_edit)
+
+        sc_rate_text = self.sc_rate_edit.text().strip()
+        if not sc_rate_text:
+            self._set_invalid(self.sc_rate_edit, "SC rate is required.")
+            ok = False
+        else:
+            try:
+                sc_rate = float(sc_rate_text)
+                if sc_rate <= 0:
+                    raise ValueError
+                self._set_valid(self.sc_rate_edit)
+            except ValueError:
+                self._set_invalid(self.sc_rate_edit, "SC rate must be a number > 0.")
+                ok = False
+        return ok
+
+    def _handle_save(self):
+        if self._validate_inline():
+            self.accept()
+
+    def data(self):
+        return {
+            "name": self.name_edit.text().strip(),
+            "sc_rate": float(self.sc_rate_edit.text().strip()),
+            "notes": self.notes_edit.toPlainText().strip() or None,
+            "active": 1 if self.active_check.isChecked() else 0,
+        }
+
+
+class SiteViewDialog(QtWidgets.QDialog):
+    def __init__(self, site, parent=None, on_edit=None):
+        super().__init__(parent)
+        self.site = site
+        self._on_edit = on_edit
+        self.setWindowTitle("View Site")
+        self.resize(480, 220)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+
+        def add_value(label_text, value, row, col):
+            label = QtWidgets.QLabel(label_text)
+            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label = QtWidgets.QLabel(value)
+            value_label.setObjectName("InfoField")
+            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            fixed_height = max(value_label.sizeHint().height(), 26)
+            value_label.setFixedHeight(fixed_height)
+            form.addWidget(label, row, col)
+            form.addWidget(value_label, row, col + 1)
+
+        row = 0
+        add_value("Site Name", site["name"], row, 0)
+        active_label = QtWidgets.QLabel("Active")
+        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        active_check = QtWidgets.QCheckBox()
+        active_check.setChecked(bool(site["active"]))
+        active_check.setEnabled(False)
+        form.addWidget(active_label, row, 2)
+        form.addWidget(active_check, row, 3)
+
+        add_value("SC Rate", f"{float(site['sc_rate'] or 1.0):.4f}", row + 1, 0)
+
+        notes_value = site["notes"] or ""
+        notes_label = QtWidgets.QLabel("Notes")
+        notes_label.setAlignment(
+            QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
+        )
+        form.addWidget(notes_label, row + 2, 0)
+        if notes_value:
+            notes_edit = QtWidgets.QPlainTextEdit()
+            notes_edit.setObjectName("NotesField")
+            notes_edit.setReadOnly(True)
+            notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
+            notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
+            notes_edit.setPlainText(notes_value)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+            form.addWidget(notes_edit, row + 2, 1, 1, 3)
+        else:
+            notes_field = QtWidgets.QLabel("—")
+            notes_field.setObjectName("InfoField")
+            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_field.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            fixed_height = max(notes_field.sizeHint().height(), 26)
+            notes_field.setFixedHeight(fixed_height)
+            form.addWidget(notes_field, row + 2, 1, 1, 3)
+
+        layout.addLayout(form)
+        layout.addSpacing(8)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        if self._on_edit:
+            edit_btn = QtWidgets.QPushButton("Edit")
+            btn_row.addWidget(edit_btn)
+        close_btn = QtWidgets.QPushButton("Close")
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        if self._on_edit:
+            edit_btn.clicked.connect(self._handle_edit)
+        close_btn.clicked.connect(self.accept)
+
+    def _handle_edit(self):
+        if self._on_edit:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_edit)
+
+
+class CardEditDialog(SetupEditDialog):
+    def __init__(self, users, card=None, parent=None):
+        super().__init__(parent)
+        self.users = users or []
+        self.card = card
+        self._user_lookup = {name.lower(): name for name in self.users}
+        self.setWindowTitle("Edit Card" if card else "Add Card")
+        self.resize(540, 240)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+
+        self.name_edit = QtWidgets.QLineEdit()
+        self.cashback_edit = QtWidgets.QLineEdit()
+        self.cashback_edit.setPlaceholderText("0.00")
+        self.user_combo = QtWidgets.QComboBox()
+        self.user_combo.setEditable(True)
+        self.user_combo.addItems(self.users)
+        self.active_check = QtWidgets.QCheckBox()
+        self.active_check.setChecked(True)
+        self.notes_edit = QtWidgets.QPlainTextEdit()
+        self.notes_edit.setObjectName("NotesField")
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+
+        form.addWidget(QtWidgets.QLabel("Card Name"), 0, 0)
+        form.addWidget(self.name_edit, 0, 1)
+        form.addWidget(QtWidgets.QLabel("Active"), 0, 2)
+        form.addWidget(self.active_check, 0, 3)
+        form.addWidget(QtWidgets.QLabel("Cashback %"), 1, 0)
+        form.addWidget(self.cashback_edit, 1, 1)
+        form.addWidget(QtWidgets.QLabel("User"), 1, 2)
+        form.addWidget(self.user_combo, 1, 3)
+        form.addWidget(QtWidgets.QLabel("Notes"), 2, 0, QtCore.Qt.AlignTop)
+        form.addWidget(self.notes_edit, 2, 1, 1, 3)
+        layout.addLayout(form)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        self.save_btn = QtWidgets.QPushButton("Save")
+        self.save_btn.setObjectName("PrimaryButton")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(self.save_btn)
+        layout.addLayout(btn_row)
+
+        cancel_btn.clicked.connect(self.reject)
+        self.save_btn.clicked.connect(self._handle_save)
+        self.name_edit.textChanged.connect(self._validate_inline)
+        self.cashback_edit.textChanged.connect(self._validate_inline)
+        self.user_combo.currentTextChanged.connect(self._validate_inline)
+
+        if card:
+            self.name_edit.setText(card["name"])
+            self.cashback_edit.setText(f"{float(card['cashback_rate'] or 0):.2f}")
+            if card["user_name"]:
+                self.user_combo.setCurrentText(card["user_name"])
+            self.active_check.setChecked(bool(card["active"]))
+            self.notes_edit.setPlainText(card["notes"] or "")
+        else:
+            self.user_combo.setCurrentIndex(-1)
+            self.user_combo.setEditText("")
+        self._validate_inline()
+
+    def _validate_inline(self):
+        ok = True
+        if not self.name_edit.text().strip():
+            self._set_invalid(self.name_edit, "Card name is required.")
+            ok = False
+        else:
+            self._set_valid(self.name_edit)
+
+        cashback_text = self.cashback_edit.text().strip()
+        if cashback_text:
+            try:
+                cashback = float(cashback_text)
+                if cashback < 0 or cashback > 100:
+                    raise ValueError
+                self._set_valid(self.cashback_edit)
+            except ValueError:
+                self._set_invalid(self.cashback_edit, "Cashback must be between 0 and 100.")
+                ok = False
+        else:
+            self._set_valid(self.cashback_edit)
+
+        user_text = self.user_combo.currentText().strip()
+        if not user_text or user_text.lower() not in self._user_lookup:
+            self._set_invalid(self.user_combo, "Select a valid user.")
+            ok = False
+        else:
+            self._set_valid(self.user_combo)
+        return ok
+
+    def _handle_save(self):
+        if self._validate_inline():
+            self.accept()
+
+    def data(self):
+        user_text = self.user_combo.currentText().strip()
+        return {
+            "name": self.name_edit.text().strip(),
+            "cashback_rate": float(self.cashback_edit.text().strip() or 0.0),
+            "user_name": self._user_lookup.get(user_text.lower(), user_text),
+            "notes": self.notes_edit.toPlainText().strip() or None,
+            "active": 1 if self.active_check.isChecked() else 0,
+        }
+
+
+class CardViewDialog(QtWidgets.QDialog):
+    def __init__(self, card, parent=None, on_edit=None):
+        super().__init__(parent)
+        self.card = card
+        self._on_edit = on_edit
+        self.setWindowTitle("View Card")
+        self.resize(540, 240)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+        form.setColumnStretch(3, 1)
+
+        def add_value(label_text, value, row, col):
+            label = QtWidgets.QLabel(label_text)
+            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label = QtWidgets.QLabel(value)
+            value_label.setObjectName("InfoField")
+            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            fixed_height = max(value_label.sizeHint().height(), 26)
+            value_label.setFixedHeight(fixed_height)
+            form.addWidget(label, row, col)
+            form.addWidget(value_label, row, col + 1)
+
+        row = 0
+        add_value("Card Name", card["name"], row, 0)
+        active_label = QtWidgets.QLabel("Active")
+        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        active_check = QtWidgets.QCheckBox()
+        active_check.setChecked(bool(card["active"]))
+        active_check.setEnabled(False)
+        form.addWidget(active_label, row, 2)
+        form.addWidget(active_check, row, 3)
+
+        add_value("Cashback %", f"{float(card['cashback_rate'] or 0):.2f}", row + 1, 0)
+        add_value("User", card["user_name"] or "—", row + 1, 2)
+
+        notes_value = card["notes"] or ""
+        notes_label = QtWidgets.QLabel("Notes")
+        notes_label.setAlignment(
+            QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
+        )
+        form.addWidget(notes_label, row + 2, 0)
+        if notes_value:
+            notes_edit = QtWidgets.QPlainTextEdit()
+            notes_edit.setObjectName("NotesField")
+            notes_edit.setReadOnly(True)
+            notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
+            notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
+            notes_edit.setPlainText(notes_value)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+            form.addWidget(notes_edit, row + 2, 1, 1, 3)
+        else:
+            notes_field = QtWidgets.QLabel("—")
+            notes_field.setObjectName("InfoField")
+            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_field.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            fixed_height = max(notes_field.sizeHint().height(), 26)
+            notes_field.setFixedHeight(fixed_height)
+            form.addWidget(notes_field, row + 2, 1, 1, 3)
+
+        layout.addLayout(form)
+        layout.addSpacing(8)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        if self._on_edit:
+            edit_btn = QtWidgets.QPushButton("Edit")
+            btn_row.addWidget(edit_btn)
+        close_btn = QtWidgets.QPushButton("Close")
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        if self._on_edit:
+            edit_btn.clicked.connect(self._handle_edit)
+        close_btn.clicked.connect(self.accept)
+
+    def _handle_edit(self):
+        if self._on_edit:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_edit)
+
+
+class MethodEditDialog(SetupEditDialog):
+    def __init__(self, users, method=None, parent=None):
+        super().__init__(parent)
+        self.users = users or []
+        self.method = method
+        self._user_lookup = {name.lower(): name for name in self.users}
+        self.setWindowTitle("Edit Method" if method else "Add Method")
+        self.resize(480, 220)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+
+        self.name_edit = QtWidgets.QLineEdit()
+        self.user_combo = QtWidgets.QComboBox()
+        self.user_combo.setEditable(True)
+        self.user_combo.addItems(self.users)
+        self.active_check = QtWidgets.QCheckBox()
+        self.active_check.setChecked(True)
+        self.notes_edit = QtWidgets.QPlainTextEdit()
+        self.notes_edit.setObjectName("NotesField")
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+
+        form.addWidget(QtWidgets.QLabel("Method Name"), 0, 0)
+        form.addWidget(self.name_edit, 0, 1)
+        form.addWidget(QtWidgets.QLabel("Active"), 0, 2)
+        form.addWidget(self.active_check, 0, 3)
+        form.addWidget(QtWidgets.QLabel("User"), 1, 0)
+        form.addWidget(self.user_combo, 1, 1, 1, 3)
+        form.addWidget(QtWidgets.QLabel("Notes"), 2, 0, QtCore.Qt.AlignTop)
+        form.addWidget(self.notes_edit, 2, 1, 1, 3)
+        layout.addLayout(form)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        self.save_btn = QtWidgets.QPushButton("Save")
+        self.save_btn.setObjectName("PrimaryButton")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(self.save_btn)
+        layout.addLayout(btn_row)
+
+        cancel_btn.clicked.connect(self.reject)
+        self.save_btn.clicked.connect(self._handle_save)
+        self.name_edit.textChanged.connect(self._validate_inline)
+        self.user_combo.currentTextChanged.connect(self._validate_inline)
+
+        if method:
+            self.name_edit.setText(method["name"])
+            if method["user_name"]:
+                self.user_combo.setCurrentText(method["user_name"])
+            self.active_check.setChecked(bool(method["active"]))
+            self.notes_edit.setPlainText(method["notes"] or "")
+        else:
+            self.user_combo.setCurrentIndex(-1)
+            self.user_combo.setEditText("")
+        self._validate_inline()
+
+    def _validate_inline(self):
+        ok = True
+        if not self.name_edit.text().strip():
+            self._set_invalid(self.name_edit, "Method name is required.")
+            ok = False
+        else:
+            self._set_valid(self.name_edit)
+
+        user_text = self.user_combo.currentText().strip()
+        if not user_text or user_text.lower() not in self._user_lookup:
+            self._set_invalid(self.user_combo, "Select a valid user.")
+            ok = False
+        else:
+            self._set_valid(self.user_combo)
+        return ok
+
+    def _handle_save(self):
+        if self._validate_inline():
+            self.accept()
+
+    def data(self):
+        user_text = self.user_combo.currentText().strip()
+        return {
+            "name": self.name_edit.text().strip(),
+            "user_name": self._user_lookup.get(user_text.lower(), user_text),
+            "notes": self.notes_edit.toPlainText().strip() or None,
+            "active": 1 if self.active_check.isChecked() else 0,
+        }
+
+
+class MethodViewDialog(QtWidgets.QDialog):
+    def __init__(self, method, parent=None, on_edit=None):
+        super().__init__(parent)
+        self.method = method
+        self._on_edit = on_edit
+        self.setWindowTitle("View Method")
+        self.resize(480, 220)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+        form.setColumnStretch(3, 1)
+
+        def add_value(label_text, value, row, col):
+            label = QtWidgets.QLabel(label_text)
+            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label = QtWidgets.QLabel(value)
+            value_label.setObjectName("InfoField")
+            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            fixed_height = max(value_label.sizeHint().height(), 26)
+            value_label.setFixedHeight(fixed_height)
+            form.addWidget(label, row, col)
+            form.addWidget(value_label, row, col + 1)
+
+        row = 0
+        add_value("Method Name", method["name"], row, 0)
+        active_label = QtWidgets.QLabel("Active")
+        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        active_check = QtWidgets.QCheckBox()
+        active_check.setChecked(bool(method["active"]))
+        active_check.setEnabled(False)
+        form.addWidget(active_label, row, 2)
+        form.addWidget(active_check, row, 3)
+
+        user_label = QtWidgets.QLabel("User")
+        user_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        user_value = QtWidgets.QLabel(method["user_name"] or "—")
+        user_value.setObjectName("InfoField")
+        user_value.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        user_value.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
+        fixed_height = max(user_value.sizeHint().height(), 26)
+        user_value.setFixedHeight(fixed_height)
+        form.addWidget(user_label, row + 1, 0)
+        form.addWidget(user_value, row + 1, 1, 1, 3)
+
+        notes_value = method["notes"] or ""
+        notes_label = QtWidgets.QLabel("Notes")
+        notes_label.setAlignment(
+            QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
+        )
+        form.addWidget(notes_label, row + 2, 0)
+        if notes_value:
+            notes_edit = QtWidgets.QPlainTextEdit()
+            notes_edit.setObjectName("NotesField")
+            notes_edit.setReadOnly(True)
+            notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
+            notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
+            notes_edit.setPlainText(notes_value)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+            form.addWidget(notes_edit, row + 2, 1, 1, 3)
+        else:
+            notes_field = QtWidgets.QLabel("—")
+            notes_field.setObjectName("InfoField")
+            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_field.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            fixed_height = max(notes_field.sizeHint().height(), 26)
+            notes_field.setFixedHeight(fixed_height)
+            form.addWidget(notes_field, row + 2, 1, 1, 3)
+
+        layout.addLayout(form)
+        layout.addSpacing(8)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        if self._on_edit:
+            edit_btn = QtWidgets.QPushButton("Edit")
+            btn_row.addWidget(edit_btn)
+        close_btn = QtWidgets.QPushButton("Close")
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        if self._on_edit:
+            edit_btn.clicked.connect(self._handle_edit)
+        close_btn.clicked.connect(self.accept)
+
+    def _handle_edit(self):
+        if self._on_edit:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_edit)
+
+
+class GameTypeEditDialog(SetupEditDialog):
+    def __init__(self, game_type=None, parent=None):
+        super().__init__(parent)
+        self.game_type = game_type
+        self.setWindowTitle("Edit Game Type" if game_type else "Add Game Type")
+        self.resize(420, 200)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+
+        self.name_edit = QtWidgets.QLineEdit()
+        self.active_check = QtWidgets.QCheckBox()
+        self.active_check.setChecked(True)
+        self.notes_edit = QtWidgets.QPlainTextEdit()
+        self.notes_edit.setObjectName("NotesField")
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+
+        form.addWidget(QtWidgets.QLabel("Game Type Name"), 0, 0)
+        form.addWidget(self.name_edit, 0, 1)
+        form.addWidget(QtWidgets.QLabel("Active"), 0, 2)
+        form.addWidget(self.active_check, 0, 3)
+        form.addWidget(QtWidgets.QLabel("Notes"), 1, 0, QtCore.Qt.AlignTop)
+        form.addWidget(self.notes_edit, 1, 1, 1, 3)
+        layout.addLayout(form)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        self.save_btn = QtWidgets.QPushButton("Save")
+        self.save_btn.setObjectName("PrimaryButton")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(self.save_btn)
+        layout.addLayout(btn_row)
+
+        cancel_btn.clicked.connect(self.reject)
+        self.save_btn.clicked.connect(self._handle_save)
+        self.name_edit.textChanged.connect(self._validate_inline)
+
+        if game_type:
+            self.name_edit.setText(game_type["name"])
+            self.active_check.setChecked(bool(game_type["active"]))
+            self.notes_edit.setPlainText(game_type["notes"] or "")
+        self._validate_inline()
+
+    def _validate_inline(self):
+        if not self.name_edit.text().strip():
+            self._set_invalid(self.name_edit, "Game type name is required.")
+            return False
+        self._set_valid(self.name_edit)
+        return True
+
+    def _handle_save(self):
+        if self._validate_inline():
+            self.accept()
+
+    def data(self):
+        return {
+            "name": self.name_edit.text().strip(),
+            "notes": self.notes_edit.toPlainText().strip() or None,
+            "active": 1 if self.active_check.isChecked() else 0,
+        }
+
+
+class GameTypeViewDialog(QtWidgets.QDialog):
+    def __init__(self, game_type, parent=None, on_edit=None):
+        super().__init__(parent)
+        self.game_type = game_type
+        self._on_edit = on_edit
+        self.setWindowTitle("View Game Type")
+        self.resize(420, 200)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+
+        def add_value(label_text, value, row, col):
+            label = QtWidgets.QLabel(label_text)
+            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label = QtWidgets.QLabel(value)
+            value_label.setObjectName("InfoField")
+            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            fixed_height = max(value_label.sizeHint().height(), 26)
+            value_label.setFixedHeight(fixed_height)
+            form.addWidget(label, row, col)
+            form.addWidget(value_label, row, col + 1)
+
+        row = 0
+        add_value("Game Type Name", game_type["name"], row, 0)
+        active_label = QtWidgets.QLabel("Active")
+        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        active_check = QtWidgets.QCheckBox()
+        active_check.setChecked(bool(game_type["active"]))
+        active_check.setEnabled(False)
+        form.addWidget(active_label, row, 2)
+        form.addWidget(active_check, row, 3)
+
+        notes_value = game_type["notes"] or ""
+        notes_label = QtWidgets.QLabel("Notes")
+        notes_label.setAlignment(
+            QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
+        )
+        form.addWidget(notes_label, row + 1, 0)
+        if notes_value:
+            notes_edit = QtWidgets.QPlainTextEdit()
+            notes_edit.setObjectName("NotesField")
+            notes_edit.setReadOnly(True)
+            notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
+            notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
+            notes_edit.setPlainText(notes_value)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+            form.addWidget(notes_edit, row + 1, 1, 1, 3)
+        else:
+            notes_field = QtWidgets.QLabel("—")
+            notes_field.setObjectName("InfoField")
+            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_field.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            fixed_height = max(notes_field.sizeHint().height(), 26)
+            notes_field.setFixedHeight(fixed_height)
+            form.addWidget(notes_field, row + 1, 1, 1, 3)
+
+        layout.addLayout(form)
+        layout.addSpacing(8)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        if self._on_edit:
+            edit_btn = QtWidgets.QPushButton("Edit")
+            btn_row.addWidget(edit_btn)
+        close_btn = QtWidgets.QPushButton("Close")
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        if self._on_edit:
+            edit_btn.clicked.connect(self._handle_edit)
+        close_btn.clicked.connect(self.accept)
+
+    def _handle_edit(self):
+        if self._on_edit:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_edit)
+
+
+class GameEditDialog(SetupEditDialog):
+    def __init__(self, game_types, game=None, parent=None):
+        super().__init__(parent)
+        self.game_types = game_types or []
+        self.game = game
+        self._type_lookup = {name.lower(): name for name in self.game_types}
+        self.setWindowTitle("Edit Game" if game else "Add Game")
+        self.resize(480, 320)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+
+        self.name_edit = QtWidgets.QLineEdit()
+        self.type_combo = QtWidgets.QComboBox()
+        self.type_combo.setEditable(True)
+        self.type_combo.addItems(self.game_types)
+        self.rtp_edit = QtWidgets.QLineEdit()
+        self.rtp_edit.setPlaceholderText("96.0")
+        self.notes_edit = QtWidgets.QPlainTextEdit()
+        self.notes_edit.setFixedHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 8)
+        self.active_check = QtWidgets.QCheckBox()
+        self.active_check.setChecked(True)
+
+        form.addWidget(QtWidgets.QLabel("Game Name"), 0, 0)
+        form.addWidget(self.name_edit, 0, 1)
+        form.addWidget(QtWidgets.QLabel("Active"), 0, 2)
+        form.addWidget(self.active_check, 0, 3)
+        form.addWidget(QtWidgets.QLabel("Game Type"), 1, 0)
+        form.addWidget(self.type_combo, 1, 1)
+        form.addWidget(QtWidgets.QLabel("RTP %"), 2, 0)
+        form.addWidget(self.rtp_edit, 2, 1)
+        form.addWidget(QtWidgets.QLabel("Notes"), 3, 0, QtCore.Qt.AlignTop)
+        form.addWidget(self.notes_edit, 3, 1)
+        layout.addLayout(form)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        self.save_btn = QtWidgets.QPushButton("Save")
+        self.save_btn.setObjectName("PrimaryButton")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(self.save_btn)
+        layout.addLayout(btn_row)
+
+        cancel_btn.clicked.connect(self.reject)
+        self.save_btn.clicked.connect(self._handle_save)
+        self.name_edit.textChanged.connect(self._validate_inline)
+        self.type_combo.currentTextChanged.connect(self._validate_inline)
+        self.rtp_edit.textChanged.connect(self._validate_inline)
+
+        if game:
+            self.name_edit.setText(game["name"])
+            if game["type_name"]:
+                self.type_combo.setCurrentText(game["type_name"])
+            if game["rtp"] is not None:
+                self.rtp_edit.setText(f"{float(game['rtp']):.2f}")
+            self.notes_edit.setPlainText(game["notes"] or "")
+            self.active_check.setChecked(bool(game["active"]))
+        else:
+            self.type_combo.setCurrentIndex(-1)
+            self.type_combo.setEditText("")
+        self._validate_inline()
+
+    def _validate_inline(self):
+        ok = True
+        if not self.name_edit.text().strip():
+            self._set_invalid(self.name_edit, "Game name is required.")
+            ok = False
+        else:
+            self._set_valid(self.name_edit)
+
+        type_text = self.type_combo.currentText().strip()
+        if not type_text or type_text.lower() not in self._type_lookup:
+            self._set_invalid(self.type_combo, "Select a valid game type.")
+            ok = False
+        else:
+            self._set_valid(self.type_combo)
+
+        rtp_text = self.rtp_edit.text().strip()
+        if rtp_text:
+            try:
+                rtp_val = float(rtp_text)
+                if rtp_val < 0 or rtp_val > 100:
+                    raise ValueError
+                self._set_valid(self.rtp_edit)
+            except ValueError:
+                self._set_invalid(self.rtp_edit, "RTP must be between 0 and 100.")
+                ok = False
+        else:
+            self._set_valid(self.rtp_edit)
+        return ok
+
+    def _handle_save(self):
+        if self._validate_inline():
+            self.accept()
+
+    def data(self):
+        type_text = self.type_combo.currentText().strip()
+        return {
+            "name": self.name_edit.text().strip(),
+            "type_name": self._type_lookup.get(type_text.lower(), type_text),
+            "rtp": float(self.rtp_edit.text().strip()) if self.rtp_edit.text().strip() else None,
+            "notes": self.notes_edit.toPlainText().strip() or None,
+            "active": 1 if self.active_check.isChecked() else 0,
+        }
+
+
+class GameViewDialog(QtWidgets.QDialog):
+    def __init__(self, game, parent=None, on_edit=None):
+        super().__init__(parent)
+        self.game = game
+        self._on_edit = on_edit
+        self.setWindowTitle("View Game")
+        self.resize(480, 320)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+
+        def add_value(label_text, value, row, col):
+            label = QtWidgets.QLabel(label_text)
+            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label = QtWidgets.QLabel(value)
+            value_label.setObjectName("InfoField")
+            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            fixed_height = max(value_label.sizeHint().height(), 26)
+            value_label.setFixedHeight(fixed_height)
+            form.addWidget(label, row, col)
+            form.addWidget(value_label, row, col + 1)
+
+        row = 0
+        add_value("Game Name", game["name"], row, 0)
+        active_label = QtWidgets.QLabel("Active")
+        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        active_check = QtWidgets.QCheckBox()
+        active_check.setChecked(bool(game["active"]))
+        active_check.setEnabled(False)
+        form.addWidget(active_label, row, 2)
+        form.addWidget(active_check, row, 3)
+
+        add_value("Game Type", game["type_name"] or "—", row + 1, 0)
+        add_value("RTP %", f"{float(game['rtp']):.2f}" if game["rtp"] is not None else "—", row + 2, 0)
+
+        notes_value = game["notes"] or ""
+        notes_label = QtWidgets.QLabel("Notes")
+        notes_label.setAlignment(
+            QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
+        )
+        form.addWidget(notes_label, row + 3, 0)
+        if notes_value:
+            notes_edit = QtWidgets.QPlainTextEdit()
+            notes_edit.setObjectName("NotesField")
+            notes_edit.setReadOnly(True)
+            notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
+            notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
+            notes_edit.setPlainText(notes_value)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+            form.addWidget(notes_edit, row + 3, 1)
+        else:
+            notes_field = QtWidgets.QLabel("—")
+            notes_field.setObjectName("InfoField")
+            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_field.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            fixed_height = max(notes_field.sizeHint().height(), 26)
+            notes_field.setFixedHeight(fixed_height)
+            form.addWidget(notes_field, row + 3, 1)
+
+        layout.addLayout(form)
+        layout.addSpacing(8)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        if self._on_edit:
+            edit_btn = QtWidgets.QPushButton("Edit")
+            btn_row.addWidget(edit_btn)
+        close_btn = QtWidgets.QPushButton("Close")
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        if self._on_edit:
+            edit_btn.clicked.connect(self._handle_edit)
+        close_btn.clicked.connect(self.accept)
+
+    def _handle_edit(self):
+        if self._on_edit:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_edit)
+
+
+class SetupListTab(QtWidgets.QWidget):
+    def __init__(
+        self,
+        db,
+        columns,
+        search_placeholder,
+        add_label,
+        view_label,
+        edit_label,
+        delete_label,
+        record_label,
+        export_name,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.db = db
+        self.columns = columns
+        self.search_placeholder = search_placeholder
+        self.record_label = record_label
+        self.export_name = export_name
+        self.numeric_cols = set()
+        self.all_rows = []
+        self.filtered_rows = []
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        actions = QtWidgets.QHBoxLayout()
+        actions.setSpacing(8)
+        self.add_btn = QtWidgets.QPushButton(add_label)
+        self.view_btn = QtWidgets.QPushButton(view_label)
+        self.edit_btn = QtWidgets.QPushButton(edit_label)
+        self.delete_btn = QtWidgets.QPushButton(delete_label)
+        self.add_btn.setObjectName("PrimaryButton")
+        self.view_btn.setVisible(False)
+        self.edit_btn.setVisible(False)
+        self.delete_btn.setVisible(False)
+        actions.addWidget(self.add_btn)
+        actions.addWidget(self.view_btn)
+        actions.addWidget(self.edit_btn)
+        actions.addWidget(self.delete_btn)
+        actions.addStretch(1)
+        layout.addLayout(actions)
+
+        search_row = QtWidgets.QHBoxLayout()
+        search_row.setSpacing(8)
+        self.search_edit = QtWidgets.QLineEdit()
+        self.search_edit.setPlaceholderText(search_placeholder)
+        self.search_clear_btn = QtWidgets.QPushButton("Clear")
+        self.clear_filters_btn = QtWidgets.QPushButton("Clear All Filters")
+        self.refresh_btn = QtWidgets.QPushButton("Refresh")
+        self.export_btn = QtWidgets.QPushButton("Export CSV")
+        search_row.addWidget(self.search_edit, 1)
+        search_row.addWidget(self.search_clear_btn)
+        search_row.addWidget(self.clear_filters_btn)
+        search_row.addStretch(1)
+        search_row.addWidget(self.refresh_btn)
+        search_row.addWidget(self.export_btn)
+        layout.addLayout(search_row)
+
+        self.table = QtWidgets.QTableWidget(0, len(columns))
+        self.table.setHorizontalHeaderLabels(columns)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.table.setAlternatingRowColors(True)
+        self.table.setMinimumSize(0, 0)
+        self.table.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding)
+        self.table.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustIgnored)
+        self.table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        header.setMinimumSectionSize(40)
+        self.table.verticalHeader().setVisible(False)
+        self.table.itemDoubleClicked.connect(self._view_selected)
+        layout.addWidget(self.table)
+
+        self.add_btn.clicked.connect(self.add_record)
+        self.view_btn.clicked.connect(self._view_selected)
+        self.edit_btn.clicked.connect(self._edit_selected)
+        self.delete_btn.clicked.connect(self._delete_selected)
+        self.search_edit.textChanged.connect(self.apply_filters)
+        self.search_clear_btn.clicked.connect(self._clear_search)
+        self.clear_filters_btn.clicked.connect(self._clear_search)
+        self.refresh_btn.clicked.connect(self.load_data)
+        self.export_btn.clicked.connect(self.export_csv)
+        self.table.selectionModel().selectionChanged.connect(self._update_action_visibility)
+
+    def _selected_ids(self):
+        ids = []
+        for idx in self.table.selectionModel().selectedRows():
+            item = self.table.item(idx.row(), 0)
+            if item is not None:
+                record_id = item.data(QtCore.Qt.UserRole)
+                if record_id is not None:
+                    ids.append(record_id)
+        return ids
+
+    def _clear_selection(self):
+        self.table.clearSelection()
+        self._update_action_visibility()
+
+    def _clear_search(self):
+        self.search_edit.clear()
+        self._clear_selection()
+
+    def _update_action_visibility(self):
+        selected = self.table.selectionModel().selectedRows()
+        has_selection = bool(selected)
+        single_selected = len(selected) == 1
+        self.view_btn.setVisible(single_selected)
+        self.edit_btn.setVisible(single_selected)
+        self.delete_btn.setVisible(has_selection)
+
+    def apply_filters(self):
+        term = self.search_edit.text().strip().lower()
+        if not term:
+            rows = list(self.all_rows)
+        else:
+            rows = [r for r in self.all_rows if term in r["search_blob"]]
+        self.filtered_rows = rows
+        self.refresh_table(rows)
+
+    def refresh_table(self, rows):
+        self.table.setRowCount(len(rows))
+        for r_idx, row in enumerate(rows):
+            for c_idx, value in enumerate(row["display"]):
+                item = QtWidgets.QTableWidgetItem(str(value))
+                if c_idx in self.numeric_cols:
+                    item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                if c_idx == 0:
+                    item.setData(QtCore.Qt.UserRole, row["id"])
+                self.table.setItem(r_idx, c_idx, item)
+        self._update_action_visibility()
+
+    def _view_selected(self, *_args):
+        selected_ids = self._selected_ids()
+        if not selected_ids:
+            QtWidgets.QMessageBox.warning(
+                self, "No Selection", f"Select a {self.record_label} to view."
+            )
+            return
+        if len(selected_ids) > 1:
+            QtWidgets.QMessageBox.warning(
+                self, "Multiple Selection", f"Select one {self.record_label} to view."
+            )
+            return
+        self.view_record(selected_ids[0])
+
+    def _edit_selected(self, *_args):
+        selected_ids = self._selected_ids()
+        if not selected_ids:
+            QtWidgets.QMessageBox.warning(
+                self, "No Selection", f"Select a {self.record_label} to edit."
+            )
+            return
+        if len(selected_ids) > 1:
+            QtWidgets.QMessageBox.warning(
+                self, "Multiple Selection", f"Select one {self.record_label} to edit."
+            )
+            return
+        self.edit_record(selected_ids[0])
+
+    def _delete_selected(self):
+        selected_ids = self._selected_ids()
+        if not selected_ids:
+            QtWidgets.QMessageBox.warning(
+                self, "No Selection", f"Select {self.record_label}(s) to delete."
+            )
+            return
+        self.delete_records(selected_ids)
+
+    def export_csv(self):
+        import csv
+
+        default_name = f"{self.export_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export CSV",
+            default_name,
+            "CSV Files (*.csv)",
+        )
+        if not path:
+            return
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(self.columns)
+            for row in self.filtered_rows:
+                writer.writerow(row["display"])
+
+    def load_data(self):
+        raise NotImplementedError
+
+    def add_record(self):
+        raise NotImplementedError
+
+    def view_record(self, record_id):
+        raise NotImplementedError
+
+    def edit_record(self, record_id):
+        raise NotImplementedError
+
+    def delete_records(self, record_ids):
+        raise NotImplementedError
+
+
+class UsersSetupTab(SetupListTab):
+    def __init__(self, db, parent=None):
+        super().__init__(
+            db,
+            ["Name", "Active", "Notes"],
+            "Search users...",
+            "Add User",
+            "View User",
+            "Edit User",
+            "Delete User",
+            "user",
+            "users",
+            parent=parent,
+        )
+        self.load_data()
+
+    def load_data(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id, name, notes, active FROM users ORDER BY name")
+        rows = []
+        for row in c.fetchall():
+            notes = (row["notes"] or "").strip()
+            notes_display = notes[:120]
+            display = [row["name"], "Yes" if row["active"] else "No", notes_display]
+            rows.append(
+                {
+                    "id": row["id"],
+                    "display": display,
+                    "search_blob": " ".join(str(v).lower() for v in display),
+                }
+            )
+        conn.close()
+        self.all_rows = rows
+        self.apply_filters()
+
+    def _fetch_user(self, user_id):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id, name, notes, active FROM users WHERE id = ?", (user_id,))
+        row = c.fetchone()
+        conn.close()
+        return row
+
+    def add_record(self):
+        dialog = UserEditDialog(parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        data = dialog.data()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute(
+                "INSERT INTO users (name, notes, active) VALUES (?, ?, ?)",
+                (data["name"], data["notes"], data["active"]),
+            )
+            conn.commit()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
+        finally:
+            conn.close()
+        self.load_data()
+
+    def view_record(self, record_id):
+        user = self._fetch_user(record_id)
+        if not user:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected user was not found.")
+            return
+
+        dialog = UserViewDialog(user, parent=self, on_edit=lambda: self.edit_record(record_id))
+        dialog.exec()
+
+    def edit_record(self, record_id):
+        user = self._fetch_user(record_id)
+        if not user:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected user was not found.")
+            return
+        dialog = UserEditDialog(user, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        data = dialog.data()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute(
+                "UPDATE users SET name = ?, notes = ?, active = ? WHERE id = ?",
+                (data["name"], data["notes"], data["active"], record_id),
+            )
+            conn.commit()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
+        finally:
+            conn.close()
+        self.load_data()
+
+    def _dependency_summary(self, cursor, user_id):
+        checks = [
+            ("purchases", "SELECT COUNT(*) as cnt FROM purchases WHERE user_id = ?"),
+            ("redemptions", "SELECT COUNT(*) as cnt FROM redemptions WHERE user_id = ?"),
+            ("game sessions", "SELECT COUNT(*) as cnt FROM game_sessions WHERE user_id = ?"),
+            ("expenses", "SELECT COUNT(*) as cnt FROM expenses WHERE user_id = ?"),
+            ("cards", "SELECT COUNT(*) as cnt FROM cards WHERE user_id = ?"),
+            ("methods", "SELECT COUNT(*) as cnt FROM redemption_methods WHERE user_id = ?"),
+            ("tax sessions", "SELECT COUNT(*) as cnt FROM tax_sessions WHERE user_id = ?"),
+            ("daily sessions", "SELECT COUNT(*) as cnt FROM daily_tax_sessions WHERE user_id = ?"),
+            ("site sessions", "SELECT COUNT(*) as cnt FROM site_sessions WHERE user_id = ?"),
+            ("other income", "SELECT COUNT(*) as cnt FROM other_income WHERE user_id = ?"),
+        ]
+        details = []
+        for label, query in checks:
+            cursor.execute(query, (user_id,))
+            count = cursor.fetchone()["cnt"]
+            if count:
+                details.append(f"{label}: {count}")
+        return details
+
+    def delete_records(self, record_ids):
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Delete {len(record_ids)} user(s)?",
+        )
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        deleted = 0
+        blocked = []
+        for user_id in record_ids:
+            deps = self._dependency_summary(c, user_id)
+            if deps:
+                blocked.append(deps)
+                continue
+            c.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            if c.rowcount:
+                deleted += 1
+        conn.commit()
+        conn.close()
+
+        self.load_data()
+        self._clear_selection()
+
+        if blocked:
+            details = "\n".join(", ".join(dep for dep in deps) for deps in blocked)
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Cannot Delete",
+                "Some users have related records. Mark them inactive instead.\n\n" + details,
+            )
+        if deleted:
+            QtWidgets.QMessageBox.information(
+                self, "Deleted", f"Deleted {deleted} user(s)."
+            )
+
+
+class SitesSetupTab(SetupListTab):
+    def __init__(self, db, parent=None):
+        super().__init__(
+            db,
+            ["Name", "SC Rate", "Active", "Notes"],
+            "Search sites...",
+            "Add Site",
+            "View Site",
+            "Edit Site",
+            "Delete Site",
+            "site",
+            "sites",
+            parent=parent,
+        )
+        self.numeric_cols = {1}
+        self.load_data()
+
+    def load_data(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id, name, sc_rate, notes, active FROM sites ORDER BY name")
+        rows = []
+        for row in c.fetchall():
+            notes = (row["notes"] or "").strip()
+            notes_display = notes[:120]
+            display = [
+                row["name"],
+                f"{float(row['sc_rate'] or 1.0):.4f}",
+                "Yes" if row["active"] else "No",
+                notes_display,
+            ]
+            rows.append(
+                {
+                    "id": row["id"],
+                    "display": display,
+                    "search_blob": " ".join(str(v).lower() for v in display),
+                }
+            )
+        conn.close()
+        self.all_rows = rows
+        self.apply_filters()
+
+    def _fetch_site(self, site_id):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT id, name, sc_rate, notes, active FROM sites WHERE id = ?",
+            (site_id,),
+        )
+        row = c.fetchone()
+        conn.close()
+        return row
+
+    def add_record(self):
+        dialog = SiteEditDialog(parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        data = dialog.data()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute(
+                "INSERT INTO sites (name, sc_rate, notes, active) VALUES (?, ?, ?, ?)",
+                (data["name"], data["sc_rate"], data["notes"], data["active"]),
+            )
+            conn.commit()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
+        finally:
+            conn.close()
+        self.load_data()
+
+    def view_record(self, record_id):
+        site = self._fetch_site(record_id)
+        if not site:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected site was not found.")
+            return
+        dialog = SiteViewDialog(site, parent=self, on_edit=lambda: self.edit_record(record_id))
+        dialog.exec()
+
+    def edit_record(self, record_id):
+        site = self._fetch_site(record_id)
+        if not site:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected site was not found.")
+            return
+        dialog = SiteEditDialog(site, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        data = dialog.data()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute(
+                "UPDATE sites SET name = ?, sc_rate = ?, notes = ?, active = ? WHERE id = ?",
+                (data["name"], data["sc_rate"], data["notes"], data["active"], record_id),
+            )
+            conn.commit()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
+        finally:
+            conn.close()
+        self.load_data()
+
+    def _dependency_summary(self, cursor, site_id):
+        checks = [
+            ("purchases", "SELECT COUNT(*) as cnt FROM purchases WHERE site_id = ?"),
+            ("redemptions", "SELECT COUNT(*) as cnt FROM redemptions WHERE site_id = ?"),
+            ("game sessions", "SELECT COUNT(*) as cnt FROM game_sessions WHERE site_id = ?"),
+            ("tax sessions", "SELECT COUNT(*) as cnt FROM tax_sessions WHERE site_id = ?"),
+            ("site sessions", "SELECT COUNT(*) as cnt FROM site_sessions WHERE site_id = ?"),
+        ]
+        details = []
+        for label, query in checks:
+            cursor.execute(query, (site_id,))
+            count = cursor.fetchone()["cnt"]
+            if count:
+                details.append(f"{label}: {count}")
+        return details
+
+    def delete_records(self, record_ids):
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Delete {len(record_ids)} site(s)?",
+        )
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        deleted = 0
+        blocked = []
+        for site_id in record_ids:
+            deps = self._dependency_summary(c, site_id)
+            if deps:
+                blocked.append(deps)
+                continue
+            c.execute("DELETE FROM sites WHERE id = ?", (site_id,))
+            if c.rowcount:
+                deleted += 1
+        conn.commit()
+        conn.close()
+
+        self.load_data()
+        self._clear_selection()
+
+        if blocked:
+            details = "\n".join(", ".join(dep for dep in deps) for deps in blocked)
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Cannot Delete",
+                "Some sites have related records. Mark them inactive instead.\n\n" + details,
+            )
+        if deleted:
+            QtWidgets.QMessageBox.information(
+                self, "Deleted", f"Deleted {deleted} site(s)."
+            )
+
+
+class CardsSetupTab(SetupListTab):
+    def __init__(self, db, parent=None):
+        super().__init__(
+            db,
+            ["Name", "Cashback %", "User", "Active", "Notes"],
+            "Search cards...",
+            "Add Card",
+            "View Card",
+            "Edit Card",
+            "Delete Card",
+            "card",
+            "cards",
+            parent=parent,
+        )
+        self.numeric_cols = {1}
+        self.load_data()
+
+    def _fetch_users(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT name FROM users ORDER BY name")
+        users = [row["name"] for row in c.fetchall()]
+        conn.close()
+        return users
+
+    def _fetch_card(self, card_id):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT cards.id, cards.name, cards.cashback_rate, cards.active, cards.notes,
+                   users.name as user_name
+            FROM cards
+            LEFT JOIN users ON users.id = cards.user_id
+            WHERE cards.id = ?
+            """,
+            (card_id,),
+        )
+        row = c.fetchone()
+        conn.close()
+        return row
+
+    def load_data(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT cards.id, cards.name, cards.cashback_rate, cards.active, cards.notes,
+                   users.name as user_name
+            FROM cards
+            LEFT JOIN users ON users.id = cards.user_id
+            ORDER BY cards.name
+            """
+        )
+        rows = []
+        for row in c.fetchall():
+            notes = (row["notes"] or "").strip()
+            notes_display = notes[:120]
+            display = [
+                row["name"],
+                f"{float(row['cashback_rate'] or 0):.2f}",
+                row["user_name"] or "",
+                "Yes" if row["active"] else "No",
+                notes_display,
+            ]
+            rows.append(
+                {
+                    "id": row["id"],
+                    "display": display,
+                    "search_blob": " ".join(str(v).lower() for v in display),
+                }
+            )
+        conn.close()
+        self.all_rows = rows
+        self.apply_filters()
+
+    def add_record(self):
+        dialog = CardEditDialog(self._fetch_users(), parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        data = dialog.data()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id FROM users WHERE name = ?", (data["user_name"],))
+        user_row = c.fetchone()
+        if not user_row:
+            conn.close()
+            QtWidgets.QMessageBox.warning(self, "Invalid", "Selected user was not found.")
+            return
+        user_id = user_row["id"]
+        try:
+            c.execute(
+                """
+                INSERT INTO cards (name, cashback_rate, user_id, notes, active)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (data["name"], data["cashback_rate"], user_id, data["notes"], data["active"]),
+            )
+            conn.commit()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
+        finally:
+            conn.close()
+        self.load_data()
+
+    def view_record(self, record_id):
+        card = self._fetch_card(record_id)
+        if not card:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected card was not found.")
+            return
+        dialog = CardViewDialog(card, parent=self, on_edit=lambda: self.edit_record(record_id))
+        dialog.exec()
+
+    def edit_record(self, record_id):
+        card = self._fetch_card(record_id)
+        if not card:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected card was not found.")
+            return
+        dialog = CardEditDialog(self._fetch_users(), card, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        data = dialog.data()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id FROM users WHERE name = ?", (data["user_name"],))
+        user_row = c.fetchone()
+        if not user_row:
+            conn.close()
+            QtWidgets.QMessageBox.warning(self, "Invalid", "Selected user was not found.")
+            return
+        user_id = user_row["id"]
+        try:
+            c.execute(
+                """
+                UPDATE cards
+                SET name = ?, cashback_rate = ?, user_id = ?, notes = ?, active = ?
+                WHERE id = ?
+                """,
+                (data["name"], data["cashback_rate"], user_id, data["notes"], data["active"], record_id),
+            )
+            conn.commit()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
+        finally:
+            conn.close()
+        self.load_data()
+
+    def delete_records(self, record_ids):
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Delete {len(record_ids)} card(s)?",
+        )
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        deleted = 0
+        blocked = False
+        for card_id in record_ids:
+            c.execute("SELECT COUNT(*) as cnt FROM purchases WHERE card_id = ?", (card_id,))
+            if c.fetchone()["cnt"]:
+                blocked = True
+                continue
+            c.execute("DELETE FROM cards WHERE id = ?", (card_id,))
+            if c.rowcount:
+                deleted += 1
+        conn.commit()
+        conn.close()
+
+        self.load_data()
+        self._clear_selection()
+
+        if blocked:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Cannot Delete",
+                "Some cards are linked to purchases. Mark them inactive instead.",
+            )
+        if deleted:
+            QtWidgets.QMessageBox.information(
+                self, "Deleted", f"Deleted {deleted} card(s)."
+            )
+
+
+class MethodsSetupTab(SetupListTab):
+    def __init__(self, db, parent=None):
+        super().__init__(
+            db,
+            ["Name", "User", "Active", "Notes"],
+            "Search redemption methods...",
+            "Add Method",
+            "View Method",
+            "Edit Method",
+            "Delete Method",
+            "method",
+            "redemption_methods",
+            parent=parent,
+        )
+        self.load_data()
+
+    def _fetch_users(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT name FROM users ORDER BY name")
+        users = [row["name"] for row in c.fetchall()]
+        conn.close()
+        return users
+
+    def _fetch_method(self, method_id):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT rm.id, rm.name, rm.active, rm.notes, u.name as user_name
+            FROM redemption_methods rm
+            LEFT JOIN users u ON u.id = rm.user_id
+            WHERE rm.id = ?
+            """,
+            (method_id,),
+        )
+        row = c.fetchone()
+        conn.close()
+        return row
+
+    def load_data(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT rm.id, rm.name, rm.active, rm.notes, u.name as user_name
+            FROM redemption_methods rm
+            LEFT JOIN users u ON u.id = rm.user_id
+            ORDER BY rm.name
+            """
+        )
+        rows = []
+        for row in c.fetchall():
+            notes = (row["notes"] or "").strip()
+            notes_display = notes[:120]
+            display = [
+                row["name"],
+                row["user_name"] or "",
+                "Yes" if row["active"] else "No",
+                notes_display,
+            ]
+            rows.append(
+                {
+                    "id": row["id"],
+                    "display": display,
+                    "search_blob": " ".join(str(v).lower() for v in display),
+                }
+            )
+        conn.close()
+        self.all_rows = rows
+        self.apply_filters()
+
+    def add_record(self):
+        dialog = MethodEditDialog(self._fetch_users(), parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        data = dialog.data()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id FROM users WHERE name = ?", (data["user_name"],))
+        user_row = c.fetchone()
+        if not user_row:
+            conn.close()
+            QtWidgets.QMessageBox.warning(self, "Invalid", "Selected user was not found.")
+            return
+        user_id = user_row["id"]
+        try:
+            c.execute(
+                """
+                INSERT INTO redemption_methods (name, user_id, notes, active)
+                VALUES (?, ?, ?, ?)
+                """,
+                (data["name"], user_id, data["notes"], data["active"]),
+            )
+            conn.commit()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
+        finally:
+            conn.close()
+        self.load_data()
+
+    def view_record(self, record_id):
+        method = self._fetch_method(record_id)
+        if not method:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected method was not found.")
+            return
+        dialog = MethodViewDialog(method, parent=self, on_edit=lambda: self.edit_record(record_id))
+        dialog.exec()
+
+    def edit_record(self, record_id):
+        method = self._fetch_method(record_id)
+        if not method:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected method was not found.")
+            return
+        dialog = MethodEditDialog(self._fetch_users(), method, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        data = dialog.data()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id FROM users WHERE name = ?", (data["user_name"],))
+        user_row = c.fetchone()
+        if not user_row:
+            conn.close()
+            QtWidgets.QMessageBox.warning(self, "Invalid", "Selected user was not found.")
+            return
+        user_id = user_row["id"]
+        try:
+            c.execute(
+                """
+                UPDATE redemption_methods
+                SET name = ?, user_id = ?, notes = ?, active = ?
+                WHERE id = ?
+                """,
+                (data["name"], user_id, data["notes"], data["active"], record_id),
+            )
+            conn.commit()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
+        finally:
+            conn.close()
+        self.load_data()
+
+    def delete_records(self, record_ids):
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Delete {len(record_ids)} method(s)?",
+        )
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        deleted = 0
+        blocked = False
+        for method_id in record_ids:
+            c.execute(
+                "SELECT COUNT(*) as cnt FROM redemptions WHERE redemption_method_id = ?",
+                (method_id,),
+            )
+            if c.fetchone()["cnt"]:
+                blocked = True
+                continue
+            c.execute("DELETE FROM redemption_methods WHERE id = ?", (method_id,))
+            if c.rowcount:
+                deleted += 1
+        conn.commit()
+        conn.close()
+
+        self.load_data()
+        self._clear_selection()
+
+        if blocked:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Cannot Delete",
+                "Some methods are linked to redemptions. Mark them inactive instead.",
+            )
+        if deleted:
+            QtWidgets.QMessageBox.information(
+                self, "Deleted", f"Deleted {deleted} method(s)."
+            )
+
+
+class GameTypesSetupTab(SetupListTab):
+    def __init__(self, db, parent=None):
+        super().__init__(
+            db,
+            ["Name", "Active", "Notes"],
+            "Search game types...",
+            "Add Game Type",
+            "View Game Type",
+            "Edit Game Type",
+            "Delete Game Type",
+            "game type",
+            "game_types",
+            parent=parent,
+        )
+        self.load_data()
+
+    def load_data(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id, name, notes, active FROM game_types ORDER BY name")
+        rows = []
+        for row in c.fetchall():
+            notes = (row["notes"] or "").strip()
+            notes_display = notes[:120]
+            display = [row["name"], "Yes" if row["active"] else "No", notes_display]
+            rows.append(
+                {
+                    "id": row["id"],
+                    "display": display,
+                    "search_blob": " ".join(str(v).lower() for v in display),
+                }
+            )
+        conn.close()
+        self.all_rows = rows
+        self.apply_filters()
+
+    def _fetch_game_type(self, type_id):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT id, name, notes, active FROM game_types WHERE id = ?",
+            (type_id,),
+        )
+        row = c.fetchone()
+        conn.close()
+        return row
+
+    def add_record(self):
+        dialog = GameTypeEditDialog(parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        data = dialog.data()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute(
+                "INSERT INTO game_types (name, notes, active) VALUES (?, ?, ?)",
+                (data["name"], data["notes"], data["active"]),
+            )
+            conn.commit()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
+        finally:
+            conn.close()
+        self.load_data()
+
+    def view_record(self, record_id):
+        game_type = self._fetch_game_type(record_id)
+        if not game_type:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected game type was not found.")
+            return
+        dialog = GameTypeViewDialog(game_type, parent=self, on_edit=lambda: self.edit_record(record_id))
+        dialog.exec()
+
+    def edit_record(self, record_id):
+        game_type = self._fetch_game_type(record_id)
+        if not game_type:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected game type was not found.")
+            return
+        dialog = GameTypeEditDialog(game_type, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        data = dialog.data()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute(
+                "UPDATE game_types SET name = ?, notes = ?, active = ? WHERE id = ?",
+                (data["name"], data["notes"], data["active"], record_id),
+            )
+            conn.commit()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
+        finally:
+            conn.close()
+        self.load_data()
+
+    def delete_records(self, record_ids):
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Delete {len(record_ids)} game type(s)?",
+        )
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        deleted = 0
+        blocked = False
+        for type_id in record_ids:
+            c.execute("SELECT COUNT(*) as cnt FROM games WHERE game_type_id = ?", (type_id,))
+            if c.fetchone()["cnt"]:
+                blocked = True
+                continue
+            c.execute("DELETE FROM game_types WHERE id = ?", (type_id,))
+            if c.rowcount:
+                deleted += 1
+        conn.commit()
+        conn.close()
+
+        self.load_data()
+        self._clear_selection()
+
+        if blocked:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Cannot Delete",
+                "Some game types are linked to games. Mark them inactive instead.",
+            )
+        if deleted:
+            QtWidgets.QMessageBox.information(
+                self, "Deleted", f"Deleted {deleted} game type(s)."
+            )
+
+
+class GamesSetupTab(SetupListTab):
+    def __init__(self, db, parent=None):
+        super().__init__(
+            db,
+            ["Name", "Game Type", "RTP", "Active", "Notes"],
+            "Search games...",
+            "Add Game",
+            "View Game",
+            "Edit Game",
+            "Delete Game",
+            "game",
+            "games",
+            parent=parent,
+        )
+        self.numeric_cols = {2}
+        self.load_data()
+
+    def _fetch_game_types(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT name FROM game_types ORDER BY name")
+        types = [row["name"] for row in c.fetchall()]
+        conn.close()
+        return types
+
+    def _fetch_game(self, game_id):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT g.id, g.name, g.rtp, g.notes, g.active, gt.name as type_name
+            FROM games g
+            LEFT JOIN game_types gt ON gt.id = g.game_type_id
+            WHERE g.id = ?
+            """,
+            (game_id,),
+        )
+        row = c.fetchone()
+        conn.close()
+        return row
+
+    def load_data(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT g.id, g.name, g.rtp, g.notes, g.active, gt.name as type_name
+            FROM games g
+            LEFT JOIN game_types gt ON gt.id = g.game_type_id
+            ORDER BY g.name
+            """
+        )
+        rows = []
+        for row in c.fetchall():
+            notes = (row["notes"] or "").strip()
+            display = [
+                row["name"],
+                row["type_name"] or "",
+                f"{float(row['rtp']):.2f}" if row["rtp"] is not None else "",
+                "Yes" if row["active"] else "No",
+                notes,
+            ]
+            rows.append(
+                {
+                    "id": row["id"],
+                    "display": display,
+                    "search_blob": " ".join(str(v).lower() for v in display),
+                }
+            )
+        conn.close()
+        self.all_rows = rows
+        self.apply_filters()
+
+    def add_record(self):
+        dialog = GameEditDialog(self._fetch_game_types(), parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        data = dialog.data()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id FROM game_types WHERE name = ?", (data["type_name"],))
+        type_row = c.fetchone()
+        if not type_row:
+            conn.close()
+            QtWidgets.QMessageBox.warning(self, "Invalid", "Selected game type was not found.")
+            return
+        type_id = type_row["id"]
+        try:
+            c.execute(
+                """
+                INSERT INTO games (name, game_type_id, rtp, notes, active)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (data["name"], type_id, data["rtp"], data["notes"], data["active"]),
+            )
+            conn.commit()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
+        finally:
+            conn.close()
+        self.load_data()
+
+    def view_record(self, record_id):
+        game = self._fetch_game(record_id)
+        if not game:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected game was not found.")
+            return
+        dialog = GameViewDialog(game, parent=self, on_edit=lambda: self.edit_record(record_id))
+        dialog.exec()
+
+    def edit_record(self, record_id):
+        game = self._fetch_game(record_id)
+        if not game:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected game was not found.")
+            return
+        dialog = GameEditDialog(self._fetch_game_types(), game, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+        data = dialog.data()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id FROM game_types WHERE name = ?", (data["type_name"],))
+        type_row = c.fetchone()
+        if not type_row:
+            conn.close()
+            QtWidgets.QMessageBox.warning(self, "Invalid", "Selected game type was not found.")
+            return
+        type_id = type_row["id"]
+        try:
+            c.execute(
+                """
+                UPDATE games
+                SET name = ?, game_type_id = ?, rtp = ?, notes = ?, active = ?
+                WHERE id = ?
+                """,
+                (data["name"], type_id, data["rtp"], data["notes"], data["active"], record_id),
+            )
+            conn.commit()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
+        finally:
+            conn.close()
+        self.load_data()
+
+    def delete_records(self, record_ids):
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Delete {len(record_ids)} game(s)?",
+        )
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        deleted = 0
+        blocked = []
+        for game_id in record_ids:
+            c.execute("SELECT name FROM games WHERE id = ?", (game_id,))
+            row = c.fetchone()
+            if not row:
+                continue
+            game_name = row["name"]
+            c.execute(
+                "SELECT COUNT(*) as cnt FROM game_sessions WHERE lower(game_name) = ?",
+                (game_name.lower(),),
+            )
+            if c.fetchone()["cnt"]:
+                blocked.append(game_name)
+                continue
+            c.execute("DELETE FROM games WHERE id = ?", (game_id,))
+            if c.rowcount:
+                deleted += 1
+        conn.commit()
+        conn.close()
+
+        self.load_data()
+        self._clear_selection()
+
+        if blocked:
+            names = ", ".join(blocked)
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Cannot Delete",
+                f"Some games are linked to sessions. Mark them inactive instead.\n\n{names}",
+            )
+        if deleted:
+            QtWidgets.QMessageBox.information(
+                self, "Deleted", f"Deleted {deleted} game(s)."
+            )
+
+
+class SetupTab(QtWidgets.QWidget):
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        self.sub_tab_bar = QtWidgets.QWidget()
+        sub_tab_layout = FlowLayout(
+            self.sub_tab_bar, margin=0, spacing=8, align=QtCore.Qt.AlignLeft
+        )
+        self.sub_tab_bar.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+        )
+
+        self.sub_group = QtWidgets.QButtonGroup(self)
+        self.sub_group.setExclusive(True)
+        self.sub_stacked = QtWidgets.QStackedWidget()
+        self.sub_stacked.setSizePolicy(
+            QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Ignored
+        )
+
+        tabs = [
+            ("Users", UsersSetupTab(self.db)),
+            ("Sites", SitesSetupTab(self.db)),
+            ("Cards", CardsSetupTab(self.db)),
+            ("Redemption Methods", MethodsSetupTab(self.db)),
+            ("Game Types", GameTypesSetupTab(self.db)),
+            ("Games", GamesSetupTab(self.db)),
+        ]
+
+        for idx, (label, widget) in enumerate(tabs):
+            widget.setMinimumSize(0, 0)
+            widget.setSizePolicy(
+                QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Ignored
+            )
+            btn = QtWidgets.QPushButton(label)
+            btn.setCheckable(True)
+            btn.setObjectName("TabButton")
+            btn.setMinimumWidth(0)
+            btn.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Fixed)
+            self.sub_group.addButton(btn, idx)
+            sub_tab_layout.addWidget(btn)
+            self.sub_stacked.addWidget(widget)
+
+        self.sub_group.buttonClicked.connect(self._on_sub_tab_clicked)
+        self.sub_stacked.currentChanged.connect(self._sync_sub_tab_selection)
+        if self.sub_group.button(0):
+            self.sub_group.button(0).setChecked(True)
+            self.sub_stacked.setCurrentIndex(0)
+
+        layout.addWidget(self.sub_tab_bar)
+        layout.addWidget(self.sub_stacked, 1)
+
+    def _on_sub_tab_clicked(self, button):
+        index = self.sub_group.id(button)
+        if index >= 0:
+            self.sub_stacked.setCurrentIndex(index)
+
+    def _sync_sub_tab_selection(self, index):
+        button = self.sub_group.button(index)
+        if button:
+            button.setChecked(True)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Session - Social Casino Tracker (Qt)")
         self.resize(1400, 900)
         self.setMinimumSize(0, 0)
+        self._did_fit_screen = False
         self.db = Database()
         self.session_mgr = SessionManager(self.db, FIFOCalculator(self.db))
         self.completer_filter = ComboCompleterFilter(self)
@@ -11018,7 +13458,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tab_group.setExclusive(True)
         self.stacked = QtWidgets.QStackedWidget()
         self.stacked.setMinimumSize(0, 0)
-        self.stacked.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding)
+        self.stacked.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Ignored)
         self.tab_buttons = []
 
         self.purchases_tab = PurchasesTab(self.db, self.session_mgr, self.refresh_stats)
@@ -11059,10 +13499,14 @@ class MainWindow(QtWidgets.QMainWindow):
             ("Realized", self.realized_tab),
             ("Expenses", self.expenses_tab),
             ("Reports", PlaceholderTab("Reports")),
-            ("Setup", PlaceholderTab("Setup")),
+            ("Setup", SetupTab(self.db)),
         ]
 
         for idx, (label, widget) in enumerate(tabs):
+            widget.setMinimumSize(0, 0)
+            widget.setSizePolicy(
+                QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Ignored
+            )
             btn = QtWidgets.QPushButton(label)
             btn.setCheckable(True)
             btn.setObjectName("TabButton")
@@ -11088,6 +13532,7 @@ class MainWindow(QtWidgets.QMainWindow):
         main_layout.addWidget(self.tab_tip)
         main_layout.addWidget(self.stacked, 1)
         self.setCentralWidget(central)
+        self._fit_to_screen()
 
         self.tab_descriptions = {
             "Purchases": "Log every sweep coin purchase here. This is your cost basis.",
@@ -11104,6 +13549,31 @@ class MainWindow(QtWidgets.QMainWindow):
         self.rebuild_all_btn.clicked.connect(self._rebuild_all)
         self.refresh_stats()
         self._update_tab_tip(0)
+
+    def _fit_to_screen(self):
+        screen = self.screen() or QtWidgets.QApplication.primaryScreen()
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        margin = 40
+        max_width = max(0, available.width() - margin)
+        max_height = max(0, available.height() - margin)
+        if max_width == 0 or max_height == 0:
+            return
+        self.setMaximumSize(max_width, max_height)
+        target_width = min(self.width(), max_width)
+        target_height = min(self.height(), max_height)
+        self.resize(target_width, target_height)
+        self.move(
+            available.x() + max(0, (available.width() - target_width) // 2),
+            available.y(),
+        )
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._did_fit_screen:
+            self._fit_to_screen()
+            self._did_fit_screen = True
 
     def refresh_stats(self):
         conn = self.db.get_connection()

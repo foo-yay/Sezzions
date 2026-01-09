@@ -83,7 +83,13 @@ class Database:
                 except sqlite3.OperationalError:
                     pass
             _add_col("sites", "sc_rate REAL DEFAULT 1.0")
+            _add_col("users", "notes TEXT")
+            _add_col("sites", "notes TEXT")
+            _add_col("cards", "notes TEXT")
             _add_col("cards", "last_four TEXT")
+            _add_col("redemption_methods", "notes TEXT")
+            _add_col("game_types", "notes TEXT")
+            _add_col("games", "notes TEXT")
             _add_col("purchases", "notes TEXT")
             _add_col("purchases", "processed INTEGER DEFAULT 0")
             _add_col("purchases", "status TEXT DEFAULT 'active'")
@@ -276,6 +282,7 @@ class Database:
         c.execute('''CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
+            notes TEXT,
             active INTEGER DEFAULT 1)''')
         
         # Sites table
@@ -283,6 +290,7 @@ class Database:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
             sc_rate REAL DEFAULT 1.0,
+            notes TEXT,
             active INTEGER DEFAULT 1)''')
         
         # Cards table
@@ -292,6 +300,7 @@ class Database:
             last_four TEXT,
             cashback_rate REAL DEFAULT 0.0,
             user_id INTEGER,
+            notes TEXT,
             active INTEGER DEFAULT 1)''')
         
         # Redemption methods table
@@ -300,6 +309,7 @@ class Database:
             name TEXT NOT NULL UNIQUE,
             method_type TEXT,
             user_id INTEGER,
+            notes TEXT,
             active INTEGER DEFAULT 1,
             FOREIGN KEY (user_id) REFERENCES users(id))''')
 
@@ -307,6 +317,7 @@ class Database:
         c.execute('''CREATE TABLE IF NOT EXISTS game_types (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
+            notes TEXT,
             active INTEGER DEFAULT 1)''')
 
         # Games table
