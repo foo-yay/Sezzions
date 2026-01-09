@@ -97,6 +97,29 @@ def validate_currency(value_str, allow_zero=True):
         return False, "Please enter a valid number"
 
 
+EXPENSE_CATEGORIES = [
+    "Advertising",
+    "Car and Truck Expenses",
+    "Commissions and Fees",
+    "Contract Labor",
+    "Depreciation",
+    "Insurance (Business)",
+    "Interest (Mortgage/Other)",
+    "Legal and Professional Services",
+    "Office Expense",
+    "Rent or Lease (Vehicles/Equipment)",
+    "Rent or Lease (Other Business Property)",
+    "Repairs and Maintenance",
+    "Supplies",
+    "Taxes and Licenses",
+    "Travel",
+    "Meals (Deductible)",
+    "Utilities",
+    "Wages (Not Contract Labor)",
+    "Other Expenses",
+]
+
+
 def header_resize_section_index(header, pos, margin=4):
     index = header.logicalIndexAt(pos)
     if index < 0:
@@ -982,15 +1005,19 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             notes_edit = QtWidgets.QPlainTextEdit()
             notes_edit.setObjectName("NotesField")
             notes_edit.setReadOnly(True)
+            notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
+            notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
             notes_edit.setPlainText(notes_value)
             notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
             form.addWidget(notes_edit, row, 1)
         else:
-            notes_field = QtWidgets.QLabel("-")
+            notes_field = QtWidgets.QLabel("—")
             notes_field.setObjectName("InfoField")
             notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            notes_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-            form.addWidget(notes_field, row, 1)
+            notes_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            fixed_height = max(notes_field.sizeHint().height(), 26)
+            notes_field.setFixedHeight(fixed_height)
+            form.addWidget(notes_field, row, 1, QtCore.Qt.AlignVCenter)
 
         layout.addLayout(form)
         layout.addSpacing(8)
@@ -1561,15 +1588,19 @@ class RedemptionViewDialog(QtWidgets.QDialog):
             notes_edit = QtWidgets.QPlainTextEdit()
             notes_edit.setObjectName("NotesField")
             notes_edit.setReadOnly(True)
+            notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
+            notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
             notes_edit.setPlainText(notes_value)
             notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
             form.addWidget(notes_edit, row, 1)
         else:
-            notes_field = QtWidgets.QLabel("-")
+            notes_field = QtWidgets.QLabel("—")
             notes_field.setObjectName("InfoField")
             notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            notes_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-            form.addWidget(notes_field, row, 1)
+            notes_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            fixed_height = max(notes_field.sizeHint().height(), 26)
+            notes_field.setFixedHeight(fixed_height)
+            form.addWidget(notes_field, row, 1, QtCore.Qt.AlignVCenter)
 
         layout.addLayout(form)
         layout.addSpacing(8)
@@ -1685,6 +1716,333 @@ class RedemptionViewDialog(QtWidgets.QDialog):
             return
         self.accept()
         QtCore.QTimer.singleShot(0, lambda: self.on_open_purchase(purchase_id))
+
+
+class ExpenseDialog(QtWidgets.QDialog):
+    def __init__(self, db, user_names, expense=None, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.expense = expense
+        self.setWindowTitle("Edit Expense" if expense else "Add Expense")
+        self.resize(520, 420)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+
+        self.date_edit = QtWidgets.QLineEdit()
+        self.date_edit.setPlaceholderText("MM/DD/YY")
+        self.today_btn = QtWidgets.QPushButton("Today")
+        self.calendar_btn = QtWidgets.QPushButton("📅")
+        self.calendar_btn.setFixedWidth(44)
+        self.today_btn.clicked.connect(self._set_today)
+        self.calendar_btn.clicked.connect(self._pick_date)
+
+        date_row = QtWidgets.QHBoxLayout()
+        date_row.setSpacing(8)
+        date_row.addWidget(self.date_edit, 1)
+        date_row.addWidget(self.calendar_btn)
+        date_row.addWidget(self.today_btn)
+
+        self.amount_edit = QtWidgets.QLineEdit()
+        self.vendor_edit = QtWidgets.QLineEdit()
+        self.user_combo = QtWidgets.QComboBox()
+        self.user_combo.setEditable(True)
+        self.user_combo.addItem("")
+        self.user_combo.addItems(user_names)
+        self._user_lookup = {name.lower(): name for name in user_names}
+
+        self.category_combo = QtWidgets.QComboBox()
+        self.category_combo.setEditable(False)
+        self.category_combo.addItems(EXPENSE_CATEGORIES)
+
+        self.desc_edit = QtWidgets.QPlainTextEdit()
+        self.desc_edit.setPlaceholderText("Description...")
+        self.desc_edit.setObjectName("NotesField")
+        self.desc_edit.setMinimumHeight(self.desc_edit.fontMetrics().lineSpacing() * 3 + 12)
+
+        form.addWidget(QtWidgets.QLabel("Date"), 0, 0)
+        form.addLayout(date_row, 0, 1)
+        form.addWidget(QtWidgets.QLabel("Amount"), 1, 0)
+        form.addWidget(self.amount_edit, 1, 1)
+        form.addWidget(QtWidgets.QLabel("Vendor"), 2, 0)
+        form.addWidget(self.vendor_edit, 2, 1)
+        form.addWidget(QtWidgets.QLabel("User (optional)"), 3, 0)
+        form.addWidget(self.user_combo, 3, 1)
+        form.addWidget(QtWidgets.QLabel("Category"), 4, 0)
+        form.addWidget(self.category_combo, 4, 1)
+        desc_label = QtWidgets.QLabel("Description")
+        desc_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        form.addWidget(desc_label, 5, 0)
+        form.addWidget(self.desc_edit, 5, 1)
+
+        layout.addLayout(form)
+        layout.addSpacing(8)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        self.cancel_btn = QtWidgets.QPushButton("Cancel")
+        self.clear_btn = QtWidgets.QPushButton("Clear")
+        self.save_btn = QtWidgets.QPushButton("Save")
+        self.save_btn.setObjectName("PrimaryButton")
+        btn_row.addWidget(self.cancel_btn)
+        btn_row.addWidget(self.clear_btn)
+        btn_row.addWidget(self.save_btn)
+        layout.addLayout(btn_row)
+
+        self.clear_btn.clicked.connect(self._clear_form)
+        self.cancel_btn.clicked.connect(self.reject)
+
+        self.date_edit.textChanged.connect(self._validate_inline)
+        self.amount_edit.textChanged.connect(self._validate_inline)
+        self.vendor_edit.textChanged.connect(self._validate_inline)
+        self.user_combo.currentTextChanged.connect(self._validate_inline)
+        self.category_combo.currentTextChanged.connect(self._validate_inline)
+
+        if expense:
+            self._load_expense()
+        else:
+            self._clear_form()
+
+        self._validate_inline()
+
+    def _set_today(self):
+        self.date_edit.setText(date.today().strftime("%m/%d/%y"))
+
+    def _pick_date(self):
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Select Date")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        calendar = QtWidgets.QCalendarWidget()
+        calendar.setSelectedDate(QtCore.QDate.currentDate())
+        layout.addWidget(calendar)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        ok_btn = QtWidgets.QPushButton("Select")
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+        cancel_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            self.date_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+
+    def _set_invalid(self, widget, message):
+        widget.setProperty("invalid", True)
+        widget.setToolTip(message)
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _set_valid(self, widget):
+        widget.setProperty("invalid", False)
+        widget.setToolTip("")
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _validate_inline(self):
+        date_text = self.date_edit.text().strip()
+        if not date_text:
+            self._set_invalid(self.date_edit, "Date is required.")
+        else:
+            try:
+                parse_date_input(date_text)
+                self._set_valid(self.date_edit)
+            except ValueError:
+                self._set_invalid(self.date_edit, "Enter a valid date.")
+
+        amount_text = self.amount_edit.text().strip()
+        if not amount_text:
+            self._set_invalid(self.amount_edit, "Amount is required.")
+        else:
+            valid, _result = validate_currency(amount_text)
+            if not valid:
+                self._set_invalid(self.amount_edit, "Enter a valid amount (max 2 decimals).")
+            else:
+                self._set_valid(self.amount_edit)
+
+        vendor_text = self.vendor_edit.text().strip()
+        if not vendor_text:
+            self._set_invalid(self.vendor_edit, "Vendor is required.")
+        else:
+            self._set_valid(self.vendor_edit)
+
+        user_text = self.user_combo.currentText().strip()
+        if user_text and user_text.lower() not in self._user_lookup:
+            self._set_invalid(self.user_combo, "Select a valid User or leave blank.")
+        else:
+            self._set_valid(self.user_combo)
+
+        category_text = self.category_combo.currentText().strip()
+        if not category_text:
+            self._set_invalid(self.category_combo, "Category is required.")
+        else:
+            self._set_valid(self.category_combo)
+
+    def _load_expense(self):
+        self.date_edit.setText(self._format_date_for_input(self.expense["expense_date"]))
+        self.amount_edit.setText(str(self.expense["amount"]))
+        self.vendor_edit.setText(self.expense["vendor"] or "")
+        user_name = self.expense["user_name"] or ""
+        self.user_combo.setCurrentText(user_name)
+        category = self.expense["category"] or "Other Expenses"
+        if category not in EXPENSE_CATEGORIES:
+            self.category_combo.addItem(category)
+        self.category_combo.setCurrentText(category)
+        self.desc_edit.setPlainText(self.expense["description"] or "")
+
+    def _format_date_for_input(self, date_str):
+        if not date_str:
+            return ""
+        try:
+            parsed = datetime.strptime(date_str, "%Y-%m-%d").date()
+            return parsed.strftime("%m/%d/%y")
+        except ValueError:
+            return date_str
+
+    def _clear_form(self):
+        self.date_edit.clear()
+        self.amount_edit.clear()
+        self.vendor_edit.clear()
+        self.user_combo.setCurrentIndex(0)
+        self.category_combo.setCurrentText("Other Expenses")
+        self.desc_edit.clear()
+        self._set_today()
+        self._validate_inline()
+
+    def collect_data(self):
+        self._validate_inline()
+        if self.date_edit.property("invalid"):
+            return None, "Please enter a valid date."
+        if self.amount_edit.property("invalid"):
+            return None, "Please enter a valid amount."
+        if self.vendor_edit.property("invalid"):
+            return None, "Please enter a vendor."
+        if self.user_combo.property("invalid"):
+            return None, "Please select a valid user or leave blank."
+        if self.category_combo.property("invalid"):
+            return None, "Please select a category."
+
+        date_val = parse_date_input(self.date_edit.text().strip()).strftime("%Y-%m-%d")
+        valid_amount, amount = validate_currency(self.amount_edit.text().strip())
+        if not valid_amount:
+            return None, "Please enter a valid amount."
+
+        user_text = self.user_combo.currentText().strip()
+        user_name = self._user_lookup.get(user_text.lower()) if user_text else ""
+
+        return (
+            {
+                "expense_date": date_val,
+                "amount": amount,
+                "vendor": self.vendor_edit.text().strip(),
+                "user_name": user_name,
+                "category": self.category_combo.currentText().strip() or "Other Expenses",
+                "description": self.desc_edit.toPlainText().strip(),
+            },
+            None,
+        )
+
+
+class ExpenseViewDialog(QtWidgets.QDialog):
+    def __init__(self, expense, parent=None, on_edit=None):
+        super().__init__(parent)
+        self.expense = expense
+        self._on_edit = on_edit
+        self.setWindowTitle("View Expense")
+        self.resize(540, 480)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(8)
+        form.setColumnStretch(1, 1)
+
+        def add_row(label_text, value, row):
+            label = QtWidgets.QLabel(label_text)
+            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label = QtWidgets.QLabel(value)
+            value_label.setObjectName("InfoField")
+            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            form.addWidget(label, row, 0)
+            form.addWidget(value_label, row, 1)
+            return row + 1
+
+        def format_date(value):
+            if not value:
+                return "—"
+            try:
+                return datetime.strptime(value, "%Y-%m-%d").strftime("%m/%d/%y")
+            except ValueError:
+                return value
+
+        row = 0
+        row = add_row("Date", format_date(expense["expense_date"]), row)
+        row = add_row("Vendor", expense["vendor"] or "—", row)
+        row = add_row("User", expense["user_name"] or "—", row)
+        row = add_row("Category", expense["category"] or "—", row)
+        row = add_row("Amount", format_currency(expense["amount"]), row)
+
+        desc_value = expense["description"] or ""
+        desc_label = QtWidgets.QLabel("Description")
+        desc_label.setAlignment(
+            QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if desc_value else QtCore.Qt.AlignVCenter)
+        )
+        form.addWidget(desc_label, row, 0)
+        if desc_value:
+            desc_edit = QtWidgets.QPlainTextEdit()
+            desc_edit.setObjectName("NotesField")
+            desc_edit.setReadOnly(True)
+            desc_edit.setFocusPolicy(QtCore.Qt.NoFocus)
+            desc_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
+            desc_edit.setPlainText(desc_value)
+            desc_edit.setMinimumHeight(desc_edit.fontMetrics().lineSpacing() * 3 + 12)
+            form.addWidget(desc_edit, row, 1)
+        else:
+            desc_field = QtWidgets.QLabel("—")
+            desc_field.setObjectName("InfoField")
+            desc_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            desc_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            fixed_height = max(desc_field.sizeHint().height(), 26)
+            desc_field.setFixedHeight(fixed_height)
+            form.addWidget(desc_field, row, 1, QtCore.Qt.AlignVCenter)
+
+        spacer = QtWidgets.QSpacerItem(
+            0, 0, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding
+        )
+        form.addItem(spacer, row + 1, 0, 1, 2)
+
+        layout.addLayout(form)
+        layout.addSpacing(8)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        if self._on_edit:
+            edit_btn = QtWidgets.QPushButton("Edit")
+            btn_row.addWidget(edit_btn)
+        close_btn = QtWidgets.QPushButton("Close")
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+        if self._on_edit:
+            edit_btn.clicked.connect(self._handle_edit)
+        close_btn.clicked.connect(self.accept)
+        QtCore.QTimer.singleShot(0, close_btn.setFocus)
+
+    def _handle_edit(self):
+        if self._on_edit:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_edit)
 
 
 class GameSessionStartDialog(QtWidgets.QDialog):
@@ -3275,13 +3633,18 @@ class GameSessionViewDialog(QtWidgets.QDialog):
             notes_edit = QtWidgets.QPlainTextEdit()
             notes_edit.setObjectName("NotesField")
             notes_edit.setReadOnly(True)
+            notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
+            notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
             notes_edit.setPlainText(notes_value)
             notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 4 + 16)
             notes_layout.addWidget(notes_edit)
         else:
-            notes_field = QtWidgets.QLabel("-")
+            notes_field = QtWidgets.QLabel("—")
             notes_field.setObjectName("InfoField")
             notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            fixed_height = max(notes_field.sizeHint().height(), 26)
+            notes_field.setFixedHeight(fixed_height)
             notes_layout.addWidget(notes_field)
         layout.addWidget(notes_group)
         layout.addSpacing(4)
@@ -3859,7 +4222,7 @@ class PurchasesTab(QtWidgets.QWidget):
         self.load_data()
         if self.on_data_changed:
             self.on_data_changed()
-        QtWidgets.QMessageBox.information(self, "Success", message)
+        QtCore.QTimer.singleShot(0, lambda: self._show_info_message("Success", message))
 
     def _fetch_purchase(self, purchase_id):
         conn = self.db.get_connection()
@@ -4848,7 +5211,7 @@ class RedemptionsTab(QtWidgets.QWidget):
         self.load_data()
         if self.on_data_changed:
             self.on_data_changed()
-        QtWidgets.QMessageBox.information(self, "Success", message)
+        QtCore.QTimer.singleShot(0, lambda: self._show_info_message("Success", message))
 
     def _fetch_redemption(self, redemption_id):
         conn = self.db.get_connection()
@@ -5330,6 +5693,642 @@ class RedemptionsTab(QtWidgets.QWidget):
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export Redemptions",
+            default_name,
+            "CSV Files (*.csv)",
+        )
+        if not path:
+            return
+        headers = [
+            self.table.horizontalHeaderItem(i).text()
+            for i in range(self.table.columnCount())
+        ]
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+        for row in self.filtered_rows:
+            writer.writerow(row["display"])
+
+
+class ExpensesTab(QtWidgets.QWidget):
+    def __init__(self, db, on_data_changed=None, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.on_data_changed = on_data_changed
+        self.all_rows = []
+        self.filtered_rows = []
+        self.header_filters = {}
+        self.sort_column = None
+        self.sort_order = QtCore.Qt.AscendingOrder
+        self.active_date_filter = (None, None)
+        self.setMinimumSize(0, 0)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        actions = QtWidgets.QHBoxLayout()
+        actions.setSpacing(8)
+        self.add_btn = QtWidgets.QPushButton("Add Expense")
+        self.view_btn = QtWidgets.QPushButton("View Expense")
+        self.edit_btn = QtWidgets.QPushButton("Edit Expense")
+        self.delete_btn = QtWidgets.QPushButton("Delete Expense")
+        self.export_btn = QtWidgets.QPushButton("Export CSV")
+        self.refresh_btn = QtWidgets.QPushButton("Refresh")
+        self.add_btn.setObjectName("PrimaryButton")
+        self.view_btn.setVisible(False)
+        self.edit_btn.setVisible(False)
+        self.delete_btn.setVisible(False)
+        actions.addWidget(self.add_btn)
+        actions.addWidget(self.view_btn)
+        actions.addWidget(self.edit_btn)
+        actions.addWidget(self.delete_btn)
+        actions.addStretch(1)
+        layout.addLayout(actions)
+
+        date_row = QtWidgets.QHBoxLayout()
+        date_row.setSpacing(6)
+        date_row.addWidget(QtWidgets.QLabel("From"))
+        self.from_edit = QtWidgets.QLineEdit()
+        self.from_edit.setPlaceholderText("MM/DD/YY")
+        self.from_calendar = QtWidgets.QPushButton("📅")
+        self.from_calendar.setFixedWidth(44)
+        date_row.addWidget(self.from_edit)
+        date_row.addWidget(self.from_calendar)
+        date_row.addWidget(QtWidgets.QLabel("To"))
+        self.to_edit = QtWidgets.QLineEdit()
+        self.to_edit.setPlaceholderText("MM/DD/YY")
+        self.to_calendar = QtWidgets.QPushButton("📅")
+        self.to_calendar.setFixedWidth(44)
+        date_row.addWidget(self.to_edit)
+        date_row.addWidget(self.to_calendar)
+        self.apply_date_btn = QtWidgets.QPushButton("Apply")
+        self.clear_date_btn = QtWidgets.QPushButton("Clear")
+        self.today_btn = QtWidgets.QPushButton("Today")
+        self.last30_btn = QtWidgets.QPushButton("Last 30 Days")
+        self.this_month_btn = QtWidgets.QPushButton("This Month")
+        self.this_year_btn = QtWidgets.QPushButton("This Year")
+        self.all_time_btn = QtWidgets.QPushButton("All Time")
+        date_row.addWidget(self.apply_date_btn)
+        date_row.addWidget(self.clear_date_btn)
+        date_row.addWidget(self.today_btn)
+        date_row.addWidget(self.last30_btn)
+        date_row.addWidget(self.this_month_btn)
+        date_row.addWidget(self.this_year_btn)
+        date_row.addWidget(self.all_time_btn)
+        date_row.addStretch(1)
+        layout.addLayout(date_row)
+
+        search_row = QtWidgets.QHBoxLayout()
+        search_row.setSpacing(8)
+        self.search_edit = QtWidgets.QLineEdit()
+        self.search_edit.setPlaceholderText("Search expenses...")
+        self.search_edit.textChanged.connect(self.apply_filters)
+        self.search_clear_btn = QtWidgets.QPushButton("Clear")
+        self.clear_filters_btn = QtWidgets.QPushButton("Clear All Filters")
+        search_row.addWidget(self.search_edit, 1)
+        search_row.addWidget(self.search_clear_btn)
+        search_row.addWidget(self.clear_filters_btn)
+        search_row.addWidget(self.refresh_btn)
+        search_row.addWidget(self.export_btn)
+        layout.addLayout(search_row)
+
+        self.table = QtWidgets.QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(
+            ["Date", "Category", "Vendor", "User", "Amount", "Description"]
+        )
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.table.setAlternatingRowColors(True)
+        self.table.setMinimumSize(0, 0)
+        self.table.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Expanding)
+        self.table.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustIgnored)
+        self.table.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        header.setMinimumSectionSize(40)
+        header.setSectionsClickable(False)
+        self.header = header
+        header.viewport().installEventFilter(self)
+        self.table.verticalHeader().setVisible(False)
+        self.table.itemDoubleClicked.connect(self._view_selected)
+        layout.addWidget(self.table)
+
+        self.table.selectionModel().selectionChanged.connect(self._update_action_visibility)
+
+        self.add_btn.clicked.connect(self._add_expense)
+        self.view_btn.clicked.connect(self._view_selected)
+        self.edit_btn.clicked.connect(self._edit_selected)
+        self.delete_btn.clicked.connect(self._delete_selected)
+        self.export_btn.clicked.connect(self.export_csv)
+        self.refresh_btn.clicked.connect(self.load_data)
+        self.search_clear_btn.clicked.connect(self._clear_search)
+        self.clear_filters_btn.clicked.connect(self.clear_all_filters)
+        self.apply_date_btn.clicked.connect(self.apply_date_filter)
+        self.clear_date_btn.clicked.connect(self.clear_date_filter)
+        self.today_btn.clicked.connect(lambda: self.set_quick_range("today"))
+        self.last30_btn.clicked.connect(lambda: self.set_quick_range("last30"))
+        self.this_month_btn.clicked.connect(lambda: self.set_quick_range("month"))
+        self.this_year_btn.clicked.connect(lambda: self.set_quick_range("year"))
+        self.all_time_btn.clicked.connect(lambda: self.set_quick_range("all"))
+        self.from_calendar.clicked.connect(lambda: self.pick_date(self.from_edit))
+        self.to_calendar.clicked.connect(lambda: self.pick_date(self.to_edit))
+
+        self._update_action_visibility()
+        self.load_data()
+
+    def load_data(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT e.id, e.expense_date, e.vendor, e.category, e.amount, e.description, u.name as user_name
+            FROM expenses e
+            LEFT JOIN users u ON e.user_id = u.id
+            ORDER BY e.expense_date DESC, e.id DESC
+            """
+        )
+        self.all_rows = []
+        for row in c.fetchall():
+            date_value = row["expense_date"]
+            try:
+                date_display = datetime.strptime(date_value, "%Y-%m-%d").strftime("%m/%d/%y")
+                date_dt = datetime.strptime(date_value, "%Y-%m-%d")
+            except ValueError:
+                date_display = date_value
+                date_dt = datetime.min
+            display = [
+                date_display,
+                row["category"] or "Other Expenses",
+                row["vendor"] or "",
+                row["user_name"] or "",
+                format_currency(row["amount"]),
+                row["description"] or "",
+            ]
+            self.all_rows.append(
+                {
+                    "id": row["id"],
+                    "expense_date": date_value,
+                    "expense_dt": date_dt,
+                    "category": row["category"] or "Other Expenses",
+                    "vendor": row["vendor"] or "",
+                    "user_name": row["user_name"] or "",
+                    "amount": float(row["amount"] or 0),
+                    "description": row["description"] or "",
+                    "display": display,
+                    "search_blob": " ".join(str(v).lower() for v in display),
+                }
+            )
+        conn.close()
+        self.apply_filters()
+
+    def apply_filters(self):
+        rows = self._filter_rows()
+        rows = self.sort_rows(rows)
+        self.filtered_rows = rows
+        self.refresh_table(rows)
+
+    def _filter_rows(self, exclude_col=None):
+        rows = list(self.all_rows)
+        start_date, end_date = self.active_date_filter
+        if start_date:
+            rows = [r for r in rows if r["expense_date"] >= start_date]
+        if end_date:
+            rows = [r for r in rows if r["expense_date"] <= end_date]
+
+        term = self.search_edit.text().strip().lower()
+        if term:
+            rows = [r for r in rows if term in r["search_blob"]]
+
+        for col, values in self.header_filters.items():
+            if col == exclude_col:
+                continue
+            if values:
+                rows = [r for r in rows if r["display"][col] in values]
+        return rows
+
+    def refresh_table(self, rows):
+        numeric_cols = {4}
+        self.table.setRowCount(len(rows))
+        for r_idx, row in enumerate(rows):
+            for c_idx, value in enumerate(row["display"]):
+                item = QtWidgets.QTableWidgetItem(str(value))
+                if c_idx in numeric_cols:
+                    item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                if c_idx == 0:
+                    item.setData(QtCore.Qt.UserRole, row["id"])
+                self.table.setItem(r_idx, c_idx, item)
+        self._update_action_visibility()
+
+    def eventFilter(self, obj, event):
+        if getattr(self, "header", None) and obj is self.header.viewport():
+            if event.type() == QtCore.QEvent.MouseButtonDblClick and event.button() == QtCore.Qt.LeftButton:
+                pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                handle = header_resize_section_index(self.header, pos)
+                if handle is not None:
+                    self._suppress_header_menu = True
+                    self.table.resizeColumnToContents(handle)
+                    return True
+            if event.type() == QtCore.QEvent.MouseButtonRelease and event.button() == QtCore.Qt.LeftButton:
+                pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                if getattr(self, "_suppress_header_menu", False):
+                    self._suppress_header_menu = False
+                    return True
+                if header_resize_section_index(self.header, pos) is not None:
+                    return False
+                index = self.header.logicalIndexAt(pos)
+                if index >= 0:
+                    self._show_header_menu(index)
+                    return True
+        return super().eventFilter(obj, event)
+
+    def _update_action_visibility(self):
+        selected = self.table.selectionModel().selectedRows()
+        has_selection = bool(selected)
+        self.view_btn.setVisible(len(selected) == 1)
+        self.edit_btn.setVisible(has_selection)
+        self.delete_btn.setVisible(has_selection)
+
+    def _clear_search(self):
+        self.search_edit.clear()
+        self._clear_selection()
+
+    def _clear_selection(self):
+        self.table.clearSelection()
+        self._update_action_visibility()
+
+    def sort_rows(self, rows):
+        if self.sort_column is None:
+            return rows
+        reverse = self.sort_order == QtCore.Qt.DescendingOrder
+
+        def sort_key(row):
+            col = self.sort_column
+            if col == 0:
+                return row["expense_dt"] or datetime.min
+            if col == 1:
+                return row["category"].lower()
+            if col == 2:
+                return row["vendor"].lower()
+            if col == 3:
+                return row["user_name"].lower()
+            if col == 4:
+                return row["amount"]
+            if col == 5:
+                return row["description"].lower()
+            return row["display"][col]
+
+        return sorted(rows, key=sort_key, reverse=reverse)
+
+    def _show_header_menu(self, col_index):
+        header = self.table.horizontalHeader()
+        menu = QtWidgets.QMenu(self)
+        sort_asc = menu.addAction("Sort Ascending")
+        sort_desc = menu.addAction("Sort Descending")
+        clear_sort = menu.addAction("Clear Sort")
+        menu.addSeparator()
+        filter_action = menu.addAction("Filter...")
+        pos_x = header.sectionPosition(col_index)
+        pos = header.mapToGlobal(QtCore.QPoint(pos_x, header.height()))
+        action = menu.exec(pos)
+        if action == sort_asc:
+            self.set_sort(col_index, QtCore.Qt.AscendingOrder)
+        elif action == sort_desc:
+            self.set_sort(col_index, QtCore.Qt.DescendingOrder)
+        elif action == clear_sort:
+            self.clear_sort()
+        elif action == filter_action:
+            filter_rows = self._filter_rows(exclude_col=col_index)
+            values = sorted({r["display"][col_index] for r in filter_rows})
+            selected = self.header_filters.get(col_index, set())
+            if col_index == 0:
+                dialog = DateTimeFilterDialog(values, selected, self, show_time=False)
+            else:
+                dialog = ColumnFilterDialog(values, selected, self)
+            if dialog.exec() == QtWidgets.QDialog.Accepted:
+                selected_values = dialog.selected_values()
+                if selected_values:
+                    self.header_filters[col_index] = selected_values
+                else:
+                    self.header_filters.pop(col_index, None)
+                self.apply_filters()
+
+    def set_sort(self, column, order):
+        self.sort_column = column
+        self.sort_order = order
+        header = self.table.horizontalHeader()
+        header.setSortIndicatorShown(True)
+        header.setSortIndicator(column, order)
+        self.apply_filters()
+
+    def clear_sort(self):
+        self.sort_column = None
+        header = self.table.horizontalHeader()
+        header.setSortIndicatorShown(False)
+        self.apply_filters()
+
+    def clear_all_filters(self):
+        self.header_filters = {}
+        self.search_edit.clear()
+        self.clear_date_filter()
+        self._clear_selection()
+        self.apply_filters()
+
+    def _selected_ids(self):
+        ids = []
+        for idx in self.table.selectionModel().selectedRows():
+            item = self.table.item(idx.row(), 0)
+            if item is not None:
+                value = item.data(QtCore.Qt.UserRole)
+                if value is not None:
+                    ids.append(value)
+        return ids
+
+    def _fetch_lookup_data(self):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT name FROM users WHERE active = 1 ORDER BY name")
+        users = [r["name"] for r in c.fetchall()]
+        conn.close()
+        return users
+
+    def _fetch_expense(self, expense_id):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT e.*, u.name as user_name
+            FROM expenses e
+            LEFT JOIN users u ON e.user_id = u.id
+            WHERE e.id = ?
+            """,
+            (expense_id,),
+        )
+        row = c.fetchone()
+        conn.close()
+        return row
+
+    def _add_expense(self):
+        users = self._fetch_lookup_data()
+        dialog = ExpenseDialog(self.db, users, parent=self)
+
+        def handle_save():
+            self._save_from_dialog(dialog, None)
+
+        dialog.save_btn.clicked.connect(handle_save)
+        dialog.exec()
+
+    def _edit_selected(self, *_args):
+        selected_ids = self._selected_ids()
+        if not selected_ids:
+            QtWidgets.QMessageBox.warning(self, "No Selection", "Select an expense to edit.")
+            return
+        if len(selected_ids) > 1:
+            QtWidgets.QMessageBox.warning(
+                self, "Multiple Selection", "Please select only one expense to edit."
+            )
+            return
+        self.edit_expense_by_id(selected_ids[0])
+
+    def edit_expense_by_id(self, expense_id):
+        expense = self._fetch_expense(expense_id)
+        if not expense:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected expense was not found.")
+            return
+        users = self._fetch_lookup_data()
+        dialog = ExpenseDialog(self.db, users, expense=expense, parent=self)
+
+        def handle_save():
+            self._save_from_dialog(dialog, expense_id)
+
+        dialog.save_btn.clicked.connect(handle_save)
+        dialog.exec()
+
+    def _view_selected(self, *_args):
+        selected_ids = self._selected_ids()
+        if not selected_ids:
+            QtWidgets.QMessageBox.warning(self, "No Selection", "Select an expense to view.")
+            return
+        if len(selected_ids) > 1:
+            QtWidgets.QMessageBox.warning(
+                self, "Multiple Selection", "Please select only one expense to view."
+            )
+            return
+        expense_id = selected_ids[0]
+        expense = self._fetch_expense(expense_id)
+        if not expense:
+            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected expense was not found.")
+            return
+        dialog = ExpenseViewDialog(
+            expense, parent=self, on_edit=lambda: self.edit_expense_by_id(expense_id)
+        )
+        dialog.exec()
+
+    def _delete_selected(self):
+        selected_ids = self._selected_ids()
+        if not selected_ids:
+            QtWidgets.QMessageBox.warning(self, "No Selection", "Select expense(s) to delete.")
+            return
+        if len(selected_ids) > 1:
+            confirm = QtWidgets.QMessageBox.question(
+                self, "Confirm", f"Delete {len(selected_ids)} expenses?"
+            )
+        else:
+            confirm = QtWidgets.QMessageBox.question(self, "Confirm", "Delete this expense?")
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        deleted_count = 0
+        for expense_id in selected_ids:
+            c.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
+            if c.rowcount:
+                deleted_count += 1
+                try:
+                    self.db.log_audit(
+                        "DELETE",
+                        "expenses",
+                        expense_id,
+                        "Expense deleted",
+                        None,
+                    )
+                except Exception:
+                    pass
+        conn.commit()
+        conn.close()
+
+        self.load_data()
+        if self.on_data_changed:
+            self.on_data_changed()
+        self._show_info_message(
+            "Success",
+            f"Deleted {deleted_count} expense{'s' if deleted_count != 1 else ''}",
+        )
+
+    def _save_from_dialog(self, dialog, expense_id):
+        data, error = dialog.collect_data()
+        if error:
+            QtWidgets.QMessageBox.warning(self, "Invalid Entry", error)
+            return
+        ok, message = self._save_expense_record(data, expense_id)
+        if not ok:
+            QtWidgets.QMessageBox.warning(self, "Error", message)
+            return
+        dialog.accept()
+        self.load_data()
+        if self.on_data_changed:
+            self.on_data_changed()
+        QtWidgets.QMessageBox.information(self, "Success", message)
+
+    def _save_expense_record(self, data, expense_id):
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        user_id = None
+        if data["user_name"]:
+            c.execute("SELECT id FROM users WHERE name = ?", (data["user_name"],))
+            row = c.fetchone()
+            if not row:
+                conn.close()
+                return False, "Selected user was not found."
+            user_id = row["id"]
+        if expense_id:
+            c.execute(
+                """
+                UPDATE expenses
+                SET expense_date = ?, amount = ?, vendor = ?, description = ?, category = ?, user_id = ?
+                WHERE id = ?
+                """,
+                (
+                    data["expense_date"],
+                    data["amount"],
+                    data["vendor"],
+                    data["description"],
+                    data["category"],
+                    user_id,
+                    expense_id,
+                ),
+            )
+            action = "UPDATE"
+            message = "Expense updated"
+        else:
+            c.execute(
+                """
+                INSERT INTO expenses (expense_date, amount, vendor, description, category, user_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    data["expense_date"],
+                    data["amount"],
+                    data["vendor"],
+                    data["description"],
+                    data["category"],
+                    user_id,
+                ),
+            )
+            expense_id = c.lastrowid
+            action = "INSERT"
+            message = "Expense added"
+        conn.commit()
+        conn.close()
+        try:
+            self.db.log_audit(action, "expenses", expense_id, f"{data['vendor']} - {format_currency(data['amount'])}", data["user_name"] or None)
+        except Exception:
+            pass
+        return True, message
+
+    def _show_info_message(self, title, message):
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Information)
+        box.setWindowTitle(title)
+        box.setText(message)
+        box.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        box.open()
+
+    def pick_date(self, target_edit):
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Select Date")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        calendar = QtWidgets.QCalendarWidget()
+        calendar.setSelectedDate(QtCore.QDate.currentDate())
+        layout.addWidget(calendar)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        ok_btn = QtWidgets.QPushButton("Select")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+        cancel_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            target_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+
+    def set_quick_range(self, mode):
+        today = date.today()
+        if mode == "all":
+            self.clear_date_filter()
+            return
+        if mode == "today":
+            start = today
+            end = today
+        elif mode == "last30":
+            start = today - timedelta(days=30)
+            end = today
+        elif mode == "month":
+            start = today.replace(day=1)
+            end = today
+        elif mode == "year":
+            start = today.replace(month=1, day=1)
+            end = today
+        else:
+            return
+        self.from_edit.setText(start.strftime("%m/%d/%y"))
+        self.to_edit.setText(end.strftime("%m/%d/%y"))
+        self.active_date_filter = (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
+        self.apply_filters()
+
+    def apply_date_filter(self):
+        start_date = None
+        end_date = None
+        start_text = self.from_edit.text().strip()
+        end_text = self.to_edit.text().strip()
+        if start_text:
+            try:
+                start_date = parse_date_input(start_text)
+            except ValueError:
+                QtWidgets.QMessageBox.warning(self, "Invalid Date", "Enter a valid start date.")
+                return
+        if end_text:
+            try:
+                end_date = parse_date_input(end_text)
+            except ValueError:
+                QtWidgets.QMessageBox.warning(self, "Invalid Date", "Enter a valid end date.")
+                return
+        if start_date and end_date and start_date > end_date:
+            QtWidgets.QMessageBox.warning(self, "Invalid Range", "From date is after To date.")
+            return
+        self.active_date_filter = (
+            start_date.strftime("%Y-%m-%d") if start_date else None,
+            end_date.strftime("%Y-%m-%d") if end_date else None,
+        )
+        self.apply_filters()
+
+    def clear_date_filter(self):
+        self.from_edit.clear()
+        self.to_edit.clear()
+        self.active_date_filter = (None, None)
+        self.apply_filters()
+
+    def export_csv(self):
+        import csv
+
+        default_name = f"expenses_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Expenses",
             default_name,
             "CSV Files (*.csv)",
         )
@@ -7634,13 +8633,18 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
             notes_edit = QtWidgets.QPlainTextEdit()
             notes_edit.setObjectName("NotesField")
             notes_edit.setReadOnly(True)
+            notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
+            notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
             notes_edit.setPlainText(notes_value)
             notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
             notes_layout.addWidget(notes_edit)
         else:
-            notes_field = QtWidgets.QLabel("-")
+            notes_field = QtWidgets.QLabel("—")
             notes_field.setObjectName("InfoField")
             notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            fixed_height = max(notes_field.sizeHint().height(), 26)
+            notes_field.setFixedHeight(fixed_height)
             notes_layout.addWidget(notes_field)
         layout.addWidget(notes_group)
 
@@ -7692,6 +8696,7 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         if self.on_close_position:
             close_position_btn.clicked.connect(self._handle_close_position)
         close_btn.clicked.connect(self.accept)
+        close_btn.setFocus()
 
     def _format_signed_currency(self, value):
         if value is None:
@@ -8887,13 +9892,18 @@ class RealizedPositionDialog(QtWidgets.QDialog):
             notes_edit = QtWidgets.QPlainTextEdit()
             notes_edit.setObjectName("NotesField")
             notes_edit.setReadOnly(True)
+            notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
+            notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
             notes_edit.setPlainText(notes_value)
             notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
             notes_layout.addWidget(notes_edit)
         else:
-            notes_field = QtWidgets.QLabel("-")
+            notes_field = QtWidgets.QLabel("—")
             notes_field.setObjectName("InfoField")
             notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            fixed_height = max(notes_field.sizeHint().height(), 26)
+            notes_field.setFixedHeight(fixed_height)
             notes_layout.addWidget(notes_field)
         layout.addWidget(notes_group)
 
@@ -10038,6 +11048,7 @@ class MainWindow(QtWidgets.QMainWindow):
             on_open_redemption=self.open_redemption,
             on_open_purchase=self.open_purchase,
         )
+        self.expenses_tab = ExpensesTab(self.db, self.refresh_stats)
 
         tabs = [
             ("Purchases", self.purchases_tab),
@@ -10046,7 +11057,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ("Daily Sessions", self.daily_sessions_tab),
             ("Unrealized", self.unrealized_tab),
             ("Realized", self.realized_tab),
-            ("Expenses", PlaceholderTab("Expenses")),
+            ("Expenses", self.expenses_tab),
             ("Reports", PlaceholderTab("Reports")),
             ("Setup", PlaceholderTab("Setup")),
         ]
