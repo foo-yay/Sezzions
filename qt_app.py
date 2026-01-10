@@ -580,17 +580,18 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.db = db
         self.purchase = purchase
         self.setWindowTitle("Edit Purchase" if purchase else "Add Purchase")
-        self.resize(520, 420)
+        self.resize(600, 520)
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
 
         form = QtWidgets.QGridLayout()
-        form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(10)
         form.setColumnStretch(1, 1)
-        form.setColumnStretch(3, 1)
+        form.setColumnMinimumWidth(0, 120)
+        form.setColumnMinimumWidth(1, 300)
 
         self.date_edit = QtWidgets.QLineEdit()
         self.date_edit.setPlaceholderText("MM/DD/YY")
@@ -630,6 +631,13 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.amount_edit = QtWidgets.QLineEdit()
         self.sc_edit = QtWidgets.QLineEdit()
         self.start_sc_edit = QtWidgets.QLineEdit()
+
+        # Cashback display (read-only label + editable field)
+        self.cashback_rate_label = QtWidgets.QLabel("—")
+        self.cashback_rate_label.setObjectName("HelperText")
+        self.cashback_edit = QtWidgets.QLineEdit()
+        self.cashback_edit.setPlaceholderText("Auto-calculated")
+
         self.notes_edit = QtWidgets.QPlainTextEdit()
         self.notes_edit.setPlaceholderText("Notes...")
         self.notes_edit.setObjectName("NotesField")
@@ -643,18 +651,32 @@ class PurchaseDialog(QtWidgets.QDialog):
         form.addWidget(self.user_combo, 2, 1)
         form.addWidget(QtWidgets.QLabel("Site"), 3, 0)
         form.addWidget(self.site_combo, 3, 1)
-        form.addWidget(QtWidgets.QLabel("Card"), 4, 0)
-        form.addWidget(self.card_combo, 4, 1)
+
+        # Card row with cashback rate display
+        card_label = QtWidgets.QLabel("Card")
+        form.addWidget(card_label, 4, 0)
+        card_container = QtWidgets.QVBoxLayout()
+        card_container.setSpacing(4)
+        card_container.addWidget(self.card_combo)
+        card_container.addWidget(self.cashback_rate_label)
+        form.addLayout(card_container, 4, 1)
+
         form.addWidget(QtWidgets.QLabel("Amount"), 5, 0)
         form.addWidget(self.amount_edit, 5, 1)
         form.addWidget(QtWidgets.QLabel("SC Received"), 6, 0)
         form.addWidget(self.sc_edit, 6, 1)
         form.addWidget(QtWidgets.QLabel("Starting SC"), 7, 0)
         form.addWidget(self.start_sc_edit, 7, 1)
+
+        # Cashback earned row (editable override)
+        cashback_label = QtWidgets.QLabel("Cashback Earned")
+        form.addWidget(cashback_label, 8, 0)
+        form.addWidget(self.cashback_edit, 8, 1)
+
         notes_label = QtWidgets.QLabel("Notes")
         notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.addWidget(notes_label, 8, 0)
-        form.addWidget(self.notes_edit, 8, 1)
+        form.addWidget(notes_label, 9, 0)
+        form.addWidget(self.notes_edit, 9, 1)
 
         layout.addLayout(form)
         layout.addSpacing(8)
@@ -674,6 +696,8 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.cancel_btn.clicked.connect(self.reject)
 
         self.user_combo.currentTextChanged.connect(self._on_user_change)
+        self.card_combo.currentTextChanged.connect(self._on_card_change)
+        self.amount_edit.textChanged.connect(self._on_amount_change)
         self.date_edit.textChanged.connect(self._validate_inline)
         self.time_edit.textChanged.connect(self._validate_inline)
         self.user_combo.currentTextChanged.connect(self._validate_inline)
@@ -745,6 +769,9 @@ class PurchaseDialog(QtWidgets.QDialog):
             self.card_combo.clear()
             self.card_combo.setCurrentIndex(-1)
             self.card_combo.setEditText("")
+            # Clear cashback fields when user is cleared
+            self.cashback_rate_label.setText("—")
+            self.cashback_edit.clear()
             return
         conn = self.db.get_connection()
         c = conn.cursor()
@@ -755,6 +782,9 @@ class PurchaseDialog(QtWidgets.QDialog):
             self.card_combo.clear()
             self.card_combo.setCurrentIndex(-1)
             self.card_combo.setEditText("")
+            # Clear cashback fields when user not found
+            self.cashback_rate_label.setText("—")
+            self.cashback_edit.clear()
             return
         user_id = user_row["id"]
         c.execute("SELECT name FROM cards WHERE user_id = ? AND active = 1 ORDER BY name", (user_id,))
@@ -771,8 +801,62 @@ class PurchaseDialog(QtWidgets.QDialog):
             self.card_combo.setCurrentIndex(-1)
             self.card_combo.setEditText("")
         self.card_combo.blockSignals(False)
+        # Manually trigger card change to update cashback
+        self._on_card_change(self.card_combo.currentText())
         self._update_completers()
         self._validate_inline()
+
+    def _on_card_change(self, value):
+        """Update cashback rate display and recalculate cashback when card changes"""
+        card_name = value.strip()
+        if not card_name:
+            self.cashback_rate_label.setText("—")
+            self.cashback_edit.clear()
+            return
+
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT cashback_rate FROM cards WHERE name = ?", (card_name,))
+        card_row = c.fetchone()
+        conn.close()
+
+        if card_row:
+            cashback_rate = float(card_row["cashback_rate"] or 0.0)
+            self.cashback_rate_label.setText(f"Cashback: {cashback_rate:.2f}%")
+            self._recalculate_cashback(cashback_rate)
+        else:
+            self.cashback_rate_label.setText("—")
+            self.cashback_edit.clear()
+
+    def _on_amount_change(self, value):
+        """Recalculate cashback when amount changes"""
+        card_name = self.card_combo.currentText().strip()
+        if not card_name:
+            return
+
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT cashback_rate FROM cards WHERE name = ?", (card_name,))
+        card_row = c.fetchone()
+        conn.close()
+
+        if card_row:
+            cashback_rate = float(card_row["cashback_rate"] or 0.0)
+            self._recalculate_cashback(cashback_rate)
+
+    def _recalculate_cashback(self, cashback_rate):
+        """Calculate and update cashback earned field"""
+        amount_text = self.amount_edit.text().strip()
+        if not amount_text:
+            self.cashback_edit.clear()
+            return
+
+        try:
+            amount = float(amount_text)
+            cashback = round(amount * (cashback_rate / 100.0), 2)
+            self.cashback_edit.setText(f"{cashback:.2f}")
+        except ValueError:
+            self.cashback_edit.clear()
 
     def _set_invalid(self, widget, message):
         widget.setProperty("invalid", True)
@@ -862,14 +946,21 @@ class PurchaseDialog(QtWidgets.QDialog):
     def _load_purchase(self):
         self.date_edit.setText(self._format_date_for_input(self.purchase["purchase_date"]))
         self.time_edit.setText(self._format_time_for_input(self.purchase["purchase_time"]))
+
+        # Load user first (this will populate the card dropdown)
         self._preserve_card_selection = True
         self.user_combo.setCurrentText(self.purchase["user_name"])
+        # Trigger user change to filter cards
+        self._on_user_change(self.purchase["user_name"])
         self._preserve_card_selection = False
+
         self.site_combo.setCurrentText(self.purchase["site_name"])
         self.card_combo.setCurrentText(self.purchase["card_name"])
         self.amount_edit.setText(str(self.purchase["amount"]))
         self.sc_edit.setText(str(self.purchase["sc_received"]))
         self.start_sc_edit.setText(str(self.purchase["starting_sc_balance"]))
+        # Format cashback to 2 decimal places
+        self.cashback_edit.setText(f"{float(self.purchase['cashback_earned'] or 0.0):.2f}")
         self.notes_edit.setPlainText(self.purchase["notes"] or "")
 
     def _format_date_for_input(self, date_str):
@@ -895,6 +986,8 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.amount_edit.clear()
         self.sc_edit.clear()
         self.start_sc_edit.clear()
+        self.cashback_edit.clear()
+        self.cashback_rate_label.setText("—")
         self.notes_edit.clear()
         self._set_today()
         self._validate_inline()
@@ -951,6 +1044,26 @@ class PurchaseDialog(QtWidgets.QDialog):
 
         notes = self.notes_edit.toPlainText().strip()
 
+        # Get cashback earned (use entered value or calculate if empty)
+        cashback_str = self.cashback_edit.text().strip()
+        if cashback_str:
+            try:
+                cashback_earned = round(float(cashback_str), 2)
+            except ValueError:
+                cashback_earned = 0.0
+        else:
+            # Auto-calculate if not provided
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute("SELECT cashback_rate FROM cards WHERE name = ?", (card_name,))
+            card_row = c.fetchone()
+            conn.close()
+            if card_row:
+                cashback_rate = float(card_row["cashback_rate"] or 0.0)
+                cashback_earned = round(amount * (cashback_rate / 100.0), 2)
+            else:
+                cashback_earned = 0.0
+
         return {
             "user_name": user_name,
             "site_name": site_name,
@@ -960,6 +1073,7 @@ class PurchaseDialog(QtWidgets.QDialog):
             "amount": amount,
             "sc_received": sc_received,
             "starting_sc_balance": start_sc,
+            "cashback_earned": cashback_earned,
             "notes": notes,
         }, None
 
@@ -970,16 +1084,18 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         self.purchase = purchase
         self._on_edit = on_edit
         self.setWindowTitle("View Purchase")
-        self.resize(540, 520)
+        self.resize(600, 560)
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
 
         form = QtWidgets.QGridLayout()
-        form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(10)
         form.setColumnStretch(1, 1)
+        form.setColumnMinimumWidth(0, 120)
+        form.setColumnMinimumWidth(1, 300)
 
         def add_row(label_text, value, row, wrap=False):
             label = QtWidgets.QLabel(label_text)
@@ -1012,6 +1128,7 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         row = add_row("Amount", format_currency(purchase["amount"]), row)
         row = add_row("SC Received", f"{float(purchase['sc_received'] or 0):.2f}", row)
         row = add_row("Starting SC", f"{float(purchase['starting_sc_balance'] or 0):.2f}", row)
+        row = add_row("Cashback Earned", format_currency(purchase["cashback_earned"] or 0.0), row)
         row = add_row("Remaining", format_currency(purchase["remaining_amount"]), row)
 
         notes_label = QtWidgets.QLabel("Notes")
@@ -1751,7 +1868,7 @@ class ExpenseDialog(QtWidgets.QDialog):
 
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(12)  # Increased for consistent visual spacing
         form.setColumnStretch(1, 1)
 
         self.date_edit = QtWidgets.QLineEdit()
@@ -1982,7 +2099,7 @@ class ExpenseViewDialog(QtWidgets.QDialog):
 
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(12)  # Increased for consistent visual spacing
         form.setColumnStretch(1, 1)
 
         def add_row(label_text, value, row):
@@ -3819,7 +3936,7 @@ class PurchasesTab(QtWidgets.QWidget):
         search_row.addWidget(self.export_btn)
         layout.addLayout(search_row)
 
-        self.table = QtWidgets.QTableWidget(0, 9)
+        self.table = QtWidgets.QTableWidget(0, 10)
         self.table.setHorizontalHeaderLabels(
             [
                 "Date/Time",
@@ -3829,6 +3946,7 @@ class PurchasesTab(QtWidgets.QWidget):
                 "SC Received",
                 "Starting SC",
                 "Card",
+                "Cashback",
                 "Remaining",
                 "Notes",
             ]
@@ -3882,7 +4000,7 @@ class PurchasesTab(QtWidgets.QWidget):
             """
             SELECT p.id, p.purchase_date, p.purchase_time, s.name as site, u.name as user_name,
                    p.amount, p.sc_received, p.starting_sc_balance, ca.name as card_name,
-                   p.remaining_amount, p.notes
+                   p.cashback_earned, p.remaining_amount, p.notes
             FROM purchases p
             JOIN sites s ON p.site_id = s.id
             JOIN users u ON p.user_id = u.id
@@ -3908,6 +4026,7 @@ class PurchasesTab(QtWidgets.QWidget):
                 f"{float(row['sc_received'] or 0):.2f}",
                 f"{float(row['starting_sc_balance'] or 0):.2f}",
                 row["card_name"],
+                format_currency(row["cashback_earned"] or 0.0),
                 format_currency(row["remaining_amount"]),
                 row["notes"] or "",
             ]
@@ -3923,6 +4042,7 @@ class PurchasesTab(QtWidgets.QWidget):
                     "sc_received": float(row["sc_received"] or 0),
                     "starting_sc_balance": float(row["starting_sc_balance"] or 0),
                     "card_name": row["card_name"],
+                    "cashback_earned": float(row["cashback_earned"] or 0.0),
                     "remaining_amount": float(row["remaining_amount"] or 0),
                     "notes": row["notes"] or "",
                     "display": display,
@@ -4270,6 +4390,8 @@ class PurchasesTab(QtWidgets.QWidget):
         amount = data["amount"]
         sc_received = data["sc_received"]
         start_sc = data["starting_sc_balance"]
+        # Ensure cashback is rounded to 2 decimal places before saving
+        cashback_earned = round(float(data.get("cashback_earned", 0.0)), 2)
         notes = data["notes"]
 
         conn = self.db.get_connection()
@@ -4334,7 +4456,8 @@ class PurchasesTab(QtWidgets.QWidget):
                 """
                 UPDATE purchases
                 SET purchase_date=?, purchase_time=?, site_id=?, amount=?, sc_received=?,
-                    starting_sc_balance=?, card_id=?, user_id=?, remaining_amount=?, notes=?
+                    starting_sc_balance=?, card_id=?, user_id=?, remaining_amount=?,
+                    cashback_earned=?, notes=?
                 WHERE id=?
                 """,
                 (
@@ -4347,6 +4470,7 @@ class PurchasesTab(QtWidgets.QWidget):
                     card_id,
                     user_id,
                     new_remaining,
+                    cashback_earned,
                     notes,
                     purchase_id,
                 ),
@@ -4423,8 +4547,8 @@ class PurchasesTab(QtWidgets.QWidget):
             """
             INSERT INTO purchases
             (purchase_date, purchase_time, site_id, amount, sc_received, starting_sc_balance,
-             card_id, user_id, remaining_amount, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             card_id, user_id, remaining_amount, cashback_earned, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 pdate,
@@ -4436,6 +4560,7 @@ class PurchasesTab(QtWidgets.QWidget):
                 card_id,
                 user_id,
                 amount,
+                cashback_earned,
                 notes,
             ),
         )
@@ -4661,6 +4786,14 @@ class PurchasesTab(QtWidgets.QWidget):
             writer.writerow(headers)
             for row in self.filtered_rows:
                 writer.writerow(row["display"])
+
+    def _show_info_message(self, title, message):
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Information)
+        box.setWindowTitle(title)
+        box.setText(message)
+        box.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        box.open()
 
 
 class RedemptionsTab(QtWidgets.QWidget):
@@ -5726,6 +5859,14 @@ class RedemptionsTab(QtWidgets.QWidget):
             writer.writerow(headers)
         for row in self.filtered_rows:
             writer.writerow(row["display"])
+
+    def _show_info_message(self, title, message):
+        box = QtWidgets.QMessageBox(self)
+        box.setIcon(QtWidgets.QMessageBox.Information)
+        box.setWindowTitle(title)
+        box.setText(message)
+        box.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        box.open()
 
 
 class ExpensesTab(QtWidgets.QWidget):
@@ -11025,7 +11166,7 @@ class UserEditDialog(SetupEditDialog):
         super().__init__(parent)
         self.user = user
         self.setWindowTitle("Edit User" if user else "Add User")
-        self.resize(420, 200)
+        self.resize(500, 200)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -11033,7 +11174,7 @@ class UserEditDialog(SetupEditDialog):
 
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(12)
         form.setColumnStretch(1, 1)
 
         self.name_edit = QtWidgets.QLineEdit()
@@ -11041,17 +11182,22 @@ class UserEditDialog(SetupEditDialog):
         self.active_check.setChecked(True)
         self.notes_edit = QtWidgets.QPlainTextEdit()
         self.notes_edit.setObjectName("NotesField")
-        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 4 + 12)
 
+        # Row 0: User Name (fills space) + Active (right-justified)
         form.addWidget(QtWidgets.QLabel("User Name"), 0, 0)
         form.addWidget(self.name_edit, 0, 1)
         form.addWidget(QtWidgets.QLabel("Active"), 0, 2)
         form.addWidget(self.active_check, 0, 3)
+
+        # Row 1: Notes (fills full width)
         form.addWidget(QtWidgets.QLabel("Notes"), 1, 0, QtCore.Qt.AlignTop)
         form.addWidget(self.notes_edit, 1, 1, 1, 3)
+
         layout.addLayout(form)
 
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
         btn_row.addStretch(1)
         cancel_btn = QtWidgets.QPushButton("Cancel")
         self.save_btn = QtWidgets.QPushButton("Save")
@@ -11095,7 +11241,7 @@ class UserViewDialog(QtWidgets.QDialog):
         self.user = user
         self._on_edit = on_edit
         self.setWindowTitle("View User")
-        self.resize(420, 200)
+        self.resize(500, 200)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -11103,39 +11249,30 @@ class UserViewDialog(QtWidgets.QDialog):
 
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(12)
         form.setColumnStretch(1, 1)
 
-        def add_value(label_text, value, row, col):
-            label = QtWidgets.QLabel(label_text)
-            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label = QtWidgets.QLabel(value)
-            value_label.setObjectName("InfoField")
-            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-            )
-            fixed_height = max(value_label.sizeHint().height(), 26)
-            value_label.setFixedHeight(fixed_height)
-            form.addWidget(label, row, col)
-            form.addWidget(value_label, row, col + 1)
+        # Row 0: User Name (fills space) + Active (right-justified)
+        user_name_label = QtWidgets.QLabel("User Name")
+        user_name_value = QtWidgets.QLabel(user["name"])
+        user_name_value.setObjectName("InfoField")
+        form.addWidget(user_name_label, 0, 0)
+        form.addWidget(user_name_value, 0, 1)
 
-        row = 0
-        add_value("User Name", user["name"], row, 0)
         active_label = QtWidgets.QLabel("Active")
-        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         active_check = QtWidgets.QCheckBox()
         active_check.setChecked(bool(user["active"]))
         active_check.setEnabled(False)
-        form.addWidget(active_label, row, 2)
-        form.addWidget(active_check, row, 3)
+        form.addWidget(active_label, 0, 2)
+        form.addWidget(active_check, 0, 3)
 
+        # Row 1: Notes (fills full width)
         notes_value = user["notes"] or ""
         notes_label = QtWidgets.QLabel("Notes")
         notes_label.setAlignment(
             QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
         )
-        form.addWidget(notes_label, row + 1, 0)
+        form.addWidget(notes_label, 1, 0)
         if notes_value:
             notes_edit = QtWidgets.QPlainTextEdit()
             notes_edit.setObjectName("NotesField")
@@ -11143,23 +11280,19 @@ class UserViewDialog(QtWidgets.QDialog):
             notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
             notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
             notes_edit.setPlainText(notes_value)
-            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-            form.addWidget(notes_edit, row + 1, 1, 1, 3)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 4 + 12)
+            form.addWidget(notes_edit, 1, 1, 1, 3)
         else:
             notes_field = QtWidgets.QLabel("—")
             notes_field.setObjectName("InfoField")
-            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            notes_field.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-            )
-            fixed_height = max(notes_field.sizeHint().height(), 26)
-            notes_field.setFixedHeight(fixed_height)
-            form.addWidget(notes_field, row + 1, 1, 1, 3)
+            notes_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            form.addWidget(notes_field, 1, 1, 1, 3)
 
         layout.addLayout(form)
         layout.addSpacing(8)
 
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -11183,7 +11316,7 @@ class SiteEditDialog(SetupEditDialog):
         super().__init__(parent)
         self.site = site
         self.setWindowTitle("Edit Site" if site else "Add Site")
-        self.resize(480, 220)
+        self.resize(500, 200)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -11191,7 +11324,7 @@ class SiteEditDialog(SetupEditDialog):
 
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(12)
         form.setColumnStretch(1, 1)
 
         self.name_edit = QtWidgets.QLineEdit()
@@ -11201,19 +11334,20 @@ class SiteEditDialog(SetupEditDialog):
         self.active_check.setChecked(True)
         self.notes_edit = QtWidgets.QPlainTextEdit()
         self.notes_edit.setObjectName("NotesField")
-        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 4 + 12)
 
         form.addWidget(QtWidgets.QLabel("Site Name"), 0, 0)
         form.addWidget(self.name_edit, 0, 1)
         form.addWidget(QtWidgets.QLabel("Active"), 0, 2)
         form.addWidget(self.active_check, 0, 3)
         form.addWidget(QtWidgets.QLabel("SC Rate (USD/SC)"), 1, 0)
-        form.addWidget(self.sc_rate_edit, 1, 1)
+        form.addWidget(self.sc_rate_edit, 1, 1, 1, 3)
         form.addWidget(QtWidgets.QLabel("Notes"), 2, 0, QtCore.Qt.AlignTop)
         form.addWidget(self.notes_edit, 2, 1, 1, 3)
         layout.addLayout(form)
 
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
         btn_row.addStretch(1)
         cancel_btn = QtWidgets.QPushButton("Cancel")
         self.save_btn = QtWidgets.QPushButton("Save")
@@ -11278,7 +11412,7 @@ class SiteViewDialog(QtWidgets.QDialog):
         self.site = site
         self._on_edit = on_edit
         self.setWindowTitle("View Site")
-        self.resize(480, 220)
+        self.resize(500, 200)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -11286,41 +11420,38 @@ class SiteViewDialog(QtWidgets.QDialog):
 
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(12)
         form.setColumnStretch(1, 1)
 
-        def add_value(label_text, value, row, col):
-            label = QtWidgets.QLabel(label_text)
-            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label = QtWidgets.QLabel(value)
-            value_label.setObjectName("InfoField")
-            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-            )
-            fixed_height = max(value_label.sizeHint().height(), 26)
-            value_label.setFixedHeight(fixed_height)
-            form.addWidget(label, row, col)
-            form.addWidget(value_label, row, col + 1)
+        # Site Name field
+        site_name_label = QtWidgets.QLabel("Site Name")
+        site_name_value = QtWidgets.QLabel(site["name"])
+        site_name_value.setObjectName("InfoField")
+        form.addWidget(site_name_label, 0, 0)
+        form.addWidget(site_name_value, 0, 1)
 
-        row = 0
-        add_value("Site Name", site["name"], row, 0)
+        # Active checkbox
         active_label = QtWidgets.QLabel("Active")
-        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         active_check = QtWidgets.QCheckBox()
         active_check.setChecked(bool(site["active"]))
         active_check.setEnabled(False)
-        form.addWidget(active_label, row, 2)
-        form.addWidget(active_check, row, 3)
+        form.addWidget(active_label, 0, 2)
+        form.addWidget(active_check, 0, 3)
 
-        add_value("SC Rate", f"{float(site['sc_rate'] or 1.0):.4f}", row + 1, 0)
+        # SC Rate field
+        sc_rate_label = QtWidgets.QLabel("SC Rate")
+        sc_rate_value = QtWidgets.QLabel(f"{float(site['sc_rate'] or 1.0):.4f}")
+        sc_rate_value.setObjectName("InfoField")
+        form.addWidget(sc_rate_label, 1, 0)
+        form.addWidget(sc_rate_value, 1, 1, 1, 3)
 
+        # Notes field
         notes_value = site["notes"] or ""
         notes_label = QtWidgets.QLabel("Notes")
         notes_label.setAlignment(
             QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
         )
-        form.addWidget(notes_label, row + 2, 0)
+        form.addWidget(notes_label, 2, 0)
         if notes_value:
             notes_edit = QtWidgets.QPlainTextEdit()
             notes_edit.setObjectName("NotesField")
@@ -11328,23 +11459,18 @@ class SiteViewDialog(QtWidgets.QDialog):
             notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
             notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
             notes_edit.setPlainText(notes_value)
-            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-            form.addWidget(notes_edit, row + 2, 1, 1, 3)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 4 + 12)
+            form.addWidget(notes_edit, 2, 1, 1, 3)
         else:
             notes_field = QtWidgets.QLabel("—")
             notes_field.setObjectName("InfoField")
-            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            notes_field.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-            )
-            fixed_height = max(notes_field.sizeHint().height(), 26)
-            notes_field.setFixedHeight(fixed_height)
-            form.addWidget(notes_field, row + 2, 1, 1, 3)
+            form.addWidget(notes_field, 2, 1, 1, 3)
 
         layout.addLayout(form)
         layout.addSpacing(8)
 
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -11370,7 +11496,7 @@ class CardEditDialog(SetupEditDialog):
         self.card = card
         self._user_lookup = {name.lower(): name for name in self.users}
         self.setWindowTitle("Edit Card" if card else "Add Card")
-        self.resize(540, 240)
+        self.resize(500, 240)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -11378,34 +11504,52 @@ class CardEditDialog(SetupEditDialog):
 
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(12)
         form.setColumnStretch(1, 1)
+        form.setColumnMinimumWidth(2, 80)
 
         self.name_edit = QtWidgets.QLineEdit()
         self.cashback_edit = QtWidgets.QLineEdit()
         self.cashback_edit.setPlaceholderText("0.00")
+        self.cashback_edit.setMaximumWidth(80)
+        self.cashback_edit.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self.user_combo = QtWidgets.QComboBox()
         self.user_combo.setEditable(True)
         self.user_combo.addItems(self.users)
+        self.user_combo.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self.active_check = QtWidgets.QCheckBox()
         self.active_check.setChecked(True)
         self.notes_edit = QtWidgets.QPlainTextEdit()
         self.notes_edit.setObjectName("NotesField")
-        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 4 + 12)
 
         form.addWidget(QtWidgets.QLabel("Card Name"), 0, 0)
         form.addWidget(self.name_edit, 0, 1)
         form.addWidget(QtWidgets.QLabel("Active"), 0, 2)
         form.addWidget(self.active_check, 0, 3)
-        form.addWidget(QtWidgets.QLabel("Cashback %"), 1, 0)
-        form.addWidget(self.cashback_edit, 1, 1)
-        form.addWidget(QtWidgets.QLabel("User"), 1, 2)
-        form.addWidget(self.user_combo, 1, 3)
+        form.addWidget(QtWidgets.QLabel("User"), 1, 0)
+        form.addWidget(self.user_combo, 1, 1)
+        form.addWidget(QtWidgets.QLabel("Cashback %"), 1, 2)
+        form.addWidget(self.cashback_edit, 1, 3)
         form.addWidget(QtWidgets.QLabel("Notes"), 2, 0, QtCore.Qt.AlignTop)
         form.addWidget(self.notes_edit, 2, 1, 1, 3)
         layout.addLayout(form)
 
+        # Add recalculate cashback button only when editing existing card
+        if card:
+            recalc_row = QtWidgets.QHBoxLayout()
+            recalc_info = QtWidgets.QLabel("If you changed the cashback %, you can retroactively update all purchases:")
+            recalc_info.setObjectName("HelperText")
+            recalc_info.setWordWrap(True)
+            recalc_row.addWidget(recalc_info)
+            self.recalc_btn = QtWidgets.QPushButton("Recalculate All Purchases")
+            self.recalc_btn.clicked.connect(self._recalculate_cashback)
+            recalc_row.addWidget(self.recalc_btn)
+            layout.addLayout(recalc_row)
+            layout.addSpacing(8)
+
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
         btn_row.addStretch(1)
         cancel_btn = QtWidgets.QPushButton("Cancel")
         self.save_btn = QtWidgets.QPushButton("Save")
@@ -11465,6 +11609,98 @@ class CardEditDialog(SetupEditDialog):
         if self._validate_inline():
             self.accept()
 
+    def _recalculate_cashback(self):
+        """Recalculate cashback for all purchases made with this card"""
+        if not self.card:
+            return
+
+        # Get current cashback rate from form
+        cashback_text = self.cashback_edit.text().strip()
+        if not cashback_text:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Cashback Rate",
+                "Please enter a cashback rate first."
+            )
+            return
+
+        try:
+            new_cashback_rate = float(cashback_text)
+            if new_cashback_rate < 0 or new_cashback_rate > 100:
+                raise ValueError
+        except ValueError:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Invalid Cashback Rate",
+                "Please enter a valid cashback rate between 0 and 100."
+            )
+            return
+
+        # Get count of purchases for this card
+        from database import Database
+        db = Database()
+        conn = db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT COUNT(*) as count FROM purchases WHERE card_id = ?",
+            (self.card["id"],)
+        )
+        count = c.fetchone()["count"]
+        conn.close()
+
+        if count == 0:
+            QtWidgets.QMessageBox.information(
+                self,
+                "No Purchases",
+                "No purchases found for this card."
+            )
+            return
+
+        # Show warning dialog
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Recalculate Cashback",
+            f"This will recalculate cashback for {count} purchase(s) using the new rate of {new_cashback_rate:.2f}%.\n\n"
+            f"This action cannot be undone.\n\n"
+            f"Continue?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        # Perform the recalculation
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        try:
+            conn = db.get_connection()
+            c = conn.cursor()
+            c.execute(
+                """
+                UPDATE purchases
+                SET cashback_earned = amount * (? / 100.0)
+                WHERE card_id = ?
+                """,
+                (new_cashback_rate, self.card["id"])
+            )
+            updated_count = c.rowcount
+            conn.commit()
+            conn.close()
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Recalculation Complete",
+                f"Successfully recalculated cashback for {updated_count} purchase(s)."
+            )
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to recalculate cashback: {str(e)}"
+            )
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+
     def data(self):
         user_text = self.user_combo.currentText().strip()
         return {
@@ -11482,7 +11718,7 @@ class CardViewDialog(QtWidgets.QDialog):
         self.card = card
         self._on_edit = on_edit
         self.setWindowTitle("View Card")
-        self.resize(540, 240)
+        self.resize(500, 240)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -11490,43 +11726,48 @@ class CardViewDialog(QtWidgets.QDialog):
 
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(12)
         form.setColumnStretch(1, 1)
-        form.setColumnStretch(3, 1)
+        form.setColumnMinimumWidth(2, 80)
 
-        def add_value(label_text, value, row, col):
-            label = QtWidgets.QLabel(label_text)
-            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label = QtWidgets.QLabel(value)
-            value_label.setObjectName("InfoField")
-            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-            )
-            fixed_height = max(value_label.sizeHint().height(), 26)
-            value_label.setFixedHeight(fixed_height)
-            form.addWidget(label, row, col)
-            form.addWidget(value_label, row, col + 1)
+        # Card Name field
+        card_name_label = QtWidgets.QLabel("Card Name")
+        card_name_value = QtWidgets.QLabel(card["name"])
+        card_name_value.setObjectName("InfoField")
+        form.addWidget(card_name_label, 0, 0)
+        form.addWidget(card_name_value, 0, 1)
 
-        row = 0
-        add_value("Card Name", card["name"], row, 0)
+        # Active checkbox
         active_label = QtWidgets.QLabel("Active")
-        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         active_check = QtWidgets.QCheckBox()
         active_check.setChecked(bool(card["active"]))
         active_check.setEnabled(False)
-        form.addWidget(active_label, row, 2)
-        form.addWidget(active_check, row, 3)
+        form.addWidget(active_label, 0, 2)
+        form.addWidget(active_check, 0, 3)
 
-        add_value("Cashback %", f"{float(card['cashback_rate'] or 0):.2f}", row + 1, 0)
-        add_value("User", card["user_name"] or "—", row + 1, 2)
+        # User field
+        user_label = QtWidgets.QLabel("User")
+        user_value = QtWidgets.QLabel(card["user_name"] or "—")
+        user_value.setObjectName("InfoField")
+        user_value.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        form.addWidget(user_label, 1, 0)
+        form.addWidget(user_value, 1, 1)
 
+        # Cashback % field
+        cashback_label = QtWidgets.QLabel("Cashback %")
+        cashback_value = QtWidgets.QLabel(f"{float(card['cashback_rate'] or 0):.2f}")
+        cashback_value.setObjectName("InfoField")
+        cashback_value.setMaximumWidth(80)
+        form.addWidget(cashback_label, 1, 2)
+        form.addWidget(cashback_value, 1, 3)
+
+        # Notes field
         notes_value = card["notes"] or ""
         notes_label = QtWidgets.QLabel("Notes")
         notes_label.setAlignment(
             QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
         )
-        form.addWidget(notes_label, row + 2, 0)
+        form.addWidget(notes_label, 2, 0)
         if notes_value:
             notes_edit = QtWidgets.QPlainTextEdit()
             notes_edit.setObjectName("NotesField")
@@ -11534,23 +11775,18 @@ class CardViewDialog(QtWidgets.QDialog):
             notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
             notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
             notes_edit.setPlainText(notes_value)
-            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-            form.addWidget(notes_edit, row + 2, 1, 1, 3)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 4 + 12)
+            form.addWidget(notes_edit, 2, 1, 1, 3)
         else:
             notes_field = QtWidgets.QLabel("—")
             notes_field.setObjectName("InfoField")
-            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            notes_field.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-            )
-            fixed_height = max(notes_field.sizeHint().height(), 26)
-            notes_field.setFixedHeight(fixed_height)
-            form.addWidget(notes_field, row + 2, 1, 1, 3)
+            form.addWidget(notes_field, 2, 1, 1, 3)
 
         layout.addLayout(form)
         layout.addSpacing(8)
 
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -11576,7 +11812,7 @@ class MethodEditDialog(SetupEditDialog):
         self.method = method
         self._user_lookup = {name.lower(): name for name in self.users}
         self.setWindowTitle("Edit Method" if method else "Add Method")
-        self.resize(480, 220)
+        self.resize(500, 200)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -11584,7 +11820,7 @@ class MethodEditDialog(SetupEditDialog):
 
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(12)
         form.setColumnStretch(1, 1)
 
         self.name_edit = QtWidgets.QLineEdit()
@@ -11595,7 +11831,7 @@ class MethodEditDialog(SetupEditDialog):
         self.active_check.setChecked(True)
         self.notes_edit = QtWidgets.QPlainTextEdit()
         self.notes_edit.setObjectName("NotesField")
-        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 4 + 12)
 
         form.addWidget(QtWidgets.QLabel("Method Name"), 0, 0)
         form.addWidget(self.name_edit, 0, 1)
@@ -11608,6 +11844,7 @@ class MethodEditDialog(SetupEditDialog):
         layout.addLayout(form)
 
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
         btn_row.addStretch(1)
         cancel_btn = QtWidgets.QPushButton("Cancel")
         self.save_btn = QtWidgets.QPushButton("Save")
@@ -11668,7 +11905,7 @@ class MethodViewDialog(QtWidgets.QDialog):
         self.method = method
         self._on_edit = on_edit
         self.setWindowTitle("View Method")
-        self.resize(480, 220)
+        self.resize(500, 200)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -11676,53 +11913,38 @@ class MethodViewDialog(QtWidgets.QDialog):
 
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(12)
         form.setColumnStretch(1, 1)
-        form.setColumnStretch(3, 1)
 
-        def add_value(label_text, value, row, col):
-            label = QtWidgets.QLabel(label_text)
-            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label = QtWidgets.QLabel(value)
-            value_label.setObjectName("InfoField")
-            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-            )
-            fixed_height = max(value_label.sizeHint().height(), 26)
-            value_label.setFixedHeight(fixed_height)
-            form.addWidget(label, row, col)
-            form.addWidget(value_label, row, col + 1)
+        # Method Name field
+        method_name_label = QtWidgets.QLabel("Method Name")
+        method_name_value = QtWidgets.QLabel(method["name"])
+        method_name_value.setObjectName("InfoField")
+        form.addWidget(method_name_label, 0, 0)
+        form.addWidget(method_name_value, 0, 1)
 
-        row = 0
-        add_value("Method Name", method["name"], row, 0)
+        # Active checkbox
         active_label = QtWidgets.QLabel("Active")
-        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         active_check = QtWidgets.QCheckBox()
         active_check.setChecked(bool(method["active"]))
         active_check.setEnabled(False)
-        form.addWidget(active_label, row, 2)
-        form.addWidget(active_check, row, 3)
+        form.addWidget(active_label, 0, 2)
+        form.addWidget(active_check, 0, 3)
 
+        # User field
         user_label = QtWidgets.QLabel("User")
-        user_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         user_value = QtWidgets.QLabel(method["user_name"] or "—")
         user_value.setObjectName("InfoField")
-        user_value.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        user_value.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-        )
-        fixed_height = max(user_value.sizeHint().height(), 26)
-        user_value.setFixedHeight(fixed_height)
-        form.addWidget(user_label, row + 1, 0)
-        form.addWidget(user_value, row + 1, 1, 1, 3)
+        form.addWidget(user_label, 1, 0)
+        form.addWidget(user_value, 1, 1, 1, 3)
 
+        # Notes field
         notes_value = method["notes"] or ""
         notes_label = QtWidgets.QLabel("Notes")
         notes_label.setAlignment(
             QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
         )
-        form.addWidget(notes_label, row + 2, 0)
+        form.addWidget(notes_label, 2, 0)
         if notes_value:
             notes_edit = QtWidgets.QPlainTextEdit()
             notes_edit.setObjectName("NotesField")
@@ -11730,23 +11952,18 @@ class MethodViewDialog(QtWidgets.QDialog):
             notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
             notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
             notes_edit.setPlainText(notes_value)
-            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-            form.addWidget(notes_edit, row + 2, 1, 1, 3)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 4 + 12)
+            form.addWidget(notes_edit, 2, 1, 1, 3)
         else:
             notes_field = QtWidgets.QLabel("—")
             notes_field.setObjectName("InfoField")
-            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            notes_field.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-            )
-            fixed_height = max(notes_field.sizeHint().height(), 26)
-            notes_field.setFixedHeight(fixed_height)
-            form.addWidget(notes_field, row + 2, 1, 1, 3)
+            form.addWidget(notes_field, 2, 1, 1, 3)
 
         layout.addLayout(form)
         layout.addSpacing(8)
 
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -11770,7 +11987,7 @@ class GameTypeEditDialog(SetupEditDialog):
         super().__init__(parent)
         self.game_type = game_type
         self.setWindowTitle("Edit Game Type" if game_type else "Add Game Type")
-        self.resize(420, 200)
+        self.resize(500, 200)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -11778,7 +11995,7 @@ class GameTypeEditDialog(SetupEditDialog):
 
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(12)
         form.setColumnStretch(1, 1)
 
         self.name_edit = QtWidgets.QLineEdit()
@@ -11786,7 +12003,7 @@ class GameTypeEditDialog(SetupEditDialog):
         self.active_check.setChecked(True)
         self.notes_edit = QtWidgets.QPlainTextEdit()
         self.notes_edit.setObjectName("NotesField")
-        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 4 + 12)
 
         form.addWidget(QtWidgets.QLabel("Game Type Name"), 0, 0)
         form.addWidget(self.name_edit, 0, 1)
@@ -11797,6 +12014,7 @@ class GameTypeEditDialog(SetupEditDialog):
         layout.addLayout(form)
 
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
         btn_row.addStretch(1)
         cancel_btn = QtWidgets.QPushButton("Cancel")
         self.save_btn = QtWidgets.QPushButton("Save")
@@ -11840,7 +12058,7 @@ class GameTypeViewDialog(QtWidgets.QDialog):
         self.game_type = game_type
         self._on_edit = on_edit
         self.setWindowTitle("View Game Type")
-        self.resize(420, 200)
+        self.resize(500, 200)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -11848,39 +12066,31 @@ class GameTypeViewDialog(QtWidgets.QDialog):
 
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(12)
         form.setColumnStretch(1, 1)
 
-        def add_value(label_text, value, row, col):
-            label = QtWidgets.QLabel(label_text)
-            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label = QtWidgets.QLabel(value)
-            value_label.setObjectName("InfoField")
-            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-            )
-            fixed_height = max(value_label.sizeHint().height(), 26)
-            value_label.setFixedHeight(fixed_height)
-            form.addWidget(label, row, col)
-            form.addWidget(value_label, row, col + 1)
+        # Game Type Name field
+        game_type_name_label = QtWidgets.QLabel("Game Type Name")
+        game_type_name_value = QtWidgets.QLabel(game_type["name"])
+        game_type_name_value.setObjectName("InfoField")
+        form.addWidget(game_type_name_label, 0, 0)
+        form.addWidget(game_type_name_value, 0, 1)
 
-        row = 0
-        add_value("Game Type Name", game_type["name"], row, 0)
+        # Active checkbox
         active_label = QtWidgets.QLabel("Active")
-        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         active_check = QtWidgets.QCheckBox()
         active_check.setChecked(bool(game_type["active"]))
         active_check.setEnabled(False)
-        form.addWidget(active_label, row, 2)
-        form.addWidget(active_check, row, 3)
+        form.addWidget(active_label, 0, 2)
+        form.addWidget(active_check, 0, 3)
 
+        # Notes field
         notes_value = game_type["notes"] or ""
         notes_label = QtWidgets.QLabel("Notes")
         notes_label.setAlignment(
             QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
         )
-        form.addWidget(notes_label, row + 1, 0)
+        form.addWidget(notes_label, 1, 0)
         if notes_value:
             notes_edit = QtWidgets.QPlainTextEdit()
             notes_edit.setObjectName("NotesField")
@@ -11888,23 +12098,19 @@ class GameTypeViewDialog(QtWidgets.QDialog):
             notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
             notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
             notes_edit.setPlainText(notes_value)
-            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-            form.addWidget(notes_edit, row + 1, 1, 1, 3)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 4 + 12)
+            form.addWidget(notes_edit, 1, 1, 1, 3)
         else:
             notes_field = QtWidgets.QLabel("—")
             notes_field.setObjectName("InfoField")
-            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            notes_field.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-            )
-            fixed_height = max(notes_field.sizeHint().height(), 26)
-            notes_field.setFixedHeight(fixed_height)
-            form.addWidget(notes_field, row + 1, 1, 1, 3)
+            notes_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            form.addWidget(notes_field, 1, 1, 1, 3)
 
         layout.addLayout(form)
         layout.addSpacing(8)
 
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -11930,7 +12136,7 @@ class GameEditDialog(SetupEditDialog):
         self.game = game
         self._type_lookup = {name.lower(): name for name in self.game_types}
         self.setWindowTitle("Edit Game" if game else "Add Game")
-        self.resize(480, 320)
+        self.resize(500, 240)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -11938,8 +12144,9 @@ class GameEditDialog(SetupEditDialog):
 
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(12)
         form.setColumnStretch(1, 1)
+        form.setColumnMinimumWidth(2, 60)
 
         self.name_edit = QtWidgets.QLineEdit()
         self.type_combo = QtWidgets.QComboBox()
@@ -11947,8 +12154,12 @@ class GameEditDialog(SetupEditDialog):
         self.type_combo.addItems(self.game_types)
         self.rtp_edit = QtWidgets.QLineEdit()
         self.rtp_edit.setPlaceholderText("96.0")
+        self.rtp_edit.setMaximumWidth(80)
+        self.rtp_edit.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        self.type_combo.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self.notes_edit = QtWidgets.QPlainTextEdit()
-        self.notes_edit.setFixedHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 8)
+        self.notes_edit.setObjectName("NotesField")
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 4 + 12)
         self.active_check = QtWidgets.QCheckBox()
         self.active_check.setChecked(True)
 
@@ -11958,13 +12169,14 @@ class GameEditDialog(SetupEditDialog):
         form.addWidget(self.active_check, 0, 3)
         form.addWidget(QtWidgets.QLabel("Game Type"), 1, 0)
         form.addWidget(self.type_combo, 1, 1)
-        form.addWidget(QtWidgets.QLabel("RTP %"), 2, 0)
-        form.addWidget(self.rtp_edit, 2, 1)
-        form.addWidget(QtWidgets.QLabel("Notes"), 3, 0, QtCore.Qt.AlignTop)
-        form.addWidget(self.notes_edit, 3, 1)
+        form.addWidget(QtWidgets.QLabel("RTP %"), 1, 2)
+        form.addWidget(self.rtp_edit, 1, 3)
+        form.addWidget(QtWidgets.QLabel("Notes"), 2, 0, QtCore.Qt.AlignTop)
+        form.addWidget(self.notes_edit, 2, 1, 1, 3)
         layout.addLayout(form)
 
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
         btn_row.addStretch(1)
         cancel_btn = QtWidgets.QPushButton("Cancel")
         self.save_btn = QtWidgets.QPushButton("Save")
@@ -12042,7 +12254,7 @@ class GameViewDialog(QtWidgets.QDialog):
         self.game = game
         self._on_edit = on_edit
         self.setWindowTitle("View Game")
-        self.resize(480, 320)
+        self.resize(500, 240)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -12050,42 +12262,48 @@ class GameViewDialog(QtWidgets.QDialog):
 
         form = QtWidgets.QGridLayout()
         form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setVerticalSpacing(12)
         form.setColumnStretch(1, 1)
+        form.setColumnMinimumWidth(2, 60)
 
-        def add_value(label_text, value, row, col):
-            label = QtWidgets.QLabel(label_text)
-            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label = QtWidgets.QLabel(value)
-            value_label.setObjectName("InfoField")
-            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-            )
-            fixed_height = max(value_label.sizeHint().height(), 26)
-            value_label.setFixedHeight(fixed_height)
-            form.addWidget(label, row, col)
-            form.addWidget(value_label, row, col + 1)
+        # Game Name field
+        game_name_label = QtWidgets.QLabel("Game Name")
+        game_name_value = QtWidgets.QLabel(game["name"])
+        game_name_value.setObjectName("InfoField")
+        form.addWidget(game_name_label, 0, 0)
+        form.addWidget(game_name_value, 0, 1)
 
-        row = 0
-        add_value("Game Name", game["name"], row, 0)
+        # Active checkbox
         active_label = QtWidgets.QLabel("Active")
-        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         active_check = QtWidgets.QCheckBox()
         active_check.setChecked(bool(game["active"]))
         active_check.setEnabled(False)
-        form.addWidget(active_label, row, 2)
-        form.addWidget(active_check, row, 3)
+        form.addWidget(active_label, 0, 2)
+        form.addWidget(active_check, 0, 3)
 
-        add_value("Game Type", game["type_name"] or "—", row + 1, 0)
-        add_value("RTP %", f"{float(game['rtp']):.2f}" if game["rtp"] is not None else "—", row + 2, 0)
+        # Game Type field
+        game_type_label = QtWidgets.QLabel("Game Type")
+        game_type_value = QtWidgets.QLabel(game["type_name"] or "—")
+        game_type_value.setObjectName("InfoField")
+        game_type_value.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        form.addWidget(game_type_label, 1, 0)
+        form.addWidget(game_type_value, 1, 1)
 
+        # RTP % field
+        rtp_label = QtWidgets.QLabel("RTP %")
+        rtp_value = QtWidgets.QLabel(f"{float(game['rtp']):.2f}" if game["rtp"] is not None else "—")
+        rtp_value.setObjectName("InfoField")
+        rtp_value.setMaximumWidth(80)
+        form.addWidget(rtp_label, 1, 2)
+        form.addWidget(rtp_value, 1, 3)
+
+        # Notes field
         notes_value = game["notes"] or ""
         notes_label = QtWidgets.QLabel("Notes")
         notes_label.setAlignment(
             QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
         )
-        form.addWidget(notes_label, row + 3, 0)
+        form.addWidget(notes_label, 2, 0)
         if notes_value:
             notes_edit = QtWidgets.QPlainTextEdit()
             notes_edit.setObjectName("NotesField")
@@ -12093,23 +12311,18 @@ class GameViewDialog(QtWidgets.QDialog):
             notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
             notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
             notes_edit.setPlainText(notes_value)
-            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-            form.addWidget(notes_edit, row + 3, 1)
+            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 4 + 12)
+            form.addWidget(notes_edit, 2, 1, 1, 3)
         else:
             notes_field = QtWidgets.QLabel("—")
             notes_field.setObjectName("InfoField")
-            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            notes_field.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
-            )
-            fixed_height = max(notes_field.sizeHint().height(), 26)
-            notes_field.setFixedHeight(fixed_height)
-            form.addWidget(notes_field, row + 3, 1)
+            form.addWidget(notes_field, 2, 1, 1, 3)
 
         layout.addLayout(form)
         layout.addSpacing(8)
 
         btn_row = QtWidgets.QHBoxLayout()
+        btn_row.setSpacing(8)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -12727,6 +12940,13 @@ class CardsSetupTab(SetupListTab):
         self.all_rows = rows
         self.apply_filters()
 
+        # Set custom column widths - make Name column 2x wider
+        header = self.table.horizontalHeader()
+        header.resizeSection(0, 240)  # Name column - 2x default width
+        header.resizeSection(1, 120)  # Cashback %
+        header.resizeSection(2, 120)  # User
+        header.resizeSection(3, 80)   # Active
+
     def add_record(self):
         dialog = CardEditDialog(self._fetch_users(), parent=self)
         if dialog.exec() != QtWidgets.QDialog.Accepted:
@@ -12908,6 +13128,12 @@ class MethodsSetupTab(SetupListTab):
         conn.close()
         self.all_rows = rows
         self.apply_filters()
+
+        # Set custom column widths - make Name column 2x wider
+        header = self.table.horizontalHeader()
+        header.resizeSection(0, 240)  # Name column - 2x default width
+        header.resizeSection(1, 120)  # User
+        header.resizeSection(2, 80)   # Active
 
     def add_record(self):
         dialog = MethodEditDialog(self._fetch_users(), parent=self)

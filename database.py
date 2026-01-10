@@ -270,7 +270,48 @@ class Database:
 
             self.set_schema_version(conn, 6)
             conn.commit()
-        
+
+        # Migration 7: Add cashback_earned column to purchases
+        if current_version < 7:
+            def _add_col(table, coldef):
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {coldef}")
+                except sqlite3.OperationalError:
+                    pass
+
+            _add_col("purchases", "cashback_earned REAL DEFAULT 0.0")
+
+            # Backfill existing purchases with calculated cashback
+            print("Backfilling cashback for existing purchases...")
+            c.execute('''
+                UPDATE purchases
+                SET cashback_earned = (
+                    SELECT p.amount * (c.cashback_rate / 100.0)
+                    FROM purchases p
+                    JOIN cards c ON p.card_id = c.id
+                    WHERE p.id = purchases.id
+                )
+            ''')
+            backfilled = c.rowcount
+            print(f"Backfilled cashback for {backfilled} purchases")
+
+            self.set_schema_version(conn, 7)
+            conn.commit()
+
+        # Migration 8: Round all cashback values to 2 decimal places
+        if current_version < 8:
+            print("Rounding cashback values to 2 decimal places...")
+            c.execute('''
+                UPDATE purchases
+                SET cashback_earned = ROUND(cashback_earned, 2)
+                WHERE cashback_earned IS NOT NULL
+            ''')
+            updated = c.rowcount
+            print(f"Rounded {updated} cashback values")
+
+            self.set_schema_version(conn, 8)
+            conn.commit()
+
         conn.close()
     
     def init_database(self):

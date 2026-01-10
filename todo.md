@@ -5,7 +5,7 @@
 - [ ] Remove or deprecate session2.py safely
 - [ ] Finish remaining tab incorporations
 - [ ] Add a one-click "Recalculate Everything" action in qt_app.py to rebuild FIFO + derived data across the entire database
-- [ ] Why does deleting a Purchase appear to take so much time & compute power?
+- [ ] Add a feature to "Start a New Session" after a purchase, or is it best to keep these as manual inputs?
 
 ## Medium Priority
 - [ ] Add free-tier usage limits
@@ -29,3 +29,4 @@
 - [ ] Export/Backup to Google Sheets/Drive/etc. for Database and Reports, including automated/scheduled backups?
 - [ ] Support ticket/bug submissions/error reporting
 - [ ] Web and/or mobile platforms
+- [ ] Change Game table to have an "Expected RTP" that the User inputs (currently it's the "RTP" column), and then an automatically calculated "Actual RTP" column that is derived from actual wager activity and output from the game as it's played on the app.  So whenever a User finishes a Session or updates a session with that game, automatically recompute the RTP and update that field for the game.  Need to do this in a way that doesn't require a complete recompute of the entire database worth of entries for that game though.  Presumably if the Wager & RTP are known previously, then if we have a new Wager amount and result from a new single session, we should be able to factor that in without a global database recompute, I think.  We should also add a button similar to in the Card dialog (cashback recalculate) that recalculates the game's actual RTP via a global database recalculation.
