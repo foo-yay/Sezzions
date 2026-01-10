@@ -2208,9 +2208,13 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
-        form = QtWidgets.QGridLayout()
-        form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        # Session section
+        session_group = QtWidgets.QGroupBox("Session")
+        session_grid = QtWidgets.QGridLayout(session_group)
+        session_grid.setHorizontalSpacing(10)
+        session_grid.setVerticalSpacing(8)
+        session_grid.setColumnStretch(1, 1)
+        session_grid.setColumnStretch(3, 1)
 
         self.date_edit = QtWidgets.QLineEdit()
         self.date_edit.setPlaceholderText("MM/DD/YY")
@@ -2219,7 +2223,6 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         self.calendar_btn.setFixedWidth(44)
         self.today_btn.clicked.connect(self._set_today)
         self.calendar_btn.clicked.connect(self._pick_date)
-
         date_row = QtWidgets.QHBoxLayout()
         date_row.setSpacing(8)
         date_row.addWidget(self.date_edit, 1)
@@ -2235,13 +2238,31 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         time_row.addWidget(self.time_edit, 1)
         time_row.addWidget(self.now_btn)
 
+        self.site_combo = QtWidgets.QComboBox()
+        self.site_combo.setEditable(True)
+        self.site_combo.addItems(site_names)
+
         self.user_combo = QtWidgets.QComboBox()
         self.user_combo.setEditable(True)
         self.user_combo.addItems(user_names)
 
-        self.site_combo = QtWidgets.QComboBox()
-        self.site_combo.setEditable(True)
-        self.site_combo.addItems(site_names)
+        session_grid.addWidget(QtWidgets.QLabel("Date"), 0, 0)
+        session_grid.addLayout(date_row, 0, 1)
+        session_grid.addWidget(QtWidgets.QLabel("Start Time"), 0, 2)
+        session_grid.addLayout(time_row, 0, 3)
+        session_grid.addWidget(QtWidgets.QLabel("Site"), 1, 0)
+        session_grid.addWidget(self.site_combo, 1, 1)
+        session_grid.addWidget(QtWidgets.QLabel("User"), 1, 2)
+        session_grid.addWidget(self.user_combo, 1, 3)
+        layout.addWidget(session_group)
+
+        # Game section
+        game_group = QtWidgets.QGroupBox("Game")
+        game_grid = QtWidgets.QGridLayout(game_group)
+        game_grid.setHorizontalSpacing(10)
+        game_grid.setVerticalSpacing(8)
+        game_grid.setColumnStretch(1, 1)
+        game_grid.setColumnStretch(3, 1)
 
         self.game_type_combo = QtWidgets.QComboBox()
         self.game_type_combo.setEditable(True)
@@ -2250,58 +2271,62 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         self.game_name_combo = QtWidgets.QComboBox()
         self.game_name_combo.setEditable(True)
         self.game_name_combo.addItems([""] + self._all_game_names())
+
         self.game_helper = QtWidgets.QLabel("Game Name requires a Game Type.")
         self.game_helper.setObjectName("HelperText")
         self.game_helper.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
+        game_grid.addWidget(QtWidgets.QLabel("Game Type"), 0, 0)
+        game_grid.addWidget(self.game_type_combo, 0, 1)
+        game_grid.addWidget(QtWidgets.QLabel("Game Name"), 0, 2)
+        game_grid.addWidget(self.game_name_combo, 0, 3)
+        game_grid.addWidget(self.game_helper, 1, 0, 1, 4)
+        layout.addWidget(game_group)
+
+        # Balances section
+        balance_group = QtWidgets.QGroupBox("Starting Balances")
+        balance_grid = QtWidgets.QGridLayout(balance_group)
+        balance_grid.setHorizontalSpacing(10)
+        balance_grid.setVerticalSpacing(8)
+        balance_grid.setColumnStretch(1, 1)
+        balance_grid.setColumnStretch(3, 1)
+
         self.start_total_edit = QtWidgets.QLineEdit()
         self.start_redeem_edit = QtWidgets.QLineEdit()
+
+        balance_tooltip = (
+            "Compares your starting total SC to the expected balance from prior sessions, purchases, "
+            "and redemptions. This helps flag missing entries or unexpected bonuses. It does not "
+            "change tax results until the session is closed."
+        )
+        self.balance_label = QtWidgets.QLabel("Balance Check")
+        self.balance_label.setToolTip(balance_tooltip)
+        self.balance_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
         self.freebie_label = QtWidgets.QLabel("")
         self.freebie_label.setWordWrap(True)
         self.freebie_label.setObjectName("InfoField")
         self.freebie_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         self.freebie_label.setProperty("status", "neutral")
-        balance_tooltip = (
-            "Compares your starting total SC to the expected balance from prior sessions, purchases, "
-            "and redemptions. This helps flag missing entries or unexpected bonuses. It does not "
-            "change tax results until the session is closed."
-        )
         self.freebie_label.setToolTip(balance_tooltip)
-        self.balance_label = QtWidgets.QLabel("Balance Check")
-        self.balance_label.setToolTip(balance_tooltip)
-        self.balance_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
+        balance_grid.addWidget(QtWidgets.QLabel("Starting Total SC"), 0, 0)
+        balance_grid.addWidget(self.start_total_edit, 0, 1)
+        balance_grid.addWidget(QtWidgets.QLabel("Starting Redeemable"), 0, 2)
+        balance_grid.addWidget(self.start_redeem_edit, 0, 3)
+        balance_grid.addWidget(self.balance_label, 1, 0)
+        balance_grid.addWidget(self.freebie_label, 1, 1, 1, 3)
+        layout.addWidget(balance_group)
+
+        # Notes section
+        notes_group = QtWidgets.QGroupBox("Notes")
+        notes_layout = QtWidgets.QVBoxLayout(notes_group)
         self.notes_edit = QtWidgets.QPlainTextEdit()
         self.notes_edit.setObjectName("NotesField")
         self.notes_edit.setPlaceholderText("Notes...")
         self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-
-        form.addWidget(QtWidgets.QLabel("Date"), 0, 0)
-        form.addLayout(date_row, 0, 1)
-        form.addWidget(QtWidgets.QLabel("Start Time"), 1, 0)
-        form.addLayout(time_row, 1, 1)
-        form.addWidget(QtWidgets.QLabel("User"), 2, 0)
-        form.addWidget(self.user_combo, 2, 1)
-        form.addWidget(QtWidgets.QLabel("Site"), 3, 0)
-        form.addWidget(self.site_combo, 3, 1)
-        form.addWidget(QtWidgets.QLabel("Game Type"), 4, 0)
-        form.addWidget(self.game_type_combo, 4, 1)
-        form.addWidget(QtWidgets.QLabel("Game Name"), 5, 0)
-        form.addWidget(self.game_name_combo, 5, 1)
-        form.addWidget(self.game_helper, 6, 0, 1, 2)
-        form.addWidget(QtWidgets.QLabel("Starting Total SC"), 7, 0)
-        form.addWidget(self.start_total_edit, 7, 1)
-        form.addWidget(QtWidgets.QLabel("Starting Redeemable"), 8, 0)
-        form.addWidget(self.start_redeem_edit, 8, 1)
-        form.addWidget(self.balance_label, 9, 0)
-        form.addWidget(self.freebie_label, 9, 1)
-        notes_label = QtWidgets.QLabel("Notes")
-        notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.addWidget(notes_label, 10, 0)
-        form.addWidget(self.notes_edit, 10, 1)
-
-        layout.addLayout(form)
+        notes_layout.addWidget(self.notes_edit)
+        layout.addWidget(notes_group)
         layout.addSpacing(8)
 
         btn_row = QtWidgets.QHBoxLayout()
@@ -3031,9 +3056,13 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
-        form = QtWidgets.QGridLayout()
-        form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        # Session section
+        session_group = QtWidgets.QGroupBox("Session")
+        session_grid = QtWidgets.QGridLayout(session_group)
+        session_grid.setHorizontalSpacing(10)
+        session_grid.setVerticalSpacing(8)
+        session_grid.setColumnStretch(1, 1)
+        session_grid.setColumnStretch(3, 1)
 
         self.start_date_edit = QtWidgets.QLineEdit()
         self.start_date_edit.setPlaceholderText("MM/DD/YY")
@@ -3081,6 +3110,28 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         self.site_combo.setEditable(True)
         self.site_combo.addItems(site_names)
 
+        session_grid.addWidget(QtWidgets.QLabel("Start Date"), 0, 0)
+        session_grid.addLayout(start_date_row, 0, 1)
+        session_grid.addWidget(QtWidgets.QLabel("End Date"), 0, 2)
+        session_grid.addLayout(end_date_row, 0, 3)
+        session_grid.addWidget(QtWidgets.QLabel("Start Time"), 1, 0)
+        session_grid.addLayout(start_time_row, 1, 1)
+        session_grid.addWidget(QtWidgets.QLabel("End Time"), 1, 2)
+        session_grid.addLayout(end_time_row, 1, 3)
+        session_grid.addWidget(QtWidgets.QLabel("Site"), 2, 0)
+        session_grid.addWidget(self.site_combo, 2, 1)
+        session_grid.addWidget(QtWidgets.QLabel("User"), 2, 2)
+        session_grid.addWidget(self.user_combo, 2, 3)
+        layout.addWidget(session_group)
+
+        # Game section
+        game_group = QtWidgets.QGroupBox("Game")
+        game_grid = QtWidgets.QGridLayout(game_group)
+        game_grid.setHorizontalSpacing(10)
+        game_grid.setVerticalSpacing(8)
+        game_grid.setColumnStretch(1, 1)
+        game_grid.setColumnStretch(3, 1)
+
         self.game_type_combo = QtWidgets.QComboBox()
         self.game_type_combo.setEditable(True)
         self.game_type_combo.addItems(game_types)
@@ -3088,9 +3139,25 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         self.game_name_combo = QtWidgets.QComboBox()
         self.game_name_combo.setEditable(True)
         self.game_name_combo.addItems([""] + self._all_game_names())
+
         self.game_helper = QtWidgets.QLabel("Game Name requires a Game Type.")
         self.game_helper.setObjectName("HelperText")
         self.game_helper.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+
+        game_grid.addWidget(QtWidgets.QLabel("Game Type"), 0, 0)
+        game_grid.addWidget(self.game_type_combo, 0, 1)
+        game_grid.addWidget(QtWidgets.QLabel("Game Name"), 0, 2)
+        game_grid.addWidget(self.game_name_combo, 0, 3)
+        game_grid.addWidget(self.game_helper, 1, 0, 1, 4)
+        layout.addWidget(game_group)
+
+        # Balances section
+        balance_group = QtWidgets.QGroupBox("Balances")
+        balance_grid = QtWidgets.QGridLayout(balance_group)
+        balance_grid.setHorizontalSpacing(10)
+        balance_grid.setVerticalSpacing(8)
+        balance_grid.setColumnStretch(1, 1)
+        balance_grid.setColumnStretch(3, 1)
 
         self.start_total_edit = QtWidgets.QLineEdit()
         self.start_redeem_edit = QtWidgets.QLineEdit()
@@ -3105,6 +3172,7 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         self.balance_label = QtWidgets.QLabel("Balance Check")
         self.balance_label.setToolTip(balance_tooltip)
         self.balance_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+
         self.balance_value = QtWidgets.QLabel("—")
         self.balance_value.setWordWrap(True)
         self.balance_value.setObjectName("InfoField")
@@ -3112,44 +3180,27 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         self.balance_value.setProperty("status", "neutral")
         self.balance_value.setToolTip(balance_tooltip)
 
+        balance_grid.addWidget(QtWidgets.QLabel("Starting Total SC"), 0, 0)
+        balance_grid.addWidget(self.start_total_edit, 0, 1)
+        balance_grid.addWidget(QtWidgets.QLabel("Ending Total SC"), 0, 2)
+        balance_grid.addWidget(self.end_total_edit, 0, 3)
+        balance_grid.addWidget(QtWidgets.QLabel("Starting Redeemable"), 1, 0)
+        balance_grid.addWidget(self.start_redeem_edit, 1, 1)
+        balance_grid.addWidget(QtWidgets.QLabel("Ending Redeemable"), 1, 2)
+        balance_grid.addWidget(self.end_redeem_edit, 1, 3)
+        balance_grid.addWidget(self.balance_label, 2, 0)
+        balance_grid.addWidget(self.balance_value, 2, 1, 1, 3)
+        layout.addWidget(balance_group)
+
+        # Notes section
+        notes_group = QtWidgets.QGroupBox("Notes")
+        notes_layout = QtWidgets.QVBoxLayout(notes_group)
         self.notes_edit = QtWidgets.QPlainTextEdit()
         self.notes_edit.setObjectName("NotesField")
         self.notes_edit.setPlaceholderText("Notes...")
         self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-
-        form.addWidget(QtWidgets.QLabel("Start Date"), 0, 0)
-        form.addLayout(start_date_row, 0, 1)
-        form.addWidget(QtWidgets.QLabel("Start Time"), 1, 0)
-        form.addLayout(start_time_row, 1, 1)
-        form.addWidget(QtWidgets.QLabel("End Date"), 2, 0)
-        form.addLayout(end_date_row, 2, 1)
-        form.addWidget(QtWidgets.QLabel("End Time"), 3, 0)
-        form.addLayout(end_time_row, 3, 1)
-        form.addWidget(QtWidgets.QLabel("User"), 4, 0)
-        form.addWidget(self.user_combo, 4, 1)
-        form.addWidget(QtWidgets.QLabel("Site"), 5, 0)
-        form.addWidget(self.site_combo, 5, 1)
-        form.addWidget(QtWidgets.QLabel("Game Type"), 6, 0)
-        form.addWidget(self.game_type_combo, 6, 1)
-        form.addWidget(QtWidgets.QLabel("Game Name"), 7, 0)
-        form.addWidget(self.game_name_combo, 7, 1)
-        form.addWidget(self.game_helper, 8, 0, 1, 2)
-        form.addWidget(QtWidgets.QLabel("Starting Total SC"), 9, 0)
-        form.addWidget(self.start_total_edit, 9, 1)
-        form.addWidget(QtWidgets.QLabel("Starting Redeemable"), 10, 0)
-        form.addWidget(self.start_redeem_edit, 10, 1)
-        form.addWidget(self.balance_label, 11, 0)
-        form.addWidget(self.balance_value, 11, 1)
-        form.addWidget(QtWidgets.QLabel("Ending Total SC"), 12, 0)
-        form.addWidget(self.end_total_edit, 12, 1)
-        form.addWidget(QtWidgets.QLabel("Ending Redeemable"), 13, 0)
-        form.addWidget(self.end_redeem_edit, 13, 1)
-        notes_label = QtWidgets.QLabel("Notes")
-        notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.addWidget(notes_label, 14, 0)
-        form.addWidget(self.notes_edit, 14, 1)
-
-        layout.addLayout(form)
+        notes_layout.addWidget(self.notes_edit)
+        layout.addWidget(notes_group)
         layout.addSpacing(8)
 
         btn_row = QtWidgets.QHBoxLayout()
