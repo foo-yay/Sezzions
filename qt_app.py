@@ -4945,10 +4945,8 @@ class PurchasesTab(QtWidgets.QWidget):
                 return True
         return False
 
-    def _needs_purchase_recalc(self, site_id, user_id, purchase_date, purchase_time):
-        conn = self.db.get_connection()
-        c = conn.cursor()
-        c.execute(
+    def _needs_purchase_recalc(self, cursor, site_id, user_id, purchase_date, purchase_time):
+        cursor.execute(
             """
             SELECT 1
             FROM redemptions
@@ -4958,10 +4956,9 @@ class PurchasesTab(QtWidgets.QWidget):
             """,
             (site_id, user_id, purchase_date, purchase_date, purchase_time),
         )
-        if c.fetchone():
-            conn.close()
+        if cursor.fetchone():
             return True
-        c.execute(
+        cursor.execute(
             """
             SELECT 1
             FROM game_sessions
@@ -4971,9 +4968,7 @@ class PurchasesTab(QtWidgets.QWidget):
             """,
             (site_id, user_id, purchase_date, purchase_date, purchase_time),
         )
-        has_sessions = c.fetchone() is not None
-        conn.close()
-        return has_sessions
+        return cursor.fetchone() is not None
 
     def view_purchase_by_id(self, purchase_id):
         purchase = self._fetch_purchase(purchase_id)
@@ -5056,10 +5051,6 @@ class PurchasesTab(QtWidgets.QWidget):
 
             c.execute("DELETE FROM purchases WHERE id = ?", (purchase_id,))
             deleted_count += 1
-            try:
-                self.db.log_audit("DELETE", "purchases", purchase_id, f"Deleted ${amount:.2f}", None)
-            except Exception:
-                pass
 
             if session:
                 session_id = session["id"]
@@ -5083,13 +5074,31 @@ class PurchasesTab(QtWidgets.QWidget):
                         if c.fetchone()["count"] == 0:
                             c.execute("DELETE FROM site_sessions WHERE id = ?", (session_id,))
 
+        # Check which affected sessions need recalculation before closing connection
+        recalc_needed = []
+        for (site_id, user_id), (pdate, ptime) in affected.items():
+            if self._needs_purchase_recalc(c, site_id, user_id, pdate, ptime):
+                recalc_needed.append((site_id, user_id, pdate, ptime))
+
         conn.commit()
         conn.close()
 
+        # Log audit for the batch delete (avoiding per-item connection overhead)
+        if deleted_count > 0:
+            try:
+                self.db.log_audit(
+                    "DELETE",
+                    "purchases",
+                    None,
+                    f"Deleted {deleted_count} purchase(s)",
+                    None,
+                )
+            except Exception:
+                pass
+
+        # Now do the expensive recalculations
         total_recalc = 0
-        for (site_id, user_id), (pdate, ptime) in affected.items():
-            if not self._needs_purchase_recalc(site_id, user_id, pdate, ptime):
-                continue
+        for site_id, user_id, pdate, ptime in recalc_needed:
             total_recalc += self.session_mgr.auto_recalculate_affected_sessions(
                 site_id, user_id, pdate, ptime
             )
@@ -6131,20 +6140,26 @@ class RedemptionsTab(QtWidgets.QWidget):
         if confirm != QtWidgets.QMessageBox.Yes:
             return
 
-        deleted_count = 0
-        error_messages = []
-        pairs_to_recalc = set()
-
+        # Fetch all redemption data first with a single connection
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        redemption_data = {}
         for redemption_id in selected_ids:
-            conn = self.db.get_connection()
-            c = conn.cursor()
             c.execute(
                 "SELECT site_id, user_id, redemption_date, redemption_time FROM redemptions WHERE id = ?",
                 (redemption_id,),
             )
             row = c.fetchone()
-            conn.close()
+            if row:
+                redemption_data[redemption_id] = row
+        conn.close()
 
+        deleted_count = 0
+        error_messages = []
+        pairs_to_recalc = set()
+
+        for redemption_id in selected_ids:
+            row = redemption_data.get(redemption_id)
             success = self.session_mgr.delete_redemption(int(redemption_id))
             if success:
                 deleted_count += 1
@@ -6679,18 +6694,21 @@ class ExpensesTab(QtWidgets.QWidget):
             c.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
             if c.rowcount:
                 deleted_count += 1
-                try:
-                    self.db.log_audit(
-                        "DELETE",
-                        "expenses",
-                        expense_id,
-                        "Expense deleted",
-                        None,
-                    )
-                except Exception:
-                    pass
         conn.commit()
         conn.close()
+
+        # Log audit for the batch delete (avoiding per-item connection overhead)
+        if deleted_count > 0:
+            try:
+                self.db.log_audit(
+                    "DELETE",
+                    "expenses",
+                    None,
+                    f"Deleted {deleted_count} expense(s)",
+                    None,
+                )
+            except Exception:
+                pass
 
         self.load_data()
         if self.on_data_changed:
