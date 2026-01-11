@@ -1079,10 +1079,11 @@ class PurchaseDialog(QtWidgets.QDialog):
 
 
 class PurchaseViewDialog(QtWidgets.QDialog):
-    def __init__(self, purchase, parent=None, on_edit=None):
+    def __init__(self, purchase, parent=None, on_edit=None, on_delete=None):
         super().__init__(parent)
         self.purchase = purchase
         self._on_edit = on_edit
+        self._on_delete = on_delete
         self.setWindowTitle("View Purchase")
         self.resize(600, 560)
 
@@ -1159,6 +1160,9 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         layout.addSpacing(8)
 
         btn_row = QtWidgets.QHBoxLayout()
+        if self._on_delete:
+            delete_btn = QtWidgets.QPushButton("Delete")
+            btn_row.addWidget(delete_btn)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -1166,6 +1170,8 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         close_btn = QtWidgets.QPushButton("Close")
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
+        if self._on_delete:
+            delete_btn.clicked.connect(self._handle_delete)
         if self._on_edit:
             edit_btn.clicked.connect(self._handle_edit)
         close_btn.clicked.connect(self.accept)
@@ -1174,6 +1180,11 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         if self._on_edit:
             self.accept()
             QtCore.QTimer.singleShot(0, self._on_edit)
+
+    def _handle_delete(self):
+        if self._on_delete:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_delete)
 
 
 class RedemptionDialog(QtWidgets.QDialog):
@@ -1646,7 +1657,7 @@ class RedemptionDialog(QtWidgets.QDialog):
 
 class RedemptionViewDialog(QtWidgets.QDialog):
     def __init__(
-        self, redemption, allocations=None, parent=None, on_edit=None, on_open=None, on_open_purchase=None
+        self, redemption, allocations=None, parent=None, on_edit=None, on_open=None, on_open_purchase=None, on_delete=None
     ):
         super().__init__(parent)
         self.redemption = redemption
@@ -1654,6 +1665,7 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         self._on_edit = on_edit
         self._on_open = on_open
         self.on_open_purchase = on_open_purchase
+        self._on_delete = on_delete
         self.setWindowTitle("View Redemption")
         self.resize(600, 620)
 
@@ -1786,6 +1798,9 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         layout.addWidget(allocations_group, 1)
 
         btn_row = QtWidgets.QHBoxLayout()
+        if self._on_delete:
+            delete_btn = QtWidgets.QPushButton("Delete")
+            btn_row.addWidget(delete_btn)
         btn_row.addStretch(1)
         if self._on_open:
             open_btn = QtWidgets.QPushButton("View in Redemptions")
@@ -1796,6 +1811,8 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         close_btn = QtWidgets.QPushButton("Close")
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
+        if self._on_delete:
+            delete_btn.clicked.connect(self._handle_delete)
         if self._on_open:
             open_btn.clicked.connect(self._handle_open)
         if self._on_edit:
@@ -1811,6 +1828,11 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         if self._on_open:
             self.accept()
             QtCore.QTimer.singleShot(0, self._on_open)
+
+    def _handle_delete(self):
+        if self._on_delete:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_delete)
 
     def _populate_allocations(self):
         self.allocations_table.setRowCount(len(self.allocations))
@@ -2086,10 +2108,11 @@ class ExpenseDialog(QtWidgets.QDialog):
 
 
 class ExpenseViewDialog(QtWidgets.QDialog):
-    def __init__(self, expense, parent=None, on_edit=None):
+    def __init__(self, expense, parent=None, on_edit=None, on_delete=None):
         super().__init__(parent)
         self.expense = expense
         self._on_edit = on_edit
+        self._on_delete = on_delete
         self.setWindowTitle("View Expense")
         self.resize(540, 480)
 
@@ -2163,6 +2186,9 @@ class ExpenseViewDialog(QtWidgets.QDialog):
         layout.addSpacing(8)
 
         btn_row = QtWidgets.QHBoxLayout()
+        if self._on_delete:
+            delete_btn = QtWidgets.QPushButton("Delete")
+            btn_row.addWidget(delete_btn)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -2170,6 +2196,8 @@ class ExpenseViewDialog(QtWidgets.QDialog):
         close_btn = QtWidgets.QPushButton("Close")
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
+        if self._on_delete:
+            delete_btn.clicked.connect(self._handle_delete)
         if self._on_edit:
             edit_btn.clicked.connect(self._handle_edit)
         close_btn.clicked.connect(self.accept)
@@ -2179,6 +2207,11 @@ class ExpenseViewDialog(QtWidgets.QDialog):
         if self._on_edit:
             self.accept()
             QtCore.QTimer.singleShot(0, self._on_edit)
+
+    def _handle_delete(self):
+        if self._on_delete:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_delete)
 
 
 class GameSessionStartDialog(QtWidgets.QDialog):
@@ -2270,7 +2303,7 @@ class GameSessionStartDialog(QtWidgets.QDialog):
 
         self.game_name_combo = QtWidgets.QComboBox()
         self.game_name_combo.setEditable(True)
-        self.game_name_combo.addItems([""] + self._all_game_names())
+        self.game_name_combo.addItems([""])
 
         self.game_helper = QtWidgets.QLabel("Game Name requires a Game Type.")
         self.game_helper.setObjectName("HelperText")
@@ -2381,7 +2414,7 @@ class GameSessionStartDialog(QtWidgets.QDialog):
                     break
             names = list(self.game_names_by_type.get(type_key, [])) if type_key else []
         else:
-            names = self._all_game_names()
+            names = []
         current = self.game_name_combo.currentText().strip()
         if "" not in names:
             names.insert(0, "")
@@ -3138,7 +3171,7 @@ class GameSessionEditDialog(QtWidgets.QDialog):
 
         self.game_name_combo = QtWidgets.QComboBox()
         self.game_name_combo.setEditable(True)
-        self.game_name_combo.addItems([""] + self._all_game_names())
+        self.game_name_combo.addItems([""])
 
         self.game_helper = QtWidgets.QLabel("Game Name requires a Game Type.")
         self.game_helper.setObjectName("HelperText")
@@ -3252,7 +3285,7 @@ class GameSessionEditDialog(QtWidgets.QDialog):
                     break
             names = list(self.game_names_by_type.get(type_key, [])) if type_key else []
         else:
-            names = self._all_game_names()
+            names = []
         current = self.game_name_combo.currentText().strip()
         if "" not in names:
             names.insert(0, "")
@@ -3619,8 +3652,14 @@ class GameSessionEditDialog(QtWidgets.QDialog):
             return None, "Ending Redeemable SC cannot exceed Ending Total SC."
 
         wager_amount = None
-        if self.session and self.session.get("wager_amount") is not None:
-            wager_amount = float(self.session.get("wager_amount") or 0.0)
+        if self.session:
+            try:
+                # Handle both dict and sqlite3.Row objects
+                wager_val = self.session["wager_amount"] if "wager_amount" in self.session.keys() else None
+                if wager_val is not None:
+                    wager_amount = float(wager_val or 0.0)
+            except (KeyError, TypeError):
+                pass
 
         notes = self.notes_edit.toPlainText().strip()
 
@@ -3679,11 +3718,12 @@ class DailySessionNotesDialog(QtWidgets.QDialog):
 
 
 class GameSessionViewDialog(QtWidgets.QDialog):
-    def __init__(self, session, parent=None, on_open_session=None, on_edit=None):
+    def __init__(self, session, parent=None, on_open_session=None, on_edit=None, on_delete=None):
         super().__init__(parent)
         self.session = session
         self._on_open_session = on_open_session
         self._on_edit = on_edit
+        self._on_delete = on_delete
         self.setWindowTitle("View Game Session")
         self.resize(700, 520)
 
@@ -3837,6 +3877,20 @@ class GameSessionViewDialog(QtWidgets.QDialog):
         layout.addSpacing(4)
 
         btn_row = QtWidgets.QHBoxLayout()
+
+        # Check if session is active (status is None or "Active")
+        status = session["status"] if "status" in session.keys() else None
+        is_active = not status or status == "Active"
+
+        if is_active:
+            end_session_btn = QtWidgets.QPushButton("End Session")
+            end_session_btn.setObjectName("PrimaryButton")
+            btn_row.addWidget(end_session_btn)
+
+        if self._on_delete:
+            delete_btn = QtWidgets.QPushButton("Delete")
+            btn_row.addWidget(delete_btn)
+
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -3847,11 +3901,21 @@ class GameSessionViewDialog(QtWidgets.QDialog):
         close_btn = QtWidgets.QPushButton("Close")
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
+
+        if is_active:
+            end_session_btn.clicked.connect(self._handle_end_session)
+        if self._on_delete:
+            delete_btn.clicked.connect(self._handle_delete)
         if self._on_edit:
             edit_btn.clicked.connect(self._handle_edit)
         if self._on_open_session:
             open_btn.clicked.connect(self._handle_open_session)
         close_btn.clicked.connect(self.accept)
+
+    def _handle_delete(self):
+        if self._on_delete:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_delete)
 
     def _handle_edit(self):
         if self._on_edit:
@@ -3864,6 +3928,64 @@ class GameSessionViewDialog(QtWidgets.QDialog):
             QtCore.QTimer.singleShot(0, self._on_open_session)
             return
         self.accept()
+
+    def _handle_end_session(self):
+        """Open the End Session dialog for this active session"""
+        parent = self.parent()
+        if not parent or not hasattr(parent, 'db') or not hasattr(parent, 'session_mgr'):
+            QtWidgets.QMessageBox.warning(self, "Error", "Cannot end session: parent context not available.")
+            return
+
+        # Close this view dialog
+        self.accept()
+
+        # Open the End Session dialog
+        session_id = self.session["id"]
+        dialog = GameSessionEndDialog(self.session, parent)
+
+        def handle_save():
+            data, error = dialog.collect_data()
+            if error:
+                QtWidgets.QMessageBox.warning(parent, "Invalid Entry", error)
+                return
+            try:
+                pnl = parent.session_mgr.end_game_session(
+                    session_id,
+                    data["ending_total_sc"],
+                    data["ending_redeemable_sc"],
+                    notes=data["notes"] or None,
+                    end_date=data["end_date"],
+                    end_time=data["end_time"],
+                )
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(parent, "Error", f"Failed to end session: {exc}")
+                return
+
+            if data.get("wager_amount") is not None:
+                conn = parent.db.get_connection()
+                c = conn.cursor()
+                c.execute(
+                    "UPDATE game_sessions SET wager_amount = ? WHERE id = ?",
+                    (data["wager_amount"], session_id),
+                )
+                conn.commit()
+                conn.close()
+
+            dialog.accept()
+            if hasattr(parent, 'load_data'):
+                parent.load_data()
+            if hasattr(parent, 'on_data_changed') and parent.on_data_changed:
+                parent.on_data_changed()
+            if pnl >= 0:
+                message = f"Session ended!\n\nProfit: +${pnl:.2f}"
+            else:
+                message = f"Session ended!\n\nLoss: ${pnl:.2f}"
+            QtCore.QTimer.singleShot(
+                0, lambda: QtWidgets.QMessageBox.information(parent, "Success", message)
+            )
+
+        dialog.save_btn.clicked.connect(handle_save)
+        dialog.exec()
 
 
 class StatsBar(QtWidgets.QFrame):
@@ -4395,7 +4517,10 @@ class PurchasesTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "Not Found", "Selected purchase was not found.")
             return
         dialog = PurchaseViewDialog(
-            purchase, parent=self, on_edit=lambda: self.edit_purchase_by_id(purchase_id)
+            purchase,
+            parent=self,
+            on_edit=lambda: self.edit_purchase_by_id(purchase_id),
+            on_delete=lambda: self._delete_purchase_by_id(purchase_id)
         )
         dialog.exec()
 
@@ -4404,15 +4529,176 @@ class PurchasesTab(QtWidgets.QWidget):
         if error:
             QtWidgets.QMessageBox.warning(self, "Invalid Entry", error)
             return
-        ok, message = self._save_purchase_record(data, purchase_id)
+        ok, message_or_id = self._save_purchase_record(data, purchase_id)
         if not ok:
-            QtWidgets.QMessageBox.warning(self, "Error", message)
+            QtWidgets.QMessageBox.warning(self, "Error", message_or_id)
             return
+
+        # Extract message and purchase_id from return value
+        if isinstance(message_or_id, tuple):
+            message, new_purchase_id = message_or_id
+        else:
+            message = message_or_id
+            new_purchase_id = purchase_id
+
         dialog.accept()
         self.load_data()
         if self.on_data_changed:
             self.on_data_changed()
-        QtCore.QTimer.singleShot(0, lambda: self._show_info_message("Success", message))
+
+        # Only show start session prompt for new purchases (not edits)
+        if purchase_id is None and new_purchase_id:
+            self._prompt_start_session(new_purchase_id, message)
+        else:
+            QtCore.QTimer.singleShot(0, lambda: self._show_info_message("Success", message))
+
+    def _prompt_start_session(self, purchase_id, success_message):
+        """Show dialog asking if user wants to start a session with this purchase"""
+        from datetime import datetime, timedelta
+
+        # Create custom dialog with checkbox
+        prompt_dialog = QtWidgets.QDialog(self)
+        prompt_dialog.setWindowTitle("Purchase Saved")
+        prompt_dialog.resize(400, 150)
+
+        layout = QtWidgets.QVBoxLayout(prompt_dialog)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        # Success message
+        success_label = QtWidgets.QLabel(success_message)
+        success_label.setWordWrap(True)
+        layout.addWidget(success_label)
+
+        # Checkbox
+        start_session_cb = QtWidgets.QCheckBox("Start a gaming session now with this purchase?")
+        start_session_cb.setChecked(False)
+        layout.addWidget(start_session_cb)
+
+        # Button
+        ok_btn = QtWidgets.QPushButton("OK")
+        ok_btn.setObjectName("PrimaryButton")
+        ok_btn.clicked.connect(prompt_dialog.accept)
+        btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout.addStretch()
+        btn_layout.addWidget(ok_btn)
+        layout.addLayout(btn_layout)
+
+        # Show dialog
+        prompt_dialog.exec()
+
+        # If checkbox was checked, open session dialog
+        if start_session_cb.isChecked():
+            # Fetch purchase data
+            purchase = self._fetch_purchase(purchase_id)
+            if not purchase:
+                QtWidgets.QMessageBox.warning(self, "Error", "Could not load purchase data")
+                return
+
+            # Calculate starting SC: starting_sc_balance + sc_received
+            starting_total_sc = float(purchase["starting_sc_balance"] or 0.0) + float(purchase["sc_received"] or 0.0)
+
+            # Calculate session start time (purchase_time + 1 second)
+            purchase_time_str = purchase["purchase_time"] or "00:00:00"
+            try:
+                purchase_time = datetime.strptime(purchase_time_str, "%H:%M:%S")
+                session_time = purchase_time + timedelta(seconds=1)
+                session_time_str = session_time.strftime("%H:%M:%S")
+            except:
+                session_time_str = purchase_time_str
+
+            # Open Start Session dialog with pre-filled data
+            self._open_start_session_from_purchase(
+                purchase["purchase_date"],
+                session_time_str,
+                purchase["site_name"],
+                purchase["user_name"],
+                starting_total_sc
+            )
+
+    def _open_start_session_from_purchase(self, session_date, session_time, site_name, user_name, starting_total_sc):
+        """Open the Start Session dialog with pre-filled values from a purchase"""
+        from datetime import datetime
+
+        # Fetch lookup data for the session dialog
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT name FROM users WHERE active = 1 ORDER BY name")
+        users = [r["name"] for r in c.fetchall()]
+        c.execute("SELECT name FROM sites WHERE active = 1 ORDER BY name")
+        sites = [r["name"] for r in c.fetchall()]
+        c.execute("SELECT name FROM game_types WHERE active = 1 ORDER BY name")
+        game_types = [r["name"] for r in c.fetchall()]
+        c.execute(
+            """
+            SELECT g.name as game_name, gt.name as type_name
+            FROM games g
+            LEFT JOIN game_types gt ON g.game_type_id = gt.id
+            WHERE g.active = 1
+            ORDER BY g.name
+            """
+        )
+        game_names_by_type = {}
+        for row in c.fetchall():
+            type_name = row["type_name"] or "Other"
+            game_names_by_type.setdefault(type_name, []).append(row["game_name"])
+        conn.close()
+
+        # Create the dialog
+        dialog = GameSessionStartDialog(
+            self.db,
+            self.session_mgr,
+            users,
+            sites,
+            game_types,
+            game_names_by_type,
+            parent=self,
+        )
+
+        # Pre-fill the fields
+        dialog.date_edit.setText(dialog._format_date_for_input(session_date))
+        dialog.time_edit.setText(dialog._format_time_for_input(session_time))
+        dialog.site_combo.setCurrentText(site_name)
+        dialog.user_combo.setCurrentText(user_name)
+        dialog.start_total_edit.setText(str(starting_total_sc))
+        # Leave start_redeem_edit empty so user can enter it manually
+
+        # Connect save button - use GameSessionsTab's existing save method
+        def handle_save():
+            # Get the GameSessionsTab from the main window
+            main_window = self.window()
+            if hasattr(main_window, 'game_sessions_tab'):
+                # Save the session
+                main_window.game_sessions_tab._save_start_session(dialog, None)
+
+                # Navigate to Game Sessions tab and highlight the new session
+                # The session was just created, so it should be the most recent active session
+                QtCore.QTimer.singleShot(100, lambda: self._navigate_to_game_sessions(main_window))
+
+        dialog.save_btn.clicked.connect(handle_save)
+        dialog.exec()
+
+    def _navigate_to_game_sessions(self, main_window):
+        """Navigate to Game Sessions tab and highlight the most recent session"""
+        # Switch to Game Sessions tab
+        if hasattr(main_window, 'stacked') and hasattr(main_window, 'tab_group'):
+            # Find the Game Sessions tab index (it's tab #2: Purchases, Redemptions, Game Sessions...)
+            game_sessions_index = 2
+            button = main_window.tab_group.button(game_sessions_index)
+            if button:
+                button.setChecked(True)
+                main_window.stacked.setCurrentIndex(game_sessions_index)
+
+                # Highlight the most recent session (first row)
+                QtCore.QTimer.singleShot(50, lambda: self._highlight_first_session(main_window))
+
+    def _highlight_first_session(self, main_window):
+        """Highlight the first row in the Game Sessions table (most recent session)"""
+        if hasattr(main_window, 'game_sessions_tab'):
+            table = main_window.game_sessions_tab.table
+            if table.rowCount() > 0:
+                table.selectRow(0)
+                table.scrollToTop()
 
     def _fetch_purchase(self, purchase_id):
         conn = self.db.get_connection()
@@ -4636,7 +4922,8 @@ class PurchasesTab(QtWidgets.QWidget):
         message = "Purchase added"
         if recalc_count > 0:
             message += f" (recalculated {recalc_count} affected session{'s' if recalc_count != 1 else ''})"
-        return True, message
+        # Return purchase_id for new purchases so we can prompt for session start
+        return True, (message, purchase_id)
 
     def _selected_ids(self):
         ids = []
@@ -4694,7 +4981,10 @@ class PurchasesTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "Not Found", "Selected purchase was not found.")
             return
         dialog = PurchaseViewDialog(
-            purchase, parent=self, on_edit=lambda: self.edit_purchase_by_id(purchase_id)
+            purchase,
+            parent=self,
+            on_edit=lambda: self.edit_purchase_by_id(purchase_id),
+            on_delete=lambda: self._delete_purchase_by_id(purchase_id)
         )
         dialog.exec()
 
@@ -4712,13 +5002,17 @@ class PurchasesTab(QtWidgets.QWidget):
         if confirm != QtWidgets.QMessageBox.Yes:
             return
 
+        self._delete_selected_purchases(selected_ids)
+
+    def _delete_selected_purchases(self, purchase_ids, skip_confirm=False):
+        """Shared method to delete purchase(s) - called by both _delete_selected and _delete_purchase_by_id"""
         conn = self.db.get_connection()
         c = conn.cursor()
         deleted_count = 0
         error_messages = []
         affected = {}
 
-        for purchase_id in selected_ids:
+        for purchase_id in purchase_ids:
             c.execute(
                 """
                 SELECT amount, remaining_amount, site_id, user_id, purchase_date, purchase_time
@@ -4815,6 +5109,17 @@ class PurchasesTab(QtWidgets.QWidget):
             if total_recalc > 0:
                 message += f" (recalculated {total_recalc} affected session{'s' if total_recalc != 1 else ''})"
             QtWidgets.QMessageBox.information(self, "Success", message)
+
+    def _delete_purchase_by_id(self, purchase_id):
+        """Delete a single purchase by ID (called from View dialog)"""
+        # Select the row and call existing delete logic (which will show confirmation)
+        self.table.clearSelection()
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item and item.data(QtCore.Qt.UserRole) == purchase_id:
+                self.table.selectRow(row)
+                break
+        self._delete_selected()
 
     def export_csv(self):
         import csv
@@ -5346,6 +5651,7 @@ class RedemptionsTab(QtWidgets.QWidget):
             parent=self,
             on_edit=lambda: self.edit_redemption_by_id(redemption_id),
             on_open_purchase=self.on_open_purchase,
+            on_delete=lambda: self._delete_redemption_by_id(redemption_id),
         )
         dialog.exec()
 
@@ -5807,6 +6113,7 @@ class RedemptionsTab(QtWidgets.QWidget):
             parent=self,
             on_edit=lambda: self.edit_redemption_by_id(redemption_id),
             on_open_purchase=self.on_open_purchase,
+            on_delete=lambda: self._delete_redemption_by_id(redemption_id),
         )
         dialog.exec()
 
@@ -5888,6 +6195,17 @@ class RedemptionsTab(QtWidgets.QWidget):
     def _clear_selection(self):
         self.table.clearSelection()
         self._update_action_visibility()
+
+    def _delete_redemption_by_id(self, redemption_id):
+        """Delete a single redemption by ID (called from View dialog)"""
+        # Select the row and call existing delete logic (which will show confirmation)
+        self.table.clearSelection()
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item and item.data(QtCore.Qt.UserRole) == redemption_id:
+                self.table.selectRow(row)
+                break
+        self._delete_selected()
 
     def export_csv(self):
         import csv
@@ -6333,7 +6651,10 @@ class ExpensesTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "Not Found", "Selected expense was not found.")
             return
         dialog = ExpenseViewDialog(
-            expense, parent=self, on_edit=lambda: self.edit_expense_by_id(expense_id)
+            expense,
+            parent=self,
+            on_edit=lambda: self.edit_expense_by_id(expense_id),
+            on_delete=lambda: self._delete_expense_by_id(expense_id),
         )
         dialog.exec()
 
@@ -6393,6 +6714,17 @@ class ExpensesTab(QtWidgets.QWidget):
         if self.on_data_changed:
             self.on_data_changed()
         QtWidgets.QMessageBox.information(self, "Success", message)
+
+    def _delete_expense_by_id(self, expense_id):
+        """Delete a single expense by ID (called from View dialog)"""
+        # Select the row and call existing delete logic (which will show confirmation)
+        self.table.clearSelection()
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item and item.data(QtCore.Qt.UserRole) == expense_id:
+                self.table.selectRow(row)
+                break
+        self._delete_selected()
 
     def _save_expense_record(self, data, expense_id):
         conn = self.db.get_connection()
@@ -7302,7 +7634,7 @@ class GameSessionsTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "Not Found", "Selected session was not found.")
             return
         dialog = GameSessionViewDialog(
-            session, parent=self, on_edit=lambda: self.edit_session_by_id(session_id)
+            session, parent=self, on_edit=lambda: self.edit_session_by_id(session_id), on_delete=lambda: self._delete_session_by_id(session_id)
         )
         dialog.exec()
 
@@ -7669,7 +8001,7 @@ class GameSessionsTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "Not Found", "Selected session was not found.")
             return
         dialog = GameSessionViewDialog(
-            session, parent=self, on_edit=lambda: self.edit_session_by_id(session_id)
+            session, parent=self, on_edit=lambda: self.edit_session_by_id(session_id), on_delete=lambda: self._delete_session_by_id(session_id)
         )
         dialog.exec()
 
@@ -7740,6 +8072,17 @@ class GameSessionsTab(QtWidgets.QWidget):
                 message += f" (recalculated {total_recalc} session{'s' if total_recalc != 1 else ''})"
             QtWidgets.QMessageBox.information(self, "Success", message)
 
+    def _delete_session_by_id(self, session_id):
+        """Delete a single session by ID (called from View dialog)"""
+        # Select the row and call existing delete logic (which will show confirmation)
+        self.table.clearSelection()
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item and item.data(QtCore.Qt.UserRole) == session_id:
+                self.table.selectRow(row)
+                break
+        self._delete_selected()
+
     def export_csv(self):
         import csv
 
@@ -7771,6 +8114,7 @@ class DailySessionsTab(QtWidgets.QWidget):
         on_data_changed=None,
         on_open_session=None,
         on_edit_session=None,
+        on_delete_session=None,
         parent=None,
     ):
         super().__init__(parent)
@@ -7779,6 +8123,7 @@ class DailySessionsTab(QtWidgets.QWidget):
         self.on_data_changed = on_data_changed
         self.on_open_session = on_open_session
         self.on_edit_session = on_edit_session
+        self.on_delete_session = on_delete_session
         self.active_date_filter = (None, None)
         self.selected_users = set()
         self.selected_sites = set()
@@ -8682,11 +9027,16 @@ class DailySessionsTab(QtWidgets.QWidget):
             if self.on_edit_session:
                 self.on_edit_session(session_id)
 
+        def handle_delete():
+            if self.on_delete_session:
+                self.on_delete_session(session_id)
+
         dialog = GameSessionViewDialog(
             session,
             parent=self,
             on_open_session=handle_open if self.on_open_session else None,
             on_edit=handle_edit if self.on_edit_session else None,
+            on_delete=handle_delete if self.on_delete_session else None,
         )
         dialog.exec()
 
@@ -11287,10 +11637,11 @@ class UserEditDialog(SetupEditDialog):
 
 
 class UserViewDialog(QtWidgets.QDialog):
-    def __init__(self, user, parent=None, on_edit=None):
+    def __init__(self, user, parent=None, on_edit=None, on_delete=None):
         super().__init__(parent)
         self.user = user
         self._on_edit = on_edit
+        self._on_delete = on_delete
         self.setWindowTitle("View User")
         self.resize(500, 200)
 
@@ -11344,6 +11695,9 @@ class UserViewDialog(QtWidgets.QDialog):
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.setSpacing(8)
+        if self._on_delete:
+            delete_btn = QtWidgets.QPushButton("Delete")
+            btn_row.addWidget(delete_btn)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -11352,6 +11706,8 @@ class UserViewDialog(QtWidgets.QDialog):
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
 
+        if self._on_delete:
+            delete_btn.clicked.connect(self._handle_delete)
         if self._on_edit:
             edit_btn.clicked.connect(self._handle_edit)
         close_btn.clicked.connect(self.accept)
@@ -11360,6 +11716,11 @@ class UserViewDialog(QtWidgets.QDialog):
         if self._on_edit:
             self.accept()
             QtCore.QTimer.singleShot(0, self._on_edit)
+
+    def _handle_delete(self):
+        if self._on_delete:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_delete)
 
 
 class SiteEditDialog(SetupEditDialog):
@@ -11458,10 +11819,11 @@ class SiteEditDialog(SetupEditDialog):
 
 
 class SiteViewDialog(QtWidgets.QDialog):
-    def __init__(self, site, parent=None, on_edit=None):
+    def __init__(self, site, parent=None, on_edit=None, on_delete=None):
         super().__init__(parent)
         self.site = site
         self._on_edit = on_edit
+        self._on_delete = on_delete
         self.setWindowTitle("View Site")
         self.resize(500, 200)
 
@@ -11522,6 +11884,9 @@ class SiteViewDialog(QtWidgets.QDialog):
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.setSpacing(8)
+        if self._on_delete:
+            delete_btn = QtWidgets.QPushButton("Delete")
+            btn_row.addWidget(delete_btn)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -11530,6 +11895,8 @@ class SiteViewDialog(QtWidgets.QDialog):
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
 
+        if self._on_delete:
+            delete_btn.clicked.connect(self._handle_delete)
         if self._on_edit:
             edit_btn.clicked.connect(self._handle_edit)
         close_btn.clicked.connect(self.accept)
@@ -11538,6 +11905,11 @@ class SiteViewDialog(QtWidgets.QDialog):
         if self._on_edit:
             self.accept()
             QtCore.QTimer.singleShot(0, self._on_edit)
+
+    def _handle_delete(self):
+        if self._on_delete:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_delete)
 
 
 class CardEditDialog(SetupEditDialog):
@@ -11764,10 +12136,11 @@ class CardEditDialog(SetupEditDialog):
 
 
 class CardViewDialog(QtWidgets.QDialog):
-    def __init__(self, card, parent=None, on_edit=None):
+    def __init__(self, card, parent=None, on_edit=None, on_delete=None):
         super().__init__(parent)
         self.card = card
         self._on_edit = on_edit
+        self._on_delete = on_delete
         self.setWindowTitle("View Card")
         self.resize(500, 240)
 
@@ -11838,6 +12211,9 @@ class CardViewDialog(QtWidgets.QDialog):
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.setSpacing(8)
+        if self._on_delete:
+            delete_btn = QtWidgets.QPushButton("Delete")
+            btn_row.addWidget(delete_btn)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -11846,6 +12222,8 @@ class CardViewDialog(QtWidgets.QDialog):
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
 
+        if self._on_delete:
+            delete_btn.clicked.connect(self._handle_delete)
         if self._on_edit:
             edit_btn.clicked.connect(self._handle_edit)
         close_btn.clicked.connect(self.accept)
@@ -11854,6 +12232,11 @@ class CardViewDialog(QtWidgets.QDialog):
         if self._on_edit:
             self.accept()
             QtCore.QTimer.singleShot(0, self._on_edit)
+
+    def _handle_delete(self):
+        if self._on_delete:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_delete)
 
 
 class MethodEditDialog(SetupEditDialog):
@@ -11951,10 +12334,11 @@ class MethodEditDialog(SetupEditDialog):
 
 
 class MethodViewDialog(QtWidgets.QDialog):
-    def __init__(self, method, parent=None, on_edit=None):
+    def __init__(self, method, parent=None, on_edit=None, on_delete=None):
         super().__init__(parent)
         self.method = method
         self._on_edit = on_edit
+        self._on_delete = on_delete
         self.setWindowTitle("View Method")
         self.resize(500, 200)
 
@@ -12015,6 +12399,9 @@ class MethodViewDialog(QtWidgets.QDialog):
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.setSpacing(8)
+        if self._on_delete:
+            delete_btn = QtWidgets.QPushButton("Delete")
+            btn_row.addWidget(delete_btn)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -12023,6 +12410,8 @@ class MethodViewDialog(QtWidgets.QDialog):
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
 
+        if self._on_delete:
+            delete_btn.clicked.connect(self._handle_delete)
         if self._on_edit:
             edit_btn.clicked.connect(self._handle_edit)
         close_btn.clicked.connect(self.accept)
@@ -12031,6 +12420,11 @@ class MethodViewDialog(QtWidgets.QDialog):
         if self._on_edit:
             self.accept()
             QtCore.QTimer.singleShot(0, self._on_edit)
+
+    def _handle_delete(self):
+        if self._on_delete:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_delete)
 
 
 class GameTypeEditDialog(SetupEditDialog):
@@ -12104,10 +12498,11 @@ class GameTypeEditDialog(SetupEditDialog):
 
 
 class GameTypeViewDialog(QtWidgets.QDialog):
-    def __init__(self, game_type, parent=None, on_edit=None):
+    def __init__(self, game_type, parent=None, on_edit=None, on_delete=None):
         super().__init__(parent)
         self.game_type = game_type
         self._on_edit = on_edit
+        self._on_delete = on_delete
         self.setWindowTitle("View Game Type")
         self.resize(500, 200)
 
@@ -12162,6 +12557,9 @@ class GameTypeViewDialog(QtWidgets.QDialog):
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.setSpacing(8)
+        if self._on_delete:
+            delete_btn = QtWidgets.QPushButton("Delete")
+            btn_row.addWidget(delete_btn)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -12170,6 +12568,8 @@ class GameTypeViewDialog(QtWidgets.QDialog):
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
 
+        if self._on_delete:
+            delete_btn.clicked.connect(self._handle_delete)
         if self._on_edit:
             edit_btn.clicked.connect(self._handle_edit)
         close_btn.clicked.connect(self.accept)
@@ -12178,6 +12578,11 @@ class GameTypeViewDialog(QtWidgets.QDialog):
         if self._on_edit:
             self.accept()
             QtCore.QTimer.singleShot(0, self._on_edit)
+
+    def _handle_delete(self):
+        if self._on_delete:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_delete)
 
 
 class GameEditDialog(SetupEditDialog):
@@ -12300,10 +12705,11 @@ class GameEditDialog(SetupEditDialog):
 
 
 class GameViewDialog(QtWidgets.QDialog):
-    def __init__(self, game, parent=None, on_edit=None):
+    def __init__(self, game, parent=None, on_edit=None, on_delete=None):
         super().__init__(parent)
         self.game = game
         self._on_edit = on_edit
+        self._on_delete = on_delete
         self.setWindowTitle("View Game")
         self.resize(500, 240)
 
@@ -12374,6 +12780,9 @@ class GameViewDialog(QtWidgets.QDialog):
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.setSpacing(8)
+        if self._on_delete:
+            delete_btn = QtWidgets.QPushButton("Delete")
+            btn_row.addWidget(delete_btn)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -12382,6 +12791,8 @@ class GameViewDialog(QtWidgets.QDialog):
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
 
+        if self._on_delete:
+            delete_btn.clicked.connect(self._handle_delete)
         if self._on_edit:
             edit_btn.clicked.connect(self._handle_edit)
         close_btn.clicked.connect(self.accept)
@@ -12390,6 +12801,11 @@ class GameViewDialog(QtWidgets.QDialog):
         if self._on_edit:
             self.accept()
             QtCore.QTimer.singleShot(0, self._on_edit)
+
+    def _handle_delete(self):
+        if self._on_delete:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_delete)
 
 
 class SetupListTab(QtWidgets.QWidget):
@@ -12566,6 +12982,17 @@ class SetupListTab(QtWidgets.QWidget):
             return
         self.delete_records(selected_ids)
 
+    def _delete_record_by_id(self, record_id):
+        """Delete a single record by ID (called from View dialog)"""
+        # Select the row and call existing delete logic (which will show confirmation)
+        self.table.clearSelection()
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item and item.data(QtCore.Qt.UserRole) == record_id:
+                self.table.selectRow(row)
+                break
+        self._delete_selected()
+
     def export_csv(self):
         import csv
 
@@ -12669,7 +13096,7 @@ class UsersSetupTab(SetupListTab):
             QtWidgets.QMessageBox.warning(self, "Not Found", "Selected user was not found.")
             return
 
-        dialog = UserViewDialog(user, parent=self, on_edit=lambda: self.edit_record(record_id))
+        dialog = UserViewDialog(user, parent=self, on_edit=lambda: self.edit_record(record_id), on_delete=lambda: self._delete_record_by_id(record_id))
         dialog.exec()
 
     def edit_record(self, record_id):
@@ -12833,7 +13260,7 @@ class SitesSetupTab(SetupListTab):
         if not site:
             QtWidgets.QMessageBox.warning(self, "Not Found", "Selected site was not found.")
             return
-        dialog = SiteViewDialog(site, parent=self, on_edit=lambda: self.edit_record(record_id))
+        dialog = SiteViewDialog(site, parent=self, on_edit=lambda: self.edit_record(record_id), on_delete=lambda: self._delete_record_by_id(record_id))
         dialog.exec()
 
     def edit_record(self, record_id):
@@ -13032,7 +13459,7 @@ class CardsSetupTab(SetupListTab):
         if not card:
             QtWidgets.QMessageBox.warning(self, "Not Found", "Selected card was not found.")
             return
-        dialog = CardViewDialog(card, parent=self, on_edit=lambda: self.edit_record(record_id))
+        dialog = CardViewDialog(card, parent=self, on_edit=lambda: self.edit_record(record_id), on_delete=lambda: self._delete_record_by_id(record_id))
         dialog.exec()
 
     def edit_record(self, record_id):
@@ -13220,7 +13647,7 @@ class MethodsSetupTab(SetupListTab):
         if not method:
             QtWidgets.QMessageBox.warning(self, "Not Found", "Selected method was not found.")
             return
-        dialog = MethodViewDialog(method, parent=self, on_edit=lambda: self.edit_record(record_id))
+        dialog = MethodViewDialog(method, parent=self, on_edit=lambda: self.edit_record(record_id), on_delete=lambda: self._delete_record_by_id(record_id))
         dialog.exec()
 
     def edit_record(self, record_id):
@@ -13370,7 +13797,7 @@ class GameTypesSetupTab(SetupListTab):
         if not game_type:
             QtWidgets.QMessageBox.warning(self, "Not Found", "Selected game type was not found.")
             return
-        dialog = GameTypeViewDialog(game_type, parent=self, on_edit=lambda: self.edit_record(record_id))
+        dialog = GameTypeViewDialog(game_type, parent=self, on_edit=lambda: self.edit_record(record_id), on_delete=lambda: self._delete_record_by_id(record_id))
         dialog.exec()
 
     def edit_record(self, record_id):
@@ -13542,7 +13969,7 @@ class GamesSetupTab(SetupListTab):
         if not game:
             QtWidgets.QMessageBox.warning(self, "Not Found", "Selected game was not found.")
             return
-        dialog = GameViewDialog(game, parent=self, on_edit=lambda: self.edit_record(record_id))
+        dialog = GameViewDialog(game, parent=self, on_edit=lambda: self.edit_record(record_id), on_delete=lambda: self._delete_record_by_id(record_id))
         dialog.exec()
 
     def edit_record(self, record_id):
@@ -14990,6 +15417,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.refresh_stats,
             self.open_game_session,
             self.edit_game_session,
+            self.delete_game_session,
         )
         self.unrealized_tab = UnrealizedTab(
             self.db,
@@ -15547,6 +15975,11 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.stacked.setCurrentIndex(target_index)
         self.game_sessions_tab.edit_session_by_id(session_id)
+
+    def delete_game_session(self, session_id):
+        """Delete a game session by ID (called from DailySessionsTab)"""
+        if hasattr(self, 'game_sessions_tab'):
+            self.game_sessions_tab._delete_session_by_id(session_id)
 
     def _on_tab_clicked(self, button):
         tab_index = self.tab_group.id(button)

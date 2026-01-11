@@ -5,7 +5,7 @@
 - [ ] Remove or deprecate session2.py safely
 - [ ] Finish remaining tab incorporations
 - [X] Add a one-click "Recalculate Everything" action in qt_app.py to rebuild FIFO + derived data across the entire database
-- [ ] Add a feature to "Start a New Session" after a purchase, or is it best to keep these as manual inputs?
+- [X] Add a feature to "Start a New Session" after a purchase, or is it best to keep these as manual inputs?
 
 ## Medium Priority
 - [ ] Add free-tier usage limits
@@ -22,9 +22,9 @@
 
 ## Low Priority / Ideas
 - [ ] Export reports to CSV
-- [ ] Dark mode toggle
-- [ ] Settings screen cleanup
-- [ ] Add notes for Users/Sites/Cards/Redemption Methods/etc.
+- [X] Dark mode toggle
+- [X] Settings screen cleanup
+- [X] Add notes for Users/Sites/Cards/Redemption Methods/etc.
 - [ ] Daily taxable P/L metric (hourly rate, etc.)
 - [ ] Export/Backup to Google Sheets/Drive/etc. for Database and Reports, including automated/scheduled backups?
 - [ ] Support ticket/bug submissions/error reporting
