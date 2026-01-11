@@ -13849,12 +13849,12 @@ class ToolsSetupTab(QtWidgets.QWidget):
         backup_settings_label.setObjectName("SectionTitle")
         db_layout.addWidget(backup_settings_label)
 
-        # Backup folder row
+        # Row 1: Backup folder
         folder_row = QtWidgets.QHBoxLayout()
         folder_row.setSpacing(10)
 
         folder_label = QtWidgets.QLabel("Backup folder:")
-        folder_label.setMinimumWidth(100)
+        folder_label.setMinimumWidth(180)
         folder_row.addWidget(folder_label)
 
         self.backup_folder_display = QtWidgets.QLineEdit()
@@ -13874,31 +13874,42 @@ class ToolsSetupTab(QtWidgets.QWidget):
         backup_now_btn.clicked.connect(self._backup_database_now)
         folder_row.addWidget(backup_now_btn)
 
+        # Last backup status inline with Backup Now button
+        self.last_backup_label = QtWidgets.QLabel("Last backup: Never")
+        self.last_backup_label.setObjectName("HelperText")
+        folder_row.addWidget(self.last_backup_label)
+
         folder_row.addStretch()
 
         db_layout.addLayout(folder_row)
 
-        # Last backup status
-        self.last_backup_label = QtWidgets.QLabel("Last backup: Never")
-        self.last_backup_label.setObjectName("HelperText")
-        self.last_backup_label.setContentsMargins(100, 8, 0, 8)
-        db_layout.addWidget(self.last_backup_label)
-
-        # Automatic backup settings row
+        # Row 2: Enable automatic backups
         auto_backup_row = QtWidgets.QHBoxLayout()
         auto_backup_row.setSpacing(10)
 
         auto_label = QtWidgets.QLabel("Enable automatic backups:")
+        auto_label.setMinimumWidth(180)
         auto_backup_row.addWidget(auto_label)
 
         self.auto_backup_enabled_cb = QtWidgets.QCheckBox()
-        self.auto_backup_enabled_cb.stateChanged.connect(self._on_auto_backup_changed)
+        self.auto_backup_enabled_cb.stateChanged.connect(self._on_auto_backup_checkbox_changed)
         auto_backup_row.addWidget(self.auto_backup_enabled_cb)
 
-        auto_backup_row.addSpacing(20)
+        auto_backup_row.addStretch()
 
-        interval_label = QtWidgets.QLabel("Check every:")
-        auto_backup_row.addWidget(interval_label)
+        db_layout.addLayout(auto_backup_row)
+
+        # Row 3: Check every interval (container for show/hide)
+        # Use a fixed-size container that's always present in the layout
+        self.interval_container = QtWidgets.QWidget()
+        self.interval_container.setFixedHeight(48)
+        interval_row = QtWidgets.QHBoxLayout(self.interval_container)
+        interval_row.setContentsMargins(0, 0, 0, 0)
+        interval_row.setSpacing(10)
+
+        self.interval_label = QtWidgets.QLabel("Check every:")
+        self.interval_label.setMinimumWidth(180)
+        interval_row.addWidget(self.interval_label)
 
         self.backup_interval_spin = QtWidgets.QSpinBox()
         self.backup_interval_spin.setMinimum(1)
@@ -13907,17 +13918,17 @@ class ToolsSetupTab(QtWidgets.QWidget):
         self.backup_interval_spin.setSuffix(" days")
         self.backup_interval_spin.setMaximumWidth(120)
         self.backup_interval_spin.valueChanged.connect(self._on_auto_backup_changed)
-        auto_backup_row.addWidget(self.backup_interval_spin)
+        interval_row.addWidget(self.backup_interval_spin)
 
-        auto_backup_row.addSpacing(15)
+        interval_row.addSpacing(15)
 
         self.next_backup_label = QtWidgets.QLabel("")
         self.next_backup_label.setObjectName("HelperText")
-        auto_backup_row.addWidget(self.next_backup_label)
+        interval_row.addWidget(self.next_backup_label)
 
-        auto_backup_row.addStretch()
+        interval_row.addStretch()
 
-        db_layout.addLayout(auto_backup_row)
+        db_layout.addWidget(self.interval_container)
 
         # Load settings
         self._load_backup_settings()
@@ -14507,6 +14518,11 @@ class ToolsSetupTab(QtWidgets.QWidget):
         enabled = result['value'] == '1' if result else False
         self.auto_backup_enabled_cb.setChecked(enabled)
 
+        # Set visibility of interval widgets based on enabled status
+        self.interval_label.setVisible(enabled)
+        self.backup_interval_spin.setVisible(enabled)
+        self.next_backup_label.setVisible(enabled)
+
         # Load interval
         c.execute("SELECT value FROM settings WHERE key = 'auto_backup_interval_days'")
         result = c.fetchone()
@@ -14571,8 +14587,18 @@ class ToolsSetupTab(QtWidgets.QWidget):
         # Refresh the last backup label to update overdue status
         self._load_backup_settings()
 
+    def _on_auto_backup_checkbox_changed(self):
+        """Called when automatic backup checkbox state changes"""
+        # Toggle visibility of interval widgets (container stays in layout with fixed height)
+        is_enabled = self.auto_backup_enabled_cb.isChecked()
+        self.interval_label.setVisible(is_enabled)
+        self.backup_interval_spin.setVisible(is_enabled)
+        self.next_backup_label.setVisible(is_enabled)
+        # Save settings
+        self._save_backup_settings()
+
     def _on_auto_backup_changed(self):
-        """Called when automatic backup checkbox or interval changes"""
+        """Called when automatic backup interval changes"""
         self._save_backup_settings()
 
     def _update_next_backup_label(self, enabled, last_backup, interval):
@@ -14897,7 +14923,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Notification bell button
         self.notification_btn = QtWidgets.QPushButton("🔔")
-        self.notification_btn.setFixedSize(40, 40)
+        self.notification_btn.setFixedSize(50, 40)
         self.notification_btn.setToolTip("Notifications")
         self.notification_btn.clicked.connect(self._show_notifications)
 
@@ -14918,7 +14944,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Stack bell and badge
         notification_stack = QtWidgets.QWidget()
-        notification_stack.setFixedSize(40, 40)
+        notification_stack.setFixedSize(50, 40)
         stack_layout = QtWidgets.QGridLayout(notification_stack)
         stack_layout.setContentsMargins(0, 0, 0, 0)
         stack_layout.addWidget(self.notification_btn, 0, 0)
@@ -14928,7 +14954,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Settings gear button
         self.settings_btn = QtWidgets.QPushButton("⚙️")
-        self.settings_btn.setFixedSize(40, 40)
+        self.settings_btn.setFixedSize(50, 40)
         self.settings_btn.setToolTip("Settings")
         self.settings_btn.clicked.connect(self._show_settings_menu)
         notification_row.addWidget(self.settings_btn)
@@ -14978,6 +15004,7 @@ class MainWindow(QtWidgets.QMainWindow):
             on_open_purchase=self.open_purchase,
         )
         self.expenses_tab = ExpensesTab(self.db, self.refresh_stats)
+        self.setup_tab = SetupTab(self.db, self.session_mgr, self)
 
         tabs = [
             ("Purchases", self.purchases_tab),
@@ -14988,7 +15015,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ("Realized", self.realized_tab),
             ("Expenses", self.expenses_tab),
             ("Reports", PlaceholderTab("Reports")),
-            ("Setup", SetupTab(self.db, self.session_mgr, self)),
+            ("Setup", self.setup_tab),
         ]
 
         for idx, (label, widget) in enumerate(tabs):
@@ -15201,6 +15228,112 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_notification_badge()
         if dialog:
             dialog.close()
+
+    def _show_settings_menu(self):
+        """Show settings dropdown menu"""
+        # Create settings dialog
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Settings")
+        dialog.setMinimumWidth(400)
+        dialog.setMinimumHeight(500)
+
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        # Setup Section
+        setup_label = QtWidgets.QLabel("Setup")
+        setup_label.setObjectName("SectionTitle")
+        layout.addWidget(setup_label)
+
+        setup_buttons = [
+            ("Users", 0),
+            ("Sites", 1),
+            ("Cards", 2),
+            ("Redemption Methods", 3),
+            ("Game Types", 4),
+            ("Games", 5),
+            ("Tools", 6),
+        ]
+
+        for label, index in setup_buttons:
+            btn = QtWidgets.QPushButton(label)
+            btn.clicked.connect(lambda checked, idx=index: self._navigate_to_setup_tab(idx, dialog))
+            layout.addWidget(btn)
+
+        layout.addSpacing(10)
+
+        # Display Section
+        display_label = QtWidgets.QLabel("Display")
+        display_label.setObjectName("SectionTitle")
+        layout.addWidget(display_label)
+
+        # Theme toggle
+        theme_row = QtWidgets.QHBoxLayout()
+        theme_label = QtWidgets.QLabel("Theme:")
+        theme_row.addWidget(theme_label)
+
+        self.theme_toggle_light = QtWidgets.QRadioButton("Light")
+        self.theme_toggle_dark = QtWidgets.QRadioButton("Dark")
+
+        if self.current_theme == 'light':
+            self.theme_toggle_light.setChecked(True)
+        else:
+            self.theme_toggle_dark.setChecked(True)
+
+        self.theme_toggle_light.toggled.connect(lambda checked: self._toggle_theme('light', checked, dialog))
+        self.theme_toggle_dark.toggled.connect(lambda checked: self._toggle_theme('dark', checked, dialog))
+
+        theme_row.addWidget(self.theme_toggle_light)
+        theme_row.addWidget(self.theme_toggle_dark)
+        theme_row.addStretch()
+
+        layout.addLayout(theme_row)
+
+        layout.addStretch()
+
+        # Close button
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.setObjectName("PrimaryButton")
+        close_btn.clicked.connect(dialog.close)
+        layout.addWidget(close_btn)
+
+        dialog.exec()
+
+    def _navigate_to_setup_tab(self, setup_index, settings_dialog):
+        """Navigate to a specific Setup sub-tab"""
+        # First close the dialog
+        settings_dialog.accept()
+
+        # Use QTimer to defer the navigation until after dialog is fully closed
+        QtCore.QTimer.singleShot(0, lambda: self._do_navigation(setup_index))
+
+    def _do_navigation(self, setup_index):
+        """Perform the actual navigation to setup tab"""
+        # Switch to Setup tab
+        for i, (btn, label) in enumerate(self.tab_buttons):
+            if label == "Setup":
+                btn.setChecked(True)
+                self.stacked.setCurrentIndex(i)
+
+                # Switch to the specific setup sub-tab
+                if hasattr(self, 'setup_tab'):
+                    if hasattr(self.setup_tab, 'sub_group') and hasattr(self.setup_tab, 'sub_stacked'):
+                        # First set the stacked widget index
+                        self.setup_tab.sub_stacked.setCurrentIndex(setup_index)
+                        # Then check the corresponding button
+                        sub_button = self.setup_tab.sub_group.button(setup_index)
+                        if sub_button:
+                            sub_button.setChecked(True)
+                break
+
+    def _toggle_theme(self, theme, checked, dialog):
+        """Toggle between light and dark theme"""
+        if checked:
+            self._save_theme_preference(theme)
+            # Close dialog and schedule reopen to avoid modal session warning
+            dialog.accept()
+            QtCore.QTimer.singleShot(100, self._show_settings_menu)
 
     def _check_backup_due(self):
         """Check if automatic backup is due and show notification/dialog"""
@@ -15445,60 +15578,60 @@ class MainWindow(QtWidgets.QMainWindow):
             f"""
             QMainWindow {{ background: {colors['bg']}; }}
             QWidget {{ color: {colors['text']}; font-size: 12px; }}
-            QDialog, QMessageBox { background: {colors['surface']}; }
-            QFrame#StatsBar {
+            QDialog, QMessageBox {{ background: {colors['surface']}; }}
+            QFrame#StatsBar {{
                 background: {colors['surface']};
                 border: 1px solid {colors['border']};
                 border-radius: 10px;
-            }
-            QFrame#StatsBar QLabel {
+            }}
+            QFrame#StatsBar QLabel {{
                 color: {colors['text']};
-            }
-            QLabel#SectionTitle { font-size: 14px; font-weight: 600; }
+            }}
+            QLabel#SectionTitle {{ font-size: 14px; font-weight: 600; }}
 
-            #TabButton {
+            #TabButton {{
                 background: {colors['surface']};
                 border: 1px solid {colors['border']};
                 border-radius: 10px;
                 padding: 6px 14px;
                 color: {colors['text_muted']};
-            }
-            #TabButton:hover {
+            }}
+            #TabButton:hover {{
                 background: {colors['surface2']};
-            }
-            #TabButton:checked {
+            }}
+            #TabButton:checked {{
                 background: {colors['accent']};
                 color: white;
                 border: 1px solid {colors['accent_hover']};
-            }
+            }}
 
-            QStackedWidget {
+            QStackedWidget {{
                 background: {colors['surface']};
                 border: 1px solid {colors['border']};
                 border-radius: 12px;
-            }
+            }}
 
-            QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox {
+            QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox {{
                 background: {colors['input_bg']};
                 border: 1px solid {colors['border']};
                 border-radius: 8px;
                 padding: 6px 10px;
                 min-height: 26px;
-            }
-            QLineEdit[invalid="true"], QTextEdit[invalid="true"], QPlainTextEdit[invalid="true"], QComboBox[invalid="true"] {
+            }}
+            QLineEdit[invalid="true"], QTextEdit[invalid="true"], QPlainTextEdit[invalid="true"], QComboBox[invalid="true"] {{
                 border: 1px solid #c0392b;
-            }
-            QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus {
+            }}
+            QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus {{
                 border: 1px solid {colors['focus']};
-            }
-            QComboBox {
+            }}
+            QComboBox {{
                 padding-right: 30px;
-            }
-            QComboBox::editable {
+            }}
+            QComboBox::editable {{
                 background: {colors['input_bg']};
                 color: {colors['text']};
-            }
-            QComboBox::drop-down {
+            }}
+            QComboBox::drop-down {{
                 subcontrol-origin: padding;
                 subcontrol-position: top right;
                 width: 28px;
@@ -15506,98 +15639,98 @@ class MainWindow(QtWidgets.QMainWindow):
                 background: {colors['surface2']};
                 border-top-right-radius: 8px;
                 border-bottom-right-radius: 8px;
-            }
-            QComboBox::down-arrow {
+            }}
+            QComboBox::down-arrow {{
                 image: url("icons/chevron-down.svg");
                 width: 10px;
                 height: 6px;
-            }
+            }}
             QAbstractItemView,
             QListView,
-            QComboBox QAbstractItemView {
+            QComboBox QAbstractItemView {{
                 background: {colors['input_bg']};
                 color: {colors['text']};
                 selection-background-color: {colors['selection']};
                 selection-color: {colors['text']};
-            }
-            QPlainTextEdit#NotesField {
+            }}
+            QPlainTextEdit#NotesField {{
                 min-height: 78px;
-            }
-            QLabel#InfoField {
+            }}
+            QLabel#InfoField {{
                 background: {colors['input_bg']};
                 border: 1px solid {colors['border']};
                 border-radius: 6px;
                 padding: 6px 10px;
                 min-height: 26px;
-            }
-            QLabel#InfoField[status="positive"] { color: #2e7d32; }
-            QLabel#InfoField[status="negative"] { color: #c0392b; }
-            QLabel#InfoField[status="neutral"] { color: {colors['text_muted']}; }
-            QLabel#HelperText { color: {colors['text_muted']}; font-size: 11px; }
-            QLabel#TabTip {
+            }}
+            QLabel#InfoField[status="positive"] {{ color: #2e7d32; }}
+            QLabel#InfoField[status="negative"] {{ color: #c0392b; }}
+            QLabel#InfoField[status="neutral"] {{ color: {colors['text_muted']}; }}
+            QLabel#HelperText {{ color: {colors['text_muted']}; font-size: 11px; }}
+            QLabel#TabTip {{
                 background: {colors['surface']};
                 border: 1px solid {colors['border']};
                 border-radius: 10px;
                 padding: 6px 12px;
                 color: {colors['accent_hover']};
                 font-weight: 500;
-            }
-            QRadioButton[invalid="true"] { color: #c0392b; }
-            QMenu {
+            }}
+            QRadioButton[invalid="true"] {{ color: #c0392b; }}
+            QMenu {{
                 background: {colors['input_bg']};
                 color: {colors['text']};
                 border: 1px solid {colors['border']};
-            }
-            QMenu::item:selected {
+            }}
+            QMenu::item:selected {{
                 background: {colors['selection']};
-            }
-            QCalendarWidget QWidget {
+            }}
+            QCalendarWidget QWidget {{
                 background: {colors['surface']};
-            }
-            QCalendarWidget QToolButton {
+            }}
+            QCalendarWidget QToolButton {{
                 background: {colors['surface2']};
                 color: {colors['text']};
                 border: 1px solid {colors['border']};
                 border-radius: 6px;
                 padding: 4px 8px;
-            }
-            QCalendarWidget QMenu {
+            }}
+            QCalendarWidget QMenu {{
                 background: {colors['input_bg']};
                 color: {colors['text']};
                 border: 1px solid {colors['border']};
-            }
-            QCalendarWidget QSpinBox {
+            }}
+            QCalendarWidget QSpinBox {{
                 background: {colors['input_bg']};
                 color: {colors['text']};
                 border: 1px solid {colors['border']};
                 border-radius: 6px;
                 padding: 2px 6px;
-            }
-            QCalendarWidget QAbstractItemView:enabled {
+            }}
+            QCalendarWidget QAbstractItemView:enabled {{
                 background: {colors['input_bg']};
                 color: {colors['text']};
                 selection-background-color: {colors['selection']};
                 selection-color: {colors['text']};
-            }
-            QPushButton {
+            }}
+            QPushButton {{
                 background: {colors['surface']};
                 border: 1px solid {colors['border']};
                 border-radius: 8px;
                 padding: 6px 14px;
                 min-height: 26px;
-            }
-            QPushButton:hover { background: {colors['surface2']}; }
-            QPushButton#PrimaryButton {
+            }}
+            QPushButton:hover {{ background: {colors['surface2']}; }}
+            QPushButton#PrimaryButton {{
                 background: {colors['accent']};
                 border: 1px solid {colors['accent_hover']};
                 color: white;
-            }
-            QPushButton#PrimaryButton:hover { background: {colors['accent_hover']}; }
-            QPushButton#MiniButton {
+            }}
+            QPushButton#PrimaryButton:hover {{ background: {colors['accent_hover']}; }}
+            QPushButton#MiniButton {{
                 padding: 4px 10px;
                 min-height: 20px;
-            }
-            QToolButton#InfoButton {
+            }}
+            QToolButton#InfoButton {{
                 background: {colors['surface2']};
                 border: 1px solid {colors['border']};
                 border-radius: 9px;
@@ -15605,93 +15738,93 @@ class MainWindow(QtWidgets.QMainWindow):
                 min-height: 18px;
                 padding: 0;
                 font-weight: 600;
-            }
-            QToolButton#InfoButton:hover { background: {colors['border']}; }
-            QCheckBox, QRadioButton {
+            }}
+            QToolButton#InfoButton:hover {{ background: {colors['border']}; }}
+            QCheckBox, QRadioButton {{
                 spacing: 6px;
-            }
-            QCheckBox::indicator {
+            }}
+            QCheckBox::indicator {{
                 width: 16px;
                 height: 16px;
                 border: 1px solid {colors['focus']};
                 border-radius: 4px;
                 background: {colors['input_bg']};
-            }
-            QCheckBox::indicator:checked {
+            }}
+            QCheckBox::indicator:checked {{
                 background: {colors['accent']};
                 border: 1px solid {colors['accent_hover']};
-            }
-            QRadioButton::indicator {
+            }}
+            QRadioButton::indicator {{
                 width: 16px;
                 height: 16px;
                 border: 1px solid {colors['focus']};
                 border-radius: 8px;
                 background: {colors['input_bg']};
-            }
-            QRadioButton::indicator:checked {
+            }}
+            QRadioButton::indicator:checked {{
                 background: {colors['accent']};
                 border: 1px solid {colors['accent_hover']};
-            }
+            }}
 
-            QTableWidget {
+            QTableWidget {{
                 background: {colors['surface']};
                 gridline-color: {colors['border']};
                 border: 1px solid {colors['border']};
                 border-radius: 8px;
-            }
-            QTreeWidget, QTreeView {
+            }}
+            QTreeWidget, QTreeView {{
                 background: {colors['surface']};
                 border: 1px solid {colors['border']};
                 border-radius: 8px;
-            }
-            QTreeWidget::item, QTreeView::item {
+            }}
+            QTreeWidget::item, QTreeView::item {{
                 padding: 4px 6px;
                 border-bottom: 1px solid {colors['border']};
-            }
-            QTreeWidget::item:selected, QTreeView::item:selected {
+            }}
+            QTreeWidget::item:selected, QTreeView::item:selected {{
                 background: {colors['selection']};
-            }
-            QHeaderView::section {
+            }}
+            QHeaderView::section {{
                 background: {colors['surface2']};
                 border: 1px solid {colors['border']};
                 padding: 6px;
                 font-weight: 600;
-            }
-            QTableWidget::item:selected {
+            }}
+            QTableWidget::item:selected {{
                 background: {colors['selection']};
-            }
-            QScrollBar:vertical {
+            }}
+            QScrollBar:vertical {{
                 background: {colors['surface']};
                 width: 12px;
                 margin: 2px;
                 border-radius: 6px;
-            }
-            QScrollBar::handle:vertical {
+            }}
+            QScrollBar::handle:vertical {{
                 background: {colors['scrollbar']};
                 min-height: 30px;
                 border-radius: 6px;
-            }
+            }}
             QScrollBar::add-line:vertical,
-            QScrollBar::sub-line:vertical {
+            QScrollBar::sub-line:vertical {{
                 background: none;
                 height: 0;
-            }
-            QScrollBar:horizontal {
+            }}
+            QScrollBar:horizontal {{
                 background: {colors['surface']};
                 height: 12px;
                 margin: 2px;
                 border-radius: 6px;
-            }
-            QScrollBar::handle:horizontal {
+            }}
+            QScrollBar::handle:horizontal {{
                 background: {colors['scrollbar']};
                 min-width: 30px;
                 border-radius: 6px;
-            }
+            }}
             QScrollBar::add-line:horizontal,
-            QScrollBar::sub-line:horizontal {
+            QScrollBar::sub-line:horizontal {{
                 background: none;
                 width: 0;
-            }
+            }}
             """
         )
 
