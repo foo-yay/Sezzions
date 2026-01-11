@@ -13627,10 +13627,888 @@ class GamesSetupTab(SetupListTab):
             )
 
 
-class SetupTab(QtWidgets.QWidget):
-    def __init__(self, db, parent=None):
+class ToolsSetupTab(QtWidgets.QWidget):
+    def __init__(self, db, session_mgr, main_window, parent=None):
         super().__init__(parent)
         self.db = db
+        self.session_mgr = session_mgr
+        self.main_window = main_window
+
+        # Add scroll area to handle overflow
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background-color: transparent; border: none; }")
+
+        container = QtWidgets.QWidget()
+        container.setStyleSheet("QWidget#ToolsContainer { background-color: transparent; }")
+        container.setObjectName("ToolsContainer")
+        layout = QtWidgets.QVBoxLayout(container)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(20)
+
+        # CSV Section (Collapsible)
+        csv_section = QtWidgets.QWidget()
+        csv_section_layout = QtWidgets.QVBoxLayout(csv_section)
+        csv_section_layout.setContentsMargins(0, 0, 0, 0)
+        csv_section_layout.setSpacing(10)
+
+        # CSV Toggle Button
+        self.csv_toggle_btn = QtWidgets.QPushButton("▶ CSV Import/Export")
+        self.csv_toggle_btn.setCheckable(True)
+        self.csv_toggle_btn.clicked.connect(self._toggle_csv_section)
+        csv_section_layout.addWidget(self.csv_toggle_btn)
+
+        # CSV Content (hidden by default)
+        self.csv_content = QtWidgets.QWidget()
+        csv_layout = QtWidgets.QVBoxLayout(self.csv_content)
+        csv_layout.setContentsMargins(10, 10, 10, 10)
+        csv_layout.setSpacing(15)
+        self.csv_content.hide()
+
+        # Upload CSV subsection
+        upload_label = QtWidgets.QLabel("Upload CSV")
+        upload_label.setObjectName("SectionTitle")
+        csv_layout.addWidget(upload_label)
+
+        upload_grid = QtWidgets.QGridLayout()
+        upload_grid.setHorizontalSpacing(10)
+        upload_grid.setVerticalSpacing(10)
+
+        upload_buttons = [
+            ("Purchases", self._upload_purchases),
+            ("Sessions", self._upload_sessions),
+            ("Redemptions", self._upload_redemptions),
+            ("Expenses", self._upload_expenses),
+            ("Users", self._upload_users),
+            ("Sites", self._upload_sites),
+            ("Cards", self._upload_cards),
+            ("Redemption Methods", self._upload_methods),
+            ("Game Types", self._upload_game_types),
+            ("Games", self._upload_games),
+        ]
+
+        for idx, (label, handler) in enumerate(upload_buttons):
+            btn = QtWidgets.QPushButton(f"📂 Upload {label}")
+            btn.clicked.connect(handler)
+            btn.setMinimumWidth(180)
+            row = idx // 3
+            col = idx % 3
+            upload_grid.addWidget(btn, row, col)
+
+        csv_layout.addLayout(upload_grid)
+
+        # Download Templates subsection
+        csv_layout.addSpacing(10)
+        template_label = QtWidgets.QLabel("Download CSV Templates")
+        template_label.setObjectName("SectionTitle")
+        csv_layout.addWidget(template_label)
+
+        template_grid = QtWidgets.QGridLayout()
+        template_grid.setHorizontalSpacing(10)
+        template_grid.setVerticalSpacing(10)
+
+        template_buttons = [
+            ("Purchases", self._download_template_purchases),
+            ("Sessions", self._download_template_sessions),
+            ("Redemptions", self._download_template_redemptions),
+            ("Expenses", self._download_template_expenses),
+            ("Users", self._download_template_users),
+            ("Sites", self._download_template_sites),
+            ("Cards", self._download_template_cards),
+            ("Redemption Methods", self._download_template_methods),
+            ("Game Types", self._download_template_game_types),
+            ("Games", self._download_template_games),
+        ]
+
+        for idx, (label, handler) in enumerate(template_buttons):
+            btn = QtWidgets.QPushButton(f"📥 {label} Template")
+            btn.clicked.connect(handler)
+            btn.setMinimumWidth(180)
+            row = idx // 3
+            col = idx % 3
+            template_grid.addWidget(btn, row, col)
+
+        csv_layout.addLayout(template_grid)
+
+        # Download Data Backups subsection
+        csv_layout.addSpacing(10)
+        backup_label = QtWidgets.QLabel("Download Data as CSV")
+        backup_label.setObjectName("SectionTitle")
+        csv_layout.addWidget(backup_label)
+
+        data_grid = QtWidgets.QGridLayout()
+        data_grid.setHorizontalSpacing(10)
+        data_grid.setVerticalSpacing(10)
+
+        data_buttons = [
+            ("Purchases", self._download_data_purchases),
+            ("Sessions", self._download_data_sessions),
+            ("Redemptions", self._download_data_redemptions),
+            ("Expenses", self._download_data_expenses),
+            ("Users", self._download_data_users),
+            ("Sites", self._download_data_sites),
+            ("Cards", self._download_data_cards),
+            ("Redemption Methods", self._download_data_methods),
+            ("Game Types", self._download_data_game_types),
+            ("Games", self._download_data_games),
+        ]
+
+        for idx, (label, handler) in enumerate(data_buttons):
+            btn = QtWidgets.QPushButton(f"💾 Download {label}")
+            btn.clicked.connect(handler)
+            btn.setMinimumWidth(180)
+            row = idx // 3
+            col = idx % 3
+            data_grid.addWidget(btn, row, col)
+
+        csv_layout.addLayout(data_grid)
+        csv_section_layout.addWidget(self.csv_content)
+        layout.addWidget(csv_section)
+
+        # Data Recalculation Section (Collapsible)
+        recalc_section = QtWidgets.QWidget()
+        recalc_section_layout = QtWidgets.QVBoxLayout(recalc_section)
+        recalc_section_layout.setContentsMargins(0, 0, 0, 0)
+        recalc_section_layout.setSpacing(10)
+
+        # Data Recalculation Toggle Button
+        self.recalc_toggle_btn = QtWidgets.QPushButton("▶ Data Recalculation")
+        self.recalc_toggle_btn.setCheckable(True)
+        self.recalc_toggle_btn.clicked.connect(self._toggle_recalc_section)
+        recalc_section_layout.addWidget(self.recalc_toggle_btn)
+
+        # Data Recalculation Content (hidden by default)
+        self.recalc_content = QtWidgets.QWidget()
+        recalc_layout = QtWidgets.QVBoxLayout(self.recalc_content)
+        recalc_layout.setContentsMargins(10, 10, 10, 10)
+        recalc_layout.setSpacing(10)
+        self.recalc_content.hide()
+
+        recalc_info = QtWidgets.QLabel(
+            "Recalculate session totals and FIFO cost basis. "
+            "Use this after bulk imports or if you notice data inconsistencies."
+        )
+        recalc_info.setWordWrap(True)
+        recalc_info.setObjectName("HelperText")
+        recalc_layout.addWidget(recalc_info)
+
+        # Recalculate Everything
+        recalc_all_btn = QtWidgets.QPushButton("🔄 Recalculate Everything")
+        recalc_all_btn.setObjectName("PrimaryButton")
+        recalc_all_btn.setMaximumWidth(250)
+        recalc_all_btn.clicked.connect(self._recalculate_all)
+        recalc_layout.addWidget(recalc_all_btn)
+
+        recalc_specific_label = QtWidgets.QLabel("Or recalculate specific data:")
+        recalc_specific_label.setObjectName("HelperText")
+        recalc_layout.addWidget(recalc_specific_label)
+
+        # Specific recalculation buttons stacked vertically
+        recalc_sessions_btn = QtWidgets.QPushButton("🎯 Recalculate Session Data")
+        recalc_sessions_btn.setMaximumWidth(250)
+        recalc_sessions_btn.clicked.connect(self._recalculate_sessions)
+        recalc_layout.addWidget(recalc_sessions_btn)
+
+        recalc_fifo_btn = QtWidgets.QPushButton("💰 Recalculate FIFO (Redemptions)")
+        recalc_fifo_btn.setMaximumWidth(250)
+        recalc_fifo_btn.clicked.connect(self._recalculate_fifo)
+        recalc_layout.addWidget(recalc_fifo_btn)
+
+        recalc_rtp_btn = QtWidgets.QPushButton("📊 Recalculate RTP")
+        recalc_rtp_btn.setMaximumWidth(250)
+        recalc_rtp_btn.clicked.connect(self._recalculate_rtp)
+        recalc_rtp_btn.setEnabled(False)
+        recalc_rtp_btn.setToolTip("RTP calculation coming soon")
+        recalc_layout.addWidget(recalc_rtp_btn)
+
+        recalc_section_layout.addWidget(self.recalc_content)
+        layout.addWidget(recalc_section)
+
+        # Database Section (Collapsible)
+        db_section = QtWidgets.QWidget()
+        db_section_layout = QtWidgets.QVBoxLayout(db_section)
+        db_section_layout.setContentsMargins(0, 0, 0, 0)
+        db_section_layout.setSpacing(10)
+
+        # Database Tools Toggle Button
+        self.db_toggle_btn = QtWidgets.QPushButton("▶ Database Tools")
+        self.db_toggle_btn.setCheckable(True)
+        self.db_toggle_btn.clicked.connect(self._toggle_db_section)
+        db_section_layout.addWidget(self.db_toggle_btn)
+
+        # Database Tools Content (hidden by default)
+        self.db_content = QtWidgets.QWidget()
+        db_layout = QtWidgets.QVBoxLayout(self.db_content)
+        db_layout.setContentsMargins(10, 10, 10, 10)
+        db_layout.setSpacing(10)
+        self.db_content.hide()
+
+        # Backup Database
+        backup_db_btn = QtWidgets.QPushButton("💾 Backup Database")
+        backup_db_btn.setMaximumWidth(200)
+        backup_db_btn.clicked.connect(self._backup_database)
+        db_layout.addWidget(backup_db_btn)
+
+        # Reset Database
+        reset_db_btn = QtWidgets.QPushButton("⚠️ Reset Database")
+        reset_db_btn.setMaximumWidth(200)
+        reset_db_btn.setObjectName("WarningButton")
+        reset_db_btn.setStyleSheet("""
+            QPushButton#WarningButton {
+                background-color: #d32f2f !important;
+                color: white !important;
+                border: 1px solid #b71c1c !important;
+                font-weight: bold;
+            }
+            QPushButton#WarningButton:hover {
+                background-color: #b71c1c !important;
+            }
+        """)
+        reset_db_btn.clicked.connect(self._reset_database)
+        db_layout.addWidget(reset_db_btn)
+
+        reset_warning = QtWidgets.QLabel(
+            "⚠️ Reset will delete ALL transaction data (Purchases, Sessions, Redemptions, Expenses). "
+            "Setup data (Users, Sites, Cards, etc.) will be preserved."
+        )
+        reset_warning.setWordWrap(True)
+        reset_warning.setMaximumWidth(500)
+        reset_warning.setObjectName("HelperText")
+        db_layout.addWidget(reset_warning)
+
+        db_section_layout.addWidget(self.db_content)
+        layout.addWidget(db_section)
+        layout.addStretch()
+
+        scroll.setWidget(container)
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.addWidget(scroll)
+
+    def _toggle_csv_section(self):
+        """Toggle CSV section visibility"""
+        if self.csv_content.isVisible():
+            self.csv_content.hide()
+            self.csv_toggle_btn.setText("▶ CSV Import/Export")
+        else:
+            self.csv_content.show()
+            self.csv_toggle_btn.setText("▼ CSV Import/Export")
+
+    def _toggle_recalc_section(self):
+        """Toggle Data Recalculation section visibility"""
+        if self.recalc_content.isVisible():
+            self.recalc_content.hide()
+            self.recalc_toggle_btn.setText("▶ Data Recalculation")
+        else:
+            self.recalc_content.show()
+            self.recalc_toggle_btn.setText("▼ Data Recalculation")
+
+    def _toggle_db_section(self):
+        """Toggle Database Tools section visibility"""
+        if self.db_content.isVisible():
+            self.db_content.hide()
+            self.db_toggle_btn.setText("▶ Database Tools")
+        else:
+            self.db_content.show()
+            self.db_toggle_btn.setText("▼ Database Tools")
+
+    # CSV Upload Methods (Placeholders for now)
+    def _upload_purchases(self):
+        self._show_not_implemented("Upload Purchases CSV")
+
+    def _upload_sessions(self):
+        self._show_not_implemented("Upload Sessions CSV")
+
+    def _upload_redemptions(self):
+        self._show_not_implemented("Upload Redemptions CSV")
+
+    def _upload_expenses(self):
+        self._show_not_implemented("Upload Expenses CSV")
+
+    def _upload_users(self):
+        self._show_not_implemented("Upload Users CSV")
+
+    def _upload_sites(self):
+        self._show_not_implemented("Upload Sites CSV")
+
+    def _upload_cards(self):
+        self._show_not_implemented("Upload Cards CSV")
+
+    def _upload_methods(self):
+        self._show_not_implemented("Upload Redemption Methods CSV")
+
+    def _upload_game_types(self):
+        self._show_not_implemented("Upload Game Types CSV")
+
+    def _upload_games(self):
+        self._show_not_implemented("Upload Games CSV")
+
+    # CSV Template Download Methods
+    def _download_template_purchases(self):
+        self._download_template(
+            "purchases",
+            ["Date", "Time", "Site", "User", "Amount", "SC Received", "Starting SC", "Card", "Notes"],
+            "purchases_template.csv"
+        )
+
+    def _download_template_sessions(self):
+        self._download_template(
+            "sessions",
+            ["Date", "Start Time", "End Time", "Site", "User", "Game Type", "Game Name",
+             "Starting Total SC", "Starting Redeemable", "Ending Total SC", "Ending Redeemable",
+             "Wager Amount", "Notes"],
+            "sessions_template.csv"
+        )
+
+    def _download_template_redemptions(self):
+        self._download_template(
+            "redemptions",
+            ["Date", "Time", "Site", "User", "Amount", "Method", "Notes"],
+            "redemptions_template.csv"
+        )
+
+    def _download_template_expenses(self):
+        self._download_template(
+            "expenses",
+            ["Date", "Category", "Vendor", "User", "Amount", "Description"],
+            "expenses_template.csv"
+        )
+
+    def _download_template_users(self):
+        self._download_template(
+            "users",
+            ["Name", "Active"],
+            "users_template.csv"
+        )
+
+    def _download_template_sites(self):
+        self._download_template(
+            "sites",
+            ["Name", "SC Rate", "Active"],
+            "sites_template.csv"
+        )
+
+    def _download_template_cards(self):
+        self._download_template(
+            "cards",
+            ["Name", "User", "Cashback Rate", "Active"],
+            "cards_template.csv"
+        )
+
+    def _download_template_methods(self):
+        self._download_template(
+            "methods",
+            ["Name", "Active"],
+            "redemption_methods_template.csv"
+        )
+
+    def _download_template_game_types(self):
+        self._download_template(
+            "game_types",
+            ["Name", "Active"],
+            "game_types_template.csv"
+        )
+
+    def _download_template_games(self):
+        self._download_template(
+            "games",
+            ["Name", "Game Type", "RTP", "Active"],
+            "games_template.csv"
+        )
+
+    def _download_template(self, data_type, headers, filename):
+        """Generate and download a CSV template"""
+        import csv
+        from datetime import datetime
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            f"Download {data_type.title()} Template",
+            filename,
+            "CSV Files (*.csv)"
+        )
+
+        if not path:
+            return
+
+        try:
+            with open(path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(headers)
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Template Downloaded",
+                f"Template saved to:\n{path}"
+            )
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Error",
+                f"Failed to save template:\n{str(e)}"
+            )
+
+    # CSV Data Download Methods
+    def _download_data_purchases(self):
+        self._download_data("purchases")
+
+    def _download_data_sessions(self):
+        self._download_data("sessions")
+
+    def _download_data_redemptions(self):
+        self._download_data("redemptions")
+
+    def _download_data_expenses(self):
+        self._download_data("expenses")
+
+    def _download_data_users(self):
+        self._download_data("users")
+
+    def _download_data_sites(self):
+        self._download_data("sites")
+
+    def _download_data_cards(self):
+        self._download_data("cards")
+
+    def _download_data_methods(self):
+        self._download_data("redemption_methods")
+
+    def _download_data_game_types(self):
+        self._download_data("game_types")
+
+    def _download_data_games(self):
+        self._download_data("games")
+
+    def _download_data(self, table_name):
+        """Download current data as CSV"""
+        import csv
+        from datetime import datetime
+
+        filename = f"{table_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            f"Download {table_name.replace('_', ' ').title()} Data",
+            filename,
+            "CSV Files (*.csv)"
+        )
+
+        if not path:
+            return
+
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+
+            # Get data based on table
+            if table_name == "purchases":
+                c.execute("""
+                    SELECT p.purchase_date, p.purchase_time, s.name as site, u.name as user,
+                           p.amount, p.sc_received, p.starting_sc_balance, ca.name as card, p.notes
+                    FROM purchases p
+                    JOIN sites s ON p.site_id = s.id
+                    JOIN users u ON p.user_id = u.id
+                    JOIN cards ca ON p.card_id = ca.id
+                    ORDER BY p.purchase_date, p.purchase_time
+                """)
+                headers = ["Date", "Time", "Site", "User", "Amount", "SC Received", "Starting SC", "Card", "Notes"]
+
+            elif table_name == "sessions":
+                c.execute("""
+                    SELECT session_date, start_time, end_time,
+                           site_name, user_name, game_type, game_name,
+                           starting_sc_balance, starting_redeemable_sc,
+                           ending_sc_balance, ending_redeemable_sc,
+                           wager_amount, notes
+                    FROM game_sessions
+                    ORDER BY session_date, start_time
+                """)
+                headers = ["Date", "Start Time", "End Time", "Site", "User", "Game Type", "Game Name",
+                          "Starting Total SC", "Starting Redeemable", "Ending Total SC", "Ending Redeemable",
+                          "Wager Amount", "Notes"]
+
+            elif table_name == "redemptions":
+                c.execute("""
+                    SELECT r.redemption_date, r.redemption_time, s.name as site, u.name as user,
+                           r.amount, m.name as method, r.notes
+                    FROM redemptions r
+                    JOIN sites s ON r.site_id = s.id
+                    JOIN users u ON r.user_id = u.id
+                    JOIN redemption_methods m ON r.method_id = m.id
+                    ORDER BY r.redemption_date, r.redemption_time
+                """)
+                headers = ["Date", "Time", "Site", "User", "Amount", "Method", "Notes"]
+
+            elif table_name == "expenses":
+                c.execute("""
+                    SELECT e.expense_date, e.category, e.vendor, u.name as user, e.amount, e.description
+                    FROM expenses e
+                    LEFT JOIN users u ON e.user_id = u.id
+                    ORDER BY e.expense_date
+                """)
+                headers = ["Date", "Category", "Vendor", "User", "Amount", "Description"]
+
+            elif table_name == "users":
+                c.execute("SELECT name, active FROM users ORDER BY name")
+                headers = ["Name", "Active"]
+
+            elif table_name == "sites":
+                c.execute("SELECT name, sc_rate, active FROM sites ORDER BY name")
+                headers = ["Name", "SC Rate", "Active"]
+
+            elif table_name == "cards":
+                c.execute("""
+                    SELECT c.name, u.name as user, c.cashback_rate, c.active
+                    FROM cards c
+                    JOIN users u ON c.user_id = u.id
+                    ORDER BY c.name
+                """)
+                headers = ["Name", "User", "Cashback Rate", "Active"]
+
+            elif table_name == "redemption_methods":
+                c.execute("SELECT name, active FROM redemption_methods ORDER BY name")
+                headers = ["Name", "Active"]
+
+            elif table_name == "game_types":
+                c.execute("SELECT name, active FROM game_types ORDER BY name")
+                headers = ["Name", "Active"]
+
+            elif table_name == "games":
+                c.execute("""
+                    SELECT g.name, gt.name as game_type, g.rtp, g.active
+                    FROM games g
+                    LEFT JOIN game_types gt ON g.game_type_id = gt.id
+                    ORDER BY g.name
+                """)
+                headers = ["Name", "Game Type", "RTP", "Active"]
+
+            else:
+                conn.close()
+                QtWidgets.QMessageBox.warning(self, "Error", f"Unknown table: {table_name}")
+                return
+
+            rows = c.fetchall()
+            conn.close()
+
+            with open(path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(headers)
+                for row in rows:
+                    writer.writerow(row)
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Data Downloaded",
+                f"Downloaded {len(rows)} record(s) to:\n{path}"
+            )
+
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Error",
+                f"Failed to download data:\n{str(e)}"
+            )
+
+    # Recalculation Methods
+    def _recalculate_all(self):
+        """Recalculate everything (uses existing rebuild_all functionality)"""
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Recalculate Everything",
+            "This will recalculate all session totals and FIFO cost basis for the entire database.\n\n"
+            "This may take a while depending on the amount of data.\n\n"
+            "Continue?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+
+        # Show progress dialog
+        progress = QtWidgets.QProgressDialog(
+            "Recalculating all data...\nThis may take a minute.",
+            None,
+            0,
+            0,
+            self
+        )
+        progress.setWindowTitle("Recalculating")
+        progress.setWindowModality(QtCore.Qt.WindowModal)
+        progress.setCancelButton(None)
+        progress.show()
+        QtWidgets.QApplication.processEvents()
+
+        try:
+            result = self.session_mgr.rebuild_all_derived()
+
+            # Refresh all tabs
+            if self.main_window:
+                self.main_window.purchases_tab.load_data()
+                self.main_window.redemptions_tab.load_data()
+                self.main_window.game_sessions_tab.load_data()
+                self.main_window.daily_sessions_tab.refresh_view()
+                self.main_window.unrealized_tab.load_data()
+                self.main_window.realized_tab.refresh_view()
+                self.main_window.refresh_stats()
+
+            progress.close()
+
+            summary = (
+                f"Recalculation Complete!\n\n"
+                f"Pairs processed: {result.get('pairs_processed', 0)}\n"
+                f"Sessions recalculated: {result.get('sessions_processed', 0)}"
+            )
+            QtWidgets.QMessageBox.information(self, "Complete", summary)
+
+        except Exception as e:
+            progress.close()
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Error",
+                f"Recalculation failed:\n{str(e)}"
+            )
+
+    def _recalculate_sessions(self):
+        """Recalculate session data only"""
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Recalculate Sessions",
+            "This will recalculate game session totals.\n\n"
+            "Continue?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+
+        progress = QtWidgets.QProgressDialog(
+            "Recalculating session data...",
+            None,
+            0,
+            0,
+            self
+        )
+        progress.setWindowTitle("Recalculating")
+        progress.setWindowModality(QtCore.Qt.WindowModal)
+        progress.setCancelButton(None)
+        progress.show()
+        QtWidgets.QApplication.processEvents()
+
+        try:
+            # Recalculate sessions (this is part of rebuild_all_derived)
+            result = self.session_mgr.rebuild_all_derived()
+
+            if self.main_window:
+                self.main_window.game_sessions_tab.load_data()
+                self.main_window.daily_sessions_tab.refresh_view()
+                self.main_window.refresh_stats()
+
+            progress.close()
+            QtWidgets.QMessageBox.information(
+                self,
+                "Complete",
+                f"Session recalculation complete!\n\nSessions processed: {result.get('sessions_processed', 0)}"
+            )
+
+        except Exception as e:
+            progress.close()
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Error",
+                f"Recalculation failed:\n{str(e)}"
+            )
+
+    def _recalculate_fifo(self):
+        """Recalculate FIFO cost basis only"""
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Recalculate FIFO",
+            "This will recalculate FIFO cost basis for all redemptions.\n\n"
+            "Continue?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+
+        progress = QtWidgets.QProgressDialog(
+            "Recalculating FIFO cost basis...",
+            None,
+            0,
+            0,
+            self
+        )
+        progress.setWindowTitle("Recalculating")
+        progress.setWindowModality(QtCore.Qt.WindowModal)
+        progress.setCancelButton(None)
+        progress.show()
+        QtWidgets.QApplication.processEvents()
+
+        try:
+            result = self.session_mgr.rebuild_all_derived()
+
+            if self.main_window:
+                self.main_window.redemptions_tab.load_data()
+                self.main_window.realized_tab.refresh_view()
+                self.main_window.unrealized_tab.load_data()
+                self.main_window.refresh_stats()
+
+            progress.close()
+            QtWidgets.QMessageBox.information(
+                self,
+                "Complete",
+                f"FIFO recalculation complete!\n\nPairs processed: {result.get('pairs_processed', 0)}"
+            )
+
+        except Exception as e:
+            progress.close()
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Error",
+                f"Recalculation failed:\n{str(e)}"
+            )
+
+    def _recalculate_rtp(self):
+        """Placeholder for RTP recalculation"""
+        QtWidgets.QMessageBox.information(
+            self,
+            "Coming Soon",
+            "RTP recalculation will be implemented in a future update."
+        )
+
+    # Database Methods
+    def _backup_database(self):
+        """Create a database backup"""
+        import shutil
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_name = f"session_backup_{timestamp}.db"
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Backup Database",
+            default_name,
+            "Database Files (*.db)"
+        )
+
+        if not path:
+            return
+
+        try:
+            # Get the database file path
+            db_path = self.db.db_path
+
+            # Copy the database file
+            shutil.copy2(db_path, path)
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Backup Complete",
+                f"Database backed up to:\n{path}"
+            )
+
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Backup Failed",
+                f"Failed to backup database:\n{str(e)}"
+            )
+
+    def _reset_database(self):
+        """Reset database (delete all transaction data, keep setup data)"""
+        # First warning
+        confirm1 = QtWidgets.QMessageBox.question(
+            self,
+            "⚠️ Reset Database",
+            "⚠️ WARNING ⚠️\n\n"
+            "This will PERMANENTLY DELETE:\n"
+            "  • All Purchases\n"
+            "  • All Game Sessions\n"
+            "  • All Redemptions\n"
+            "  • All Expenses\n"
+            "  • All tax session data\n\n"
+            "Setup data (Users, Sites, Cards, Methods, Game Types, Games) will be preserved.\n\n"
+            "It is STRONGLY RECOMMENDED to backup your database first.\n\n"
+            "Do you want to create a backup now?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel
+        )
+
+        if confirm1 == QtWidgets.QMessageBox.Cancel:
+            return
+
+        if confirm1 == QtWidgets.QMessageBox.Yes:
+            self._backup_database()
+
+        # Second confirmation
+        confirm2 = QtWidgets.QMessageBox.question(
+            self,
+            "⚠️ Final Confirmation",
+            "Are you ABSOLUTELY SURE you want to delete all transaction data?\n\n"
+            "This CANNOT be undone!",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if confirm2 != QtWidgets.QMessageBox.Yes:
+            return
+
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+
+            # Delete all transaction data
+            c.execute("DELETE FROM game_sessions")
+            c.execute("DELETE FROM daily_sessions")
+            c.execute("DELETE FROM purchases")
+            c.execute("DELETE FROM redemptions")
+            c.execute("DELETE FROM expenses")
+            c.execute("DELETE FROM site_sessions")
+            c.execute("DELETE FROM purchase_allocations")
+
+            conn.commit()
+            conn.close()
+
+            # Refresh all tabs
+            if self.main_window:
+                self.main_window.purchases_tab.load_data()
+                self.main_window.redemptions_tab.load_data()
+                self.main_window.game_sessions_tab.load_data()
+                self.main_window.daily_sessions_tab.refresh_view()
+                self.main_window.unrealized_tab.load_data()
+                self.main_window.realized_tab.refresh_view()
+                self.main_window.expenses_tab.load_data()
+                self.main_window.refresh_stats()
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Reset Complete",
+                "All transaction data has been deleted.\n\n"
+                "Setup data (Users, Sites, Cards, etc.) has been preserved."
+            )
+
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Reset Failed",
+                f"Failed to reset database:\n{str(e)}"
+            )
+
+    def _show_not_implemented(self, feature):
+        """Show not implemented message"""
+        QtWidgets.QMessageBox.information(
+            self,
+            "Coming Soon",
+            f"{feature} functionality will be implemented in a future update."
+        )
+
+
+class SetupTab(QtWidgets.QWidget):
+    def __init__(self, db, session_mgr=None, main_window=None, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.session_mgr = session_mgr
+        self.main_window = main_window
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
@@ -13657,6 +14535,7 @@ class SetupTab(QtWidgets.QWidget):
             ("Redemption Methods", MethodsSetupTab(self.db)),
             ("Game Types", GameTypesSetupTab(self.db)),
             ("Games", GamesSetupTab(self.db)),
+            ("Tools", ToolsSetupTab(self.db, self.session_mgr, self.main_window)),
         ]
 
         for idx, (label, widget) in enumerate(tabs):
@@ -13776,7 +14655,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ("Realized", self.realized_tab),
             ("Expenses", self.expenses_tab),
             ("Reports", PlaceholderTab("Reports")),
-            ("Setup", SetupTab(self.db)),
+            ("Setup", SetupTab(self.db, self.session_mgr, self)),
         ]
 
         for idx, (label, widget) in enumerate(tabs):
