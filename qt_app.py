@@ -13844,11 +13844,90 @@ class ToolsSetupTab(QtWidgets.QWidget):
         db_layout.setSpacing(10)
         self.db_content.hide()
 
-        # Backup Database
-        backup_db_btn = QtWidgets.QPushButton("💾 Backup Database")
-        backup_db_btn.setMaximumWidth(200)
-        backup_db_btn.clicked.connect(self._backup_database)
-        db_layout.addWidget(backup_db_btn)
+        # Backup Settings Section
+        backup_settings_label = QtWidgets.QLabel("Backup Settings")
+        backup_settings_label.setObjectName("SectionTitle")
+        db_layout.addWidget(backup_settings_label)
+
+        # Backup folder row
+        folder_row = QtWidgets.QHBoxLayout()
+        folder_row.setSpacing(10)
+
+        folder_label = QtWidgets.QLabel("Backup folder:")
+        folder_label.setMinimumWidth(100)
+        folder_row.addWidget(folder_label)
+
+        self.backup_folder_display = QtWidgets.QLineEdit()
+        self.backup_folder_display.setPlaceholderText("Not set - click to choose")
+        self.backup_folder_display.setReadOnly(True)
+        self.backup_folder_display.setMaximumWidth(400)
+        folder_row.addWidget(self.backup_folder_display)
+
+        folder_btn = QtWidgets.QPushButton("📁 Choose")
+        folder_btn.setMaximumWidth(100)
+        folder_btn.clicked.connect(self._choose_backup_folder)
+        folder_row.addWidget(folder_btn)
+
+        backup_now_btn = QtWidgets.QPushButton("💾 Backup Now")
+        backup_now_btn.setObjectName("PrimaryButton")
+        backup_now_btn.setMaximumWidth(150)
+        backup_now_btn.clicked.connect(self._backup_database_now)
+        folder_row.addWidget(backup_now_btn)
+
+        folder_row.addStretch()
+
+        db_layout.addLayout(folder_row)
+
+        # Last backup status
+        self.last_backup_label = QtWidgets.QLabel("Last backup: Never")
+        self.last_backup_label.setObjectName("HelperText")
+        self.last_backup_label.setContentsMargins(100, 8, 0, 8)
+        db_layout.addWidget(self.last_backup_label)
+
+        # Automatic backup settings row
+        auto_backup_row = QtWidgets.QHBoxLayout()
+        auto_backup_row.setSpacing(10)
+
+        auto_label = QtWidgets.QLabel("Enable automatic backups:")
+        auto_backup_row.addWidget(auto_label)
+
+        self.auto_backup_enabled_cb = QtWidgets.QCheckBox()
+        self.auto_backup_enabled_cb.stateChanged.connect(self._on_auto_backup_changed)
+        auto_backup_row.addWidget(self.auto_backup_enabled_cb)
+
+        auto_backup_row.addSpacing(20)
+
+        interval_label = QtWidgets.QLabel("Check every:")
+        auto_backup_row.addWidget(interval_label)
+
+        self.backup_interval_spin = QtWidgets.QSpinBox()
+        self.backup_interval_spin.setMinimum(1)
+        self.backup_interval_spin.setMaximum(365)
+        self.backup_interval_spin.setValue(7)
+        self.backup_interval_spin.setSuffix(" days")
+        self.backup_interval_spin.setMaximumWidth(120)
+        self.backup_interval_spin.valueChanged.connect(self._on_auto_backup_changed)
+        auto_backup_row.addWidget(self.backup_interval_spin)
+
+        auto_backup_row.addSpacing(15)
+
+        self.next_backup_label = QtWidgets.QLabel("")
+        self.next_backup_label.setObjectName("HelperText")
+        auto_backup_row.addWidget(self.next_backup_label)
+
+        auto_backup_row.addStretch()
+
+        db_layout.addLayout(auto_backup_row)
+
+        # Load settings
+        self._load_backup_settings()
+
+        db_layout.addSpacing(15)
+
+        # Database Reset Section
+        reset_label = QtWidgets.QLabel("Database Reset")
+        reset_label.setObjectName("SectionTitle")
+        db_layout.addWidget(reset_label)
 
         # Reset Database
         reset_db_btn = QtWidgets.QPushButton("⚠️ Reset Database")
@@ -14416,6 +14495,217 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 f"Failed to backup database:\n{str(e)}"
             )
 
+    def _load_backup_settings(self):
+        """Load automatic backup settings from database"""
+        from datetime import datetime, timedelta
+        conn = self.db.get_connection()
+        c = conn.cursor()
+
+        # Load enabled status
+        c.execute("SELECT value FROM settings WHERE key = 'auto_backup_enabled'")
+        result = c.fetchone()
+        enabled = result['value'] == '1' if result else False
+        self.auto_backup_enabled_cb.setChecked(enabled)
+
+        # Load interval
+        c.execute("SELECT value FROM settings WHERE key = 'auto_backup_interval_days'")
+        result = c.fetchone()
+        interval = int(result['value']) if result else 7
+        self.backup_interval_spin.setValue(interval)
+
+        # Load folder
+        c.execute("SELECT value FROM settings WHERE key = 'auto_backup_folder'")
+        result = c.fetchone()
+        folder = result['value'] if result else ""
+        self.backup_folder_display.setText(folder)
+
+        # Load last backup date
+        c.execute("SELECT value FROM settings WHERE key = 'last_backup_date'")
+        result = c.fetchone()
+        last_backup = result['value'] if result else ""
+
+        if last_backup:
+            try:
+                last_date = datetime.fromisoformat(last_backup)
+                days_ago = (datetime.now() - last_date).days
+
+                # Check if backup is due
+                if enabled and days_ago >= interval:
+                    self.last_backup_label.setStyleSheet("color: #d32f2f; font-weight: bold;")
+                    self.last_backup_label.setText(f"⚠️ Last backup: {days_ago} days ago (OVERDUE)")
+                else:
+                    # Clear any custom styling
+                    self.last_backup_label.setStyleSheet("")
+                    if days_ago == 0:
+                        self.last_backup_label.setText("Last backup: Today")
+                    elif days_ago == 1:
+                        self.last_backup_label.setText("Last backup: 1 day ago")
+                    else:
+                        self.last_backup_label.setText(f"Last backup: {days_ago} days ago")
+            except:
+                self.last_backup_label.setStyleSheet("")
+                self.last_backup_label.setText("Last backup: Never")
+        else:
+            self.last_backup_label.setStyleSheet("")
+            self.last_backup_label.setText("Last backup: Never")
+
+        # Calculate next backup time
+        self._update_next_backup_label(enabled, last_backup, interval)
+
+        conn.close()
+
+    def _save_backup_settings(self):
+        """Save automatic backup settings to database"""
+        conn = self.db.get_connection()
+        c = conn.cursor()
+
+        enabled = '1' if self.auto_backup_enabled_cb.isChecked() else '0'
+        interval = str(self.backup_interval_spin.value())
+
+        c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_backup_enabled', ?)", (enabled,))
+        c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_backup_interval_days', ?)", (interval,))
+
+        conn.commit()
+        conn.close()
+
+        # Refresh the last backup label to update overdue status
+        self._load_backup_settings()
+
+    def _on_auto_backup_changed(self):
+        """Called when automatic backup checkbox or interval changes"""
+        self._save_backup_settings()
+
+    def _update_next_backup_label(self, enabled, last_backup, interval):
+        """Update the next backup time label"""
+        from datetime import datetime, timedelta
+
+        if not enabled:
+            self.next_backup_label.setText("")
+            return
+
+        if not last_backup:
+            self.next_backup_label.setText("Next backup: Now (no previous backup)")
+            return
+
+        try:
+            last_date = datetime.fromisoformat(last_backup)
+            next_date = last_date + timedelta(days=interval)
+            now = datetime.now()
+
+            # Calculate time until next backup
+            time_until = next_date - now
+
+            if time_until.total_seconds() <= 0:
+                self.next_backup_label.setText("Next backup: Now (overdue)")
+            else:
+                days = time_until.days
+                hours = int(time_until.seconds / 3600)
+
+                if days > 0:
+                    if hours > 0:
+                        self.next_backup_label.setText(f"Next automatic backup in {days} days, {hours} hours")
+                    else:
+                        self.next_backup_label.setText(f"Next automatic backup in {days} days")
+                elif hours > 0:
+                    self.next_backup_label.setText(f"Next automatic backup in {hours} hours")
+                else:
+                    minutes = int(time_until.seconds / 60)
+                    self.next_backup_label.setText(f"Next automatic backup in {minutes} minutes")
+        except:
+            self.next_backup_label.setText("")
+
+    def _choose_backup_folder(self):
+        """Let user choose automatic backup folder"""
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Choose Automatic Backup Folder"
+        )
+
+        if folder:
+            self.backup_folder_display.setText(folder)
+
+            # Save to database
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_backup_folder', ?)", (folder,))
+            conn.commit()
+            conn.close()
+
+    def _backup_database_now(self):
+        """Perform backup using automatic backup settings"""
+        from datetime import datetime
+        import shutil
+        import os
+
+        # Get backup folder from settings
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT value FROM settings WHERE key = 'auto_backup_folder'")
+        result = c.fetchone()
+        backup_folder = result['value'] if result else ""
+        conn.close()
+
+        # If no folder set, prompt user to choose
+        if not backup_folder or not os.path.exists(backup_folder):
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Backup Folder Not Set",
+                "No backup folder is configured. Would you like to choose one now?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            )
+
+            if reply == QtWidgets.QMessageBox.Yes:
+                self._choose_backup_folder()
+                # Reload the folder setting
+                conn = self.db.get_connection()
+                c = conn.cursor()
+                c.execute("SELECT value FROM settings WHERE key = 'auto_backup_folder'")
+                result = c.fetchone()
+                backup_folder = result['value'] if result else ""
+                conn.close()
+
+                if not backup_folder:
+                    return
+            else:
+                return
+
+        try:
+            # Create timestamped backup filename
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+            backup_filename = f"auto_backup_{timestamp}.db"
+            backup_path = os.path.join(backup_folder, backup_filename)
+
+            # Copy database
+            shutil.copy2(self.db.db_path, backup_path)
+
+            # Update last backup date
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_backup_date', ?)",
+                      (datetime.now().isoformat(),))
+            conn.commit()
+            conn.close()
+
+            # Refresh the UI
+            self._load_backup_settings()
+
+            # Dismiss any backup due notification in main window
+            if self.main_window:
+                self.main_window._dismiss_notification("backup_due")
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Backup Complete",
+                f"Database backed up successfully to:\n\n{backup_path}"
+            )
+
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Backup Failed",
+                f"Failed to backup database:\n{str(e)}"
+            )
+
     def _reset_database(self):
         """Reset database (delete all transaction data, keep setup data)"""
         # First warning
@@ -14587,6 +14877,9 @@ class MainWindow(QtWidgets.QMainWindow):
             app._completer_filter = self.completer_filter
             app.installEventFilter(self.completer_filter)
 
+        # Load theme preference
+        self.current_theme = self._load_theme_preference()
+
         self._apply_style()
 
         central = QtWidgets.QWidget()
@@ -14599,11 +14892,51 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.stats_bar = StatsBar()
         main_layout.addWidget(self.stats_bar)
-        rebuild_row = QtWidgets.QHBoxLayout()
-        rebuild_row.addStretch(1)
-        self.rebuild_all_btn = QtWidgets.QPushButton("Rebuild All (Temp)")
-        rebuild_row.addWidget(self.rebuild_all_btn)
-        main_layout.addLayout(rebuild_row)
+        notification_row = QtWidgets.QHBoxLayout()
+        notification_row.addStretch(1)
+
+        # Notification bell button
+        self.notification_btn = QtWidgets.QPushButton("🔔")
+        self.notification_btn.setFixedSize(40, 40)
+        self.notification_btn.setToolTip("Notifications")
+        self.notification_btn.clicked.connect(self._show_notifications)
+
+        # Notification badge (red circle with count)
+        self.notification_badge = QtWidgets.QLabel("")
+        self.notification_badge.setFixedSize(18, 18)
+        self.notification_badge.setAlignment(QtCore.Qt.AlignCenter)
+        self.notification_badge.setStyleSheet("""
+            QLabel {
+                background-color: #d32f2f;
+                color: white;
+                border-radius: 9px;
+                font-size: 10px;
+                font-weight: bold;
+            }
+        """)
+        self.notification_badge.hide()
+
+        # Stack bell and badge
+        notification_stack = QtWidgets.QWidget()
+        notification_stack.setFixedSize(40, 40)
+        stack_layout = QtWidgets.QGridLayout(notification_stack)
+        stack_layout.setContentsMargins(0, 0, 0, 0)
+        stack_layout.addWidget(self.notification_btn, 0, 0)
+        stack_layout.addWidget(self.notification_badge, 0, 0, QtCore.Qt.AlignTop | QtCore.Qt.AlignRight)
+
+        notification_row.addWidget(notification_stack)
+
+        # Settings gear button
+        self.settings_btn = QtWidgets.QPushButton("⚙️")
+        self.settings_btn.setFixedSize(40, 40)
+        self.settings_btn.setToolTip("Settings")
+        self.settings_btn.clicked.connect(self._show_settings_menu)
+        notification_row.addWidget(self.settings_btn)
+
+        main_layout.addLayout(notification_row)
+
+        # Notification list
+        self.notifications = []
 
         self.tab_bar = QtWidgets.QWidget()
         tab_bar_layout = FlowLayout(self.tab_bar, margin=0, spacing=8, align=QtCore.Qt.AlignCenter)
@@ -14702,9 +15035,11 @@ class MainWindow(QtWidgets.QMainWindow):
             "Setup": "Manage users, sites, games, and other lookup lists.",
         }
 
-        self.rebuild_all_btn.clicked.connect(self._rebuild_all)
         self.refresh_stats()
         self._update_tab_tip(0)
+
+        # Check if backup is due on startup
+        self._check_backup_due()
 
     def _fit_to_screen(self):
         screen = self.screen() or QtWidgets.QApplication.primaryScreen()
@@ -14783,6 +15118,254 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         QtWidgets.QMessageBox.information(self, "Rebuild Complete", summary)
 
+    def _add_notification(self, title, message, notification_id=None):
+        """Add a notification to the list"""
+        notification = {
+            'id': notification_id or f"notif_{len(self.notifications)}",
+            'title': title,
+            'message': message,
+            'timestamp': QtCore.QDateTime.currentDateTime()
+        }
+        self.notifications.append(notification)
+        self._update_notification_badge()
+
+    def _update_notification_badge(self):
+        """Update the notification badge count"""
+        count = len(self.notifications)
+        if count > 0:
+            self.notification_badge.setText(str(count))
+            self.notification_badge.show()
+        else:
+            self.notification_badge.hide()
+
+    def _show_notifications(self):
+        """Show notifications dropdown"""
+        if not self.notifications:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Notifications",
+                "No notifications"
+            )
+            return
+
+        # Create notifications dialog
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Notifications")
+        dialog.setMinimumWidth(400)
+
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        for notif in self.notifications:
+            notif_widget = QtWidgets.QWidget()
+            notif_layout = QtWidgets.QVBoxLayout(notif_widget)
+            notif_layout.setContentsMargins(10, 10, 10, 10)
+
+            title_label = QtWidgets.QLabel(notif['title'])
+            title_label.setStyleSheet("font-weight: bold; font-size: 11pt;")
+            notif_layout.addWidget(title_label)
+
+            message_label = QtWidgets.QLabel(notif['message'])
+            message_label.setWordWrap(True)
+            notif_layout.addWidget(message_label)
+
+            time_label = QtWidgets.QLabel(notif['timestamp'].toString("MMM d, yyyy h:mm AP"))
+            time_label.setObjectName("HelperText")
+            notif_layout.addWidget(time_label)
+
+            dismiss_btn = QtWidgets.QPushButton("Dismiss")
+            dismiss_btn.setMaximumWidth(100)
+            dismiss_btn.clicked.connect(lambda checked, n=notif: self._dismiss_notification(n['id'], dialog))
+            notif_layout.addWidget(dismiss_btn)
+
+            notif_widget.setStyleSheet("QWidget { background: #f7f9ff; border: 1px solid #dfeaff; border-radius: 8px; }")
+            layout.addWidget(notif_widget)
+
+        clear_all_btn = QtWidgets.QPushButton("Clear All")
+        clear_all_btn.clicked.connect(lambda: self._clear_all_notifications(dialog))
+        layout.addWidget(clear_all_btn)
+
+        dialog.exec_()
+
+    def _dismiss_notification(self, notification_id, dialog=None):
+        """Dismiss a single notification"""
+        self.notifications = [n for n in self.notifications if n['id'] != notification_id]
+        self._update_notification_badge()
+        if dialog:
+            dialog.close()
+            if self.notifications:
+                self._show_notifications()
+
+    def _clear_all_notifications(self, dialog=None):
+        """Clear all notifications"""
+        self.notifications = []
+        self._update_notification_badge()
+        if dialog:
+            dialog.close()
+
+    def _check_backup_due(self):
+        """Check if automatic backup is due and show notification/dialog"""
+        from datetime import datetime
+        import os
+
+        conn = self.db.get_connection()
+        c = conn.cursor()
+
+        # Check if auto backup is enabled
+        c.execute("SELECT value FROM settings WHERE key = 'auto_backup_enabled'")
+        result = c.fetchone()
+        if not result or result['value'] != '1':
+            conn.close()
+            return
+
+        # Get backup settings
+        c.execute("SELECT value FROM settings WHERE key = 'auto_backup_interval_days'")
+        result = c.fetchone()
+        interval = int(result['value']) if result else 7
+
+        c.execute("SELECT value FROM settings WHERE key = 'last_backup_date'")
+        result = c.fetchone()
+        last_backup = result['value'] if result else ""
+
+        c.execute("SELECT value FROM settings WHERE key = 'auto_backup_folder'")
+        result = c.fetchone()
+        backup_folder = result['value'] if result else ""
+
+        conn.close()
+
+        # Check if backup is due
+        days_since_backup = None
+        if last_backup:
+            try:
+                last_date = datetime.fromisoformat(last_backup)
+                days_since_backup = (datetime.now() - last_date).days
+            except:
+                days_since_backup = None
+
+        is_due = (days_since_backup is None) or (days_since_backup >= interval)
+
+        if is_due:
+            # Add notification
+            if days_since_backup is None:
+                msg = "No backup has been created yet. Would you like to create one now?"
+            else:
+                msg = f"It's been {days_since_backup} days since your last backup. Would you like to backup now?"
+
+            self._add_notification(
+                "Database Backup Due",
+                msg,
+                "backup_due"
+            )
+
+            # Show popup dialog
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "⚠️ Database Backup Due",
+                f"{msg}\n\nYou can dismiss this reminder, and you won't be reminded again until the next backup cycle.",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            )
+
+            if reply == QtWidgets.QMessageBox.Yes:
+                self._perform_automatic_backup(backup_folder)
+
+        # Start background timer (check every hour)
+        self.backup_timer = QtCore.QTimer(self)
+        self.backup_timer.timeout.connect(self._check_backup_timer)
+        self.backup_timer.start(3600000)  # 1 hour in milliseconds
+
+    def _check_backup_timer(self):
+        """Background timer to check if backup becomes due"""
+        from datetime import datetime
+
+        conn = self.db.get_connection()
+        c = conn.cursor()
+
+        c.execute("SELECT value FROM settings WHERE key = 'auto_backup_enabled'")
+        result = c.fetchone()
+        if not result or result['value'] != '1':
+            conn.close()
+            return
+
+        c.execute("SELECT value FROM settings WHERE key = 'auto_backup_interval_days'")
+        result = c.fetchone()
+        interval = int(result['value']) if result else 7
+
+        c.execute("SELECT value FROM settings WHERE key = 'last_backup_date'")
+        result = c.fetchone()
+        last_backup = result['value'] if result else ""
+
+        conn.close()
+
+        if last_backup:
+            try:
+                last_date = datetime.fromisoformat(last_backup)
+                days_since_backup = (datetime.now() - last_date).days
+
+                if days_since_backup >= interval:
+                    # Check if we already have this notification
+                    has_notification = any(n['id'] == 'backup_due' for n in self.notifications)
+                    if not has_notification:
+                        self._add_notification(
+                            "Database Backup Due",
+                            f"It's been {days_since_backup} days since your last backup.",
+                            "backup_due"
+                        )
+            except:
+                pass
+
+    def _perform_automatic_backup(self, backup_folder):
+        """Perform automatic backup to the configured folder"""
+        from datetime import datetime
+        import shutil
+        import os
+
+        if not backup_folder or not os.path.exists(backup_folder):
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Backup Folder Not Set",
+                "Please configure the automatic backup folder in Setup > Tools > Database Tools."
+            )
+            return
+
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+            backup_filename = f"auto_backup_{timestamp}.db"
+            backup_path = os.path.join(backup_folder, backup_filename)
+
+            # Copy database
+            shutil.copy2(self.db.db_path, backup_path)
+
+            # Update last backup date
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_backup_date', ?)",
+                      (datetime.now().isoformat(),))
+            conn.commit()
+            conn.close()
+
+            # Remove the backup due notification
+            self._dismiss_notification("backup_due")
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Backup Complete",
+                f"Database backed up to:\n{backup_path}"
+            )
+
+            # Refresh the tools tab if it's open
+            if hasattr(self, 'setup_tab'):
+                for i in range(self.setup_tab.sub_stacked.count()):
+                    widget = self.setup_tab.sub_stacked.widget(i)
+                    if isinstance(widget, ToolsSetupTab):
+                        widget._load_backup_settings()
+                        break
+
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Backup Failed",
+                f"Failed to backup database:\n{str(e)}"
+            )
+
     def open_game_session(self, session_id):
         target_index = self.stacked.indexOf(self.game_sessions_tab)
         if target_index < 0:
@@ -14851,46 +15434,53 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _apply_style(self):
         self.setStyle(QtWidgets.QStyleFactory.create("Fusion"))
+
+        # Get colors based on theme
+        if self.current_theme == 'dark':
+            colors = self._get_dark_theme_colors()
+        else:
+            colors = self._get_light_theme_colors()
+
         self.setStyleSheet(
-            """
-            QMainWindow { background: #ffffff; }
-            QWidget { color: #1e1f24; font-size: 12px; }
-            QDialog, QMessageBox { background: #f7f9ff; }
+            f"""
+            QMainWindow {{ background: {colors['bg']}; }}
+            QWidget {{ color: {colors['text']}; font-size: 12px; }}
+            QDialog, QMessageBox { background: {colors['surface']}; }
             QFrame#StatsBar {
-                background: #f7f9ff;
-                border: 1px solid #dfeaff;
+                background: {colors['surface']};
+                border: 1px solid {colors['border']};
                 border-radius: 10px;
             }
             QFrame#StatsBar QLabel {
-                color: #1e1f24;
+                color: {colors['text']};
             }
             QLabel#SectionTitle { font-size: 14px; font-weight: 600; }
 
             #TabButton {
-                background: #f7f9ff;
-                border: 1px solid #dfeaff;
+                background: {colors['surface']};
+                border: 1px solid {colors['border']};
                 border-radius: 10px;
                 padding: 6px 14px;
-                color: #62636c;
+                color: {colors['text_muted']};
             }
             #TabButton:hover {
-                background: #edf2fe;
+                background: {colors['surface2']};
             }
             #TabButton:checked {
-                background: #3d63dd;
+                background: {colors['accent']};
                 color: white;
-                border: 1px solid #3657c3;
+                border: 1px solid {colors['accent_hover']};
             }
 
             QStackedWidget {
-                background: #f7f9ff;
-                border: 1px solid #dfeaff;
+                background: {colors['surface']};
+                border: 1px solid {colors['border']};
                 border-radius: 12px;
             }
 
-            QLineEdit, QTextEdit, QPlainTextEdit, QComboBox {
-                background: #fdfdfe;
-                border: 1px solid #dfeaff;
+            QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox {
+                background: {colors['input_bg']};
+                border: 1px solid {colors['border']};
                 border-radius: 8px;
                 padding: 6px 10px;
                 min-height: 26px;
@@ -14898,22 +15488,22 @@ class MainWindow(QtWidgets.QMainWindow):
             QLineEdit[invalid="true"], QTextEdit[invalid="true"], QPlainTextEdit[invalid="true"], QComboBox[invalid="true"] {
                 border: 1px solid #c0392b;
             }
-            QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus {
-                border: 1px solid #a6bff9;
+            QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus, QSpinBox:focus {
+                border: 1px solid {colors['focus']};
             }
             QComboBox {
                 padding-right: 30px;
             }
             QComboBox::editable {
-                background: #fdfdfe;
-                color: #1e1f24;
+                background: {colors['input_bg']};
+                color: {colors['text']};
             }
             QComboBox::drop-down {
                 subcontrol-origin: padding;
                 subcontrol-position: top right;
                 width: 28px;
-                border-left: 1px solid #dfeaff;
-                background: #edf2fe;
+                border-left: 1px solid {colors['border']};
+                background: {colors['surface2']};
                 border-top-right-radius: 8px;
                 border-bottom-right-radius: 8px;
             }
@@ -14925,159 +15515,159 @@ class MainWindow(QtWidgets.QMainWindow):
             QAbstractItemView,
             QListView,
             QComboBox QAbstractItemView {
-                background: #fdfdfe;
-                color: #1e1f24;
-                selection-background-color: #d0dfff;
-                selection-color: #1e1f24;
+                background: {colors['input_bg']};
+                color: {colors['text']};
+                selection-background-color: {colors['selection']};
+                selection-color: {colors['text']};
             }
             QPlainTextEdit#NotesField {
                 min-height: 78px;
             }
             QLabel#InfoField {
-                background: #fdfdfe;
-                border: 1px solid #dfeaff;
+                background: {colors['input_bg']};
+                border: 1px solid {colors['border']};
                 border-radius: 6px;
                 padding: 6px 10px;
                 min-height: 26px;
             }
             QLabel#InfoField[status="positive"] { color: #2e7d32; }
             QLabel#InfoField[status="negative"] { color: #c0392b; }
-            QLabel#InfoField[status="neutral"] { color: #62636c; }
-            QLabel#HelperText { color: #62636c; font-size: 11px; }
+            QLabel#InfoField[status="neutral"] { color: {colors['text_muted']}; }
+            QLabel#HelperText { color: {colors['text_muted']}; font-size: 11px; }
             QLabel#TabTip {
-                background: #f7f9ff;
-                border: 1px solid #dfeaff;
+                background: {colors['surface']};
+                border: 1px solid {colors['border']};
                 border-radius: 10px;
                 padding: 6px 12px;
-                color: #3657c3;
+                color: {colors['accent_hover']};
                 font-weight: 500;
             }
             QRadioButton[invalid="true"] { color: #c0392b; }
             QMenu {
-                background: #fdfdfe;
-                color: #1e1f24;
-                border: 1px solid #dfeaff;
+                background: {colors['input_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
             }
             QMenu::item:selected {
-                background: #d0dfff;
+                background: {colors['selection']};
             }
             QCalendarWidget QWidget {
-                background: #f7f9ff;
+                background: {colors['surface']};
             }
             QCalendarWidget QToolButton {
-                background: #edf2fe;
-                color: #1e1f24;
-                border: 1px solid #dfeaff;
+                background: {colors['surface2']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
                 border-radius: 6px;
                 padding: 4px 8px;
             }
             QCalendarWidget QMenu {
-                background: #fdfdfe;
-                color: #1e1f24;
-                border: 1px solid #dfeaff;
+                background: {colors['input_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
             }
             QCalendarWidget QSpinBox {
-                background: #fdfdfe;
-                color: #1e1f24;
-                border: 1px solid #dfeaff;
+                background: {colors['input_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
                 border-radius: 6px;
                 padding: 2px 6px;
             }
             QCalendarWidget QAbstractItemView:enabled {
-                background: #fdfdfe;
-                color: #1e1f24;
-                selection-background-color: #d0dfff;
-                selection-color: #1e1f24;
+                background: {colors['input_bg']};
+                color: {colors['text']};
+                selection-background-color: {colors['selection']};
+                selection-color: {colors['text']};
             }
             QPushButton {
-                background: #f7f9ff;
-                border: 1px solid #dfeaff;
+                background: {colors['surface']};
+                border: 1px solid {colors['border']};
                 border-radius: 8px;
                 padding: 6px 14px;
                 min-height: 26px;
             }
-            QPushButton:hover { background: #edf2fe; }
+            QPushButton:hover { background: {colors['surface2']}; }
             QPushButton#PrimaryButton {
-                background: #3d63dd;
-                border: 1px solid #3657c3;
+                background: {colors['accent']};
+                border: 1px solid {colors['accent_hover']};
                 color: white;
             }
-            QPushButton#PrimaryButton:hover { background: #3657c3; }
+            QPushButton#PrimaryButton:hover { background: {colors['accent_hover']}; }
             QPushButton#MiniButton {
                 padding: 4px 10px;
                 min-height: 20px;
             }
             QToolButton#InfoButton {
-                background: #edf2fe;
-                border: 1px solid #dfeaff;
+                background: {colors['surface2']};
+                border: 1px solid {colors['border']};
                 border-radius: 9px;
                 min-width: 18px;
                 min-height: 18px;
                 padding: 0;
                 font-weight: 600;
             }
-            QToolButton#InfoButton:hover { background: #dfeaff; }
+            QToolButton#InfoButton:hover { background: {colors['border']}; }
             QCheckBox, QRadioButton {
                 spacing: 6px;
             }
             QCheckBox::indicator {
                 width: 16px;
                 height: 16px;
-                border: 1px solid #a6bff9;
+                border: 1px solid {colors['focus']};
                 border-radius: 4px;
-                background: #fdfdfe;
+                background: {colors['input_bg']};
             }
             QCheckBox::indicator:checked {
-                background: #3d63dd;
-                border: 1px solid #3657c3;
+                background: {colors['accent']};
+                border: 1px solid {colors['accent_hover']};
             }
             QRadioButton::indicator {
                 width: 16px;
                 height: 16px;
-                border: 1px solid #a6bff9;
+                border: 1px solid {colors['focus']};
                 border-radius: 8px;
-                background: #fdfdfe;
+                background: {colors['input_bg']};
             }
             QRadioButton::indicator:checked {
-                background: #3d63dd;
-                border: 1px solid #3657c3;
+                background: {colors['accent']};
+                border: 1px solid {colors['accent_hover']};
             }
 
             QTableWidget {
-                background: #f7f9ff;
-                gridline-color: #dfeaff;
-                border: 1px solid #dfeaff;
+                background: {colors['surface']};
+                gridline-color: {colors['border']};
+                border: 1px solid {colors['border']};
                 border-radius: 8px;
             }
             QTreeWidget, QTreeView {
-                background: #f7f9ff;
-                border: 1px solid #dfeaff;
+                background: {colors['surface']};
+                border: 1px solid {colors['border']};
                 border-radius: 8px;
             }
             QTreeWidget::item, QTreeView::item {
                 padding: 4px 6px;
-                border-bottom: 1px solid #dfeaff;
+                border-bottom: 1px solid {colors['border']};
             }
             QTreeWidget::item:selected, QTreeView::item:selected {
-                background: #d0dfff;
+                background: {colors['selection']};
             }
             QHeaderView::section {
-                background: #edf2fe;
-                border: 1px solid #dfeaff;
+                background: {colors['surface2']};
+                border: 1px solid {colors['border']};
                 padding: 6px;
                 font-weight: 600;
             }
             QTableWidget::item:selected {
-                background: #d0dfff;
+                background: {colors['selection']};
             }
             QScrollBar:vertical {
-                background: #f7f9ff;
+                background: {colors['surface']};
                 width: 12px;
                 margin: 2px;
                 border-radius: 6px;
             }
             QScrollBar::handle:vertical {
-                background: #b9bbc6;
+                background: {colors['scrollbar']};
                 min-height: 30px;
                 border-radius: 6px;
             }
@@ -15087,13 +15677,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 height: 0;
             }
             QScrollBar:horizontal {
-                background: #f7f9ff;
+                background: {colors['surface']};
                 height: 12px;
                 margin: 2px;
                 border-radius: 6px;
             }
             QScrollBar::handle:horizontal {
-                background: #b9bbc6;
+                background: {colors['scrollbar']};
                 min-width: 30px;
                 border-radius: 6px;
             }
@@ -15104,6 +15694,65 @@ class MainWindow(QtWidgets.QMainWindow):
             }
             """
         )
+
+    def _get_light_theme_colors(self):
+        """Get light theme color palette"""
+        return {
+            'bg': '#ffffff',  # blue-1 light
+            'surface': '#f7f9ff',  # blue-2
+            'surface2': '#edf2fe',  # blue-3
+            'border': '#dfeaff',  # blue-6
+            'input_bg': '#fdfdfe',  # blue-1
+            'text': '#1e1f24',  # gray-12
+            'text_muted': '#62636c',  # gray-11
+            'accent': '#3d63dd',  # blue-9
+            'accent_hover': '#3657c3',  # blue-10
+            'selection': '#d0dfff',  # blue-4
+            'focus': '#a6bff9',  # blue-7
+            'scrollbar': '#b9bbc6',  # gray-9
+        }
+
+    def _get_dark_theme_colors(self):
+        """Get dark theme color palette based on Radix UI colors"""
+        return {
+            'bg': '#111113',  # gray-1
+            'surface': '#19191b',  # gray-2
+            'surface2': '#222325',  # gray-3
+            'border': '#292a2e',  # gray-4
+            'input_bg': '#222325',  # gray-3
+            'text': '#eeeef0',  # gray-12
+            'text_muted': '#b2b3bd',  # gray-11
+            'accent': '#3d63dd',  # blue-9
+            'accent_hover': '#5480ff',  # blue-8 lighter
+            'selection': '#172448',  # blue-3
+            'focus': '#243974',  # blue-5
+            'scrollbar': '#6c6e79',  # gray-9
+        }
+
+    def _load_theme_preference(self):
+        """Load theme preference from database"""
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute("SELECT value FROM settings WHERE key = 'theme'")
+            result = c.fetchone()
+            conn.close()
+            return result['value'] if result else 'light'
+        except:
+            return 'light'
+
+    def _save_theme_preference(self, theme):
+        """Save theme preference to database"""
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            c.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('theme', ?)", (theme,))
+            conn.commit()
+            conn.close()
+            self.current_theme = theme
+            self._apply_style()
+        except Exception as e:
+            print(f"Failed to save theme preference: {e}")
 
 
 def main():

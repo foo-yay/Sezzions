@@ -312,6 +312,25 @@ class Database:
             self.set_schema_version(conn, 8)
             conn.commit()
 
+        # Migration 9: Add automatic backup settings
+        if current_version < 9:
+            # Insert default backup settings if they don't exist
+            c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_backup_enabled', '0')")
+            c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_backup_interval_days', '7')")
+            c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_backup_folder', '')")
+            c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('last_backup_date', '')")
+
+            self.set_schema_version(conn, 9)
+            conn.commit()
+
+        # Migration 10: Add theme preference
+        if current_version < 10:
+            # Insert default theme preference (light)
+            c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'light')")
+
+            self.set_schema_version(conn, 10)
+            conn.commit()
+
         conn.close()
     
     def init_database(self):
