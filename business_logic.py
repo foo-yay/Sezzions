@@ -892,7 +892,8 @@ class SessionManager:
                    COALESCE(starting_sc_balance,0) as starting_sc_balance,
                    COALESCE(ending_sc_balance,0) as ending_sc_balance,
                    COALESCE(starting_redeemable_sc, COALESCE(starting_sc_balance,0)) as starting_redeemable_sc,
-                   COALESCE(ending_redeemable_sc, COALESCE(ending_sc_balance,0)) as ending_redeemable_sc
+                   COALESCE(ending_redeemable_sc, COALESCE(ending_sc_balance,0)) as ending_redeemable_sc,
+                   wager_amount
             FROM game_sessions
             WHERE site_id=? AND user_id=? AND status='Closed'
             ORDER BY end_date ASC, end_time ASC, id ASC
@@ -974,6 +975,15 @@ class SessionManager:
 
             net_taxable_pl = ((discoverable_sc + delta_play_sc) * sc_rate) - basis_consumed
 
+            # Calculate RTP (Return to Player) if wager_amount is provided
+            # RTP = (wager + net_change) / wager * 100
+            # Example: Wager 1000 SC, lose 100 SC -> (1000 - 100) / 1000 = 90%
+            wager = s['wager_amount']
+            if wager and float(wager) > 0:
+                rtp = ((float(wager) + delta_total) / float(wager)) * 100
+            else:
+                rtp = None
+
             # Write derived fields
             c.execute("""
                 UPDATE game_sessions
@@ -989,12 +999,13 @@ class SessionManager:
                     net_taxable_pl=?,
                     total_taxable=?,
                     sc_change=?,
+                    rtp=?,
                     basis_bonus=NULL,
                     gameplay_pnl=NULL
                 WHERE id=?
             """, (session_basis, basis_consumed, expected_start_total, expected_start_redeem,
                   inferred_start_total_delta, inferred_start_redeem_delta,
-                  delta_total, delta_redeem, net_taxable_pl, net_taxable_pl, delta_total, sid))
+                  delta_total, delta_redeem, net_taxable_pl, net_taxable_pl, delta_total, rtp, sid))
 
             # Advance checkpoint
             last_end_total = end_total

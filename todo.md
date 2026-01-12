@@ -10,7 +10,8 @@
 
 ## Medium Priority
 - [ ] Add free-tier usage limits
-- [ ] Add RTP calculation to Game Sessions based on wager and return
+- [X] Add RTP calculation to Game Sessions based on wager and return
+- [ ] Add "actual_rtp" to game_names table, and calculate the weighted average RTP across all sessions for that game and display both in the Games setup dialogs (actual RTP not editable); display the actual rtp along with the advertised RTP as a tooltip in the Game Sessions dialog wherever we are able to select a Game (add/edit).  Add a "Recalculate RTP" button in the Games setup dialog (editing a game) to manually recalculate the RTP from all games/sessions that played it.  "Actual RTP" should get recalculated every time a game session is closed or edited, but we need to do this smartly in a way that doesn't require a 100% tree traversal every time we make a change because that will get compute heavy over time, so if there's a method of updating it accurately in a more narrow scope that would be ideal.
 - [ ] What is the "method type" field in redemption methods used for?  Can we get rid of it?
 - [ ] Where is "last four" of cards used?  Should we keep it?  It's not in any input forms
 - [ ] Design license key system (no server)
