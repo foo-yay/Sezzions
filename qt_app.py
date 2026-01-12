@@ -14504,6 +14504,45 @@ class ToolsSetupTab(QtWidgets.QWidget):
 
         # Parse columns (exclude id, created_at, etc.)
         exclude_columns = {'id', 'created_at', 'updated_at', 'timestamp'}
+
+        # Calculated/system fields that should be excluded from CSV imports
+        # These are auto-generated or derived fields that users shouldn't provide
+        # Organized by table for clarity and maintainability
+        calculated_fields_by_table = {
+            'purchases': {
+                'remaining_amount',  # FIFO calculation
+                'processed',  # System flag
+                'status',  # System-managed status (active/dormant)
+            },
+            'redemptions': {
+                'site_session_id',  # Auto-linked during session creation
+            },
+            'game_sessions': {
+                'sc_change',  # Calculated: ending - starting
+                'dollar_value',  # Calculated from SC values
+                'status',  # System-managed (Active/Closed)
+                'processed',  # System flag
+                'freebies_detected',  # Auto-calculated by detect_freebies()
+                'gameplay_pnl',  # Legacy/deprecated - set to NULL during recalc
+                'basis_bonus',  # Legacy/deprecated - set to NULL during recalc
+                'total_taxable',  # Tax calculation
+                'session_basis',  # FIFO/tax calculation
+                'expected_start_total_sc',  # Auto-calculated
+                'expected_start_redeemable_sc',  # Auto-calculated
+                'inferred_start_total_delta',  # Auto-calculated
+                'inferred_start_redeemable_delta',  # Auto-calculated
+                'delta_total',  # Auto-calculated
+                'delta_redeem',  # Auto-calculated
+                'net_taxable_pl',  # Tax calculation
+                'basis_consumed',  # FIFO/tax calculation
+                'rtp',  # Will be auto-calculated in future
+            },
+            'expenses': set(),  # No calculated fields
+        }
+
+        # Get calculated fields for this specific table
+        calculated_fields = calculated_fields_by_table.get(table_name, set())
+
         columns = []
         required = set()
 
@@ -14513,8 +14552,8 @@ class ToolsSetupTab(QtWidgets.QWidget):
             not_null = col_info[3]  # notnull
             default_val = col_info[4]  # dflt_value
 
-            # Skip excluded columns
-            if col_name in exclude_columns:
+            # Skip excluded columns and calculated fields
+            if col_name in exclude_columns or col_name in calculated_fields:
                 continue
 
             columns.append(col_name)
@@ -14630,15 +14669,78 @@ class ToolsSetupTab(QtWidgets.QWidget):
 
         return query, headers
 
+    def _apply_import_defaults(self, table_name, record):
+        """Apply default values for calculated/system fields during import.
+
+        This ensures that auto-calculated fields are properly initialized
+        when importing records that don't include these fields.
+
+        Args:
+            table_name: Name of the table being imported to
+            record: Dictionary of field values (modified in place)
+        """
+        if table_name == 'purchases':
+            # Initialize remaining_amount to full purchase amount (before FIFO allocations)
+            if 'remaining_amount' not in record and 'amount' in record:
+                record['remaining_amount'] = record['amount']
+            # Mark as processed
+            if 'processed' not in record:
+                record['processed'] = 1
+            # Set as active (not dormant)
+            if 'status' not in record:
+                record['status'] = 'active'
+
+        elif table_name == 'redemptions':
+            # Mark as unprocessed initially (will be processed during recalculation)
+            if 'processed' not in record:
+                record['processed'] = 0
+            # Site session will be auto-linked later if needed
+            if 'site_session_id' not in record:
+                record['site_session_id'] = None
+
+        elif table_name == 'game_sessions':
+            # Default start_time to 00:00:00 if blank
+            if 'start_time' not in record or not record.get('start_time'):
+                record['start_time'] = '00:00:00'
+            # game_type is nullable - don't set a default
+            # Calculate SC change if both balances provided
+            if 'sc_change' not in record:
+                if 'ending_sc_balance' in record and 'starting_sc_balance' in record:
+                    if record['ending_sc_balance'] is not None and record['starting_sc_balance'] is not None:
+                        record['sc_change'] = record['ending_sc_balance'] - record['starting_sc_balance']
+            # Set status based on whether session has end date/time
+            if 'status' not in record:
+                # If session has end_date or end_time, it's closed
+                has_end_date = record.get('end_date') is not None
+                has_end_time = record.get('end_time') is not None and record.get('end_time') != ''
+                if has_end_date or has_end_time:
+                    record['status'] = 'Closed'
+                else:
+                    record['status'] = 'Active'
+            # Mark as processed
+            if 'processed' not in record:
+                record['processed'] = 1
+            # Other calculated fields will be filled during "Recalculate Everything"
+
+        # Expenses have no calculated fields to initialize
+
     def _upload_table_dynamic(self, table_name, unique_column, refresh_tab=None):
         """Universal CSV upload using fully dynamic schema with automatic FK detection and validation.
 
         Args:
             table_name: Database table name
-            unique_column: Column name that uniquely identifies records
+            unique_column: Column name or tuple of column names that uniquely identify records
             refresh_tab: Optional tab widget to refresh after import
+
+        IMPORTANT: No database modifications occur until the user confirms the final import dialog.
         """
         import csv
+
+        # Normalize unique_column to tuple for consistent handling
+        if isinstance(unique_column, str):
+            unique_columns = (unique_column,)
+        else:
+            unique_columns = tuple(unique_column)
 
         # Get schema with FK info
         schema = self._get_table_schema(table_name)
@@ -14650,7 +14752,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
         if not file_path:
             return False
 
-        # Ask if user wants to clear existing data
+        # Ask if user wants to clear existing data (just captures preference, no DB changes yet)
         conn = self.db.get_connection()
         c = conn.cursor()
         c.execute(f"SELECT COUNT(*) FROM {table_name}")
@@ -14723,9 +14825,16 @@ class ToolsSetupTab(QtWidgets.QWidget):
 
             for row in c.fetchall():
                 record = {schema['columns'][i]: row[i] for i in range(len(row))}
-                key = str(record[unique_column]).lower() if record[unique_column] else None
-                if key:
-                    existing_records[key] = record
+                # Build composite key from unique columns
+                key_parts = []
+                for col in unique_columns:
+                    val = record.get(col)
+                    if val is None:
+                        key_parts.append('__NULL__')
+                    else:
+                        key_parts.append(str(val).lower())
+                key = '|||'.join(key_parts)
+                existing_records[key] = record
 
         conn.close()
 
@@ -14739,7 +14848,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
 
         for row_idx, csv_row in enumerate(rows, start=2):
             record = {}
-            unique_val = None
+            unique_vals = {}
             errors = []
 
             for col in schema['columns']:
@@ -14758,16 +14867,54 @@ class ToolsSetupTab(QtWidgets.QWidget):
                             record[col] = fk_id
                     else:
                         record[col] = None
-                # Handle boolean/active columns
-                elif col in ('active', 'is_active'):
-                    record[col] = 1 if csv_value.lower() in ('1', 'true', 'yes', 'active') else 0
+                # Handle boolean/integer columns (processed, active, is_active, is_free_sc, more_remaining, etc.)
+                elif col in ('active', 'is_active', 'processed', 'is_free_sc', 'more_remaining'):
+                    if csv_value:
+                        record[col] = 1 if csv_value.lower() in ('1', 'true', 'yes', 'active') else 0
+                    else:
+                        record[col] = 0
+                # Handle date columns
+                elif col in ('purchase_date', 'redemption_date', 'session_date', 'expense_date',
+                            'receipt_date', 'end_date'):
+                    if csv_value:
+                        try:
+                            # Handle formatted dates like "12/02/25 00:00" or just "12/02/25"
+                            date_part = csv_value.split()[0] if ' ' in csv_value else csv_value
+                            parsed_date = parse_date_input(date_part)
+                            record[col] = parsed_date.strftime('%Y-%m-%d')
+                        except (ValueError, AttributeError):
+                            errors.append(f"Invalid date for {csv_name}: '{csv_value}'")
+                            record[col] = None
+                    else:
+                        record[col] = None
+                # Handle time columns
+                elif col in ('purchase_time', 'redemption_time', 'start_time', 'end_time'):
+                    if csv_value:
+                        try:
+                            # Handle formatted datetime like "12/02/25 00:00" - extract time
+                            if ' ' in csv_value:
+                                time_part = csv_value.split(' ', 1)[1] if ' ' in csv_value else csv_value
+                            else:
+                                time_part = csv_value
+                            parsed_time = parse_time_input(time_part)
+                            record[col] = parsed_time
+                        except (ValueError, AttributeError):
+                            # If parsing fails, keep as text
+                            record[col] = csv_value
+                    else:
+                        record[col] = None
                 # Handle numeric columns (detect by type checking common patterns)
                 elif col in ('rtp', 'cashback_rate', 'sc_rate', 'amount', 'sc_received',
                             'starting_sc_balance', 'starting_sc_balance', 'starting_redeemable_sc',
-                            'ending_sc_balance', 'ending_redeemable_sc', 'wager_amount'):
+                            'ending_sc_balance', 'ending_redeemable_sc', 'wager_amount',
+                            'cashback_earned', 'remaining_amount', 'dollar_value', 'freebies_detected',
+                            'sc_change', 'basis_bonus', 'gameplay_pnl', 'total_taxable', 'net_taxable_pl',
+                            'basis_consumed', 'session_basis'):
                     if csv_value:
                         try:
-                            record[col] = float(csv_value)
+                            # Strip currency formatting ($, commas) before parsing
+                            clean_value = csv_value.replace('$', '').replace(',', '').strip()
+                            record[col] = float(clean_value)
                         except ValueError:
                             errors.append(f"Invalid number for {csv_name}: '{csv_value}'")
                             record[col] = None
@@ -14779,28 +14926,130 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 else:
                     record[col] = None
 
-                if col == unique_column:
-                    unique_val = csv_value
+                # Track values for unique columns
+                if col in unique_columns:
+                    unique_vals[col] = csv_value if csv_value else None
 
-            if not unique_val:
-                errors.append(f"Missing {schema['csv_names'][unique_column]}")
+            # Apply defaults for optional fields that have standard defaults
+            # This must happen before validation so defaults count as "present"
+            if table_name == 'game_sessions':
+                if 'start_time' not in record or not record.get('start_time'):
+                    record['start_time'] = '00:00:00'
+                    if 'start_time' in unique_columns:
+                        unique_vals['start_time'] = '00:00:00'
+
+            # Check if all unique columns are present
+            missing_cols = [schema['csv_names'][col] for col in unique_columns if col not in record or not unique_vals.get(col)]
+            if missing_cols:
+                errors.append(f"Missing required: {', '.join(missing_cols)}")
+
+            # Business logic validations
+            from datetime import datetime, timedelta
+            today = datetime.now().date()
+
+            # Redemptions validations
+            if table_name == 'redemptions':
+                if record.get('receipt_date') and record.get('redemption_date'):
+                    if record['receipt_date'] < record['redemption_date']:
+                        errors.append(f"Receipt date ({record['receipt_date']}) cannot be before redemption date ({record['redemption_date']})")
+                if record.get('redemption_date'):
+                    try:
+                        redemption_date = datetime.strptime(record['redemption_date'], '%Y-%m-%d').date()
+                        if redemption_date > today:
+                            errors.append(f"Redemption date ({record['redemption_date']}) cannot be in the future")
+                    except:
+                        pass
+
+            # Game sessions validations
+            elif table_name == 'game_sessions':
+                session_date = record.get('session_date')
+                start_time = record.get('start_time', '00:00:00')
+                end_date = record.get('end_date')
+                end_time = record.get('end_time')
+
+                # Check session date not in future
+                if session_date:
+                    try:
+                        sess_date = datetime.strptime(session_date, '%Y-%m-%d').date()
+                        if sess_date > today:
+                            errors.append(f"Session date ({session_date}) cannot be in the future")
+                    except:
+                        pass
+
+                # Check end date/time validations
+                if end_date and end_time and session_date and start_time:
+                    try:
+                        start_dt = datetime.strptime(f"{session_date} {start_time}", '%Y-%m-%d %H:%M:%S')
+                        end_dt = datetime.strptime(f"{end_date} {end_time}", '%Y-%m-%d %H:%M:%S')
+
+                        if end_dt < start_dt:
+                            errors.append(f"Session cannot end ({end_date} {end_time}) before it starts ({session_date} {start_time})")
+                        elif end_dt == start_dt:
+                            errors.append(f"Session cannot end at the same time it starts (must be at least 1 second)")
+                    except:
+                        pass
+
+                # Validate SC balances are non-negative
+                if record.get('starting_sc_balance') is not None and record['starting_sc_balance'] < 0:
+                    errors.append(f"Starting SC balance cannot be negative ({record['starting_sc_balance']})")
+                if record.get('ending_sc_balance') is not None and record['ending_sc_balance'] < 0:
+                    errors.append(f"Ending SC balance cannot be negative ({record['ending_sc_balance']})")
+
+            # Purchases validations
+            elif table_name == 'purchases':
+                if record.get('purchase_date'):
+                    try:
+                        purchase_date = datetime.strptime(record['purchase_date'], '%Y-%m-%d').date()
+                        if purchase_date > today:
+                            errors.append(f"Purchase date ({record['purchase_date']}) cannot be in the future")
+                    except:
+                        pass
+                if record.get('amount') is not None and record['amount'] <= 0:
+                    errors.append(f"Purchase amount must be greater than 0 ({record['amount']})")
+                if record.get('sc_received') is not None and record['sc_received'] <= 0:
+                    errors.append(f"SC received must be greater than 0 ({record['sc_received']})")
+
+            # Expenses validations
+            elif table_name == 'expenses':
+                if record.get('expense_date'):
+                    try:
+                        expense_date = datetime.strptime(record['expense_date'], '%Y-%m-%d').date()
+                        if expense_date > today:
+                            errors.append(f"Expense date ({record['expense_date']}) cannot be in the future")
+                    except:
+                        pass
+                if record.get('amount') is not None and record['amount'] <= 0:
+                    errors.append(f"Expense amount must be greater than 0 ({record['amount']})")
 
             # If there are validation errors, mark as invalid
             if errors:
+                # Use first unique column value for display name
+                display_name = unique_vals.get(unique_columns[0], '(unnamed)')
                 invalid_rows.append({
                     'row': row_idx,
-                    'name': unique_val or '(unnamed)',
+                    'name': display_name,
                     'errors': errors
                 })
                 continue
 
-            key = unique_val.lower()
+            # Build composite key
+            key_parts = []
+            for col in unique_columns:
+                val = record.get(col)
+                if val is None:
+                    key_parts.append('__NULL__')
+                else:
+                    key_parts.append(str(val).lower())
+            key = '|||'.join(key_parts)
+
+            # Build display name for this record (use first unique column)
+            display_name = unique_vals.get(unique_columns[0], '(unnamed)')
 
             # Check if we've already seen this key in the CSV file
             if key in seen_in_csv:
                 csv_duplicates.append({
                     'row': row_idx,
-                    'name': unique_val,
+                    'name': display_name,
                     'first_row': seen_in_csv[key]
                 })
                 continue
@@ -14808,10 +15057,34 @@ class ToolsSetupTab(QtWidgets.QWidget):
             # Check if record exists in database
             if key in existing_records:
                 existing = existing_records[key]
-                is_exact = all(record.get(col) == existing.get(col) for col in schema['columns'])
+                # Only compare columns that are present in the CSV (non-None in record)
+                # This allows CSV to have subset of columns without triggering conflicts
+                is_exact = True
+                for col in schema['columns']:
+                    if record.get(col) is None:
+                        continue  # Skip columns not in CSV
+
+                    csv_val = record.get(col)
+                    db_val = existing.get(col)
+
+                    # Normalize empty strings and None for text fields
+                    if isinstance(csv_val, str) and not csv_val:
+                        csv_val = None
+                    if isinstance(db_val, str) and not db_val:
+                        db_val = None
+
+                    # For numeric columns, compare with tolerance for floating point precision
+                    if isinstance(csv_val, (int, float)) and isinstance(db_val, (int, float)):
+                        if abs(csv_val - db_val) > 0.01:  # Allow 1 cent difference
+                            is_exact = False
+                            break
+                    # For other types, exact comparison
+                    elif csv_val != db_val:
+                        is_exact = False
+                        break
 
                 if is_exact:
-                    exact_duplicates.append(unique_val)
+                    exact_duplicates.append(display_name)
                 else:
                     conflicts.append(record)
             else:
@@ -14870,14 +15143,17 @@ class ToolsSetupTab(QtWidgets.QWidget):
         # Handle conflicts
         update_conflicts = False
         if conflicts:
-            conflict_list = "\n".join([f"  - {rec[unique_column]}" for rec in conflicts[:10]])
+            conflict_list = "\n".join([f"  - {rec[unique_columns[0]]}" for rec in conflicts[:10]])
             if len(conflicts) > 10:
                 conflict_list += f"\n  ... and {len(conflicts) - 10} more"
 
+
+            # Build display text for unique columns
+            unique_col_display = ' + '.join([schema['csv_names'][col] for col in unique_columns])
             reply = QtWidgets.QMessageBox.question(
                 self,
                 "Handle Conflicts?",
-                f"Found {len(conflicts)} records with same {unique_column} but different data:\n\n"
+                f"Found {len(conflicts)} records with same {unique_col_display} but different data:\n\n"
                 f"{conflict_list}\n\n"
                 "Do you want to UPDATE these records with the CSV values?",
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel,
@@ -14886,6 +15162,9 @@ class ToolsSetupTab(QtWidgets.QWidget):
             if reply == QtWidgets.QMessageBox.Cancel:
                 return False
             update_conflicts = (reply == QtWidgets.QMessageBox.Yes)
+
+        # Close the connection used for reading - no database changes should happen until final confirmation
+        conn.close()
 
         # Final confirmation
         summary_parts = []
@@ -14928,6 +15207,9 @@ class ToolsSetupTab(QtWidgets.QWidget):
             # Add new records
             added = 0
             for record in to_add:
+                # Add default values for calculated/system fields based on table
+                self._apply_import_defaults(table_name, record)
+
                 cols = ', '.join(record.keys())
                 placeholders = ', '.join(['?'] * len(record))
                 values = tuple(record.values())
@@ -14938,13 +15220,27 @@ class ToolsSetupTab(QtWidgets.QWidget):
             updated = 0
             if update_conflicts:
                 for record in conflicts:
-                    set_cols = [f"{col} = ?" for col in record.keys() if col != unique_column]
+                    # Add default values for calculated/system fields based on table
+                    self._apply_import_defaults(table_name, record)
+
+                    # Build SET clause (exclude unique columns from update)
+                    set_cols = [f"{col} = ?" for col in record.keys() if col not in unique_columns]
                     set_clause = ', '.join(set_cols)
-                    values = [record[col] for col in record.keys() if col != unique_column]
-                    values.append(record[unique_column].lower())
+                    values = [record[col] for col in record.keys() if col not in unique_columns]
+
+                    # Build WHERE clause for composite unique columns
+                    where_parts = []
+                    for col in unique_columns:
+                        val = record[col]
+                        if val is None:
+                            where_parts.append(f"{col} IS NULL")
+                        else:
+                            where_parts.append(f"LOWER({col}) = ?")
+                            values.append(str(val).lower())
+                    where_clause = ' AND '.join(where_parts)
 
                     c.execute(
-                        f"UPDATE {table_name} SET {set_clause} WHERE LOWER({unique_column}) = ?",
+                        f"UPDATE {table_name} SET {set_clause} WHERE {where_clause}",
                         values
                     )
                     updated += 1
@@ -15151,6 +15447,9 @@ class ToolsSetupTab(QtWidgets.QWidget):
             if reply == QtWidgets.QMessageBox.Cancel:
                 return False
             update_conflicts = (reply == QtWidgets.QMessageBox.Yes)
+
+        # Close the connection used for reading - no database changes should happen until final confirmation
+        conn.close()
 
         # Final confirmation
         summary_parts = []
@@ -15371,9 +15670,12 @@ class ToolsSetupTab(QtWidgets.QWidget):
                             record[col] = fk_id
                     else:
                         record[col] = None
-                # Handle boolean/active columns
-                elif col in ('active', 'is_active'):
-                    record[col] = 1 if csv_value.lower() in ('1', 'true', 'yes', 'active') else 0
+                # Handle boolean/integer columns (processed, active, is_active, is_free_sc, more_remaining, etc.)
+                elif col in ('active', 'is_active', 'processed', 'is_free_sc', 'more_remaining'):
+                    if csv_value:
+                        record[col] = 1 if csv_value.lower() in ('1', 'true', 'yes', 'active') else 0
+                    else:
+                        record[col] = 0
                 # Handle numeric columns
                 elif col in ('rtp', 'cashback_rate', 'sc_rate'):
                     if csv_value:
@@ -15468,6 +15770,9 @@ class ToolsSetupTab(QtWidgets.QWidget):
             if reply == QtWidgets.QMessageBox.Cancel:
                 return False
             update_conflicts = (reply == QtWidgets.QMessageBox.Yes)
+
+        # Close the connection used for reading - no database changes should happen until final confirmation
+        conn.close()
 
         # Final confirmation
         summary_parts = []
@@ -15568,25 +15873,41 @@ class ToolsSetupTab(QtWidgets.QWidget):
     # CSV Upload Methods for Transactional Data
     def _upload_purchases(self):
         """Upload Purchases from CSV with recalculation prompt"""
-        success = self._upload_table_dynamic("purchases", unique_column="id", refresh_tab=self.purchases_tab)
+        refresh_tab = self.main_window.purchases_tab if self.main_window else None
+        # Use composite key: date, time, site, user, and amount to identify unique purchases
+        success = self._upload_table_dynamic("purchases",
+            unique_column=("purchase_date", "purchase_time", "site_id", "user_id", "amount"),
+            refresh_tab=refresh_tab)
         if success:
             self._prompt_recalculate_after_import("Purchases")
 
     def _upload_sessions(self):
         """Upload Game Sessions from CSV with recalculation prompt"""
-        success = self._upload_table_dynamic("game_sessions", unique_column="id", refresh_tab=self.game_sessions_tab)
+        refresh_tab = self.main_window.game_sessions_tab if self.main_window else None
+        # Use composite key: date, start time, site, and user to identify unique sessions
+        success = self._upload_table_dynamic("game_sessions",
+            unique_column=("session_date", "start_time", "site_id", "user_id"),
+            refresh_tab=refresh_tab)
         if success:
             self._prompt_recalculate_after_import("Game Sessions")
 
     def _upload_redemptions(self):
         """Upload Redemptions from CSV with recalculation prompt"""
-        success = self._upload_table_dynamic("redemptions", unique_column="id", refresh_tab=self.redemptions_tab)
+        refresh_tab = self.main_window.redemptions_tab if self.main_window else None
+        # Use composite key: date, time, site, user, and amount to identify unique redemptions
+        success = self._upload_table_dynamic("redemptions",
+            unique_column=("redemption_date", "redemption_time", "site_id", "user_id", "amount"),
+            refresh_tab=refresh_tab)
         if success:
             self._prompt_recalculate_after_import("Redemptions")
 
     def _upload_expenses(self):
         """Upload Expenses from CSV with recalculation prompt"""
-        success = self._upload_table_dynamic("expenses", unique_column="id", refresh_tab=self.expenses_tab)
+        refresh_tab = self.main_window.expenses_tab if self.main_window else None
+        # Use composite key: date, vendor, and amount to identify unique expenses
+        success = self._upload_table_dynamic("expenses",
+            unique_column=("expense_date", "vendor", "amount"),
+            refresh_tab=refresh_tab)
         if success:
             self._prompt_recalculate_after_import("Expenses")
 
@@ -15613,12 +15934,12 @@ class ToolsSetupTab(QtWidgets.QWidget):
         self._upload_table_dynamic("sites", unique_column="name", refresh_tab=self.sites_tab)
 
     def _upload_cards(self):
-        """Upload Cards from CSV using dynamic schema"""
-        self._upload_table_dynamic("cards", unique_column="name", refresh_tab=self.cards_tab)
+        """Upload Cards from CSV using dynamic schema with composite key"""
+        self._upload_table_dynamic("cards", unique_column=("name", "user_id"), refresh_tab=self.cards_tab)
 
     def _upload_methods(self):
-        """Upload Redemption Methods from CSV using dynamic schema"""
-        self._upload_table_dynamic("redemption_methods", unique_column="name", refresh_tab=self.methods_tab)
+        """Upload Redemption Methods from CSV using dynamic schema with composite key"""
+        self._upload_table_dynamic("redemption_methods", unique_column=("name", "user_id"), refresh_tab=self.methods_tab)
 
     def _upload_game_types(self):
         """Upload Game Types from CSV using dynamic schema"""
@@ -16258,12 +16579,14 @@ class ToolsSetupTab(QtWidgets.QWidget):
 
             # Delete all transaction data
             c.execute("DELETE FROM game_sessions")
-            c.execute("DELETE FROM daily_sessions")
+            c.execute("DELETE FROM daily_tax_sessions")
+            c.execute("DELETE FROM tax_sessions")
             c.execute("DELETE FROM purchases")
             c.execute("DELETE FROM redemptions")
             c.execute("DELETE FROM expenses")
             c.execute("DELETE FROM site_sessions")
-            c.execute("DELETE FROM purchase_allocations")
+            c.execute("DELETE FROM redemption_allocations")
+            c.execute("DELETE FROM other_income")
 
             conn.commit()
             conn.close()

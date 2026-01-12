@@ -331,6 +331,71 @@ class Database:
             self.set_schema_version(conn, 10)
             conn.commit()
 
+        # Migration 11: Make game_type nullable in game_sessions
+        if current_version < 11:
+            # SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+            # First check if game_type is NOT NULL
+            c.execute("PRAGMA table_info(game_sessions)")
+            cols = c.fetchall()
+            game_type_col = [col for col in cols if col[1] == 'game_type']
+
+            # If game_type is NOT NULL (notnull=1), recreate the table
+            if game_type_col and game_type_col[0][3] == 1:
+                print("Making game_type nullable in game_sessions...")
+
+                # Create new table with game_type nullable
+                c.execute('''CREATE TABLE game_sessions_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_date DATE NOT NULL,
+                    start_time TEXT DEFAULT '00:00:00',
+                    end_date DATE,
+                    end_time TEXT,
+                    site_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    game_type TEXT,
+                    game_name TEXT,
+                    wager_amount REAL,
+                    rtp REAL,
+                    starting_sc_balance REAL DEFAULT 0.0,
+                    ending_sc_balance REAL,
+                    starting_redeemable_sc REAL,
+                    ending_redeemable_sc REAL,
+                    freebies_detected REAL,
+                    status TEXT DEFAULT 'Active',
+                    notes TEXT,
+                    processed INTEGER DEFAULT 0,
+                    session_basis REAL,
+                    basis_consumed REAL,
+                    expected_start_total_sc REAL,
+                    expected_start_redeemable_sc REAL,
+                    inferred_start_total_delta REAL,
+                    inferred_start_redeemable_delta REAL,
+                    delta_total REAL,
+                    delta_redeem REAL,
+                    net_taxable_pl REAL,
+                    total_taxable REAL,
+                    sc_change REAL,
+                    dollar_value REAL,
+                    basis_bonus REAL,
+                    gameplay_pnl REAL,
+                    FOREIGN KEY (site_id) REFERENCES sites(id),
+                    FOREIGN KEY (user_id) REFERENCES users(id))''')
+
+                # Copy data from old table
+                c.execute('''INSERT INTO game_sessions_new
+                    SELECT * FROM game_sessions''')
+
+                # Drop old table
+                c.execute('DROP TABLE game_sessions')
+
+                # Rename new table
+                c.execute('ALTER TABLE game_sessions_new RENAME TO game_sessions')
+
+                print("game_type is now nullable")
+
+            self.set_schema_version(conn, 11)
+            conn.commit()
+
         conn.close()
     
     def init_database(self):

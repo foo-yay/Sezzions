@@ -912,9 +912,16 @@ class SessionManager:
             start_dt = self._dt(s['session_date'], s['start_time'])
             end_dt = self._dt(s['end_date'], s['end_time'])
 
-            # Defensive: if end_dt < start_dt, force end_dt = start_dt
-            if end_dt and start_dt and end_dt < start_dt:
-                end_dt = start_dt
+            # Defensive: if end_dt < start_dt or equal, fix it and log warning
+            if end_dt and start_dt:
+                if end_dt < start_dt:
+                    print(f"WARNING: Session {sid} ends before it starts! Fixing: {s['session_date']} {s['start_time']} -> {s['end_date']} {s['end_time']}")
+                    end_dt = start_dt
+                elif end_dt == start_dt:
+                    print(f"WARNING: Session {sid} starts and ends at the same time! Adding 1 second: {s['session_date']} {s['start_time']}")
+                    # Add 1 second to end time
+                    from datetime import timedelta
+                    end_dt = end_dt + timedelta(seconds=1)
 
             # Redemptions between checkpoint end and session start (exclusive cp, inclusive start)
             red_between = sum(amt for (dt, amt) in redemptions if in_window(dt, checkpoint_end_dt, start_dt))

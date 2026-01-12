@@ -10,6 +10,9 @@
 
 ## Medium Priority
 - [ ] Add free-tier usage limits
+- [ ] Add RTP calculation to Game Sessions based on wager and return
+- [ ] What is the "method type" field in redemption methods used for?  Can we get rid of it?
+- [ ] Where is "last four" of cards used?  Should we keep it?  It's not in any input forms
 - [ ] Design license key system (no server)
 - [X] Add database backup strategy
 - [ ] Determine best way to link transactions to specific sessions (purchases & redemptions)
