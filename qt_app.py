@@ -14648,7 +14648,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
             self, f"Select {table_name.replace('_', ' ').title()} CSV", "", "CSV Files (*.csv)"
         )
         if not file_path:
-            return
+            return False
 
         # Ask if user wants to clear existing data
         conn = self.db.get_connection()
@@ -14667,7 +14667,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.No
             )
             if reply == QtWidgets.QMessageBox.Cancel:
-                return
+                return False
             clear_existing = (reply == QtWidgets.QMessageBox.Yes)
         else:
             clear_existing = False
@@ -14690,7 +14690,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                         self, "Invalid CSV",
                         f"CSV is missing required columns:\n" + "\n".join(f"  - {col}" for col in missing_required)
                     )
-                    return
+                    return False
 
                 # Read all rows
                 rows = list(reader)
@@ -14699,11 +14699,11 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 self, "Error Reading CSV",
                 f"Failed to read CSV file:\n{exc}"
             )
-            return
+            return False
 
         if not rows:
             QtWidgets.QMessageBox.information(self, "Empty CSV", "The CSV file contains no data rows.")
-            return
+            return False
 
         # Get existing records and build FK lookup tables
         conn = self.db.get_connection()
@@ -14854,7 +14854,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.No
             )
             if reply != QtWidgets.QMessageBox.Yes:
-                return
+                return False
 
         # Report findings
         if not to_add and not conflicts:
@@ -14865,7 +14865,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 f"CSV duplicates skipped: {len(csv_duplicates)}\n"
                 f"Invalid rows skipped: {len(invalid_rows)}"
             )
-            return
+            return False
 
         # Handle conflicts
         update_conflicts = False
@@ -14884,7 +14884,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.No
             )
             if reply == QtWidgets.QMessageBox.Cancel:
-                return
+                return False
             update_conflicts = (reply == QtWidgets.QMessageBox.Yes)
 
         # Final confirmation
@@ -14914,7 +14914,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.Yes
         )
         if reply != QtWidgets.QMessageBox.Yes:
-            return
+            return False
 
         # Perform import
         try:
@@ -14975,13 +14975,14 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 f"Updated: {updated}\n"
                 f"Skipped: {len(exact_duplicates) + len(csv_duplicates) + len(invalid_rows) + (len(conflicts) if not update_conflicts else 0)}"
             )
+            return True
 
         except Exception as exc:
             QtWidgets.QMessageBox.warning(
                 self, "Import Failed",
                 f"Failed to import {table_name}:\n{exc}"
             )
-            return
+            return False
 
     def _upload_simple_table(self, table_name, unique_column, refresh_tab=None):
         """Generic CSV upload for simple tables (no foreign keys to resolve).
@@ -15002,7 +15003,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
             self, f"Select {table_name.replace('_', ' ').title()} CSV", "", "CSV Files (*.csv)"
         )
         if not file_path:
-            return
+            return False
 
         # Ask if user wants to clear existing data
         conn = self.db.get_connection()
@@ -15021,7 +15022,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.No
             )
             if reply == QtWidgets.QMessageBox.Cancel:
-                return
+                return False
             clear_existing = (reply == QtWidgets.QMessageBox.Yes)
         else:
             clear_existing = False
@@ -15044,7 +15045,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                         self, "Invalid CSV",
                         f"CSV is missing required columns:\n" + "\n".join(f"  - {col}" for col in missing_required)
                     )
-                    return
+                    return False
 
                 # Read all rows
                 rows = list(reader)
@@ -15053,11 +15054,11 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 self, "Error Reading CSV",
                 f"Failed to read CSV file:\n{exc}"
             )
-            return
+            return False
 
         if not rows:
             QtWidgets.QMessageBox.information(self, "Empty CSV", "The CSV file contains no data rows.")
-            return
+            return False
 
         # Get existing records for duplicate detection
         conn = self.db.get_connection()
@@ -15148,7 +15149,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.No
             )
             if reply == QtWidgets.QMessageBox.Cancel:
-                return
+                return False
             update_conflicts = (reply == QtWidgets.QMessageBox.Yes)
 
         # Final confirmation
@@ -15174,7 +15175,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.Yes
         )
         if reply != QtWidgets.QMessageBox.Yes:
-            return
+            return False
 
         # Perform import
         try:
@@ -15262,7 +15263,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
             self, f"Select {table_name.replace('_', ' ').title()} CSV", "", "CSV Files (*.csv)"
         )
         if not file_path:
-            return
+            return False
 
         # Ask if user wants to clear existing data
         conn = self.db.get_connection()
@@ -15281,7 +15282,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.No
             )
             if reply == QtWidgets.QMessageBox.Cancel:
-                return
+                return False
             clear_existing = (reply == QtWidgets.QMessageBox.Yes)
         else:
             clear_existing = False
@@ -15304,7 +15305,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                         self, "Invalid CSV",
                         f"CSV is missing required columns:\n" + "\n".join(f"  - {col}" for col in missing_required)
                     )
-                    return
+                    return False
 
                 # Read all rows
                 rows = list(reader)
@@ -15313,11 +15314,11 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 self, "Error Reading CSV",
                 f"Failed to read CSV file:\n{exc}"
             )
-            return
+            return False
 
         if not rows:
             QtWidgets.QMessageBox.information(self, "Empty CSV", "The CSV file contains no data rows.")
-            return
+            return False
 
         # Get existing records and FK lookup tables
         conn = self.db.get_connection()
@@ -15436,7 +15437,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.No
             )
             if reply != QtWidgets.QMessageBox.Yes:
-                return
+                return False
 
         # Report findings
         if not to_add and not conflicts:
@@ -15446,7 +15447,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 f"Exact duplicates skipped: {len(exact_duplicates)}\n"
                 f"Invalid rows skipped: {len(invalid_rows)}"
             )
-            return
+            return False
 
         # Handle conflicts
         update_conflicts = False
@@ -15465,7 +15466,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.No
             )
             if reply == QtWidgets.QMessageBox.Cancel:
-                return
+                return False
             update_conflicts = (reply == QtWidgets.QMessageBox.Yes)
 
         # Final confirmation
@@ -15495,7 +15496,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.Yes
         )
         if reply != QtWidgets.QMessageBox.Yes:
-            return
+            return False
 
         # Perform import
         try:
@@ -15564,46 +15565,44 @@ class ToolsSetupTab(QtWidgets.QWidget):
             )
             return
 
-    # CSV Upload Methods (Placeholders for now)
+    # CSV Upload Methods for Transactional Data
     def _upload_purchases(self):
-        QtWidgets.QMessageBox.information(
-            self,
-            "Transaction Data Import",
-            "Bulk import of Purchases is not currently supported.\n\n"
-            "Purchases are transactional data that need to maintain proper referential integrity "
-            "and trigger recalculations. Please add purchases individually through the Purchases tab.\n\n"
-            "You can still export your Purchases data as CSV for backup purposes."
-        )
+        """Upload Purchases from CSV with recalculation prompt"""
+        success = self._upload_table_dynamic("purchases", unique_column="id", refresh_tab=self.purchases_tab)
+        if success:
+            self._prompt_recalculate_after_import("Purchases")
 
     def _upload_sessions(self):
-        QtWidgets.QMessageBox.information(
-            self,
-            "Transaction Data Import",
-            "Bulk import of Game Sessions is not currently supported.\n\n"
-            "Sessions are transactional data that need to maintain proper referential integrity "
-            "and trigger recalculations. Please add sessions individually through the Game Sessions tab.\n\n"
-            "You can still export your Session data as CSV for backup purposes."
-        )
+        """Upload Game Sessions from CSV with recalculation prompt"""
+        success = self._upload_table_dynamic("game_sessions", unique_column="id", refresh_tab=self.game_sessions_tab)
+        if success:
+            self._prompt_recalculate_after_import("Game Sessions")
 
     def _upload_redemptions(self):
-        QtWidgets.QMessageBox.information(
-            self,
-            "Transaction Data Import",
-            "Bulk import of Redemptions is not currently supported.\n\n"
-            "Redemptions are transactional data that need to maintain proper referential integrity "
-            "and trigger recalculations. Please add redemptions individually through the Redemptions tab.\n\n"
-            "You can still export your Redemptions data as CSV for backup purposes."
-        )
+        """Upload Redemptions from CSV with recalculation prompt"""
+        success = self._upload_table_dynamic("redemptions", unique_column="id", refresh_tab=self.redemptions_tab)
+        if success:
+            self._prompt_recalculate_after_import("Redemptions")
 
     def _upload_expenses(self):
-        QtWidgets.QMessageBox.information(
+        """Upload Expenses from CSV with recalculation prompt"""
+        success = self._upload_table_dynamic("expenses", unique_column="id", refresh_tab=self.expenses_tab)
+        if success:
+            self._prompt_recalculate_after_import("Expenses")
+
+    def _prompt_recalculate_after_import(self, data_type):
+        """Prompt user to recalculate everything after importing transactional data"""
+        reply = QtWidgets.QMessageBox.question(
             self,
-            "Transaction Data Import",
-            "Bulk import of Expenses is not currently supported.\n\n"
-            "Expenses are transactional data that need to maintain proper referential integrity. "
-            "Please add expenses individually through the Expenses tab.\n\n"
-            "You can still export your Expenses data as CSV for backup purposes."
+            "Recalculate After Import?",
+            f"It is recommended to run 'Recalculate Everything' to ensure all session totals "
+            "and FIFO cost basis are properly updated after importing {data_type}.\n\n"
+            "Would you like to recalculate everything now?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.Yes
         )
+        if reply == QtWidgets.QMessageBox.Yes:
+            self._recalculate_all()
 
     def _upload_users(self):
         """Upload Users from CSV using dynamic schema"""
