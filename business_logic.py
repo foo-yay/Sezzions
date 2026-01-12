@@ -262,6 +262,14 @@ class SessionManager:
             )
         """, (site_id, user_id))
 
+        # Reset site_sessions totals to 0 before reprocessing redemptions
+        # This prevents double-counting when rebuild is called multiple times
+        c.execute("""
+            UPDATE site_sessions
+            SET total_buyin = 0.0, total_redeemed = 0.0, status = 'Active'
+            WHERE site_id = ? AND user_id = ?
+        """, (site_id, user_id))
+
         conn.commit()
 
         c.execute("""

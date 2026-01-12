@@ -6033,12 +6033,8 @@ class RedemptionsTab(QtWidgets.QWidget):
             conn.commit()
             conn.close()
 
-            if old_cost_basis > 0 and old_site_id and old_user_id:
-                self.session_mgr.fifo_calc.reverse_cost_basis(old_site_id, old_user_id, old_cost_basis)
-
-            self.session_mgr.process_redemption(
-                redemption_id, site_id, amount, rdate, rtime, user_id, False, more_remaining, is_edit=True
-            )
+            # No need to call process_redemption() here - auto_recalculate does full rebuild
+            # The old reverse_cost_basis and process_redemption calls were redundant
 
             if self._has_subsequent and self._subsequent_ids:
                 self._recalculate_subsequent_redemptions(self._subsequent_ids, site_id, user_id)
@@ -6082,7 +6078,7 @@ class RedemptionsTab(QtWidgets.QWidget):
         conn.commit()
         conn.close()
 
-        self.session_mgr.process_redemption(rid, site_id, amount, rdate, rtime, user_id, False, more_remaining)
+        # No need to call process_redemption() here - auto_recalculate does full rebuild
         recalc_count = self.session_mgr.auto_recalculate_affected_sessions(site_id, user_id, rdate, rtime)
         message = "Redemption logged"
         if recalc_count:
@@ -7754,6 +7750,14 @@ class GameSessionsTab(QtWidgets.QWidget):
                     "Another active session already exists for this site and user.",
                 )
                 return
+            # Get old site/user/date/time BEFORE update for recalculation
+            c.execute("SELECT site_id, user_id, session_date, start_time FROM game_sessions WHERE id = ?", (session_id,))
+            old_session_data = c.fetchone()
+            old_site_id = old_session_data["site_id"] if old_session_data else site_id
+            old_user_id = old_session_data["user_id"] if old_session_data else user_id
+            old_date = old_session_data["session_date"] if old_session_data else session_date
+            old_time = old_session_data["start_time"] if old_session_data else start_time
+
             c.execute(
                 """
                 UPDATE game_sessions
@@ -7776,15 +7780,29 @@ class GameSessionsTab(QtWidgets.QWidget):
                     session_id,
                 ),
             )
+
             conn.commit()
             conn.close()
+
+            # Recalculate for both old and new (site, user) if changed
+            pairs = {
+                (site_id, user_id, session_date, start_time),
+                (old_site_id, old_user_id, old_date, old_time),
+            }
+            total_recalc = 0
+            for s_id, u_id, sdate, stime in pairs:
+                total_recalc += self.session_mgr.auto_recalculate_affected_sessions(s_id, u_id, sdate, stime)
 
             dialog.accept()
             self.load_data()
             if self.on_data_changed:
                 self.on_data_changed()
+
+            message = "Session updated"
+            if total_recalc:
+                message += f" (recalculated {total_recalc} sessions)"
             QtCore.QTimer.singleShot(
-                0, lambda: QtWidgets.QMessageBox.information(self, "Success", "Session updated")
+                0, lambda: QtWidgets.QMessageBox.information(self, "Success", message)
             )
             return
 

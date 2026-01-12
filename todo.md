@@ -6,7 +6,7 @@
 - [ ] Finish remaining tab incorporations
 - [X] Add a one-click "Recalculate Everything" action in qt_app.py to rebuild FIFO + derived data across the entire database
 - [X] Add a feature to "Start a New Session" after a purchase, or is it best to keep these as manual inputs?
-- [ ] Implement the upload CSV functionality.  This should account for duplicate entries and prompt for adding them or excluding them.  It should NOT be a complete overwrite but a way to add entries.
+- [X] Implement the upload CSV functionality.  This should account for duplicate entries and prompt for adding them or excluding them.  It should NOT be a complete overwrite but a way to add entries.
 
 ## Medium Priority
 - [ ] Add free-tier usage limits
@@ -22,7 +22,7 @@
 - [ ] Re-integrate the Audit Log
 - [ ] Add a field for Redemption Fees, or just assume users will enter the amount they're actually going to get out?
 - [ ] Allow different currencies and denominations on Purchases and Redemptions (Fortune Coins 1:100, USDC, Crypto, etc.).  Need assistance strategizing incorporation
-- [ ] How do we limit the scope of recalculation when making changes?  Is there a way to do it reliably and automatically?  When we have 10,000 rows, it's going to be a nightmare making changes if we have to update ALL associated sessions with every change.
+- [X] How do we limit the scope of recalculation when making changes?  Is there a way to do it reliably and automatically?  When we have 10,000 rows, it's going to be a nightmare making changes if we have to update ALL associated sessions with every change.
 
 ## Low Priority / Ideas
 - [ ] Export reports to CSV
