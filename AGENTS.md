@@ -2,3 +2,4 @@ Avoid re-using code; aim for modularity and reusable methods that can be called 
 We want modularity and concise code to be a priority and feature of this app.  Wherever possible re-use existing code or port it so that it can be called appropriately without having to re-write methods for single case items.
 Aim for reusable code.  Before integrating new features, check existing functionality for methods that already handle the logic and modify as needed to make them portable/modular
 Verify that methods exist or don't exist before creating new ones
+ASSUME SC:DOLLAR is 1:1 unless specified otherwise

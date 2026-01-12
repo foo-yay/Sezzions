@@ -4531,8 +4531,31 @@ class PurchasesTab(QtWidgets.QWidget):
             return
         ok, message_or_id = self._save_purchase_record(data, purchase_id)
         if not ok:
-            QtWidgets.QMessageBox.warning(self, "Error", message_or_id)
-            return
+            # Check if this is a site/user change error with allocations
+            if "Cannot change site or user" in message_or_id and purchase_id:
+                reply = QtWidgets.QMessageBox.question(
+                    self,
+                    "Force Change?",
+                    f"{message_or_id}\n\n"
+                    "Do you want to FORCE this change?\n\n"
+                    "This will:\n"
+                    "• Delete existing redemption allocations for this purchase\n"
+                    "• Make the change\n"
+                    "• Recalculate FIFO for affected users\n\n"
+                    "Continue?",
+                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                    QtWidgets.QMessageBox.No
+                )
+                if reply == QtWidgets.QMessageBox.Yes:
+                    ok, message_or_id = self._save_purchase_record(data, purchase_id, force_site_user_change=True)
+                    if not ok:
+                        QtWidgets.QMessageBox.warning(self, "Error", message_or_id)
+                        return
+                else:
+                    return
+            else:
+                QtWidgets.QMessageBox.warning(self, "Error", message_or_id)
+                return
 
         # Extract message and purchase_id from return value
         if isinstance(message_or_id, tuple):
@@ -4718,7 +4741,7 @@ class PurchasesTab(QtWidgets.QWidget):
         conn.close()
         return row
 
-    def _save_purchase_record(self, data, purchase_id):
+    def _save_purchase_record(self, data, purchase_id, force_site_user_change=False):
         user_name = data["user_name"]
         site_name = data["site_name"]
         card_name = data["card_name"]
@@ -4781,11 +4804,16 @@ class PurchasesTab(QtWidgets.QWidget):
                         f"Cannot change amount - ${consumed:.2f} has been used for redemptions.",
                     )
                 if old_site_id != site_id or old_user_id != user_id:
-                    conn.close()
-                    return (
-                        False,
-                        f"Cannot change site or user - ${consumed:.2f} has been used for redemptions.",
-                    )
+                    if not force_site_user_change:
+                        conn.close()
+                        return (
+                            False,
+                            f"Cannot change site or user - ${consumed:.2f} has been used for redemptions.",
+                        )
+                    # Force change requested - delete allocations for this purchase
+                    c.execute("DELETE FROM redemption_allocations WHERE purchase_id = ?", (purchase_id,))
+                    # Mark purchase as having no remaining amount initially (will be reset after update)
+                    consumed = 0  # Reset consumed to 0 since we deleted allocations
 
             new_remaining = amount
 
@@ -4871,6 +4899,16 @@ class PurchasesTab(QtWidgets.QWidget):
             else:
                 conn.commit()
                 conn.close()
+
+            # If we forced a site/user change, do targeted recalculation for both old and new (site, user) pairs
+            if force_site_user_change and (old_site_id != site_id or old_user_id != user_id):
+                # Recalculate FIFO for old (site, user) pair
+                self.session_mgr.rebuild_all_derived(old_site_id, old_user_id)
+                # Recalculate FIFO for new (site, user) pair if different
+                if site_id != old_site_id or user_id != old_user_id:
+                    self.session_mgr.rebuild_all_derived(site_id, user_id)
+                message = "Purchase updated with forced site/user change. FIFO recalculated for affected users."
+                return True, message
 
             recalc_count = self.session_mgr.auto_recalculate_affected_sessions(
                 site_id, user_id, pdate, ptime
@@ -10304,6 +10342,9 @@ class UnrealizedTab(QtWidgets.QWidget):
 
         conn.commit()
         conn.close()
+
+        # Run FIFO allocation for this redemption so it shows up immediately
+        self.session_mgr.fifo_calc._rebuild_fifo_for_pair(site_id, user_id)
 
         self.load_data()
         if self.on_data_changed:
