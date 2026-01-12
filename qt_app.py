@@ -13895,6 +13895,8 @@ class GamesSetupTab(SetupListTab):
             parent=parent,
         )
         self.numeric_cols = {2}
+        # Set Name column width to 300px
+        self.table.setColumnWidth(0, 300)
         self.load_data()
 
     def _fetch_game_types(self):
@@ -14073,11 +14075,20 @@ class GamesSetupTab(SetupListTab):
 
 
 class ToolsSetupTab(QtWidgets.QWidget):
-    def __init__(self, db, session_mgr, main_window, parent=None):
+    def __init__(self, db, session_mgr, main_window, users_tab=None, sites_tab=None,
+                 cards_tab=None, methods_tab=None, game_types_tab=None, games_tab=None, parent=None):
         super().__init__(parent)
         self.db = db
         self.session_mgr = session_mgr
         self.main_window = main_window
+
+        # Store references to other setup tabs for refreshing after CSV import
+        self.users_tab = users_tab
+        self.sites_tab = sites_tab
+        self.cards_tab = cards_tab
+        self.methods_tab = methods_tab
+        self.game_types_tab = game_types_tab
+        self.games_tab = games_tab
 
         # Add scroll area to handle overflow
         scroll = QtWidgets.QScrollArea()
@@ -14448,109 +14459,1216 @@ class ToolsSetupTab(QtWidgets.QWidget):
             self.db_content.show()
             self.db_toggle_btn.setText("▼ Database Tools")
 
+    # CSV Schema Helper Methods
+    def _get_table_schema(self, table_name):
+        """Get schema information for a table dynamically from the database.
+
+        Returns a dict with:
+        - columns: list of column names (excluding id and auto-generated fields)
+        - display_names: dict mapping column names to display-friendly names
+        - csv_names: dict mapping column names to CSV-friendly names (FKs resolved)
+        - foreign_keys: dict mapping FK column to (ref_table, ref_column, display_name)
+        - required: set of required column names
+        """
+        conn = self.db.get_connection()
+        c = conn.cursor()
+
+        # Get table info
+        c.execute(f"PRAGMA table_info({table_name})")
+        columns_info = c.fetchall()
+
+        # Get foreign key info
+        c.execute(f"PRAGMA foreign_key_list({table_name})")
+        fk_info = c.fetchall()
+
+        conn.close()
+
+        # Build FK map: column_name -> (referenced_table, referenced_column)
+        foreign_keys = {}
+        for fk in fk_info:
+            fk_column = fk[3]  # from column
+            ref_table = fk[2]  # referenced table
+            ref_column = fk[4]  # referenced column (usually 'id')
+            foreign_keys[fk_column] = (ref_table, ref_column)
+
+        # Common FK patterns when PRAGMA foreign_key_list doesn't work
+        # (SQLite doesn't always have FK constraints defined)
+        fk_patterns = {
+            'user_id': ('users', 'id'),
+            'site_id': ('sites', 'id'),
+            'card_id': ('cards', 'id'),
+            'method_id': ('redemption_methods', 'id'),
+            'game_type_id': ('game_types', 'id'),
+            'game_id': ('games', 'id'),
+        }
+
+        # Parse columns (exclude id, created_at, etc.)
+        exclude_columns = {'id', 'created_at', 'updated_at', 'timestamp'}
+        columns = []
+        required = set()
+
+        for col_info in columns_info:
+            col_name = col_info[1]  # name
+            col_type = col_info[2]  # type
+            not_null = col_info[3]  # notnull
+            default_val = col_info[4]  # dflt_value
+
+            # Skip excluded columns
+            if col_name in exclude_columns:
+                continue
+
+            columns.append(col_name)
+
+            # Mark as required if NOT NULL and no default value
+            if not_null and default_val is None:
+                required.add(col_name)
+
+            # Auto-detect FKs by pattern if not found
+            if col_name not in foreign_keys and col_name in fk_patterns:
+                foreign_keys[col_name] = fk_patterns[col_name]
+
+        # Create display names
+        display_names = {}
+        csv_names = {}
+        fk_details = {}
+
+        for col in columns:
+            # Convert snake_case to Title Case
+            display_name = ' '.join(word.capitalize() for word in col.split('_'))
+            display_names[col] = display_name
+
+            # For foreign keys, use singular form of referenced table
+            if col in foreign_keys:
+                ref_table, ref_column = foreign_keys[col]
+                # Convert table name to singular display name
+                if ref_table == 'users':
+                    csv_name = 'User'
+                elif ref_table == 'sites':
+                    csv_name = 'Site'
+                elif ref_table == 'cards':
+                    csv_name = 'Card'
+                elif ref_table == 'redemption_methods':
+                    csv_name = 'Method'
+                elif ref_table == 'game_types':
+                    csv_name = 'Game Type'
+                elif ref_table == 'games':
+                    csv_name = 'Game'
+                else:
+                    # Fallback: remove trailing 's' and capitalize
+                    csv_name = ref_table.rstrip('s').replace('_', ' ').title()
+
+                csv_names[col] = csv_name
+                fk_details[col] = (ref_table, ref_column, csv_name)
+            else:
+                csv_names[col] = display_name
+
+        return {
+            'columns': columns,
+            'display_names': display_names,
+            'csv_names': csv_names,
+            'foreign_keys': fk_details,
+            'required': required
+        }
+
+    def _get_csv_headers(self, table_name):
+        """Get CSV headers for a table (display-friendly names with FKs resolved)"""
+        schema = self._get_table_schema(table_name)
+        return [schema['csv_names'][col] for col in schema['columns']]
+
+    def _get_csv_column_mapping(self, table_name):
+        """Get mapping from CSV names to database column names"""
+        schema = self._get_table_schema(table_name)
+        return {schema['csv_names'][col]: col for col in schema['columns']}
+
+    def _build_select_query(self, table_name):
+        """Build a SELECT query that resolves all foreign keys to names.
+
+        Returns: (query_string, headers)
+        """
+        schema = self._get_table_schema(table_name)
+
+        select_parts = []
+        joins = []
+
+        # Check which referenced tables have a 'name' column
+        tables_with_name = set()
+        conn = self.db.get_connection()
+        c = conn.cursor()
+
+        for col, (ref_table, ref_column, csv_name) in schema['foreign_keys'].items():
+            c.execute(f"PRAGMA table_info({ref_table})")
+            ref_columns = [row[1] for row in c.fetchall()]
+            if 'name' in ref_columns:
+                tables_with_name.add(col)
+
+        conn.close()
+
+        for col in schema['columns']:
+            if col in schema['foreign_keys']:
+                ref_table, ref_column, csv_name = schema['foreign_keys'][col]
+                # Create unique alias based on the column name (e.g., site_id -> site_id_ref)
+                alias = f"{col}_ref"
+
+                if col in tables_with_name:
+                    # Reference table has a name column - resolve it
+                    joins.append(f"LEFT JOIN {ref_table} {alias} ON {table_name}.{col} = {alias}.{ref_column}")
+                    select_parts.append(f"{alias}.name")
+                else:
+                    # Reference table doesn't have a name column - just use the ID
+                    select_parts.append(f"{table_name}.{col}")
+            else:
+                # Select from main table
+                select_parts.append(f"{table_name}.{col}")
+
+        # Build query
+        select_clause = ", ".join(select_parts)
+        join_clause = " ".join(joins)
+        query = f"SELECT {select_clause} FROM {table_name} {join_clause}"
+
+        # Get headers
+        headers = self._get_csv_headers(table_name)
+
+        return query, headers
+
+    def _upload_table_dynamic(self, table_name, unique_column, refresh_tab=None):
+        """Universal CSV upload using fully dynamic schema with automatic FK detection and validation.
+
+        Args:
+            table_name: Database table name
+            unique_column: Column name that uniquely identifies records
+            refresh_tab: Optional tab widget to refresh after import
+        """
+        import csv
+
+        # Get schema with FK info
+        schema = self._get_table_schema(table_name)
+
+        # File selection
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, f"Select {table_name.replace('_', ' ').title()} CSV", "", "CSV Files (*.csv)"
+        )
+        if not file_path:
+            return
+
+        # Ask if user wants to clear existing data
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(f"SELECT COUNT(*) FROM {table_name}")
+        existing_count = c.fetchone()[0]
+        conn.close()
+
+        if existing_count > 0:
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Clear Existing Data?",
+                f"There are {existing_count} existing records.\n\n"
+                f"Do you want to clear all existing {table_name.replace('_', ' ')} before importing?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel,
+                QtWidgets.QMessageBox.No
+            )
+            if reply == QtWidgets.QMessageBox.Cancel:
+                return
+            clear_existing = (reply == QtWidgets.QMessageBox.Yes)
+        else:
+            clear_existing = False
+
+        # Read and validate CSV
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                csv_headers = reader.fieldnames
+
+                # Validate required headers
+                missing_required = []
+                for col in schema['columns']:
+                    csv_name = schema['csv_names'][col]
+                    if col in schema['required'] and csv_name not in csv_headers:
+                        missing_required.append(csv_name)
+
+                if missing_required:
+                    QtWidgets.QMessageBox.warning(
+                        self, "Invalid CSV",
+                        f"CSV is missing required columns:\n" + "\n".join(f"  - {col}" for col in missing_required)
+                    )
+                    return
+
+                # Read all rows
+                rows = list(reader)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "Error Reading CSV",
+                f"Failed to read CSV file:\n{exc}"
+            )
+            return
+
+        if not rows:
+            QtWidgets.QMessageBox.information(self, "Empty CSV", "The CSV file contains no data rows.")
+            return
+
+        # Get existing records and build FK lookup tables
+        conn = self.db.get_connection()
+        c = conn.cursor()
+
+        # Build FK lookup maps
+        fk_lookups = {}
+        for col, (ref_table, ref_column, csv_name) in schema['foreign_keys'].items():
+            c.execute(f"SELECT id, name FROM {ref_table}")
+            fk_lookups[col] = {row[1].lower(): row[0] for row in c.fetchall()}
+
+        # Get existing records (only if not clearing - no need to check duplicates if we're wiping everything)
+        existing_records = {}
+        if not clear_existing:
+            cols = ', '.join(schema['columns'])
+            c.execute(f"SELECT {cols} FROM {table_name}")
+
+            for row in c.fetchall():
+                record = {schema['columns'][i]: row[i] for i in range(len(row))}
+                key = str(record[unique_column]).lower() if record[unique_column] else None
+                if key:
+                    existing_records[key] = record
+
+        conn.close()
+
+        # Parse and validate CSV rows
+        to_add = []
+        exact_duplicates = []
+        conflicts = []
+        invalid_rows = []
+        csv_duplicates = []
+        seen_in_csv = {}  # Track what we've seen in this CSV to detect within-file duplicates
+
+        for row_idx, csv_row in enumerate(rows, start=2):
+            record = {}
+            unique_val = None
+            errors = []
+
+            for col in schema['columns']:
+                csv_name = schema['csv_names'][col]
+                csv_value = csv_row.get(csv_name, '').strip()
+
+                # Handle foreign keys
+                if col in schema['foreign_keys']:
+                    ref_table, ref_column, fk_display_name = schema['foreign_keys'][col]
+                    if csv_value:
+                        fk_id = fk_lookups[col].get(csv_value.lower())
+                        if fk_id is None:
+                            errors.append(f"{fk_display_name} '{csv_value}' not found")
+                            record[col] = None
+                        else:
+                            record[col] = fk_id
+                    else:
+                        record[col] = None
+                # Handle boolean/active columns
+                elif col in ('active', 'is_active'):
+                    record[col] = 1 if csv_value.lower() in ('1', 'true', 'yes', 'active') else 0
+                # Handle numeric columns (detect by type checking common patterns)
+                elif col in ('rtp', 'cashback_rate', 'sc_rate', 'amount', 'sc_received',
+                            'starting_sc_balance', 'starting_sc_balance', 'starting_redeemable_sc',
+                            'ending_sc_balance', 'ending_redeemable_sc', 'wager_amount'):
+                    if csv_value:
+                        try:
+                            record[col] = float(csv_value)
+                        except ValueError:
+                            errors.append(f"Invalid number for {csv_name}: '{csv_value}'")
+                            record[col] = None
+                    else:
+                        record[col] = None
+                # Handle text columns
+                elif csv_value:
+                    record[col] = csv_value
+                else:
+                    record[col] = None
+
+                if col == unique_column:
+                    unique_val = csv_value
+
+            if not unique_val:
+                errors.append(f"Missing {schema['csv_names'][unique_column]}")
+
+            # If there are validation errors, mark as invalid
+            if errors:
+                invalid_rows.append({
+                    'row': row_idx,
+                    'name': unique_val or '(unnamed)',
+                    'errors': errors
+                })
+                continue
+
+            key = unique_val.lower()
+
+            # Check if we've already seen this key in the CSV file
+            if key in seen_in_csv:
+                csv_duplicates.append({
+                    'row': row_idx,
+                    'name': unique_val,
+                    'first_row': seen_in_csv[key]
+                })
+                continue
+
+            # Check if record exists in database
+            if key in existing_records:
+                existing = existing_records[key]
+                is_exact = all(record.get(col) == existing.get(col) for col in schema['columns'])
+
+                if is_exact:
+                    exact_duplicates.append(unique_val)
+                else:
+                    conflicts.append(record)
+            else:
+                to_add.append(record)
+
+            # Mark this key as seen in the CSV
+            seen_in_csv[key] = row_idx
+
+        # Report CSV duplicates and invalid rows
+        total_errors = len(invalid_rows) + len(csv_duplicates)
+        if total_errors > 0:
+            error_parts = []
+
+            if csv_duplicates:
+                csv_dup_summary = "\n".join([
+                    f"Row {d['row']}: {d['name']} (duplicate of row {d['first_row']})"
+                    for d in csv_duplicates[:5]
+                ])
+                if len(csv_duplicates) > 5:
+                    csv_dup_summary += f"\n... and {len(csv_duplicates) - 5} more CSV duplicates"
+                error_parts.append(f"Duplicate entries within CSV ({len(csv_duplicates)}):\n{csv_dup_summary}")
+
+            if invalid_rows:
+                invalid_summary = "\n".join([
+                    f"Row {r['row']}: {r['name']} - {', '.join(r['errors'])}"
+                    for r in invalid_rows[:5]
+                ])
+                if len(invalid_rows) > 5:
+                    invalid_summary += f"\n... and {len(invalid_rows) - 5} more validation errors"
+                error_parts.append(f"Validation errors ({len(invalid_rows)}):\n{invalid_summary}")
+
+            error_message = "\n\n".join(error_parts)
+
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "CSV Errors Found",
+                f"Found {total_errors} problematic rows:\n\n{error_message}\n\n"
+                f"Skip these rows and import {len(to_add) + len(conflicts)} valid rows?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No
+            )
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
+
+        # Report findings
+        if not to_add and not conflicts:
+            QtWidgets.QMessageBox.information(
+                self, "No Changes",
+                f"All valid records in the CSV already exist in the database.\n\n"
+                f"Exact duplicates skipped: {len(exact_duplicates)}\n"
+                f"CSV duplicates skipped: {len(csv_duplicates)}\n"
+                f"Invalid rows skipped: {len(invalid_rows)}"
+            )
+            return
+
+        # Handle conflicts
+        update_conflicts = False
+        if conflicts:
+            conflict_list = "\n".join([f"  - {rec[unique_column]}" for rec in conflicts[:10]])
+            if len(conflicts) > 10:
+                conflict_list += f"\n  ... and {len(conflicts) - 10} more"
+
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Handle Conflicts?",
+                f"Found {len(conflicts)} records with same {unique_column} but different data:\n\n"
+                f"{conflict_list}\n\n"
+                "Do you want to UPDATE these records with the CSV values?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel,
+                QtWidgets.QMessageBox.No
+            )
+            if reply == QtWidgets.QMessageBox.Cancel:
+                return
+            update_conflicts = (reply == QtWidgets.QMessageBox.Yes)
+
+        # Final confirmation
+        summary_parts = []
+        if clear_existing:
+            summary_parts.append(f"Clear {existing_count} existing records")
+        if to_add:
+            summary_parts.append(f"Add {len(to_add)} new records")
+        if conflicts and update_conflicts:
+            summary_parts.append(f"Update {len(conflicts)} conflicting records")
+        elif conflicts:
+            summary_parts.append(f"Skip {len(conflicts)} conflicting records")
+        if exact_duplicates:
+            summary_parts.append(f"Skip {len(exact_duplicates)} exact duplicates")
+        if csv_duplicates:
+            summary_parts.append(f"Skip {len(csv_duplicates)} CSV duplicates")
+        if invalid_rows:
+            summary_parts.append(f"Skip {len(invalid_rows)} invalid rows")
+
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Import",
+            f"Ready to import {table_name.replace('_', ' ')}:\n\n" +
+            "\n".join(f"  • {part}" for part in summary_parts) + "\n\n"
+            "Proceed with import?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.Yes
+        )
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        # Perform import
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+
+            # Clear existing if requested
+            if clear_existing:
+                c.execute(f"DELETE FROM {table_name}")
+
+            # Add new records
+            added = 0
+            for record in to_add:
+                cols = ', '.join(record.keys())
+                placeholders = ', '.join(['?'] * len(record))
+                values = tuple(record.values())
+                c.execute(f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})", values)
+                added += 1
+
+            # Update conflicts if requested
+            updated = 0
+            if update_conflicts:
+                for record in conflicts:
+                    set_cols = [f"{col} = ?" for col in record.keys() if col != unique_column]
+                    set_clause = ', '.join(set_cols)
+                    values = [record[col] for col in record.keys() if col != unique_column]
+                    values.append(record[unique_column].lower())
+
+                    c.execute(
+                        f"UPDATE {table_name} SET {set_clause} WHERE LOWER({unique_column}) = ?",
+                        values
+                    )
+                    updated += 1
+
+            conn.commit()
+
+            # Log audit
+            details = f"Imported from CSV: {added} added"
+            if updated:
+                details += f", {updated} updated"
+            if exact_duplicates:
+                details += f", {len(exact_duplicates)} skipped (duplicates)"
+            if invalid_rows:
+                details += f", {len(invalid_rows)} skipped (invalid)"
+            self.db.log_audit("IMPORT", table_name, details=details)
+
+            conn.close()
+
+            # Refresh UI
+            if refresh_tab and hasattr(refresh_tab, 'load_data'):
+                refresh_tab.load_data()
+
+            # Show success
+            QtWidgets.QMessageBox.information(
+                self, "Import Complete",
+                f"{table_name.replace('_', ' ').title()} imported successfully!\n\n"
+                f"Added: {added}\n"
+                f"Updated: {updated}\n"
+                f"Skipped: {len(exact_duplicates) + len(csv_duplicates) + len(invalid_rows) + (len(conflicts) if not update_conflicts else 0)}"
+            )
+
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "Import Failed",
+                f"Failed to import {table_name}:\n{exc}"
+            )
+            return
+
+    def _upload_simple_table(self, table_name, unique_column, refresh_tab=None):
+        """Generic CSV upload for simple tables (no foreign keys to resolve).
+
+        Args:
+            table_name: Database table name
+            unique_column: Column name that uniquely identifies records (e.g., 'name')
+            refresh_tab: Optional tab widget to refresh after import
+        """
+        import csv
+
+        # Get schema
+        schema = self._get_table_schema(table_name)
+        column_mapping = self._get_csv_column_mapping(table_name)
+
+        # File selection
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, f"Select {table_name.replace('_', ' ').title()} CSV", "", "CSV Files (*.csv)"
+        )
+        if not file_path:
+            return
+
+        # Ask if user wants to clear existing data
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(f"SELECT COUNT(*) FROM {table_name}")
+        existing_count = c.fetchone()[0]
+        conn.close()
+
+        if existing_count > 0:
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Clear Existing Data?",
+                f"There are {existing_count} existing records.\n\n"
+                f"Do you want to clear all existing {table_name.replace('_', ' ')} before importing?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel,
+                QtWidgets.QMessageBox.No
+            )
+            if reply == QtWidgets.QMessageBox.Cancel:
+                return
+            clear_existing = (reply == QtWidgets.QMessageBox.Yes)
+        else:
+            clear_existing = False
+
+        # Read and validate CSV
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                csv_headers = reader.fieldnames
+
+                # Validate required headers
+                missing_required = []
+                for col in schema['columns']:
+                    display_name = schema['display_names'][col]
+                    if col in schema['required'] and display_name not in csv_headers:
+                        missing_required.append(display_name)
+
+                if missing_required:
+                    QtWidgets.QMessageBox.warning(
+                        self, "Invalid CSV",
+                        f"CSV is missing required columns:\n" + "\n".join(f"  - {col}" for col in missing_required)
+                    )
+                    return
+
+                # Read all rows
+                rows = list(reader)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "Error Reading CSV",
+                f"Failed to read CSV file:\n{exc}"
+            )
+            return
+
+        if not rows:
+            QtWidgets.QMessageBox.information(self, "Empty CSV", "The CSV file contains no data rows.")
+            return
+
+        # Get existing records for duplicate detection
+        conn = self.db.get_connection()
+        c = conn.cursor()
+
+        # Build SELECT for all columns
+        cols = ', '.join(schema['columns'])
+        c.execute(f"SELECT {cols} FROM {table_name}")
+        existing_records = {}
+
+        for row in c.fetchall():
+            # Create dict from row
+            record = {schema['columns'][i]: row[i] for i in range(len(row))}
+            # Use unique column as key (case-insensitive)
+            key = str(record[unique_column]).lower() if record[unique_column] else None
+            if key:
+                existing_records[key] = record
+
+        conn.close()
+
+        # Analyze duplicates and conflicts
+        to_add = []
+        exact_duplicates = []
+        conflicts = []
+
+        for csv_row in rows:
+            # Parse CSV row into database columns
+            record = {}
+            unique_val = None
+
+            for col in schema['columns']:
+                display_name = schema['display_names'][col]
+                csv_value = csv_row.get(display_name, '').strip()
+
+                # Parse value based on column name patterns
+                if col in ('active', 'is_active'):
+                    # Boolean/integer columns
+                    record[col] = 1 if csv_value.lower() in ('1', 'true', 'yes', 'active') else 0
+                elif csv_value:
+                    record[col] = csv_value
+                else:
+                    record[col] = None
+
+                if col == unique_column:
+                    unique_val = csv_value
+
+            if not unique_val:
+                continue
+
+            key = unique_val.lower()
+
+            # Check if record exists
+            if key in existing_records:
+                existing = existing_records[key]
+                # Check for exact duplicate (all columns match)
+                is_exact = all(record.get(col) == existing.get(col) for col in schema['columns'])
+
+                if is_exact:
+                    exact_duplicates.append(unique_val)
+                else:
+                    conflicts.append(record)
+            else:
+                to_add.append(record)
+
+        # Report findings
+        if not to_add and not conflicts:
+            QtWidgets.QMessageBox.information(
+                self, "No Changes",
+                f"All records in the CSV already exist in the database.\n\n"
+                f"Exact duplicates skipped: {len(exact_duplicates)}"
+            )
+            return
+
+        # Handle conflicts
+        update_conflicts = False
+        if conflicts:
+            conflict_list = "\n".join([f"  - {rec[unique_column]}" for rec in conflicts[:10]])
+            if len(conflicts) > 10:
+                conflict_list += f"\n  ... and {len(conflicts) - 10} more"
+
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Handle Conflicts?",
+                f"Found {len(conflicts)} records with same {unique_column} but different data:\n\n"
+                f"{conflict_list}\n\n"
+                "Do you want to UPDATE these records with the CSV values?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel,
+                QtWidgets.QMessageBox.No
+            )
+            if reply == QtWidgets.QMessageBox.Cancel:
+                return
+            update_conflicts = (reply == QtWidgets.QMessageBox.Yes)
+
+        # Final confirmation
+        summary_parts = []
+        if clear_existing:
+            summary_parts.append(f"Clear {existing_count} existing records")
+        if to_add:
+            summary_parts.append(f"Add {len(to_add)} new records")
+        if conflicts and update_conflicts:
+            summary_parts.append(f"Update {len(conflicts)} conflicting records")
+        elif conflicts:
+            summary_parts.append(f"Skip {len(conflicts)} conflicting records")
+        if exact_duplicates:
+            summary_parts.append(f"Skip {len(exact_duplicates)} exact duplicates")
+
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Import",
+            f"Ready to import {table_name.replace('_', ' ')}:\n\n" +
+            "\n".join(f"  • {part}" for part in summary_parts) + "\n\n"
+            "Proceed with import?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.Yes
+        )
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        # Perform import
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+
+            # Clear existing if requested
+            if clear_existing:
+                c.execute(f"DELETE FROM {table_name}")
+
+            # Add new records
+            added = 0
+            for record in to_add:
+                cols = ', '.join(record.keys())
+                placeholders = ', '.join(['?'] * len(record))
+                values = tuple(record.values())
+                c.execute(f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})", values)
+                added += 1
+
+            # Update conflicts if requested
+            updated = 0
+            if update_conflicts:
+                for record in conflicts:
+                    # Build SET clause
+                    set_cols = [f"{col} = ?" for col in record.keys() if col != unique_column]
+                    set_clause = ', '.join(set_cols)
+                    values = [record[col] for col in record.keys() if col != unique_column]
+                    values.append(record[unique_column].lower())
+
+                    c.execute(
+                        f"UPDATE {table_name} SET {set_clause} WHERE LOWER({unique_column}) = ?",
+                        values
+                    )
+                    updated += 1
+
+            conn.commit()
+
+            # Log audit
+            details = f"Imported from CSV: {added} added"
+            if updated:
+                details += f", {updated} updated"
+            if exact_duplicates:
+                details += f", {len(exact_duplicates)} skipped"
+            self.db.log_audit("IMPORT", table_name, details=details)
+
+            conn.close()
+
+            # Refresh UI
+            if refresh_tab and hasattr(refresh_tab, 'load_data'):
+                refresh_tab.load_data()
+
+            # Show success
+            QtWidgets.QMessageBox.information(
+                self, "Import Complete",
+                f"{table_name.replace('_', ' ').title()} imported successfully!\n\n"
+                f"Added: {added}\n"
+                f"Updated: {updated}\n"
+                f"Skipped: {len(exact_duplicates) + (len(conflicts) if not update_conflicts else 0)}"
+            )
+
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "Import Failed",
+                f"Failed to import {table_name}:\n{exc}"
+            )
+            return
+
+    def _upload_table_with_fk(self, table_name, unique_column, foreign_keys, refresh_tab=None):
+        """Generic CSV upload for tables with foreign key relationships.
+
+        Args:
+            table_name: Database table name
+            unique_column: Column name that uniquely identifies records
+            foreign_keys: Dict mapping FK column names to (ref_table, display_name)
+                         e.g., {"user_id": ("users", "User")}
+            refresh_tab: Optional tab widget to refresh after import
+        """
+        import csv
+
+        # Get schema
+        schema = self._get_table_schema(table_name)
+
+        # File selection
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, f"Select {table_name.replace('_', ' ').title()} CSV", "", "CSV Files (*.csv)"
+        )
+        if not file_path:
+            return
+
+        # Ask if user wants to clear existing data
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(f"SELECT COUNT(*) FROM {table_name}")
+        existing_count = c.fetchone()[0]
+        conn.close()
+
+        if existing_count > 0:
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Clear Existing Data?",
+                f"There are {existing_count} existing records.\n\n"
+                f"Do you want to clear all existing {table_name.replace('_', ' ')} before importing?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel,
+                QtWidgets.QMessageBox.No
+            )
+            if reply == QtWidgets.QMessageBox.Cancel:
+                return
+            clear_existing = (reply == QtWidgets.QMessageBox.Yes)
+        else:
+            clear_existing = False
+
+        # Read and validate CSV
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                csv_headers = reader.fieldnames
+
+                # Validate required headers
+                missing_required = []
+                for col in schema['columns']:
+                    display_name = schema['display_names'][col]
+                    if col in schema['required'] and display_name not in csv_headers:
+                        missing_required.append(display_name)
+
+                if missing_required:
+                    QtWidgets.QMessageBox.warning(
+                        self, "Invalid CSV",
+                        f"CSV is missing required columns:\n" + "\n".join(f"  - {col}" for col in missing_required)
+                    )
+                    return
+
+                # Read all rows
+                rows = list(reader)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "Error Reading CSV",
+                f"Failed to read CSV file:\n{exc}"
+            )
+            return
+
+        if not rows:
+            QtWidgets.QMessageBox.information(self, "Empty CSV", "The CSV file contains no data rows.")
+            return
+
+        # Get existing records and FK lookup tables
+        conn = self.db.get_connection()
+        c = conn.cursor()
+
+        # Build FK lookup maps
+        fk_lookups = {}
+        for fk_col, (ref_table, display_name) in foreign_keys.items():
+            c.execute(f"SELECT id, name FROM {ref_table}")
+            fk_lookups[fk_col] = {row[1].lower(): row[0] for row in c.fetchall()}
+
+        # Get existing records
+        cols = ', '.join(schema['columns'])
+        c.execute(f"SELECT {cols} FROM {table_name}")
+        existing_records = {}
+
+        for row in c.fetchall():
+            record = {schema['columns'][i]: row[i] for i in range(len(row))}
+            key = str(record[unique_column]).lower() if record[unique_column] else None
+            if key:
+                existing_records[key] = record
+
+        conn.close()
+
+        # Parse and validate CSV rows
+        to_add = []
+        exact_duplicates = []
+        conflicts = []
+        invalid_rows = []
+
+        for row_idx, csv_row in enumerate(rows, start=2):  # start=2 for Excel-style row numbers
+            record = {}
+            unique_val = None
+            errors = []
+
+            for col in schema['columns']:
+                display_name = schema['display_names'][col]
+                csv_value = csv_row.get(display_name, '').strip()
+
+                # Handle foreign keys
+                if col in foreign_keys:
+                    ref_table, fk_display_name = foreign_keys[col]
+                    if csv_value:
+                        # Look up FK
+                        fk_id = fk_lookups[col].get(csv_value.lower())
+                        if fk_id is None:
+                            errors.append(f"{fk_display_name} '{csv_value}' not found")
+                            record[col] = None
+                        else:
+                            record[col] = fk_id
+                    else:
+                        record[col] = None
+                # Handle boolean/active columns
+                elif col in ('active', 'is_active'):
+                    record[col] = 1 if csv_value.lower() in ('1', 'true', 'yes', 'active') else 0
+                # Handle numeric columns
+                elif col in ('rtp', 'cashback_rate', 'sc_rate'):
+                    if csv_value:
+                        try:
+                            record[col] = float(csv_value)
+                        except ValueError:
+                            errors.append(f"Invalid number for {display_name}: '{csv_value}'")
+                            record[col] = None
+                    else:
+                        record[col] = None
+                # Handle text columns
+                elif csv_value:
+                    record[col] = csv_value
+                else:
+                    record[col] = None
+
+                if col == unique_column:
+                    unique_val = csv_value
+
+            if not unique_val:
+                errors.append(f"Missing {schema['display_names'][unique_column]}")
+
+            # If there are validation errors, mark as invalid
+            if errors:
+                invalid_rows.append({
+                    'row': row_idx,
+                    'name': unique_val or '(unnamed)',
+                    'errors': errors
+                })
+                continue
+
+            key = unique_val.lower()
+
+            # Check if record exists
+            if key in existing_records:
+                existing = existing_records[key]
+                is_exact = all(record.get(col) == existing.get(col) for col in schema['columns'])
+
+                if is_exact:
+                    exact_duplicates.append(unique_val)
+                else:
+                    conflicts.append(record)
+            else:
+                to_add.append(record)
+
+        # Report invalid rows
+        if invalid_rows:
+            error_summary = "\n".join([
+                f"Row {r['row']}: {r['name']} - {', '.join(r['errors'])}"
+                for r in invalid_rows[:10]
+            ])
+            if len(invalid_rows) > 10:
+                error_summary += f"\n... and {len(invalid_rows) - 10} more errors"
+
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Validation Errors",
+                f"Found {len(invalid_rows)} invalid rows:\n\n{error_summary}\n\n"
+                f"Skip these rows and import {len(to_add) + len(conflicts)} valid rows?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No
+            )
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
+
+        # Report findings
+        if not to_add and not conflicts:
+            QtWidgets.QMessageBox.information(
+                self, "No Changes",
+                f"All valid records in the CSV already exist in the database.\n\n"
+                f"Exact duplicates skipped: {len(exact_duplicates)}\n"
+                f"Invalid rows skipped: {len(invalid_rows)}"
+            )
+            return
+
+        # Handle conflicts
+        update_conflicts = False
+        if conflicts:
+            conflict_list = "\n".join([f"  - {rec[unique_column]}" for rec in conflicts[:10]])
+            if len(conflicts) > 10:
+                conflict_list += f"\n  ... and {len(conflicts) - 10} more"
+
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Handle Conflicts?",
+                f"Found {len(conflicts)} records with same {unique_column} but different data:\n\n"
+                f"{conflict_list}\n\n"
+                "Do you want to UPDATE these records with the CSV values?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel,
+                QtWidgets.QMessageBox.No
+            )
+            if reply == QtWidgets.QMessageBox.Cancel:
+                return
+            update_conflicts = (reply == QtWidgets.QMessageBox.Yes)
+
+        # Final confirmation
+        summary_parts = []
+        if clear_existing:
+            summary_parts.append(f"Clear {existing_count} existing records")
+        if to_add:
+            summary_parts.append(f"Add {len(to_add)} new records")
+        if conflicts and update_conflicts:
+            summary_parts.append(f"Update {len(conflicts)} conflicting records")
+        elif conflicts:
+            summary_parts.append(f"Skip {len(conflicts)} conflicting records")
+        if exact_duplicates:
+            summary_parts.append(f"Skip {len(exact_duplicates)} exact duplicates")
+        if csv_duplicates:
+            summary_parts.append(f"Skip {len(csv_duplicates)} CSV duplicates")
+        if invalid_rows:
+            summary_parts.append(f"Skip {len(invalid_rows)} invalid rows")
+
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Import",
+            f"Ready to import {table_name.replace('_', ' ')}:\n\n" +
+            "\n".join(f"  • {part}" for part in summary_parts) + "\n\n"
+            "Proceed with import?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.Yes
+        )
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        # Perform import
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+
+            # Clear existing if requested
+            if clear_existing:
+                c.execute(f"DELETE FROM {table_name}")
+
+            # Add new records
+            added = 0
+            for record in to_add:
+                cols = ', '.join(record.keys())
+                placeholders = ', '.join(['?'] * len(record))
+                values = tuple(record.values())
+                c.execute(f"INSERT INTO {table_name} ({cols}) VALUES ({placeholders})", values)
+                added += 1
+
+            # Update conflicts if requested
+            updated = 0
+            if update_conflicts:
+                for record in conflicts:
+                    set_cols = [f"{col} = ?" for col in record.keys() if col != unique_column]
+                    set_clause = ', '.join(set_cols)
+                    values = [record[col] for col in record.keys() if col != unique_column]
+                    values.append(record[unique_column].lower())
+
+                    c.execute(
+                        f"UPDATE {table_name} SET {set_clause} WHERE LOWER({unique_column}) = ?",
+                        values
+                    )
+                    updated += 1
+
+            conn.commit()
+
+            # Log audit
+            details = f"Imported from CSV: {added} added"
+            if updated:
+                details += f", {updated} updated"
+            if exact_duplicates:
+                details += f", {len(exact_duplicates)} skipped (duplicates)"
+            if invalid_rows:
+                details += f", {len(invalid_rows)} skipped (invalid)"
+            self.db.log_audit("IMPORT", table_name, details=details)
+
+            conn.close()
+
+            # Refresh UI
+            if refresh_tab and hasattr(refresh_tab, 'load_data'):
+                refresh_tab.load_data()
+
+            # Show success
+            QtWidgets.QMessageBox.information(
+                self, "Import Complete",
+                f"{table_name.replace('_', ' ').title()} imported successfully!\n\n"
+                f"Added: {added}\n"
+                f"Updated: {updated}\n"
+                f"Skipped: {len(exact_duplicates) + len(csv_duplicates) + len(invalid_rows) + (len(conflicts) if not update_conflicts else 0)}"
+            )
+
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "Import Failed",
+                f"Failed to import {table_name}:\n{exc}"
+            )
+            return
+
     # CSV Upload Methods (Placeholders for now)
     def _upload_purchases(self):
-        self._show_not_implemented("Upload Purchases CSV")
+        QtWidgets.QMessageBox.information(
+            self,
+            "Transaction Data Import",
+            "Bulk import of Purchases is not currently supported.\n\n"
+            "Purchases are transactional data that need to maintain proper referential integrity "
+            "and trigger recalculations. Please add purchases individually through the Purchases tab.\n\n"
+            "You can still export your Purchases data as CSV for backup purposes."
+        )
 
     def _upload_sessions(self):
-        self._show_not_implemented("Upload Sessions CSV")
+        QtWidgets.QMessageBox.information(
+            self,
+            "Transaction Data Import",
+            "Bulk import of Game Sessions is not currently supported.\n\n"
+            "Sessions are transactional data that need to maintain proper referential integrity "
+            "and trigger recalculations. Please add sessions individually through the Game Sessions tab.\n\n"
+            "You can still export your Session data as CSV for backup purposes."
+        )
 
     def _upload_redemptions(self):
-        self._show_not_implemented("Upload Redemptions CSV")
+        QtWidgets.QMessageBox.information(
+            self,
+            "Transaction Data Import",
+            "Bulk import of Redemptions is not currently supported.\n\n"
+            "Redemptions are transactional data that need to maintain proper referential integrity "
+            "and trigger recalculations. Please add redemptions individually through the Redemptions tab.\n\n"
+            "You can still export your Redemptions data as CSV for backup purposes."
+        )
 
     def _upload_expenses(self):
-        self._show_not_implemented("Upload Expenses CSV")
+        QtWidgets.QMessageBox.information(
+            self,
+            "Transaction Data Import",
+            "Bulk import of Expenses is not currently supported.\n\n"
+            "Expenses are transactional data that need to maintain proper referential integrity. "
+            "Please add expenses individually through the Expenses tab.\n\n"
+            "You can still export your Expenses data as CSV for backup purposes."
+        )
 
     def _upload_users(self):
-        self._show_not_implemented("Upload Users CSV")
+        """Upload Users from CSV using dynamic schema"""
+        self._upload_table_dynamic("users", unique_column="name", refresh_tab=self.users_tab)
 
     def _upload_sites(self):
-        self._show_not_implemented("Upload Sites CSV")
+        """Upload Sites from CSV using dynamic schema"""
+        self._upload_table_dynamic("sites", unique_column="name", refresh_tab=self.sites_tab)
 
     def _upload_cards(self):
-        self._show_not_implemented("Upload Cards CSV")
+        """Upload Cards from CSV using dynamic schema"""
+        self._upload_table_dynamic("cards", unique_column="name", refresh_tab=self.cards_tab)
 
     def _upload_methods(self):
-        self._show_not_implemented("Upload Redemption Methods CSV")
+        """Upload Redemption Methods from CSV using dynamic schema"""
+        self._upload_table_dynamic("redemption_methods", unique_column="name", refresh_tab=self.methods_tab)
 
     def _upload_game_types(self):
-        self._show_not_implemented("Upload Game Types CSV")
+        """Upload Game Types from CSV using dynamic schema"""
+        self._upload_table_dynamic("game_types", unique_column="name", refresh_tab=self.game_types_tab)
 
     def _upload_games(self):
-        self._show_not_implemented("Upload Games CSV")
+        """Upload Games from CSV using dynamic schema"""
+        self._upload_table_dynamic("games", unique_column="name", refresh_tab=self.games_tab)
 
     # CSV Template Download Methods
     def _download_template_purchases(self):
-        self._download_template(
-            "purchases",
-            ["Date", "Time", "Site", "User", "Amount", "SC Received", "Starting SC", "Card", "Notes"],
-            "purchases_template.csv"
-        )
+        headers = self._get_csv_headers("purchases")
+        self._download_template("purchases", headers, "purchases_template.csv")
 
     def _download_template_sessions(self):
-        self._download_template(
-            "sessions",
-            ["Date", "Start Time", "End Time", "Site", "User", "Game Type", "Game Name",
-             "Starting Total SC", "Starting Redeemable", "Ending Total SC", "Ending Redeemable",
-             "Wager Amount", "Notes"],
-            "sessions_template.csv"
-        )
+        headers = self._get_csv_headers("game_sessions")
+        self._download_template("game_sessions", headers, "sessions_template.csv")
 
     def _download_template_redemptions(self):
-        self._download_template(
-            "redemptions",
-            ["Date", "Time", "Site", "User", "Amount", "Method", "Notes"],
-            "redemptions_template.csv"
-        )
+        headers = self._get_csv_headers("redemptions")
+        self._download_template("redemptions", headers, "redemptions_template.csv")
 
     def _download_template_expenses(self):
-        self._download_template(
-            "expenses",
-            ["Date", "Category", "Vendor", "User", "Amount", "Description"],
-            "expenses_template.csv"
-        )
+        headers = self._get_csv_headers("expenses")
+        self._download_template("expenses", headers, "expenses_template.csv")
 
     def _download_template_users(self):
-        self._download_template(
-            "users",
-            ["Name", "Active"],
-            "users_template.csv"
-        )
+        headers = self._get_csv_headers("users")
+        self._download_template("users", headers, "users_template.csv")
 
     def _download_template_sites(self):
-        self._download_template(
-            "sites",
-            ["Name", "SC Rate", "Active"],
-            "sites_template.csv"
-        )
+        headers = self._get_csv_headers("sites")
+        self._download_template("sites", headers, "sites_template.csv")
 
     def _download_template_cards(self):
-        self._download_template(
-            "cards",
-            ["Name", "User", "Cashback Rate", "Active"],
-            "cards_template.csv"
-        )
+        headers = self._get_csv_headers("cards")
+        self._download_template("cards", headers, "cards_template.csv")
 
     def _download_template_methods(self):
-        self._download_template(
-            "methods",
-            ["Name", "Active"],
-            "redemption_methods_template.csv"
-        )
+        headers = self._get_csv_headers("redemption_methods")
+        self._download_template("redemption_methods", headers, "redemption_methods_template.csv")
 
     def _download_template_game_types(self):
-        self._download_template(
-            "game_types",
-            ["Name", "Active"],
-            "game_types_template.csv"
-        )
+        headers = self._get_csv_headers("game_types")
+        self._download_template("game_types", headers, "game_types_template.csv")
 
     def _download_template_games(self):
-        self._download_template(
-            "games",
-            ["Name", "Game Type", "RTP", "Active"],
-            "games_template.csv"
-        )
+        headers = self._get_csv_headers("games")
+        self._download_template("games", headers, "games_template.csv")
 
     def _download_template(self, data_type, headers, filename):
         """Generate and download a CSV template"""
@@ -14616,9 +15734,12 @@ class ToolsSetupTab(QtWidgets.QWidget):
         self._download_data("games")
 
     def _download_data(self, table_name):
-        """Download current data as CSV"""
+        """Download current data as CSV using dynamic schema"""
         import csv
         from datetime import datetime
+
+        # Handle table name mapping
+        actual_table = "game_sessions" if table_name == "sessions" else table_name
 
         filename = f"{table_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
@@ -14636,93 +15757,11 @@ class ToolsSetupTab(QtWidgets.QWidget):
             conn = self.db.get_connection()
             c = conn.cursor()
 
-            # Get data based on table
-            if table_name == "purchases":
-                c.execute("""
-                    SELECT p.purchase_date, p.purchase_time, s.name as site, u.name as user,
-                           p.amount, p.sc_received, p.starting_sc_balance, ca.name as card, p.notes
-                    FROM purchases p
-                    JOIN sites s ON p.site_id = s.id
-                    JOIN users u ON p.user_id = u.id
-                    JOIN cards ca ON p.card_id = ca.id
-                    ORDER BY p.purchase_date, p.purchase_time
-                """)
-                headers = ["Date", "Time", "Site", "User", "Amount", "SC Received", "Starting SC", "Card", "Notes"]
+            # Build dynamic query that resolves all foreign keys
+            query, headers = self._build_select_query(actual_table)
 
-            elif table_name == "sessions":
-                c.execute("""
-                    SELECT session_date, start_time, end_time,
-                           site_name, user_name, game_type, game_name,
-                           starting_sc_balance, starting_redeemable_sc,
-                           ending_sc_balance, ending_redeemable_sc,
-                           wager_amount, notes
-                    FROM game_sessions
-                    ORDER BY session_date, start_time
-                """)
-                headers = ["Date", "Start Time", "End Time", "Site", "User", "Game Type", "Game Name",
-                          "Starting Total SC", "Starting Redeemable", "Ending Total SC", "Ending Redeemable",
-                          "Wager Amount", "Notes"]
-
-            elif table_name == "redemptions":
-                c.execute("""
-                    SELECT r.redemption_date, r.redemption_time, s.name as site, u.name as user,
-                           r.amount, m.name as method, r.notes
-                    FROM redemptions r
-                    JOIN sites s ON r.site_id = s.id
-                    JOIN users u ON r.user_id = u.id
-                    JOIN redemption_methods m ON r.method_id = m.id
-                    ORDER BY r.redemption_date, r.redemption_time
-                """)
-                headers = ["Date", "Time", "Site", "User", "Amount", "Method", "Notes"]
-
-            elif table_name == "expenses":
-                c.execute("""
-                    SELECT e.expense_date, e.category, e.vendor, u.name as user, e.amount, e.description
-                    FROM expenses e
-                    LEFT JOIN users u ON e.user_id = u.id
-                    ORDER BY e.expense_date
-                """)
-                headers = ["Date", "Category", "Vendor", "User", "Amount", "Description"]
-
-            elif table_name == "users":
-                c.execute("SELECT name, active FROM users ORDER BY name")
-                headers = ["Name", "Active"]
-
-            elif table_name == "sites":
-                c.execute("SELECT name, sc_rate, active FROM sites ORDER BY name")
-                headers = ["Name", "SC Rate", "Active"]
-
-            elif table_name == "cards":
-                c.execute("""
-                    SELECT c.name, u.name as user, c.cashback_rate, c.active
-                    FROM cards c
-                    JOIN users u ON c.user_id = u.id
-                    ORDER BY c.name
-                """)
-                headers = ["Name", "User", "Cashback Rate", "Active"]
-
-            elif table_name == "redemption_methods":
-                c.execute("SELECT name, active FROM redemption_methods ORDER BY name")
-                headers = ["Name", "Active"]
-
-            elif table_name == "game_types":
-                c.execute("SELECT name, active FROM game_types ORDER BY name")
-                headers = ["Name", "Active"]
-
-            elif table_name == "games":
-                c.execute("""
-                    SELECT g.name, gt.name as game_type, g.rtp, g.active
-                    FROM games g
-                    LEFT JOIN game_types gt ON g.game_type_id = gt.id
-                    ORDER BY g.name
-                """)
-                headers = ["Name", "Game Type", "RTP", "Active"]
-
-            else:
-                conn.close()
-                QtWidgets.QMessageBox.warning(self, "Error", f"Unknown table: {table_name}")
-                return
-
+            # Execute query
+            c.execute(query)
             rows = c.fetchall()
             conn.close()
 
@@ -15289,14 +16328,33 @@ class SetupTab(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Ignored
         )
 
+        # Create tabs and store references
+        self.users_tab = UsersSetupTab(self.db)
+        self.sites_tab = SitesSetupTab(self.db)
+        self.cards_tab = CardsSetupTab(self.db)
+        self.methods_tab = MethodsSetupTab(self.db)
+        self.game_types_tab = GameTypesSetupTab(self.db)
+        self.games_tab = GamesSetupTab(self.db)
+        self.tools_tab = ToolsSetupTab(
+            self.db,
+            self.session_mgr,
+            self.main_window,
+            users_tab=self.users_tab,
+            sites_tab=self.sites_tab,
+            cards_tab=self.cards_tab,
+            methods_tab=self.methods_tab,
+            game_types_tab=self.game_types_tab,
+            games_tab=self.games_tab
+        )
+
         tabs = [
-            ("Users", UsersSetupTab(self.db)),
-            ("Sites", SitesSetupTab(self.db)),
-            ("Cards", CardsSetupTab(self.db)),
-            ("Redemption Methods", MethodsSetupTab(self.db)),
-            ("Game Types", GameTypesSetupTab(self.db)),
-            ("Games", GamesSetupTab(self.db)),
-            ("Tools", ToolsSetupTab(self.db, self.session_mgr, self.main_window)),
+            ("Users", self.users_tab),
+            ("Sites", self.sites_tab),
+            ("Cards", self.cards_tab),
+            ("Redemption Methods", self.methods_tab),
+            ("Game Types", self.game_types_tab),
+            ("Games", self.games_tab),
+            ("Tools", self.tools_tab),
         ]
 
         for idx, (label, widget) in enumerate(tabs):

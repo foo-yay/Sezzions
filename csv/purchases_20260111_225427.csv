@@ -1,0 +1,40 @@
+Purchase Date,Purchase Time,Site,Amount,Sc Received,Starting Sc Balance,Card,User,Remaining Amount,Notes,Processed,Status,Cashback Earned
+2025-12-02,00:00:00,Lonestar,2099.97,2400.0,13.22,NFCU Authorized User Visa,mrs. fooyay,2099.97,"Purchased in 2025, but pending previous redemption...",0,active,42.0
+2025-12-12,19:17:36,Real Prize,1269.98,1500.0,0.0,NFCU Authorized User Visa,mrs. fooyay,1269.98,Purchased in 2025 but pending a previous redemption.  Carried forward,0,active,25.4
+2025-12-26,19:20:48,Pulsz,4.99,10.0,3.7,NFCU Visa,fooyay,4.99,"2025 purchase, no minimum met, so balance carried forward",0,active,0.1
+2025-12-19,19:21:18,Wow Vegas,123.45,160.0,15.03,NFCU Visa,fooyay,0.0,"Purchased in 2025 but no minimum met, so balance carried forward",0,active,2.47
+2025-12-28,19:22:00,Moonspin,239.96,335.0,35.28,NFCU Visa,fooyay,0.0,Purchases made in 2025 but not redeemable.  Balance carried forward,0,active,4.8
+2025-12-30,19:23:24,Spree,13.49,20.0,2.68,NFCU Visa,fooyay,0.0,2025 purchase but session started in 2026,0,dormant,0.27
+2025-12-31,19:23:51,Stake,4500.0,4511.25,0.0,NFCU Authorized User Visa,mrs. fooyay,0.0,"Pre-2026 purchase, but session realized in 2026.",0,active,90.0
+2025-12-31,19:24:38,Modo,169.98,200.0,1.0,NFCU Visa,fooyay,0.0,"Purchased in 2025, balance carried forward into 2026",0,active,3.4
+2025-12-31,19:25:10,Modo,229.47,270.0,0.8,NFCU Authorized User Visa,mrs. fooyay,0.0,Purchased in 2025 but balance carried forward to 2026,0,active,4.59
+2025-12-31,19:25:52,Pulsz Bingo,442.43,500.0,2.1,NFCU Visa,fooyay,0.0,2025 purchase with balance carried forward to 2026,0,active,8.85
+2026-01-01,00:06:00,Golden Hearts,250.0,283.05,1.65,NFCU Visa,fooyay,0.0,,0,active,5.0
+2026-01-01,12:02:00,Stake,500.0,501.25,0.0,NFCU Authorized User Visa,mrs. fooyay,0.0,,0,active,10.0
+2026-01-01,12:04:00,Stake,2000.0,2005.0,501.25,NFCU Authorized User Visa,mrs. fooyay,0.0,,0,active,40.0
+2026-01-01,12:07:00,Modo,79.99,100.0,271.1,NFCU Authorized User Visa,mrs. fooyay,0.0,"Purchase started in 2025, carried forward",0,active,1.6
+2026-01-01,12:10:00,Modo,89.99,100.0,371.1,NFCU Authorized User Visa,mrs. fooyay,0.0,Purchase started 2025 and carried forward,0,active,1.8
+2026-01-01,12:13:00,Modo,79.99,100.0,201.0,NFCU Visa,fooyay,0.0,Purchase started in 2025 and carried forward,0,active,1.6
+2026-01-01,12:14:00,Modo,89.99,100.0,301.0,NFCU Visa,fooyay,0.0,Purchase started 2025 and balance carried forward,0,active,1.8
+2025-12-31,19:31:09,Legendz,102.89,110.0,0.0,NFCU Visa,fooyay,0.0,Bought in 2025 and carried forward,0,active,2.06
+2026-01-01,20:46:00,Moonspin,69.99,90.0,346.09,NFCU Visa,fooyay,1.4210854715202004e-14,Basis started in 2025,0,active,1.4
+2026-01-02,09:07:00,Pulsz,7.99,10.0,14.35,NFCU Visa,fooyay,7.99,Basis started in 2025,0,active,0.16
+2026-01-02,11:42:00,Wow Vegas,30.86,39.0,314.86,NFCU Visa,fooyay,0.0,Basis started in 2025,0,active,0.62
+2026-01-02,11:59:00,Modo,84.99,100.0,0.3,NFCU Visa,fooyay,84.99,,0,active,1.7
+2026-01-02,12:00:00,Modo,89.99,100.0,100.3,NFCU Visa,fooyay,89.99,,0,active,1.8
+2026-01-02,13:47:00,Moonspin,235.95,295.0,0.0,NFCU Visa,fooyay,235.95,,0,active,4.72
+2026-01-02,14:00:00,Lucky Land Casino,12.0,20.0,11.5,NFCU Visa,fooyay,12.0,,0,active,0.24
+2026-01-02,16:23:00,Modo,174.98,200.0,0.0,NFCU Authorized User Visa,mrs. fooyay,0.0,,0,active,3.5
+2026-01-03,20:10:00,Moonspin,34.99,45.0,301.48,NFCU Visa,fooyay,34.99,,1,active,0.7
+2026-01-03,20:35:00,Legendz,102.89,110.0,110.0,NFCU Visa,fooyay,0.0,Added to a basis started on 12/31/25,1,active,2.06
+2026-01-03,21:10:00,Rolling Riches,424.91,492.0,0.2,NFCU Visa,fooyay,0.0,,1,active,8.5
+2026-01-04,20:45:00,Moonspin,19.99,25.0,350.62,NFCU Visa,fooyay,19.99,,1,active,0.4
+2026-01-05,09:39:00,Stake,2500.0,2506.25,55.76,NFCU Visa,fooyay,0.0,,1,active,50.0
+2026-01-05,10:10:00,Stake,2500.0,2506.25,1.0,NFCU Authorized User Visa,mrs. fooyay,0.0,,1,active,50.0
+2026-01-05,11:20:00,Modo,84.99,100.0,190.45,NFCU Visa,fooyay,84.99,,1,active,1.7
+2026-01-05,11:25:00,Modo,84.99,100.0,200.6,NFCU Authorized User Visa,mrs. fooyay,1.4210854715202004e-14,,1,active,1.7
+2026-01-05,11:35:00,Play Fame,94.98,123.0,0.0,NFCU Authorized User Visa,mrs. fooyay,94.98,,1,active,1.9
+2026-01-05,12:08:00,Golden Hearts,250.0,280.5,0.4,NFCU Visa,fooyay,0.0,,1,active,5.0
+2026-01-05,20:55:00,Moonspin,34.99,40.0,381.6,NFCU Visa,fooyay,34.99,,1,active,0.7
+2026-01-06,08:55:00,Legendz,205.79,240.0,0.0,NFCU Visa,fooyay,205.79,,1,active,4.12
+2025-12-22,15:09:57,Clubs Poker,20.0,20.0,37.0,NFCU Visa,fooyay,20.0,"2025 purchase, basis carried to 2026",1,active,0.4

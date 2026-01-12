@@ -6,6 +6,7 @@
 - [ ] Finish remaining tab incorporations
 - [X] Add a one-click "Recalculate Everything" action in qt_app.py to rebuild FIFO + derived data across the entire database
 - [X] Add a feature to "Start a New Session" after a purchase, or is it best to keep these as manual inputs?
+- [ ] Implement the upload CSV functionality.  This should account for duplicate entries and prompt for adding them or excluding them.  It should NOT be a complete overwrite but a way to add entries.
 
 ## Medium Priority
 - [ ] Add free-tier usage limits
