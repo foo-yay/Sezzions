@@ -31,6 +31,64 @@ class Database:
         conn.commit()
         conn.close()
     
+    def log_audit_conditional(self, action, table_name, record_id=None, details=None, user_name=None):
+        """
+        Log an audit event only if audit logging is enabled and the action type is enabled.
+        This checks the settings table before logging.
+        
+        Args:
+            action: The action type (INSERT, UPDATE, DELETE, IMPORT, REFACTOR, etc.)
+            table_name: The name of the table affected
+            record_id: Optional record ID
+            details: Optional details string
+            user_name: Optional user name (if None, uses default from settings)
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # Check if audit logging is enabled
+            cursor.execute("SELECT value FROM settings WHERE key = 'audit_log_enabled'")
+            result = cursor.fetchone()
+            enabled = int(result["value"]) if result else 0
+            
+            if not enabled:
+                conn.close()
+                return
+            
+            # Check if this action type is enabled
+            cursor.execute("SELECT value FROM settings WHERE key = 'audit_log_actions'")
+            result = cursor.fetchone()
+            enabled_actions = result["value"] if result else "INSERT,UPDATE,DELETE,IMPORT,REFACTOR"
+            
+            action_list = [a.strip() for a in enabled_actions.split(",")]
+            if action not in action_list:
+                conn.close()
+                return
+            
+            # Get default user if not provided
+            if user_name is None:
+                cursor.execute("SELECT value FROM settings WHERE key = 'audit_log_default_user'")
+                result = cursor.fetchone()
+                user_name = result["value"] if result and result["value"] else None
+            
+            # Log the audit event
+            cursor.execute('''
+                INSERT INTO audit_log (action, table_name, record_id, details, user_name)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (action, table_name, record_id, details, user_name))
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            # Silently fail - don't let audit logging break the app
+            print(f"Warning: Audit log failed: {e}")
+            try:
+                conn.close()
+            except:
+                pass
+    
     def get_schema_version(self, conn):
         """Get current schema version"""
         c = conn.cursor()

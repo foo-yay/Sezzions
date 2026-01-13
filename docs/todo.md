@@ -73,14 +73,6 @@ Follow the Planner’s decisions and keep changes minimal.
 
 ## 🟠 Medium Priority — IMPLEMENTER TASKS
 
-### Payments & Cards
-- [ ] Evaluate whether `method_type` in redemption methods is used; remove if unused
-- [X] Add “Last 4” field to Cards
-- [X] Display cards as `<Card Name> – x####` in dropdowns
-- [X] Ensure full CRUD works everywhere cards are referenced
-
----
-
 ### Accounting & Reporting
 - [ ] Add user-defined tax withholding rate (Settings)
 - [ ] Consolidated tax reporting based on session outcomes
@@ -93,7 +85,7 @@ Follow the Planner’s decisions and keep changes minimal.
 - [ ] Add free-tier usage limits
 - [ ] Design offline license key system (no server)
 - [X] Add database backup strategy
-- [ ] Re-integrate Audit Log
+- [X] Re-integrate Audit Log
 
 ---
 
@@ -129,9 +121,9 @@ Follow the Planner’s decisions and keep changes minimal.
 
 ## 📝 Ideas / Parking Lot (Not Approved)
 
-- [ ] Idea: Auto-detect abandoned sessions after X days
-- [ ] Feature: Per-game volatility tracking
-- [ ] UX: Warn before editing transactions that trigger recalculation
+- [ ] Create notifications when played through balances haven't been redeemed in more than 1 week?  72 hours? 96 hours?
+- [ ] Create notifications when sessions go longer than 24 hours
+- [X] UX: Warn before editing transactions that trigger recalculation
 
 
 ## 🐞 Bugs / Issues (Triage Needed)

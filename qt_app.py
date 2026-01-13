@@ -4,6 +4,7 @@ qt_app.py - PySide6/Qt UI for Session
 Run: python3 qt_app.py
 """
 import sys
+import os
 import re
 from datetime import date, datetime, timedelta
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -765,27 +766,45 @@ class PurchaseDialog(QtWidgets.QDialog):
 
     def _on_user_change(self, value):
         user_name = value.strip()
-        if not user_name:
+        
+        # Check if user is valid
+        user_valid = user_name and user_name.lower() in self._user_lookup
+        
+        if not user_valid:
+            self.card_combo.blockSignals(True)
             self.card_combo.clear()
             self.card_combo.setCurrentIndex(-1)
             self.card_combo.setEditText("")
-            # Clear cashback fields when user is cleared
+            # Restore placeholder when user is cleared or invalid
+            self.card_combo.lineEdit().setPlaceholderText("Select a user first")
+            self.card_combo.blockSignals(False)
+            # Clear cashback fields
             self.cashback_rate_label.setText("—")
             self.cashback_edit.clear()
+            self._card_name_map = {}
+            self._validate_inline()
             return
+        
         conn = self.db.get_connection()
         c = conn.cursor()
         c.execute("SELECT id FROM users WHERE name = ?", (user_name,))
         user_row = c.fetchone()
         if not user_row:
             conn.close()
+            self.card_combo.blockSignals(True)
             self.card_combo.clear()
             self.card_combo.setCurrentIndex(-1)
             self.card_combo.setEditText("")
-            # Clear cashback fields when user not found
+            # Restore placeholder when user not found
+            self.card_combo.lineEdit().setPlaceholderText("Select a user first")
+            self.card_combo.blockSignals(False)
+            # Clear cashback fields
             self.cashback_rate_label.setText("—")
             self.cashback_edit.clear()
+            self._card_name_map = {}
+            self._validate_inline()
             return
+        
         user_id = user_row["id"]
         c.execute("SELECT name, last_four FROM cards WHERE user_id = ? AND active = 1 ORDER BY name", (user_id,))
         card_rows = c.fetchall()
@@ -809,6 +828,8 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.card_combo.blockSignals(True)
         self.card_combo.clear()
         self.card_combo.addItems(cards)
+        # Remove placeholder since valid user is selected
+        self.card_combo.lineEdit().setPlaceholderText("")
         
         if preserve and current:
             # Find display name that matches original card name
@@ -943,11 +964,18 @@ class PurchaseDialog(QtWidgets.QDialog):
             self._set_valid(self.site_combo)
 
         card_text = self.card_combo.currentText().strip()
-        # Check if card text is valid using the name map
-        if not card_text or (hasattr(self, '_card_name_map') and card_text.lower() not in self._card_name_map):
-            self._set_invalid(self.card_combo, "Select a valid Card for the chosen User.")
+        # If card has text, validate it
+        if card_text:
+            # Check if user is selected first (need _card_name_map)
+            if not hasattr(self, '_card_name_map') or not self._card_name_map:
+                self._set_invalid(self.card_combo, "Select a User first.")
+            elif card_text.lower() not in self._card_name_map:
+                self._set_invalid(self.card_combo, "Select a valid Card for the chosen User.")
+            else:
+                self._set_valid(self.card_combo)
         else:
-            self._set_valid(self.card_combo)
+            # Card is required
+            self._set_invalid(self.card_combo, "Card is required.")
 
         amount_text = self.amount_edit.text().strip()
         if not amount_text:
@@ -1037,6 +1065,8 @@ class PurchaseDialog(QtWidgets.QDialog):
         for combo in (self.user_combo, self.site_combo, self.card_combo):
             combo.setCurrentIndex(-1)
             combo.setEditText("")
+        # Restore card placeholder since user will be cleared
+        self.card_combo.lineEdit().setPlaceholderText("Select a user first")
         self.amount_edit.clear()
         self.sc_edit.clear()
         self.start_sc_edit.clear()
@@ -5898,6 +5928,16 @@ class PurchasesTab(QtWidgets.QWidget):
                 old_values=old_purchase_values,
                 new_values=new_purchase_values
             )
+            
+            # Log audit for purchase update
+            self.db.log_audit_conditional(
+                "UPDATE",
+                "purchases",
+                purchase_id,
+                f"{user_name} - {site_name} - ${amount:.2f}",
+                user_name
+            )
+            
             message = "Purchase updated"
             if recalc_count > 0:
                 message += f" (scoped recalc: {recalc_count} session{'s' if recalc_count != 1 else ''})"
@@ -5928,16 +5968,13 @@ class PurchasesTab(QtWidgets.QWidget):
         conn.commit()
         conn.close()
 
-        try:
-            self.db.log_audit(
-                "INSERT",
-                "purchases",
-                purchase_id,
-                f"{user_name} - {site_name} - ${amount:.2f}",
-                user_name,
-            )
-        except Exception:
-            pass
+        self.db.log_audit_conditional(
+            "INSERT",
+            "purchases",
+            purchase_id,
+            f"{user_name} - {site_name} - ${amount:.2f}",
+            user_name,
+        )
 
         session_id = self.session_mgr.get_or_create_site_session(site_id, user_id, pdate)
         self.session_mgr.add_purchase_to_session(session_id, amount)
@@ -6118,16 +6155,13 @@ class PurchasesTab(QtWidgets.QWidget):
 
         # Log audit for the batch delete (avoiding per-item connection overhead)
         if deleted_count > 0:
-            try:
-                self.db.log_audit(
-                    "DELETE",
-                    "purchases",
-                    None,
-                    f"Deleted {deleted_count} purchase(s)",
-                    None,
-                )
-            except Exception:
-                pass
+            self.db.log_audit_conditional(
+                "DELETE",
+                "purchases",
+                None,
+                f"Deleted {deleted_count} purchase(s)",
+                None,
+            )
 
         # Now do the expensive recalculations using scoped API
         total_recalc = 0
@@ -7085,6 +7119,15 @@ class RedemptionsTab(QtWidgets.QWidget):
                         entity_type='redemption'
                     )
 
+            # Log audit for redemption update
+            self.db.log_audit_conditional(
+                "UPDATE",
+                "redemptions",
+                redemption_id,
+                f"{user_name} - {site_name} - ${amount:.2f}",
+                user_name
+            )
+
             message = "Redemption updated"
             if self._has_subsequent:
                 message += f" (recalculated {len(self._subsequent_ids)} subsequent redemptions)"
@@ -7116,6 +7159,15 @@ class RedemptionsTab(QtWidgets.QWidget):
         rid = c.lastrowid
         conn.commit()
         conn.close()
+
+        # Log audit for redemption insert
+        self.db.log_audit_conditional(
+            "INSERT",
+            "redemptions",
+            rid,
+            f"{user_name} - {site_name} - ${amount:.2f}",
+            user_name
+        )
 
         # Add redemption: use scoped recalculation with new_ts only
         recalc_count = self.session_mgr.auto_recalculate_affected_sessions(
@@ -7264,6 +7316,16 @@ class RedemptionsTab(QtWidgets.QWidget):
                 new_ts=None,
                 scoped=True,
                 entity_type='redemption'
+            )
+
+        # Log audit for redemption delete
+        if deleted_count > 0:
+            self.db.log_audit_conditional(
+                "DELETE",
+                "redemptions",
+                None,
+                f"Deleted {deleted_count} redemption(s)",
+                None
             )
 
         self.load_data()
@@ -7786,16 +7848,13 @@ class ExpensesTab(QtWidgets.QWidget):
 
         # Log audit for the batch delete (avoiding per-item connection overhead)
         if deleted_count > 0:
-            try:
-                self.db.log_audit(
-                    "DELETE",
-                    "expenses",
-                    None,
-                    f"Deleted {deleted_count} expense(s)",
-                    None,
-                )
-            except Exception:
-                pass
+            self.db.log_audit_conditional(
+                "DELETE",
+                "expenses",
+                None,
+                f"Deleted {deleted_count} expense(s)",
+                None,
+            )
 
         self.load_data()
         if self.on_data_changed:
@@ -7882,7 +7941,7 @@ class ExpensesTab(QtWidgets.QWidget):
         conn.commit()
         conn.close()
         try:
-            self.db.log_audit(action, "expenses", expense_id, f"{data['vendor']} - {format_currency(data['amount'])}", data["user_name"] or None)
+            self.db.log_audit_conditional(action, "expenses", expense_id, f"{data['vendor']} - {format_currency(data['amount'])}", data["user_name"] or None)
         except Exception:
             pass
         return True, message
@@ -16026,6 +16085,199 @@ class ToolsSetupTab(QtWidgets.QWidget):
 
         db_section_layout.addWidget(self.db_content)
         layout.addWidget(db_section)
+        
+        # Audit Log Section (Collapsible)
+        audit_section = QtWidgets.QWidget()
+        audit_section_layout = QtWidgets.QVBoxLayout(audit_section)
+        audit_section_layout.setContentsMargins(0, 0, 0, 0)
+        audit_section_layout.setSpacing(10)
+
+        # Audit Log Toggle Button
+        self.audit_toggle_btn = QtWidgets.QPushButton("▶ Audit Log")
+        self.audit_toggle_btn.setCheckable(True)
+        self.audit_toggle_btn.clicked.connect(self._toggle_audit_section)
+        audit_section_layout.addWidget(self.audit_toggle_btn)
+
+        # Audit Log Content (hidden by default)
+        self.audit_content = QtWidgets.QWidget()
+        audit_layout = QtWidgets.QVBoxLayout(self.audit_content)
+        audit_layout.setContentsMargins(10, 10, 10, 10)
+        audit_layout.setSpacing(15)
+        self.audit_content.hide()
+
+        # Enable/Disable Audit Logging
+        self.audit_enabled_check = QtWidgets.QCheckBox("Enable audit logging")
+        self.audit_enabled_check.stateChanged.connect(self._on_audit_enabled_changed)
+        audit_layout.addWidget(self.audit_enabled_check)
+
+        audit_info = QtWidgets.QLabel(
+            "Track all create, update, and delete operations across the application."
+        )
+        audit_info.setWordWrap(True)
+        audit_info.setObjectName("HelperText")
+        audit_layout.addWidget(audit_info)
+
+        audit_layout.addSpacing(5)
+
+        # Actions to Log
+        actions_label = QtWidgets.QLabel("Actions to log:")
+        actions_label.setObjectName("SectionTitle")
+        audit_layout.addWidget(actions_label)
+
+        self.audit_insert_check = QtWidgets.QCheckBox("Create (INSERT)")
+        self.audit_update_check = QtWidgets.QCheckBox("Update (UPDATE)")
+        self.audit_delete_check = QtWidgets.QCheckBox("Delete (DELETE)")
+        self.audit_import_check = QtWidgets.QCheckBox("Import (IMPORT)")
+        self.audit_system_check = QtWidgets.QCheckBox("Database Operations (REFACTOR, BACKUP, RESTORE)")
+
+        audit_layout.addWidget(self.audit_insert_check)
+        audit_layout.addWidget(self.audit_update_check)
+        audit_layout.addWidget(self.audit_delete_check)
+        audit_layout.addWidget(self.audit_import_check)
+        audit_layout.addWidget(self.audit_system_check)
+
+        audit_layout.addSpacing(10)
+
+        # Retention settings
+        retention_row = QtWidgets.QHBoxLayout()
+        retention_row.setSpacing(10)
+
+        retention_label = QtWidgets.QLabel("Keep logs for:")
+        retention_row.addWidget(retention_label)
+
+        self.audit_retention_spin = QtWidgets.QSpinBox()
+        self.audit_retention_spin.setMinimum(1)
+        self.audit_retention_spin.setMaximum(3650)  # 10 years max
+        self.audit_retention_spin.setValue(365)
+        self.audit_retention_spin.setSuffix(" days")
+        self.audit_retention_spin.setMaximumWidth(120)
+        retention_row.addWidget(self.audit_retention_spin)
+
+        retention_row.addStretch()
+        audit_layout.addLayout(retention_row)
+
+        retention_help = QtWidgets.QLabel("Records older than this will be automatically deleted on app startup.")
+        retention_help.setWordWrap(True)
+        retention_help.setObjectName("HelperText")
+        audit_layout.addWidget(retention_help)
+
+        audit_layout.addSpacing(10)
+
+        # Default user name
+        user_row = QtWidgets.QHBoxLayout()
+        user_row.setSpacing(10)
+
+        user_label = QtWidgets.QLabel("Default user name:")
+        user_label.setMinimumWidth(150)
+        user_row.addWidget(user_label)
+
+        self.audit_user_edit = QtWidgets.QLineEdit()
+        self.audit_user_edit.setPlaceholderText("(Optional) Name to use for audit log entries")
+        self.audit_user_edit.setMaximumWidth(300)
+        user_row.addWidget(self.audit_user_edit)
+
+        user_row.addStretch()
+        audit_layout.addLayout(user_row)
+
+        audit_layout.addSpacing(10)
+
+        # Auto-backup settings
+        self.audit_backup_check = QtWidgets.QCheckBox("Auto-backup audit log")
+        self.audit_backup_check.stateChanged.connect(self._on_audit_backup_changed)
+        audit_layout.addWidget(self.audit_backup_check)
+
+        self.audit_backup_interval_container = QtWidgets.QWidget()
+        audit_interval_row = QtWidgets.QHBoxLayout(self.audit_backup_interval_container)
+        audit_interval_row.setContentsMargins(20, 0, 0, 0)
+        audit_interval_row.setSpacing(10)
+
+        audit_interval_label = QtWidgets.QLabel("Backup every:")
+        audit_interval_row.addWidget(audit_interval_label)
+
+        self.audit_backup_interval_spin = QtWidgets.QSpinBox()
+        self.audit_backup_interval_spin.setMinimum(1)
+        self.audit_backup_interval_spin.setMaximum(365)
+        self.audit_backup_interval_spin.setValue(30)
+        self.audit_backup_interval_spin.setSuffix(" days")
+        self.audit_backup_interval_spin.setMaximumWidth(120)
+        audit_interval_row.addWidget(self.audit_backup_interval_spin)
+
+        self.audit_last_backup_label = QtWidgets.QLabel("")
+        self.audit_last_backup_label.setObjectName("HelperText")
+        audit_interval_row.addWidget(self.audit_last_backup_label)
+
+        audit_interval_row.addStretch()
+        audit_layout.addWidget(self.audit_backup_interval_container)
+        self.audit_backup_interval_container.hide()
+
+        backup_help = QtWidgets.QLabel(
+            "Exports audit log to CSV in the backups/audit_logs/ folder."
+        )
+        backup_help.setWordWrap(True)
+        backup_help.setObjectName("HelperText")
+        backup_help.setContentsMargins(20, 0, 0, 0)
+        audit_layout.addWidget(backup_help)
+
+        audit_layout.addSpacing(15)
+
+        # Action buttons - Row 1 (Primary actions)
+        audit_buttons_row1 = QtWidgets.QHBoxLayout()
+        audit_buttons_row1.setSpacing(10)
+
+        save_audit_btn = QtWidgets.QPushButton("💾 Save Settings")
+        save_audit_btn.setObjectName("PrimaryButton")
+        save_audit_btn.setMaximumWidth(150)
+        save_audit_btn.clicked.connect(self._save_audit_settings)
+        audit_buttons_row1.addWidget(save_audit_btn)
+
+        view_log_btn = QtWidgets.QPushButton("👁 View Log")
+        view_log_btn.setMaximumWidth(150)
+        view_log_btn.clicked.connect(self._view_audit_log)
+        audit_buttons_row1.addWidget(view_log_btn)
+
+        export_log_btn = QtWidgets.QPushButton("📤 Export Log")
+        export_log_btn.setMaximumWidth(150)
+        export_log_btn.clicked.connect(self._export_audit_log)
+        audit_buttons_row1.addWidget(export_log_btn)
+
+        audit_buttons_row1.addStretch()
+        audit_layout.addLayout(audit_buttons_row1)
+
+        # Action buttons - Row 2 (Destructive actions)
+        audit_buttons_row2 = QtWidgets.QHBoxLayout()
+        audit_buttons_row2.setSpacing(10)
+
+        clear_log_btn = QtWidgets.QPushButton("🗑 Clear Old Records")
+        clear_log_btn.setMaximumWidth(180)
+        clear_log_btn.clicked.connect(self._clear_old_audit_records)
+        audit_buttons_row2.addWidget(clear_log_btn)
+
+        clear_all_log_btn = QtWidgets.QPushButton("⚠️ Clear All Logs")
+        clear_all_log_btn.setMaximumWidth(150)
+        clear_all_log_btn.setObjectName("WarningButton")
+        clear_all_log_btn.setStyleSheet("""
+            QPushButton#WarningButton {
+                background-color: #d32f2f !important;
+                color: white !important;
+                border: 1px solid #b71c1c !important;
+                font-weight: bold;
+            }
+            QPushButton#WarningButton:hover {
+                background-color: #b71c1c !important;
+            }
+        """)
+        clear_all_log_btn.clicked.connect(self._clear_all_audit_logs)
+        audit_buttons_row2.addWidget(clear_all_log_btn)
+
+        audit_buttons_row2.addStretch()
+        audit_layout.addLayout(audit_buttons_row2)
+
+        audit_section_layout.addWidget(self.audit_content)
+        layout.addWidget(audit_section)
+        
+        # Load audit settings
+        self._load_audit_settings()
+        
         layout.addStretch()
 
         scroll.setWidget(container)
@@ -16059,6 +16311,37 @@ class ToolsSetupTab(QtWidgets.QWidget):
         else:
             self.db_content.show()
             self.db_toggle_btn.setText("▼ Database Tools")
+
+    def _toggle_audit_section(self):
+        """Toggle Audit Log section visibility"""
+        if self.audit_content.isVisible():
+            self.audit_content.hide()
+            self.audit_toggle_btn.setText("▶ Audit Log")
+        else:
+            self.audit_content.show()
+            self.audit_toggle_btn.setText("▼ Audit Log")
+
+    def _on_audit_enabled_changed(self):
+        """Handle audit enabled checkbox state change"""
+        # Enable/disable all audit-related controls based on checkbox state
+        enabled = self.audit_enabled_check.isChecked()
+        self.audit_insert_check.setEnabled(enabled)
+        self.audit_update_check.setEnabled(enabled)
+        self.audit_delete_check.setEnabled(enabled)
+        self.audit_import_check.setEnabled(enabled)
+        self.audit_system_check.setEnabled(enabled)
+        self.audit_retention_spin.setEnabled(enabled)
+        self.audit_user_edit.setEnabled(enabled)
+        self.audit_backup_check.setEnabled(enabled)
+        if not enabled:
+            self.audit_backup_interval_container.hide()
+
+    def _on_audit_backup_changed(self):
+        """Handle audit backup checkbox state change"""
+        if self.audit_backup_check.isChecked():
+            self.audit_backup_interval_container.show()
+        else:
+            self.audit_backup_interval_container.hide()
 
     # CSV Schema Helper Methods
     def _get_table_schema(self, table_name):
@@ -17132,7 +17415,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 details += f", {updated} updated"
             if exact_duplicates:
                 details += f", {len(exact_duplicates)} skipped"
-            self.db.log_audit("IMPORT", table_name, details=details)
+            self.db.log_audit_conditional("IMPORT", table_name, details=details)
 
             conn.close()
 
@@ -17885,6 +18168,297 @@ class ToolsSetupTab(QtWidgets.QWidget):
             "RTP recalculation will be implemented in a future update."
         )
 
+    # Audit Log Methods
+    def _load_audit_settings(self):
+        """Load audit log settings from database and populate UI"""
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            # Helper to get setting with default
+            def get_setting(key, default):
+                cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+                row = cursor.fetchone()
+                return row["value"] if row else default
+            
+            # Load enabled state
+            enabled = int(get_setting("audit_log_enabled", "0"))
+            self.audit_enabled_check.setChecked(bool(enabled))
+            
+            # Load which action types are enabled
+            actions = get_setting("audit_log_actions", "INSERT,UPDATE,DELETE,IMPORT,REFACTOR")
+            action_list = [a.strip() for a in actions.split(",")]
+            self.audit_insert_check.setChecked("INSERT" in action_list)
+            self.audit_update_check.setChecked("UPDATE" in action_list)
+            self.audit_delete_check.setChecked("DELETE" in action_list)
+            self.audit_import_check.setChecked("IMPORT" in action_list)
+            self.audit_system_check.setChecked("REFACTOR" in action_list or "BACKUP" in action_list)
+            
+            # Load retention days
+            try:
+                retention = int(get_setting("audit_log_retention_days", "365"))
+                self.audit_retention_spin.setValue(retention)
+            except:
+                self.audit_retention_spin.setValue(365)
+            
+            # Load default user
+            default_user = get_setting("audit_log_default_user", "")
+            self.audit_user_edit.setText(default_user)
+            
+            # Load auto-backup settings
+            auto_backup = int(get_setting("audit_log_auto_backup", "0"))
+            self.audit_backup_check.setChecked(bool(auto_backup))
+            
+            backup_interval = int(get_setting("audit_log_backup_interval_days", "30"))
+            self.audit_backup_interval_spin.setValue(backup_interval)
+            
+            conn.close()
+            
+            # Show/hide backup interval based on checkbox
+            if self.audit_backup_check.isChecked():
+                self.audit_backup_interval_container.show()
+            else:
+                self.audit_backup_interval_container.hide()
+            
+            # Enable/disable controls based on enabled state
+            self._on_audit_enabled_changed()
+            
+        except Exception as e:
+            print(f"Error loading audit settings: {e}")
+            # Set defaults if loading fails
+            self.audit_enabled_check.setChecked(False)
+            self.audit_retention_spin.setValue(365)
+            self.audit_backup_interval_spin.setValue(30)
+
+    def _save_audit_settings(self):
+        """Save audit log settings to database"""
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            # Save enabled state
+            enabled = "1" if self.audit_enabled_check.isChecked() else "0"
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                          ("audit_log_enabled", enabled))
+            
+            # Build comma-separated list of enabled actions
+            actions = []
+            if self.audit_insert_check.isChecked():
+                actions.append("INSERT")
+            if self.audit_update_check.isChecked():
+                actions.append("UPDATE")
+            if self.audit_delete_check.isChecked():
+                actions.append("DELETE")
+            if self.audit_import_check.isChecked():
+                actions.append("IMPORT")
+            if self.audit_system_check.isChecked():
+                actions.append("REFACTOR")
+            
+            actions_str = ",".join(actions)
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                          ("audit_log_actions", actions_str))
+            
+            # Save retention days
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                          ("audit_log_retention_days", str(self.audit_retention_spin.value())))
+            
+            # Save default user (can be empty)
+            default_user = self.audit_user_edit.text().strip()
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                          ("audit_log_default_user", default_user))
+            
+            # Save auto-backup settings
+            auto_backup = "1" if self.audit_backup_check.isChecked() else "0"
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                          ("audit_log_auto_backup", auto_backup))
+            
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                          ("audit_log_backup_interval_days", str(self.audit_backup_interval_spin.value())))
+            
+            conn.commit()
+            conn.close()
+
+            QtWidgets.QMessageBox.information(self, "Settings Saved", "Audit log settings saved successfully.")
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to save audit settings:\n{str(e)}")
+
+    def _view_audit_log(self):
+        """Show the audit log viewer dialog"""
+        dialog = AuditLogViewerDialog(self.db, self)
+        dialog.exec()
+
+    def _export_audit_log(self):
+        """Export audit log to CSV"""
+        try:
+            import csv
+            from datetime import datetime
+            
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM audit_log ORDER BY timestamp DESC")
+            rows = cursor.fetchall()
+            conn.close()
+            
+            if not rows:
+                QtWidgets.QMessageBox.information(self, "No Data", "No audit log records to export.")
+                return
+            
+            # Create audit_logs backup folder if needed
+            backup_folder = os.path.join(os.path.dirname(self.db.db_path), "backups", "audit_logs")
+            os.makedirs(backup_folder, exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"audit_log_{timestamp}.csv"
+            export_path = os.path.join(backup_folder, filename)
+            
+            # Export to CSV
+            with open(export_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Timestamp', 'Action', 'Table', 'Record ID', 'Details', 'User'])
+                
+                for row in rows:
+                    writer.writerow([
+                        row['timestamp'] if 'timestamp' in row.keys() else '',
+                        row['action'] if 'action' in row.keys() else '',
+                        row['table_name'] if 'table_name' in row.keys() else '',
+                        row['record_id'] if 'record_id' in row.keys() else '',
+                        row['details'] if 'details' in row.keys() else '',
+                        row['user_name'] if 'user_name' in row.keys() else ''
+                    ])
+            
+            QtWidgets.QMessageBox.information(
+                self,
+                "Export Complete",
+                f"Audit log exported to:\n{export_path}"
+            )
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Export Error",
+                f"Failed to export audit log:\n{str(e)}"
+            )
+
+    def _clear_old_audit_records(self):
+        """Delete audit log records older than retention setting"""
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            # Get retention setting
+            cursor.execute("SELECT value FROM settings WHERE key = 'audit_log_retention_days'")
+            result = cursor.fetchone()
+            retention_days = int(result["value"]) if result else 365
+            
+            # Delete old records
+            cursor.execute("""
+                DELETE FROM audit_log
+                WHERE datetime(timestamp) < datetime('now', '-' || ? || ' days')
+            """, (retention_days,))
+            
+            deleted_count = cursor.rowcount
+            conn.commit()
+            conn.close()
+            
+            QtWidgets.QMessageBox.information(
+                self,
+                "Records Cleared",
+                f"Deleted {deleted_count} audit log record(s) older than {retention_days} days."
+            )
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Clear Error",
+                f"Failed to clear old audit records:\n{str(e)}"
+            )
+
+    def _clear_all_audit_logs(self):
+        """Delete ALL audit log records after confirmation"""
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "⚠️ Clear All Audit Logs",
+            "Are you sure you want to delete ALL audit log records?\n\n"
+            "⚠️ WARNING: This action cannot be undone!\n\n"
+            "This will permanently erase the entire audit log history.\n\n"
+            "Consider exporting the log first if you need to keep a record.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+        
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+        
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            # Count records before deletion
+            cursor.execute("SELECT COUNT(*) as count FROM audit_log")
+            result = cursor.fetchone()
+            total_count = result["count"] if result else 0
+            
+            # Delete all records
+            cursor.execute("DELETE FROM audit_log")
+            conn.commit()
+            conn.close()
+            
+            QtWidgets.QMessageBox.information(
+                self,
+                "All Records Cleared",
+                f"Successfully deleted all {total_count} audit log record(s)."
+            )
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Clear Error",
+                f"Failed to clear all audit records:\n{str(e)}"
+            )
+
+    def _clear_all_audit_logs(self):
+        """Delete ALL audit log records after confirmation"""
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "⚠️ Clear All Audit Logs",
+            "Are you sure you want to delete ALL audit log records?\n\n"
+            "⚠️ WARNING: This action cannot be undone!\n\n"
+            "This will permanently erase the entire audit log history.\n\n"
+            "Consider exporting the log first if you need to keep a record.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+        
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+        
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            
+            # Count records before deletion
+            cursor.execute("SELECT COUNT(*) as count FROM audit_log")
+            result = cursor.fetchone()
+            total_count = result["count"] if result else 0
+            
+            # Delete all records
+            cursor.execute("DELETE FROM audit_log")
+            conn.commit()
+            conn.close()
+            
+            QtWidgets.QMessageBox.information(
+                self,
+                "All Records Cleared",
+                f"Successfully deleted all {total_count} audit log record(s)."
+            )
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Clear Error",
+                f"Failed to clear all audit records:\n{str(e)}"
+            )
+
     # Database Methods
     def _backup_database(self):
         """Create a database backup"""
@@ -18114,10 +18688,14 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 return
 
         try:
+            # Create database subdirectory if it doesn't exist
+            database_folder = os.path.join(backup_folder, "database")
+            os.makedirs(database_folder, exist_ok=True)
+            
             # Create timestamped backup filename
             timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
             backup_filename = f"auto_backup_{timestamp}.db"
-            backup_path = os.path.join(backup_folder, backup_filename)
+            backup_path = os.path.join(database_folder, backup_filename)
 
             # Copy database
             shutil.copy2(self.db.db_path, backup_path)
@@ -18325,6 +18903,314 @@ class SetupTab(QtWidgets.QWidget):
         button = self.sub_group.button(index)
         if button:
             button.setChecked(True)
+
+
+class AuditLogViewerDialog(QtWidgets.QDialog):
+    """Dialog for viewing and managing audit log records"""
+    
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.setWindowTitle("Audit Log Viewer")
+        self.resize(1200, 600)
+        
+        # Main layout
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+        
+        # Filters section
+        filters_group = QtWidgets.QGroupBox("Filters")
+        filters_layout = QtWidgets.QHBoxLayout(filters_group)
+        
+        # Limit filter
+        filters_layout.addWidget(QtWidgets.QLabel("Show:"))
+        self.limit_combo = QtWidgets.QComboBox()
+        self.limit_combo.addItems(["100", "500", "1000", "5000", "All"])
+        self.limit_combo.setCurrentText("500")
+        filters_layout.addWidget(self.limit_combo)
+        
+        # Action filter
+        filters_layout.addWidget(QtWidgets.QLabel("Action:"))
+        self.action_combo = QtWidgets.QComboBox()
+        self.action_combo.addItems(["All", "INSERT", "UPDATE", "DELETE", "IMPORT", "REFACTOR", "BACKUP", "RESTORE"])
+        filters_layout.addWidget(self.action_combo)
+        
+        # Table filter
+        filters_layout.addWidget(QtWidgets.QLabel("Table:"))
+        self.table_combo = QtWidgets.QComboBox()
+        self.table_combo.addItem("All")
+        # Populate with actual table names
+        self._populate_table_filter()
+        filters_layout.addWidget(self.table_combo)
+        
+        # Search field
+        filters_layout.addWidget(QtWidgets.QLabel("Search:"))
+        self.search_edit = QtWidgets.QLineEdit()
+        self.search_edit.setPlaceholderText("Search details...")
+        self.search_edit.setMinimumWidth(200)
+        filters_layout.addWidget(self.search_edit)
+        
+        # Refresh button in filters
+        refresh_btn = QtWidgets.QPushButton("Refresh")
+        refresh_btn.clicked.connect(self._load_audit_data)
+        filters_layout.addWidget(refresh_btn)
+        
+        filters_layout.addStretch()
+        layout.addWidget(filters_group)
+        
+        # Table
+        self.table = QtWidgets.QTableWidget()
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(["Timestamp", "Action", "Table", "Record ID", "Details", "User"])
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
+        self.table.setSortingEnabled(True)
+        
+        # Set column widths
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)  # Timestamp
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)  # Action
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)  # Table
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)  # Record ID
+        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Stretch)           # Details
+        header.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeToContents)  # User
+        
+        layout.addWidget(self.table, 1)
+        
+        # Info label
+        self.info_label = QtWidgets.QLabel("Loading...")
+        layout.addWidget(self.info_label)
+        
+        # Button bar
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+        
+        export_btn = QtWidgets.QPushButton("Export to CSV")
+        export_btn.clicked.connect(self._export_to_csv)
+        button_layout.addWidget(export_btn)
+        
+        clear_btn = QtWidgets.QPushButton("Clear Old Records")
+        clear_btn.clicked.connect(self._clear_old_records)
+        button_layout.addWidget(clear_btn)
+        
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        button_layout.addWidget(close_btn)
+        
+        layout.addLayout(button_layout)
+        
+        # Connect filter changes to reload
+        self.limit_combo.currentTextChanged.connect(self._load_audit_data)
+        self.action_combo.currentTextChanged.connect(self._load_audit_data)
+        self.table_combo.currentTextChanged.connect(self._load_audit_data)
+        self.search_edit.textChanged.connect(self._apply_search_filter)
+        
+        # Load initial data
+        self._load_audit_data()
+    
+    def _populate_table_filter(self):
+        """Populate table filter with unique table names from audit log"""
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT table_name FROM audit_log ORDER BY table_name")
+            rows = cursor.fetchall()
+            conn.close()
+            
+            for row in rows:
+                table_name = row["table_name"] if "table_name" in row.keys() else row[0]
+                if table_name:
+                    self.table_combo.addItem(table_name)
+        except Exception as e:
+            print(f"Error populating table filter: {e}")
+    
+    def _load_audit_data(self):
+        """Load audit log data based on current filters"""
+        try:
+            # Build query with filters
+            query = "SELECT timestamp, action, table_name, record_id, details, user_name FROM audit_log WHERE 1=1"
+            params = []
+            
+            # Action filter
+            action_filter = self.action_combo.currentText()
+            if action_filter != "All":
+                query += " AND action = ?"
+                params.append(action_filter)
+            
+            # Table filter
+            table_filter = self.table_combo.currentText()
+            if table_filter != "All":
+                query += " AND table_name = ?"
+                params.append(table_filter)
+            
+            # Order by timestamp descending (newest first)
+            query += " ORDER BY timestamp DESC"
+            
+            # Limit
+            limit_text = self.limit_combo.currentText()
+            if limit_text != "All":
+                query += f" LIMIT {limit_text}"
+            
+            # Execute query
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            conn.close()
+            
+            # Populate table
+            self.table.setSortingEnabled(False)
+            self.table.setRowCount(len(rows))
+            
+            for i, row in enumerate(rows):
+                self.table.setItem(i, 0, QtWidgets.QTableWidgetItem(
+                    row["timestamp"] if "timestamp" in row.keys() else ""
+                ))
+                self.table.setItem(i, 1, QtWidgets.QTableWidgetItem(
+                    row["action"] if "action" in row.keys() else ""
+                ))
+                self.table.setItem(i, 2, QtWidgets.QTableWidgetItem(
+                    row["table_name"] if "table_name" in row.keys() else ""
+                ))
+                self.table.setItem(i, 3, QtWidgets.QTableWidgetItem(
+                    str(row["record_id"]) if "record_id" in row.keys() and row["record_id"] else ""
+                ))
+                self.table.setItem(i, 4, QtWidgets.QTableWidgetItem(
+                    row["details"] if "details" in row.keys() else ""
+                ))
+                self.table.setItem(i, 5, QtWidgets.QTableWidgetItem(
+                    row["user_name"] if "user_name" in row.keys() else ""
+                ))
+            
+            self.table.setSortingEnabled(True)
+            
+            # Update info label
+            total_count = len(rows)
+            self.info_label.setText(f"Showing {total_count} record(s)")
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Load Error",
+                f"Failed to load audit log:\n{str(e)}"
+            )
+            self.info_label.setText("Error loading data")
+    
+    def _apply_search_filter(self):
+        """Filter visible rows based on search text"""
+        search_text = self.search_edit.text().strip().lower()
+        
+        for row in range(self.table.rowCount()):
+            show_row = False
+            if not search_text:
+                show_row = True
+            else:
+                # Search in all columns
+                for col in range(self.table.columnCount()):
+                    item = self.table.item(row, col)
+                    if item and search_text in item.text().lower():
+                        show_row = True
+                        break
+            
+            self.table.setRowHidden(row, not show_row)
+        
+        # Update info label with visible count
+        visible_count = sum(1 for row in range(self.table.rowCount()) if not self.table.isRowHidden(row))
+        self.info_label.setText(f"Showing {visible_count} of {self.table.rowCount()} record(s)")
+    
+    def _export_to_csv(self):
+        """Export current filtered view to CSV"""
+        try:
+            import csv
+            from datetime import datetime
+            
+            # Create audit_logs backup folder if needed
+            backup_folder = os.path.join(os.path.dirname(self.db.db_path), "backups", "audit_logs")
+            os.makedirs(backup_folder, exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"audit_log_{timestamp}.csv"
+            export_path = os.path.join(backup_folder, filename)
+            
+            # Export visible rows to CSV
+            with open(export_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Timestamp', 'Action', 'Table', 'Record ID', 'Details', 'User'])
+                
+                for row in range(self.table.rowCount()):
+                    if not self.table.isRowHidden(row):
+                        row_data = []
+                        for col in range(self.table.columnCount()):
+                            item = self.table.item(row, col)
+                            row_data.append(item.text() if item else "")
+                        writer.writerow(row_data)
+            
+            QtWidgets.QMessageBox.information(
+                self,
+                "Export Complete",
+                f"Audit log exported to:\n{export_path}"
+            )
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Export Error",
+                f"Failed to export audit log:\n{str(e)}"
+            )
+    
+    def _clear_old_records(self):
+        """Delete audit log records older than retention setting"""
+        try:
+            # Get retention setting
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM settings WHERE key = 'audit_log_retention_days'")
+            result = cursor.fetchone()
+            retention_days = int(result["value"]) if result else 365
+            conn.close()
+            
+            # Confirm with user
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Confirm Clear",
+                f"Delete all audit log records older than {retention_days} days?\nThis cannot be undone.",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No
+            )
+            
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
+            
+            # Delete old records
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM audit_log
+                WHERE datetime(timestamp) < datetime('now', '-' || ? || ' days')
+            """, (retention_days,))
+            
+            deleted_count = cursor.rowcount
+            conn.commit()
+            conn.close()
+            
+            QtWidgets.QMessageBox.information(
+                self,
+                "Records Cleared",
+                f"Deleted {deleted_count} audit log record(s) older than {retention_days} days."
+            )
+            
+            # Reload data
+            self._load_audit_data()
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Clear Error",
+                f"Failed to clear old audit records:\n{str(e)}"
+            )
 
 
 class MainWindow(QtWidgets.QMainWindow):
