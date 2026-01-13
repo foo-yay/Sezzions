@@ -198,7 +198,7 @@ class SessionManager:
     ADMINISTRATIVE_FIELDS = {
         'session': {'notes'},
         'purchase': {'notes'},
-        'redemption': {'notes', 'redemption_method_id', 'receipt_date', 'processed'}
+        'redemption': {'notes', 'redemption_method_id', 'receipt_date', 'processed', 'fees'}
     }
     
     def __init__(self, db, fifo_calc):

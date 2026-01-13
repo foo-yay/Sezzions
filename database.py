@@ -833,5 +833,11 @@ class Database:
                 # Not critical - column will just be ignored
                 pass
         
+        # Migration: Add fees column to redemptions table
+        c.execute("PRAGMA table_info(redemptions)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'fees' not in columns:
+            c.execute("ALTER TABLE redemptions ADD COLUMN fees REAL DEFAULT 0")
+        
         conn.commit()
         conn.close()

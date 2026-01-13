@@ -1578,6 +1578,15 @@ class RedemptionDialog(QtWidgets.QDialog):
         self._site_lookup = {name.lower(): name for name in site_names}
 
         self.amount_edit = QtWidgets.QLineEdit()
+        self.fees_edit = QtWidgets.QLineEdit()
+        self.fees_edit.setPlaceholderText("Optional fees")
+        
+        amount_row = QtWidgets.QHBoxLayout()
+        amount_row.setSpacing(8)
+        amount_row.addWidget(self.amount_edit, 2)
+        amount_row.addWidget(QtWidgets.QLabel("Fees:"))
+        amount_row.addWidget(self.fees_edit, 1)
+        
         self.receipt_edit = QtWidgets.QLineEdit()
         self.receipt_edit.setPlaceholderText("MM/DD/YY")
         self.receipt_btn = QtWidgets.QPushButton("📅")
@@ -1639,7 +1648,7 @@ class RedemptionDialog(QtWidgets.QDialog):
         form.addWidget(self.method_combo, 5, 1)
         
         form.addWidget(QtWidgets.QLabel("Amount"), 6, 0)
-        form.addWidget(self.amount_edit, 6, 1)
+        form.addLayout(amount_row, 6, 1)
         form.addWidget(QtWidgets.QLabel("Receipt Date"), 7, 0)
         form.addLayout(receipt_row, 7, 1)
         form.addWidget(QtWidgets.QLabel("Redemption Type"), 8, 0)
@@ -1680,6 +1689,7 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.method_type_combo.currentTextChanged.connect(self._validate_inline)
         self.method_combo.currentTextChanged.connect(self._validate_inline)
         self.amount_edit.textChanged.connect(self._validate_inline)
+        self.fees_edit.textChanged.connect(self._validate_inline)
         self.receipt_edit.textChanged.connect(self._validate_inline)
         self.partial_radio.toggled.connect(self._validate_inline)
         self.final_radio.toggled.connect(self._validate_inline)
@@ -1953,6 +1963,26 @@ class RedemptionDialog(QtWidgets.QDialog):
                 amount_value = result
                 self._set_valid(self.amount_edit)
 
+        # Validate fees
+        fees_text = self.fees_edit.text().strip()
+        fees_value = None
+        if fees_text:
+            valid, result = validate_currency(fees_text)
+            if not valid:
+                self._set_invalid(self.fees_edit, "Enter a valid fee amount (max 2 decimals).")
+            else:
+                fees_value = result
+                if fees_value < 0:
+                    self._set_invalid(self.fees_edit, "Fees cannot be negative.")
+                elif amount_value is not None and fees_value > amount_value:
+                    self._set_invalid(self.fees_edit, "Fees cannot exceed the redemption amount.")
+                else:
+                    self._set_valid(self.fees_edit)
+        else:
+            # Fees are optional
+            self._set_valid(self.fees_edit)
+            fees_value = 0
+
         receipt_text = self.receipt_edit.text().strip()
         if receipt_text:
             try:
@@ -2030,6 +2060,9 @@ class RedemptionDialog(QtWidgets.QDialog):
         # Load other fields
         self.site_combo.setCurrentText(self.redemption["site_name"])
         self.amount_edit.setText(str(self.redemption["amount"]))
+        fees_val = self.redemption["fees"] if "fees" in self.redemption.keys() else None
+        if fees_val:
+            self.fees_edit.setText(str(fees_val))
         if self.redemption["receipt_date"]:
             self.receipt_edit.setText(self._format_date_for_input(self.redemption["receipt_date"]))
         if self.redemption["more_remaining"]:
@@ -2063,6 +2096,7 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.method_combo.setCurrentIndex(-1)
         self.method_combo.setEditText("")
         self.amount_edit.clear()
+        self.fees_edit.clear()
         self.receipt_edit.clear()
         self.partial_radio.setChecked(False)
         self.final_radio.setChecked(False)
@@ -2114,6 +2148,19 @@ class RedemptionDialog(QtWidgets.QDialog):
             return None, result
         amount = result
 
+        # Validate and collect fees (optional)
+        fees_str = self.fees_edit.text().strip()
+        fees = 0
+        if fees_str:
+            valid, result = validate_currency(fees_str)
+            if not valid:
+                return None, "Please enter a valid fee amount (max 2 decimals)."
+            fees = result
+            if fees < 0:
+                return None, "Fees cannot be negative."
+            if fees > amount:
+                return None, "Fees cannot exceed the redemption amount."
+
         method_name = self.method_combo.currentText().strip()
         if amount > 0 and not method_name:
             return None, "Please select a redemption method."
@@ -2127,6 +2174,7 @@ class RedemptionDialog(QtWidgets.QDialog):
             "redemption_date": rdate.strftime("%Y-%m-%d"),
             "redemption_time": rtime,
             "amount": amount,
+            "fees": fees,
             "receipt_date": receipt_date.strftime("%Y-%m-%d") if receipt_date else None,
             "more_remaining": self.partial_radio.isChecked(),
             "processed": self.processed_check.isChecked(),
@@ -2254,6 +2302,10 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         row = add_row("User", self.redemption["user_name"] or "—", row)
         row = add_row("Site", self.redemption["site_name"] or "—", row)
         row = add_row("Amount", format_currency(amount), row)
+        # Fees (optional)
+        fees_val = self.redemption["fees"] if "fees" in self.redemption.keys() else None
+        fees_display = format_currency(fees_val) if fees_val not in (None, "", 0, 0.0) else "—"
+        row = add_row("Fees", fees_display, row)
         row = add_row("Receipt Date", receipt_display, row)
         row = add_row("Method", method_name or "—", row)
         row = add_row("Redemption Type", redemption_type, row)
@@ -6931,6 +6983,7 @@ class RedemptionsTab(QtWidgets.QWidget):
         rdate = data["redemption_date"]
         rtime = data["redemption_time"]
         amount = data["amount"]
+        fees = data.get("fees", 0)
         receipt_date = data["receipt_date"]
         more_remaining = data["more_remaining"]
         processed = 1 if data["processed"] else 0
@@ -7034,10 +7087,45 @@ class RedemptionsTab(QtWidgets.QWidget):
             old_time = old_data["redemption_time"] or "00:00:00" if old_data else "00:00:00"
             old_cost_basis = float(old_data["cost_basis"] or 0.0) if old_data else 0.0
 
+            # Build old record dict for admin-only check
+            old_record = {
+                'site_id': old_site_id,
+                'user_id': old_user_id,
+                'redemption_date': old_date,
+                'redemption_time': old_time,
+                'amount': old_amount,
+                'notes': old_data["notes"] if old_data and "notes" in old_data.keys() else None,
+                'redemption_method_id': old_data["redemption_method_id"] if old_data and "redemption_method_id" in old_data.keys() else None,
+                'receipt_date': old_data["receipt_date"] if old_data and "receipt_date" in old_data.keys() else None,
+                'processed': old_data["processed"] if old_data and "processed" in old_data.keys() else 0,
+                'fees': old_data["fees"] if old_data and "fees" in old_data.keys() else 0,
+            }
+            new_record = {
+                'site_id': site_id,
+                'user_id': user_id,
+                'redemption_date': rdate,
+                'redemption_time': rtime,
+                'amount': amount,
+                'notes': notes,
+                'redemption_method_id': method_id,
+                'receipt_date': receipt_date,
+                'processed': 1 if processed else 0,
+                'fees': fees,
+            }
+
+            # Determine which fields changed
+            changed_fields = {k for k in old_record if old_record.get(k) != new_record.get(k)}
+
+            # Administrative fields that don't affect tax_sessions
+            admin_fields = {'notes', 'redemption_method_id', 'receipt_date', 'processed', 'fees'}
+
+            # Check if only administrative fields changed
+            accounting_changed = bool(changed_fields - admin_fields)
+
             c.execute(
                 """
                 UPDATE redemptions
-                SET site_session_id=?, site_id=?, redemption_date=?, redemption_time=?, amount=?, receipt_date=?,
+                SET site_session_id=?, site_id=?, redemption_date=?, redemption_time=?, amount=?, fees=?, receipt_date=?,
                     redemption_method_id=?, more_remaining=?, user_id=?, processed=?, notes=?
                 WHERE id=?
                 """,
@@ -7047,6 +7135,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                     rdate,
                     rtime,
                     amount,
+                    fees,
                     receipt_date,
                     method_id,
                     1 if more_remaining else 0,
@@ -7057,42 +7146,71 @@ class RedemptionsTab(QtWidgets.QWidget):
                 ),
             )
 
-            if old_session_id:
+            if old_session_id and accounting_changed:
                 c.execute(
                     "UPDATE site_sessions SET total_redeemed = total_redeemed - ? WHERE id = ?",
                     (old_amount, old_session_id),
                 )
 
-            if session_id and session_id != old_session_id:
+            if session_id and session_id != old_session_id and accounting_changed:
                 c.execute(
                     "UPDATE site_sessions SET total_redeemed = total_redeemed + ? WHERE id = ?",
                     (amount, session_id),
                 )
 
-            c.execute("DELETE FROM tax_sessions WHERE redemption_id = ?", (redemption_id,))
+            # Only delete and recalculate tax_sessions if accounting fields changed
+            if accounting_changed:
+                c.execute("DELETE FROM tax_sessions WHERE redemption_id = ?", (redemption_id,))
             conn.commit()
             conn.close()
 
             # No need to call process_redemption() here - auto_recalculate does full rebuild
             # The old reverse_cost_basis and process_redemption calls were redundant
 
-            if self._has_subsequent and self._subsequent_ids:
-                self._recalculate_subsequent_redemptions(self._subsequent_ids, site_id, user_id)
-
-            # Scoped recalculation for affected pairs
-            # Skip if nothing changed (same site, user, date, time, and amount)
-            nothing_changed = (
-                old_site_id == site_id and
-                old_user_id == user_id and
-                old_date == rdate and
-                old_time == rtime and
-                abs(old_amount - amount) < 0.01
-            )
-            
+            # Only recalculate if accounting fields changed
             total_recalc = 0
-            if not nothing_changed:
-                # If site/user changed, recalculate both old and new pairs
-                if old_site_id and old_user_id and (old_site_id != site_id or old_user_id != user_id):
+            if accounting_changed:
+                if self._has_subsequent and self._subsequent_ids:
+                    self._recalculate_subsequent_redemptions(self._subsequent_ids, site_id, user_id)
+
+                # Scoped recalculation for affected pairs
+                # Skip if nothing changed (same site, user, date, time, and amount)
+                nothing_changed = (
+                    old_site_id == site_id and
+                    old_user_id == user_id and
+                    old_date == rdate and
+                    old_time == rtime and
+                    abs(old_amount - amount) < 0.01
+                )
+                
+                if not nothing_changed:
+                    # If site/user changed, recalculate both old and new pairs
+                    if old_site_id and old_user_id and (old_site_id != site_id or old_user_id != user_id):
+                        # Old pair: remove old transaction
+                        total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
+                            old_site_id, old_user_id,
+                            old_ts=(old_date, old_time),
+                            new_ts=None,
+                            scoped=True,
+                            entity_type='redemption'
+                        )
+                        # New pair: add new transaction
+                        total_recalc += self.session_mgr.auto_recalculate_affected_sessions(
+                            site_id, user_id,
+                            old_ts=None,
+                            new_ts=(rdate, rtime),
+                            scoped=True,
+                            entity_type='redemption'
+                        )
+                    else:
+                        # Same pair: use both timestamps
+                        total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
+                            site_id, user_id,
+                            old_ts=(old_date, old_time),
+                            new_ts=(rdate, rtime),
+                            scoped=True,
+                            entity_type='redemption'
+                        )
                     # Old pair: remove old transaction
                     total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
                         old_site_id, old_user_id,
@@ -7138,9 +7256,9 @@ class RedemptionsTab(QtWidgets.QWidget):
         c.execute(
             """
             INSERT INTO redemptions
-            (site_session_id, site_id, redemption_date, redemption_time, amount, receipt_date,
+            (site_session_id, site_id, redemption_date, redemption_time, amount, fees, receipt_date,
              redemption_method_id, more_remaining, user_id, processed, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 session_id,
@@ -7148,6 +7266,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                 rdate,
                 rtime,
                 amount,
+                fees,
                 receipt_date,
                 method_id,
                 1 if more_remaining else 0,
@@ -12148,6 +12267,7 @@ class RealizedTab(QtWidgets.QWidget):
             "Site",
             "Transaction",
             "Cost Basis",
+            "Fees",
             "Net P/L",
             "Notes",
         ]
@@ -12309,8 +12429,9 @@ class RealizedTab(QtWidgets.QWidget):
         self.tree.setColumnWidth(2, 220)
         self.tree.setColumnWidth(3, 200)
         self.tree.setColumnWidth(4, 110)
-        self.tree.setColumnWidth(5, 110)
-        self.tree.setColumnWidth(6, 200)
+        self.tree.setColumnWidth(5, 80)
+        self.tree.setColumnWidth(6, 110)
+        self.tree.setColumnWidth(7, 200)
         self.header = header
         header.viewport().installEventFilter(self)
         layout.addWidget(self.tree, 1)
@@ -12598,13 +12719,19 @@ class RealizedTab(QtWidgets.QWidget):
         if col_index == 4:
             return self._format_currency_or_dash(tx["cost_basis"])
         if col_index == 5:
-            return self._format_signed_currency(tx["net_pl"])
+            return self._format_currency_or_dash(tx.get("fees", 0))
         if col_index == 6:
+            # Net P/L with fees deducted
+            net_pl = tx["net_pl"]
+            fees = tx.get("fees", 0) or 0
+            adjusted_net_pl = net_pl - fees
+            return self._format_signed_currency(adjusted_net_pl)
+        if col_index == 7:
             return tx["notes"] or ""
         return ""
 
     def _align_numeric(self, item):
-        for col in (4, 5):
+        for col in (4, 5, 6):
             item.setTextAlignment(col, QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
 
     def _apply_status_color(self, item, value):
@@ -12637,6 +12764,7 @@ class RealizedTab(QtWidgets.QWidget):
                 ts.user_id,
                 u.name as user_name,
                 r.amount as redemption_amount,
+                r.fees as fees,
                 r.is_free_sc,
                 r.notes as redemption_notes,
                 {notes_select}
@@ -12694,6 +12822,7 @@ class RealizedTab(QtWidgets.QWidget):
                     "user_name": row["user_name"],
                     "cost_basis": row["cost_basis"],
                     "net_pl": row["net_pl"],
+                    "fees": (row["fees"] if "fees" in row.keys() else 0) or 0,
                     "redemption_amount": redemption_amount,
                     "is_free_sc": bool(row["is_free_sc"]),
                     "notes": notes,
@@ -12734,6 +12863,7 @@ class RealizedTab(QtWidgets.QWidget):
             date_site_ids = set()
             total_transactions = 0
             date_cost = 0.0
+            date_fees = 0.0
             date_net = 0.0
             notes_count = 0
             users_map = dates[session_date]
@@ -12744,6 +12874,7 @@ class RealizedTab(QtWidgets.QWidget):
                 sites_map = users_map[user_id]
                 site_groups = []
                 user_cost = 0.0
+                user_fees = 0.0
                 user_net = 0.0
                 user_transactions = 0
                 for site_id in sorted(
@@ -12752,19 +12883,23 @@ class RealizedTab(QtWidgets.QWidget):
                 ):
                     txs = sites_map[site_id]
                     total_cost = sum(tx["cost_basis"] for tx in txs)
-                    total_net = sum(tx["net_pl"] for tx in txs)
+                    total_fees = sum((tx.get("fees", 0) or 0) for tx in txs)
+                    # Net totals should account for fees at the transaction level
+                    total_net = sum((tx["net_pl"] - (tx.get("fees", 0) or 0)) for tx in txs)
                     transaction_count = len(txs)
                     site_groups.append(
                         {
                             "site_id": site_id,
                             "site_name": txs[0]["site_name"],
                             "total_cost": total_cost,
+                            "total_fees": total_fees,
                             "total_net": total_net,
                             "transaction_count": transaction_count,
                             "transactions": txs,
                         }
                     )
                     user_cost += total_cost
+                    user_fees += total_fees
                     user_net += total_net
                     user_transactions += transaction_count
                     total_transactions += transaction_count
@@ -12776,6 +12911,7 @@ class RealizedTab(QtWidgets.QWidget):
                         "user_id": user_id,
                         "user_name": list(sites_map.values())[0][0]["user_name"],
                         "total_cost": user_cost,
+                        "total_fees": user_fees,
                         "total_net": user_net,
                         "transaction_count": user_transactions,
                         "site_count": len(site_groups),
@@ -12783,6 +12919,7 @@ class RealizedTab(QtWidgets.QWidget):
                     }
                 )
                 date_cost += user_cost
+                date_fees += user_fees
                 date_net += user_net
 
             date_notes = notes_by_date.get(session_date, "")
@@ -12792,6 +12929,7 @@ class RealizedTab(QtWidgets.QWidget):
                 {
                     "date": session_date,
                     "date_cost": date_cost,
+                    "date_fees": date_fees,
                     "date_net": date_net,
                     "user_count": len(user_groups),
                     "site_count": len(date_site_ids),
@@ -12820,8 +12958,10 @@ class RealizedTab(QtWidgets.QWidget):
             if self.sort_column == 4:
                 return item["date_cost"]
             if self.sort_column == 5:
-                return item["date_net"]
+                return item.get("date_fees", 0)
             if self.sort_column == 6:
+                return item["date_net"]
+            if self.sort_column == 7:
                 return item["notes_count"]
             return item["date"]
 
@@ -12836,6 +12976,7 @@ class RealizedTab(QtWidgets.QWidget):
                 f"{day['site_count']} site(s)",
                 f"{day['transaction_count']} transaction(s)",
                 self._format_currency_or_dash(day["date_cost"]),
+                self._format_currency_or_dash(day.get("date_fees", 0)),
                 self._format_signed_currency(day["date_net"]),
                 day.get("notes", ""),
             ]
@@ -12853,6 +12994,7 @@ class RealizedTab(QtWidgets.QWidget):
                     f"{user['site_count']} site(s)",
                     f"{user['transaction_count']} transaction(s)",
                     self._format_currency_or_dash(user["total_cost"]),
+                    self._format_currency_or_dash(user.get("total_fees", 0)),
                     self._format_signed_currency(user["total_net"]),
                     "",
                 ]
@@ -12874,6 +13016,7 @@ class RealizedTab(QtWidgets.QWidget):
                         site_display,
                         f"{site['transaction_count']} transaction(s)",
                         self._format_currency_or_dash(site["total_cost"]),
+                        self._format_currency_or_dash(site.get("total_fees", 0)),
                         self._format_signed_currency(site["total_net"]),
                         "",
                     ]
@@ -12889,13 +13032,17 @@ class RealizedTab(QtWidgets.QWidget):
 
                     for tx in site["transactions"]:
                         transaction_display = f"    └─ {self._transaction_label(tx)}"
+                        tx_fees = tx.get("fees", 0) or 0
+                        tx_net_pl = tx["net_pl"]
+                        adjusted_net_pl = tx_net_pl - tx_fees
                         tx_values = [
                             "",
                             "",
                             "",
                             transaction_display,
                             self._format_currency_or_dash(tx["cost_basis"]),
-                            self._format_signed_currency(tx["net_pl"]),
+                            self._format_currency_or_dash(tx_fees),
+                            self._format_signed_currency(adjusted_net_pl),
                             tx["notes"] or "",
                         ]
                         tx_item = QtWidgets.QTreeWidgetItem(tx_values)
@@ -12909,7 +13056,7 @@ class RealizedTab(QtWidgets.QWidget):
                             },
                         )
                         self._align_numeric(tx_item)
-                        self._apply_status_color(tx_item, tx["net_pl"])
+                        self._apply_status_color(tx_item, adjusted_net_pl)
                         site_item.addChild(tx_item)
 
     def refresh_view(self):
@@ -13658,9 +13805,7 @@ class CardEditDialog(SetupEditDialog):
         reply = QtWidgets.QMessageBox.question(
             self,
             "Recalculate Cashback",
-            f"This will recalculate cashback for {count} purchase(s) using the new rate of {new_cashback_rate:.2f}%.\n\n"
-            f"This action cannot be undone.\n\n"
-            f"Continue?",
+            f"This will recalculate cashback for {count} purchase(s) using the new rate of {new_cashback_rate:.2f}%.\n\nContinue?",
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
             QtWidgets.QMessageBox.No
         )
@@ -16795,7 +16940,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
                     else:
                         record[col] = None
                 # Handle numeric columns (detect by type checking common patterns)
-                elif col in ('rtp', 'cashback_rate', 'sc_rate', 'amount', 'sc_received',
+                elif col in ('rtp', 'cashback_rate', 'sc_rate', 'amount', 'fees', 'sc_received',
                             'starting_sc_balance', 'starting_sc_balance', 'starting_redeemable_sc',
                             'ending_sc_balance', 'ending_redeemable_sc', 'wager_amount',
                             'cashback_earned', 'remaining_amount', 'dollar_value', 'freebies_detected',
@@ -16850,6 +16995,12 @@ class ToolsSetupTab(QtWidgets.QWidget):
                             errors.append(f"Redemption date ({record['redemption_date']}) cannot be in the future")
                     except:
                         pass
+                # Fees validation: optional, non-negative, and cannot exceed amount
+                if record.get('fees') is not None:
+                    if record['fees'] < 0:
+                        errors.append(f"Fees cannot be negative ({record['fees']})")
+                    if record.get('amount') is not None and record['fees'] > record['amount']:
+                        errors.append(f"Fees ({record['fees']}) cannot exceed the redemption amount ({record['amount']})")
 
             # Game sessions validations
             elif table_name == 'game_sessions':

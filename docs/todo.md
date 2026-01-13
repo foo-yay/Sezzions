@@ -12,34 +12,7 @@ AI agents must follow the role definitions in `AGENTS.md`.
 These items require architectural or accounting decisions
 before any code should be written.
 
-### 1. Multi-Currency / Denominations Model
-- Support alternate units on Purchases and Redemptions:
-  - Fortune Coins (1:100)
-  - USDC / crypto
-- Ensure:
-  - basis logic remains correct
-  - reporting stays consistent
-- Strategy only — no schema changes until approved.
-
----
-
-### 2. Redemption Fees Accounting Treatment
-- Decide between:
-  - net-only redemption entry
-  - explicit fee tracking
-- Define:
-  - tax treatment
-  - basis impact
-  - reconciliation expectations
-- Do not implement without a clear decision.
-
----
-
 ### 6. Tax Reporting Logic (Conceptual)
-- Define:
-  - when profit becomes taxable
-  - how withholding rate is applied
-  - session-based vs cash-based reporting
 - Identify authoritative reports.
 
 ---
@@ -84,8 +57,6 @@ Follow the Planner’s decisions and keep changes minimal.
 ### Platform
 - [ ] Add free-tier usage limits
 - [ ] Design offline license key system (no server)
-- [X] Add database backup strategy
-- [X] Re-integrate Audit Log
 
 ---
 
