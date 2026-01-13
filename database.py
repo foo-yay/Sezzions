@@ -396,6 +396,47 @@ class Database:
             self.set_schema_version(conn, 11)
             conn.commit()
 
+        # Migration 12: Add game RTP aggregates table and actual_rtp column to games
+        if current_version < 12:
+            print("Adding game RTP aggregates table...")
+            c.execute('''CREATE TABLE IF NOT EXISTS game_rtp_aggregates (
+                game_id INTEGER PRIMARY KEY REFERENCES games(id),
+                total_wager REAL DEFAULT 0,
+                total_delta REAL DEFAULT 0,
+                session_count INTEGER DEFAULT 0,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+            
+            # Add actual_rtp column to games table
+            try:
+                c.execute("ALTER TABLE games ADD COLUMN actual_rtp REAL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            
+            self.set_schema_version(conn, 12)
+            conn.commit()
+
+        # Migration 13: Add game_id foreign key column to game_sessions
+        if current_version < 13:
+            print("Adding game_id column to game_sessions...")
+            try:
+                c.execute("ALTER TABLE game_sessions ADD COLUMN game_id INTEGER REFERENCES games(id)")
+            except sqlite3.OperationalError:
+                pass
+            
+            # Backfill game_id for existing sessions that have game_name
+            print("Backfilling game_id from game_name...")
+            c.execute('''
+                UPDATE game_sessions
+                SET game_id = (SELECT id FROM games WHERE games.name = game_sessions.game_name)
+                WHERE game_name IS NOT NULL AND game_id IS NULL
+            ''')
+            backfilled = c.rowcount
+            if backfilled > 0:
+                print(f"  Backfilled game_id for {backfilled} sessions")
+            
+            self.set_schema_version(conn, 13)
+            conn.commit()
+
         conn.close()
     
     def init_database(self):

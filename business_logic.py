@@ -870,7 +870,7 @@ class SessionManager:
         redemptions.sort(key=lambda x: (x[0] or datetime.min))
         return purchases, redemptions
 
-    def _rebuild_session_tax_fields_for_pair(self, site_id, user_id):
+    def _rebuild_session_tax_fields_for_pair(self, site_id, user_id, old_session_values=None):
         """
         Recompute derived session fields per spec (v2):
         - expected_start_total_sc / expected_start_redeemable_sc
@@ -880,6 +880,9 @@ class SessionManager:
         - inferred_start deltas
         - net_taxable_pl (discoverable + delta_play - basis_consumed)
         - pending basis pool (carry-forward cash basis consumed only on redeemable gains)
+        
+        old_session_values: Optional dict with {'session_id', 'wager_amount', 'delta_total', 'game_id'}
+                           for accurate RTP delta calculation when editing a session.
         """
         conn = self.db.get_connection()
         c = conn.cursor()
@@ -893,7 +896,7 @@ class SessionManager:
                    COALESCE(ending_sc_balance,0) as ending_sc_balance,
                    COALESCE(starting_redeemable_sc, COALESCE(starting_sc_balance,0)) as starting_redeemable_sc,
                    COALESCE(ending_redeemable_sc, COALESCE(ending_sc_balance,0)) as ending_redeemable_sc,
-                   wager_amount
+                   wager_amount, game_id, delta_total
             FROM game_sessions
             WHERE site_id=? AND user_id=? AND status='Closed'
             ORDER BY end_date ASC, end_time ASC, id ASC
@@ -1006,6 +1009,24 @@ class SessionManager:
             """, (session_basis, basis_consumed, expected_start_total, expected_start_redeem,
                   inferred_start_total_delta, inferred_start_redeem_delta,
                   delta_total, delta_redeem, net_taxable_pl, net_taxable_pl, delta_total, rtp, sid))
+
+            # Update game RTP aggregates ONLY if this is the session being edited
+            # (has old_session_values). Don't re-process unchanged sessions during rebuild.
+            if old_session_values and old_session_values.get('session_id') == sid:
+                if 'game_id' in s.keys() and s['game_id'] and wager:
+                    # Use provided old values for accurate delta calculation
+                    old_wager = old_session_values.get('wager_amount', 0.0)
+                    old_delta_total = old_session_values.get('delta_total', 0.0)
+                    
+                    # Calculate deltas
+                    wager_delta = float(wager) - float(old_wager or 0.0)
+                    delta_total_delta = delta_total - float(old_delta_total or 0.0)
+                    
+                    # Determine if this is a new session (had no wager before, now has wager)
+                    is_new_session = (old_wager is None or float(old_wager or 0.0) == 0.0) and float(wager) > 0.0
+                    
+                    # Update game RTP incrementally (pass existing connection to avoid lock)
+                    self.update_game_rtp_incremental(s['game_id'], wager_delta, delta_total_delta, is_new_session, conn)
 
             # Advance checkpoint
             last_end_total = end_total
@@ -1155,11 +1176,14 @@ class SessionManager:
         conn2.close()
         return float(row['net_taxable_pl'] or 0.0)
 
-    def auto_recalculate_affected_sessions(self, site_id, user_id, changed_date, changed_time='00:00:00'):
+    def auto_recalculate_affected_sessions(self, site_id, user_id, changed_date, changed_time='00:00:00', old_session_values=None):
         """
         Canonical recompute path for a site/user pair.
 
         This is a full recompute to keep basis pool and expected balances consistent.
+        
+        old_session_values: Optional dict with {'session_id', 'wager_amount', 'delta_total', 'game_id'}
+                           for accurate RTP delta calculation when editing a session.
         """
         if site_id is None or user_id is None:
             return 0
@@ -1168,7 +1192,7 @@ class SessionManager:
             _ = (changed_date, changed_time)
 
         self._rebuild_fifo_for_pair(site_id, user_id)
-        session_count, touched_dates = self._rebuild_session_tax_fields_for_pair(site_id, user_id)
+        session_count, touched_dates = self._rebuild_session_tax_fields_for_pair(site_id, user_id, old_session_values)
         for d in touched_dates:
             self.update_daily_tax_session(d, user_id)
         return session_count
@@ -1235,3 +1259,215 @@ class SessionManager:
         
         conn.commit()
         conn.close()
+
+    def update_game_rtp_incremental(self, game_id, wager_delta, delta_total_delta, new_session=False, conn=None):
+        """
+        Apply delta to game RTP aggregates and recalculate RTP (O(1) operation).
+        Called after session close/edit without full DB traversal.
+        
+        Args:
+            game_id: ID of the game to update
+            wager_delta: Change in total wager (positive or negative)
+            delta_total_delta: Change in total delta (SC change delta)
+            new_session: If True, increment session_count by 1
+            conn: Optional existing database connection (if None, creates new one)
+        """
+        close_conn = False
+        if conn is None:
+            conn = self.db.get_connection()
+            close_conn = True
+        
+        c = conn.cursor()
+        
+        try:
+            # Load or initialize aggregates
+            c.execute('''SELECT * FROM game_rtp_aggregates WHERE game_id = ?''', (game_id,))
+            agg_row = c.fetchone()
+            
+            if agg_row is None:
+                # First session for this game - initialize aggregates
+                total_wager = max(0, wager_delta)
+                total_delta = delta_total_delta
+                session_count = 1 if new_session else 0
+                
+                c.execute('''
+                    INSERT INTO game_rtp_aggregates (game_id, total_wager, total_delta, session_count)
+                    VALUES (?, ?, ?, ?)
+                ''', (game_id, total_wager, total_delta, session_count))
+            else:
+                # Update existing aggregates
+                total_wager = agg_row['total_wager'] + wager_delta
+                total_delta = agg_row['total_delta'] + delta_total_delta
+                session_count = agg_row['session_count'] + (1 if new_session else 0)
+                
+                # Ensure totals don't go negative (safety check)
+                total_wager = max(0, total_wager)
+                
+                c.execute('''
+                    UPDATE game_rtp_aggregates
+                    SET total_wager = ?, total_delta = ?, session_count = ?, last_updated = CURRENT_TIMESTAMP
+                    WHERE game_id = ?
+                ''', (total_wager, total_delta, session_count, game_id))
+            
+            # Recalculate RTP from aggregates
+            self._recalculate_game_rtp_from_aggregates(game_id, conn)
+            
+            if close_conn:
+                conn.commit()
+        except Exception as e:
+            print(f"Error updating game RTP incrementally: {e}")
+            import traceback
+            traceback.print_exc()
+            if close_conn:
+                conn.rollback()
+        finally:
+            if close_conn:
+                conn.close()
+
+    def recalculate_game_rtp_full(self, game_id):
+        """
+        Full RTP recalculation via SQL aggregation (O(N) via GROUP BY).
+        User-triggered via "Recalculate RTP" button. Traverses all game_sessions for the game.
+        
+        Args:
+            game_id: ID of the game to recalculate
+        """
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        
+        try:
+            # Delete existing aggregates for this game
+            c.execute('''DELETE FROM game_rtp_aggregates WHERE game_id = ?''', (game_id,))
+            
+            # Query all game_sessions for this game with status='Closed'
+            c.execute('''
+                SELECT 
+                    SUM(COALESCE(wager_amount, 0)) as total_wager,
+                    SUM(COALESCE(delta_total, 0)) as total_delta,
+                    COUNT(*) as session_count
+                FROM game_sessions
+                WHERE game_id = ? AND status = 'Closed'
+            ''', (game_id,))
+            
+            result = c.fetchone()
+            total_wager = float(result['total_wager']) if result['total_wager'] else 0.0
+            total_delta = float(result['total_delta']) if result['total_delta'] else 0.0
+            session_count = int(result['session_count']) if result['session_count'] else 0
+            
+            # Insert aggregates
+            if session_count > 0 or total_wager > 0:
+                c.execute('''
+                    INSERT INTO game_rtp_aggregates (game_id, total_wager, total_delta, session_count)
+                    VALUES (?, ?, ?, ?)
+                ''', (game_id, total_wager, total_delta, session_count))
+            
+            # Recalculate RTP
+            self._recalculate_game_rtp_from_aggregates(game_id, conn)
+            
+            conn.commit()
+        except Exception as e:
+            print(f"Error recalculating game RTP fully: {e}")
+            conn.rollback()
+        finally:
+            conn.close()
+
+    def _recalculate_game_rtp_from_aggregates(self, game_id, conn=None):
+        """
+        Internal: Load aggregates and compute actual_rtp.
+        Updates both game_rtp_aggregates and games.actual_rtp.
+        
+        Formula: RTP = ((total_wager + total_delta) / total_wager) * 100
+        
+        Args:
+            game_id: ID of the game
+            conn: Optional existing database connection (if None, creates new one)
+        """
+        close_conn = False
+        if conn is None:
+            conn = self.db.get_connection()
+            close_conn = True
+        
+        try:
+            c = conn.cursor()
+            
+            # Load aggregates
+            c.execute('''SELECT * FROM game_rtp_aggregates WHERE game_id = ?''', (game_id,))
+            agg_row = c.fetchone()
+            
+            if agg_row is None:
+                # No aggregates - set RTP to 0
+                actual_rtp = 0.0
+            else:
+                total_wager = float(agg_row['total_wager'])
+                total_delta = float(agg_row['total_delta'])
+                
+                # Calculate RTP: ((wager + delta) / wager) * 100
+                if total_wager > 0:
+                    actual_rtp = ((total_wager + total_delta) / total_wager) * 100.0
+                else:
+                    actual_rtp = 0.0
+            
+            # Update games.actual_rtp
+            c.execute('''UPDATE games SET actual_rtp = ? WHERE id = ?''', (actual_rtp, game_id))
+            if close_conn:
+                conn.commit()
+        except Exception as e:
+            print(f"Error recalculating RTP from aggregates: {e}")
+            import traceback
+            traceback.print_exc()
+            if close_conn:
+                conn.rollback()
+        finally:
+            if close_conn:
+                conn.close()
+
+    def remove_session_from_game_rtp(self, game_id, wager_amount, delta_total):
+        """
+        Remove a session's contribution from game RTP aggregates.
+        Called when a session is deleted.
+        
+        Args:
+            game_id: ID of the game
+            wager_amount: Wager amount of the deleted session
+            delta_total: delta_total of the deleted session
+        """
+        if not game_id or not wager_amount:
+            return
+        
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        
+        try:
+            # Load aggregates
+            c.execute('''SELECT * FROM game_rtp_aggregates WHERE game_id = ?''', (game_id,))
+            agg_row = c.fetchone()
+            
+            if agg_row is None:
+                # No aggregates - nothing to remove
+                return
+            
+            # Apply negative deltas
+            wager_delta = -float(wager_amount or 0.0)
+            delta_total_delta = -float(delta_total or 0.0)
+            
+            new_wager = max(0, agg_row['total_wager'] + wager_delta)
+            new_delta = agg_row['total_delta'] + delta_total_delta
+            new_session_count = max(0, agg_row['session_count'] - 1)
+            
+            c.execute('''
+                UPDATE game_rtp_aggregates
+                SET total_wager = ?, total_delta = ?, session_count = ?, last_updated = CURRENT_TIMESTAMP
+                WHERE game_id = ?
+            ''', (new_wager, new_delta, new_session_count, game_id))
+            
+            # Recalculate RTP
+            self._recalculate_game_rtp_from_aggregates(game_id, conn)
+            
+            conn.commit()
+        except Exception as e:
+            print(f"Error removing session from game RTP: {e}")
+            conn.rollback()
+        finally:
+            conn.close()
+
+

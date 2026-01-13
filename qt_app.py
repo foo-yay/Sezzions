@@ -2309,11 +2309,17 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         self.game_helper.setObjectName("HelperText")
         self.game_helper.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
+        self.rtp_tooltip = QtWidgets.QLabel("")
+        self.rtp_tooltip.setObjectName("HelperText")
+        self.rtp_tooltip.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self.rtp_tooltip.setWordWrap(True)
+
         game_grid.addWidget(QtWidgets.QLabel("Game Type"), 0, 0)
         game_grid.addWidget(self.game_type_combo, 0, 1)
         game_grid.addWidget(QtWidgets.QLabel("Game Name"), 0, 2)
         game_grid.addWidget(self.game_name_combo, 0, 3)
         game_grid.addWidget(self.game_helper, 1, 0, 1, 4)
+        game_grid.addWidget(self.rtp_tooltip, 2, 0, 1, 4)
         layout.addWidget(game_group)
 
         # Balances section
@@ -2378,6 +2384,7 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         self.game_type_combo.currentTextChanged.connect(self._update_game_names)
         self.game_type_combo.currentTextChanged.connect(self._validate_inline)
         self.game_name_combo.currentTextChanged.connect(self._validate_inline)
+        self.game_name_combo.currentTextChanged.connect(self._update_rtp_tooltip)
         self.site_combo.currentTextChanged.connect(self._update_freebie_label)
         self.user_combo.currentTextChanged.connect(self._update_freebie_label)
         self.start_total_edit.textChanged.connect(self._update_freebie_label)
@@ -2653,6 +2660,36 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         self.freebie_label.style().unpolish(self.freebie_label)
         self.freebie_label.style().polish(self.freebie_label)
 
+    def _update_rtp_tooltip(self):
+        """Update the RTP tooltip with Expected and Actual RTP when a game is selected"""
+        game_name = self.game_name_combo.currentText().strip()
+        if not game_name:
+            self.rtp_tooltip.setText("")
+            return
+        
+        # Fetch game RTP info from database
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT rtp, actual_rtp FROM games WHERE name = ?
+            """,
+            (game_name,),
+        )
+        row = c.fetchone()
+        conn.close()
+        
+        if row:
+            exp_rtp = row['rtp']
+            act_rtp = row['actual_rtp']
+            
+            exp_str = f"{exp_rtp:.2f}%" if exp_rtp is not None else "—"
+            act_str = f"{act_rtp:.2f}%" if act_rtp is not None else "—"
+            
+            self.rtp_tooltip.setText(f"Exp RTP: {exp_str} / Act RTP: {act_str}")
+        else:
+            self.rtp_tooltip.setText("")
+
     def _load_session(self):
         self.date_edit.setText(self._format_date_for_input(self.session["session_date"]))
         self.time_edit.setText(self._format_time_for_input(self.session["start_time"]))
@@ -2676,6 +2713,7 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         self.start_redeem_edit.setText(str(start_redeem))
         self.notes_edit.setPlainText(self.session["notes"] or "")
         self._update_freebie_label()
+        self._update_rtp_tooltip()
 
     def _clear_form(self):
         self.date_edit.clear()
@@ -2695,6 +2733,7 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         self.freebie_label.setProperty("status", "neutral")
         self.freebie_label.style().unpolish(self.freebie_label)
         self.freebie_label.style().polish(self.freebie_label)
+        self.rtp_tooltip.setText("")
         self._validate_inline()
 
     def collect_data(self):
@@ -3177,11 +3216,17 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         self.game_helper.setObjectName("HelperText")
         self.game_helper.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
+        self.rtp_tooltip = QtWidgets.QLabel("")
+        self.rtp_tooltip.setObjectName("HelperText")
+        self.rtp_tooltip.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self.rtp_tooltip.setWordWrap(True)
+
         game_grid.addWidget(QtWidgets.QLabel("Game Type"), 0, 0)
         game_grid.addWidget(self.game_type_combo, 0, 1)
         game_grid.addWidget(QtWidgets.QLabel("Game Name"), 0, 2)
         game_grid.addWidget(self.game_name_combo, 0, 3)
         game_grid.addWidget(self.game_helper, 1, 0, 1, 4)
+        game_grid.addWidget(self.rtp_tooltip, 2, 0, 1, 4)
         layout.addWidget(game_group)
 
         # Balances section
@@ -3196,6 +3241,7 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         self.start_redeem_edit = QtWidgets.QLineEdit()
         self.end_total_edit = QtWidgets.QLineEdit()
         self.end_redeem_edit = QtWidgets.QLineEdit()
+        self.wager_edit = QtWidgets.QLineEdit()
 
         balance_tooltip = (
             "Compares your starting total SC to the expected balance from prior sessions, purchases, "
@@ -3221,8 +3267,10 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         balance_grid.addWidget(self.start_redeem_edit, 1, 1)
         balance_grid.addWidget(QtWidgets.QLabel("Ending Redeemable"), 1, 2)
         balance_grid.addWidget(self.end_redeem_edit, 1, 3)
-        balance_grid.addWidget(self.balance_label, 2, 0)
-        balance_grid.addWidget(self.balance_value, 2, 1, 1, 3)
+        balance_grid.addWidget(QtWidgets.QLabel("Wager Amount"), 2, 0)
+        balance_grid.addWidget(self.wager_edit, 2, 1)
+        balance_grid.addWidget(self.balance_label, 3, 0)
+        balance_grid.addWidget(self.balance_value, 3, 1, 1, 3)
         layout.addWidget(balance_group)
 
         # Notes section
@@ -3247,6 +3295,7 @@ class GameSessionEditDialog(QtWidgets.QDialog):
 
         self.cancel_btn.clicked.connect(self.reject)
         self.game_type_combo.currentTextChanged.connect(self._update_game_names)
+        self.game_name_combo.currentTextChanged.connect(self._update_rtp_tooltip)
         self.site_combo.currentTextChanged.connect(self._update_balance_label)
         self.user_combo.currentTextChanged.connect(self._update_balance_label)
         self.start_total_edit.textChanged.connect(self._update_balance_label)
@@ -3264,6 +3313,7 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         self.start_redeem_edit.textChanged.connect(self._validate_inline)
         self.end_total_edit.textChanged.connect(self._validate_inline)
         self.end_redeem_edit.textChanged.connect(self._validate_inline)
+        self.wager_edit.textChanged.connect(self._validate_inline)
 
         self._load_session()
         self._update_completers()
@@ -3424,6 +3474,16 @@ class GameSessionEditDialog(QtWidgets.QDialog):
             else:
                 self._set_valid(self.end_redeem_edit)
 
+        wager_text = self.wager_edit.text().strip()
+        if wager_text:
+            valid, _result = validate_currency(wager_text)
+            if not valid:
+                self._set_invalid(self.wager_edit, "Enter a valid wager (max 2 decimals).")
+            else:
+                self._set_valid(self.wager_edit)
+        else:
+            self._set_valid(self.wager_edit)
+
     def _update_completers(self):
         for combo in (
             self.user_combo,
@@ -3558,6 +3618,36 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         self.balance_value.style().unpolish(self.balance_value)
         self.balance_value.style().polish(self.balance_value)
 
+    def _update_rtp_tooltip(self):
+        """Update the RTP tooltip with Expected and Actual RTP when a game is selected"""
+        game_name = self.game_name_combo.currentText().strip()
+        if not game_name:
+            self.rtp_tooltip.setText("")
+            return
+        
+        # Fetch game RTP info from database
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT rtp, actual_rtp FROM games WHERE name = ?
+            """,
+            (game_name,),
+        )
+        row = c.fetchone()
+        conn.close()
+        
+        if row:
+            exp_rtp = row['rtp']
+            act_rtp = row['actual_rtp']
+            
+            exp_str = f"{exp_rtp:.2f}%" if exp_rtp is not None else "—"
+            act_str = f"{act_rtp:.2f}%" if act_rtp is not None else "—"
+            
+            self.rtp_tooltip.setText(f"Exp RTP: {exp_str} / Act RTP: {act_str}")
+        else:
+            self.rtp_tooltip.setText("")
+
     def _load_session(self):
         self.start_date_edit.setText(self._format_date_for_input(self.session["session_date"]))
         self.start_time_edit.setText(self._format_time_for_input(self.session["start_time"]))
@@ -3591,8 +3681,12 @@ class GameSessionEditDialog(QtWidgets.QDialog):
             else self.session["ending_sc_balance"]
         )
         self.end_redeem_edit.setText("" if end_redeem is None else str(end_redeem))
+        self.wager_edit.setText(
+            "" if self.session["wager_amount"] is None else str(self.session["wager_amount"])
+        )
         self.notes_edit.setPlainText(self.session["notes"] or "")
         self._update_balance_label()
+        self._update_rtp_tooltip()
 
     def collect_data(self):
         start_date_str = self.start_date_edit.text().strip()
@@ -3651,15 +3745,12 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         if end_redeem > end_total:
             return None, "Ending Redeemable SC cannot exceed Ending Total SC."
 
+        wager_str = self.wager_edit.text().strip()
         wager_amount = None
-        if self.session:
-            try:
-                # Handle both dict and sqlite3.Row objects
-                wager_val = self.session["wager_amount"] if "wager_amount" in self.session.keys() else None
-                if wager_val is not None:
-                    wager_amount = float(wager_val or 0.0)
-            except (KeyError, TypeError):
-                pass
+        if wager_str:
+            valid, result = validate_currency(wager_str)
+            if valid:
+                wager_amount = float(result)
 
         notes = self.notes_edit.toPlainText().strip()
 
@@ -7984,6 +8075,14 @@ class GameSessionsTab(QtWidgets.QWidget):
         old_date = old_session["session_date"]
         old_time = old_session["start_time"] or "00:00:00"
 
+        # Capture old values for RTP delta calculation
+        old_session_values = {
+            'session_id': old_session['id'],
+            'wager_amount': old_session['wager_amount'] if 'wager_amount' in old_session.keys() else None,
+            'delta_total': old_session['delta_total'] if 'delta_total' in old_session.keys() else None,
+            'game_id': old_session['game_id'] if 'game_id' in old_session.keys() else None
+        }
+
         if data["end_date"] < data["session_date"]:
             conn.close()
             QtWidgets.QMessageBox.warning(self, "Invalid Dates", "End date is before start date.")
@@ -8035,7 +8134,9 @@ class GameSessionsTab(QtWidgets.QWidget):
         }
         total_recalc = 0
         for site_id, user_id, sdate, stime in pairs:
-            total_recalc += self.session_mgr.auto_recalculate_affected_sessions(site_id, user_id, sdate, stime)
+            # Pass old session values to first recalc (for the edited session's site/user pair)
+            old_vals = old_session_values if (site_id, user_id) == (new_site_id, new_user_id) else None
+            total_recalc += self.session_mgr.auto_recalculate_affected_sessions(site_id, user_id, sdate, stime, old_vals)
 
         dialog.accept()
         self.load_data()
@@ -8118,6 +8219,14 @@ class GameSessionsTab(QtWidgets.QWidget):
             session_date = session["session_date"]
             start_time = session["start_time"] or "00:00:00"
             affected.add((session["site_id"], session["user_id"], session_date, start_time))
+
+            # Remove session's contribution from game RTP if it has game_id
+            if session['game_id']:
+                self.session_mgr.remove_session_from_game_rtp(
+                    session['game_id'],
+                    session['wager_amount'],
+                    session['delta_total']
+                )
 
             c.execute("DELETE FROM other_income WHERE game_session_id = ?", (session_id,))
             c.execute("DELETE FROM game_sessions WHERE id = ?", (session_id,))
@@ -12823,13 +12932,21 @@ class GameViewDialog(QtWidgets.QDialog):
         form.addWidget(game_type_label, 1, 0)
         form.addWidget(game_type_value, 1, 1)
 
-        # RTP % field
-        rtp_label = QtWidgets.QLabel("RTP %")
-        rtp_value = QtWidgets.QLabel(f"{float(game['rtp']):.2f}" if game["rtp"] is not None else "—")
-        rtp_value.setObjectName("InfoField")
-        rtp_value.setMaximumWidth(80)
-        form.addWidget(rtp_label, 1, 2)
-        form.addWidget(rtp_value, 1, 3)
+        # Expected RTP % field
+        exp_rtp_label = QtWidgets.QLabel("Expected RTP %")
+        exp_rtp_value = QtWidgets.QLabel(f"{float(game['rtp']):.2f}" if game["rtp"] is not None else "—")
+        exp_rtp_value.setObjectName("InfoField")
+        exp_rtp_value.setMaximumWidth(80)
+        form.addWidget(exp_rtp_label, 1, 2)
+        form.addWidget(exp_rtp_value, 1, 3)
+
+        # Actual RTP % field
+        act_rtp_label = QtWidgets.QLabel("Actual RTP %")
+        act_rtp_value = QtWidgets.QLabel(f"{float(game['actual_rtp']):.2f}" if game["actual_rtp"] is not None else "—")
+        act_rtp_value.setObjectName("InfoField")
+        act_rtp_value.setMaximumWidth(80)
+        form.addWidget(act_rtp_label, 2, 2)
+        form.addWidget(act_rtp_value, 2, 3)
 
         # Notes field
         notes_value = game["notes"] or ""
@@ -12837,7 +12954,7 @@ class GameViewDialog(QtWidgets.QDialog):
         notes_label.setAlignment(
             QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
         )
-        form.addWidget(notes_label, 2, 0)
+        form.addWidget(notes_label, 3, 0)
         if notes_value:
             notes_edit = QtWidgets.QPlainTextEdit()
             notes_edit.setObjectName("NotesField")
@@ -12846,11 +12963,11 @@ class GameViewDialog(QtWidgets.QDialog):
             notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
             notes_edit.setPlainText(notes_value)
             notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 4 + 12)
-            form.addWidget(notes_edit, 2, 1, 1, 3)
+            form.addWidget(notes_edit, 3, 1, 1, 3)
         else:
             notes_field = QtWidgets.QLabel("—")
             notes_field.setObjectName("InfoField")
-            form.addWidget(notes_field, 2, 1, 1, 3)
+            form.addWidget(notes_field, 3, 1, 1, 3)
 
         layout.addLayout(form)
         layout.addSpacing(8)
@@ -12860,6 +12977,9 @@ class GameViewDialog(QtWidgets.QDialog):
         if self._on_delete:
             delete_btn = QtWidgets.QPushButton("Delete")
             btn_row.addWidget(delete_btn)
+        # Add Recalculate RTP button
+        recalc_rtp_btn = QtWidgets.QPushButton("Recalculate RTP")
+        btn_row.addWidget(recalc_rtp_btn)
         btn_row.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
@@ -12870,6 +12990,7 @@ class GameViewDialog(QtWidgets.QDialog):
 
         if self._on_delete:
             delete_btn.clicked.connect(self._handle_delete)
+        recalc_rtp_btn.clicked.connect(self._handle_recalc_rtp)
         if self._on_edit:
             edit_btn.clicked.connect(self._handle_edit)
         close_btn.clicked.connect(self.accept)
@@ -12883,6 +13004,56 @@ class GameViewDialog(QtWidgets.QDialog):
         if self._on_delete:
             self.accept()
             QtCore.QTimer.singleShot(0, self._on_delete)
+
+    def _handle_recalc_rtp(self):
+        """Handle Recalculate RTP button click"""
+        try:
+            # Import here to avoid circular dependency
+            from business_logic import SessionManager, FIFOCalculator
+            from database import Database
+            
+            db = Database()
+            fifo = FIFOCalculator(db)
+            session_mgr = SessionManager(db, fifo)
+            
+            game_id = self.game['id']
+            if game_id:
+                session_mgr.recalculate_game_rtp_full(game_id)
+                
+                # Reload game data from database to get updated actual_rtp
+                conn = db.get_connection()
+                c = conn.cursor()
+                c.execute(
+                    """SELECT g.id, g.name, g.rtp, g.actual_rtp, g.notes, g.active, gt.name as type_name
+                       FROM games g
+                       LEFT JOIN game_types gt ON gt.id = g.game_type_id
+                       WHERE g.id = ?""",
+                    (game_id,)
+                )
+                updated_game = c.fetchone()
+                conn.close()
+                
+                if updated_game:
+                    self.game = updated_game
+                    # Update the actual_rtp display in the dialog
+                    for i in range(self.layout().count()):
+                        item = self.layout().itemAt(i)
+                        if isinstance(item.layout(), QtWidgets.QGridLayout):
+                            form = item.layout()
+                            # Find the Actual RTP value label (row 2, column 3)
+                            act_rtp_widget = form.itemAtPosition(2, 3)
+                            if act_rtp_widget:
+                                label = act_rtp_widget.widget()
+                                if isinstance(label, QtWidgets.QLabel):
+                                    label.setText(f"{float(updated_game['actual_rtp']):.2f}" if updated_game["actual_rtp"] is not None else "—")
+                            break
+                
+                QtWidgets.QMessageBox.information(self, "Success", f"RTP recalculated for '{self.game['name']}'")
+            else:
+                QtWidgets.QMessageBox.warning(self, "Error", "Game ID not found.")
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to recalculate RTP: {str(e)}")
+
 
 
 class SetupListTab(QtWidgets.QWidget):
@@ -13943,7 +14114,7 @@ class GamesSetupTab(SetupListTab):
     def __init__(self, db, parent=None):
         super().__init__(
             db,
-            ["Name", "Game Type", "RTP", "Active", "Notes"],
+            ["Name", "Game Type", "Expected RTP", "Actual RTP", "Active", "Notes"],
             "Search games...",
             "Add Game",
             "View Game",
@@ -13953,7 +14124,7 @@ class GamesSetupTab(SetupListTab):
             "games",
             parent=parent,
         )
-        self.numeric_cols = {2}
+        self.numeric_cols = {2, 3}
         # Set Name column width to 300px
         self.table.setColumnWidth(0, 300)
         self.load_data()
@@ -13971,7 +14142,7 @@ class GamesSetupTab(SetupListTab):
         c = conn.cursor()
         c.execute(
             """
-            SELECT g.id, g.name, g.rtp, g.notes, g.active, gt.name as type_name
+            SELECT g.id, g.name, g.rtp, g.actual_rtp, g.notes, g.active, gt.name as type_name
             FROM games g
             LEFT JOIN game_types gt ON gt.id = g.game_type_id
             WHERE g.id = ?
@@ -13987,7 +14158,7 @@ class GamesSetupTab(SetupListTab):
         c = conn.cursor()
         c.execute(
             """
-            SELECT g.id, g.name, g.rtp, g.notes, g.active, gt.name as type_name
+            SELECT g.id, g.name, g.rtp, g.actual_rtp, g.notes, g.active, gt.name as type_name
             FROM games g
             LEFT JOIN game_types gt ON gt.id = g.game_type_id
             ORDER BY g.name
@@ -14000,6 +14171,7 @@ class GamesSetupTab(SetupListTab):
                 row["name"],
                 row["type_name"] or "",
                 f"{float(row['rtp']):.2f}" if row["rtp"] is not None else "",
+                f"{float(row['actual_rtp']):.2f}" if row["actual_rtp"] is not None else "",
                 "Yes" if row["active"] else "No",
                 notes,
             ]
@@ -14050,6 +14222,8 @@ class GamesSetupTab(SetupListTab):
             return
         dialog = GameViewDialog(game, parent=self, on_edit=lambda: self.edit_record(record_id), on_delete=lambda: self._delete_record_by_id(record_id))
         dialog.exec()
+        # Refresh table after dialog closes (in case RTP was recalculated)
+        self.load_data()
 
     def edit_record(self, record_id):
         game = self._fetch_game(record_id)
@@ -14595,6 +14769,9 @@ class ToolsSetupTab(QtWidgets.QWidget):
                 'net_taxable_pl',  # Tax calculation
                 'basis_consumed',  # FIFO/tax calculation
                 'rtp',  # Will be auto-calculated in future
+            },
+            'games': {
+                'actual_rtp',  # Auto-calculated from RTP aggregates
             },
             'expenses': set(),  # No calculated fields
         }
