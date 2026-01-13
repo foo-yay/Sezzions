@@ -722,6 +722,13 @@ class Database:
         if 'user_id' not in columns:
             c.execute("ALTER TABLE redemption_methods ADD COLUMN user_id INTEGER")
         
+        # Migration: Add method_type to redemption_methods if it doesn't exist
+        # Re-fetch columns in case user_id was just added
+        c.execute("PRAGMA table_info(redemption_methods)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'method_type' not in columns:
+            c.execute("ALTER TABLE redemption_methods ADD COLUMN method_type TEXT")
+        
         # Migration: Add purchase_time to purchases if it doesn't exist
         c.execute("PRAGMA table_info(purchases)")
         columns = [col[1] for col in c.fetchall()]
@@ -756,6 +763,17 @@ class Database:
         if 'status' not in columns:
             c.execute("ALTER TABLE purchases ADD COLUMN status TEXT DEFAULT 'active'")
             # All existing purchases default to 'active'
+        
+        # Migration: Drop method_type from redemptions table (not needed - get via JOIN)
+        c.execute("PRAGMA table_info(redemptions)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'method_type' in columns:
+            try:
+                c.execute("ALTER TABLE redemptions DROP COLUMN method_type")
+            except Exception as e:
+                # Older SQLite versions don't support DROP COLUMN
+                # Not critical - column will just be ignored
+                pass
         
         conn.commit()
         conn.close()

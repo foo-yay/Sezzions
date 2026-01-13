@@ -1,0 +1,7 @@
+Name,Method Type,User,Active
+PayPal - Personal,PayPal,fooyay,TRUE
+Bank Transfer,,fooyay,TRUE
+Venmo,PayPal,mrs. fooyay,TRUE
+Credit Card,Card,fooyay,FALSE
+Gift Card,,mrs. fooyay,TRUE
+ACH Transfer,Bank/ACH,fooyay,TRUE

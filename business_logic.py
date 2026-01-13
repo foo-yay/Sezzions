@@ -361,7 +361,7 @@ class SessionManager:
             conn.close()
             return  # Nothing to rebuild
         
-        # Step 2: Validate free SC allocations BEFORE undo
+        # Step 2: Validate allocations BEFORE undo
         suffix_ids = [r['id'] for r in suffix_redemptions]
         
         for r in suffix_redemptions:
@@ -369,7 +369,7 @@ class SessionManager:
             redemption_amount = r['amount'] or 0
             
             if is_free == 0:  # Non-free redemption
-                # REQUIRE allocations that sum to amount
+                # Get actual allocations from redemption_allocations table
                 c.execute("""
                     SELECT COALESCE(SUM(allocated_amount), 0) as total_allocated
                     FROM redemption_allocations
@@ -378,11 +378,22 @@ class SessionManager:
                 row = c.fetchone()
                 allocated = row['total_allocated'] if row else 0
                 
-                if abs(allocated - redemption_amount) > 0.01:  # Allow small floating point error
+                # Get cost_basis from tax_sessions table (this is what SHOULD have been allocated)
+                c.execute("""
+                    SELECT cost_basis
+                    FROM tax_sessions
+                    WHERE redemption_id = ?
+                """, (r['id'],))
+                tax_row = c.fetchone()
+                expected_basis = tax_row['cost_basis'] if tax_row else 0
+                
+                # Validation: allocations should match the cost_basis, not the full redemption amount
+                # When redemption > basis (profit), allocations = basis only
+                if abs(allocated - expected_basis) > 0.01:  # Allow small floating point error
                     conn.close()
                     raise Exception(
                         f"Missing/incomplete allocations for non-free redemption {r['id']}: "
-                        f"expected {redemption_amount}, found {allocated}. Fallback to full rebuild."
+                        f"expected basis {expected_basis}, found allocations {allocated}. Fallback to full rebuild."
                     )
         
         # Step 3: Undo allocations - restore purchases.remaining_amount
@@ -1326,8 +1337,8 @@ class SessionManager:
             locked_end = max(0.0, end_total - end_red)
             locked_processed_sc = max(locked_start - locked_end, 0.0)
             
-            # Use 1:1 SC to dollar rate
-            sc_rate = 1.0
+            # Get SC to dollar conversion rate for this site
+            sc_rate = float(self.get_sc_rate(site_id) or 1.0)
             locked_processed_value = locked_processed_sc * sc_rate
             
             # Compute inferred starting deltas
@@ -2379,11 +2390,22 @@ class SessionManager:
             WHERE game_session_id IN ({placeholders})
         ''', suffix_session_ids)
         
-        # Find checkpoint session (last session before boundary)
-        checkpoint_session = self._get_session_checkpoint(site_id, user_id, from_date, from_time)
+        # Find checkpoint session (last closed session before boundary)
+        c.execute('''
+            SELECT id, end_date, end_time
+            FROM game_sessions
+            WHERE site_id = ? AND user_id = ? AND status = 'Closed'
+              AND (session_date < ? OR (session_date = ? AND COALESCE(start_time,'00:00:00') < ?))
+            ORDER BY 
+              COALESCE(end_date, session_date) DESC,
+              COALESCE(end_time, '00:00:00') DESC
+            LIMIT 1
+        ''', (site_id, user_id, from_date, from_date, from_time))
+        
+        checkpoint_session = c.fetchone()
         
         prev_end_dt = None
-        if checkpoint_session:
+        if checkpoint_session and checkpoint_session['end_date']:
             prev_end_dt = self._dt(
                 checkpoint_session['end_date'],
                 checkpoint_session['end_time'] if checkpoint_session['end_time'] else '23:59:59'
@@ -2463,14 +2485,14 @@ class SessionManager:
             if end_dt:
                 for r in redemptions:
                     r_dt = self._dt(r['redemption_date'], r['redemption_time'])
-                
-                if start_dt <= r_dt <= end_dt:
-                    links_to_insert.append((session_id, 'redemption', r['id'], 'DURING'))
-                elif next_start_dt is None or (end_dt < r_dt < next_start_dt):
-                    if next_start_dt is None and r_dt > end_dt:
-                        links_to_insert.append((session_id, 'redemption', r['id'], 'AFTER'))
-                    elif next_start_dt is not None and end_dt < r_dt < next_start_dt:
-                        links_to_insert.append((session_id, 'redemption', r['id'], 'AFTER'))
+                    
+                    if start_dt <= r_dt <= end_dt:
+                        links_to_insert.append((session_id, 'redemption', r['id'], 'DURING'))
+                    elif next_start_dt is None or (end_dt < r_dt < next_start_dt):
+                        if next_start_dt is None and r_dt > end_dt:
+                            links_to_insert.append((session_id, 'redemption', r['id'], 'AFTER'))
+                        elif next_start_dt is not None and end_dt < r_dt < next_start_dt:
+                            links_to_insert.append((session_id, 'redemption', r['id'], 'AFTER'))
         
         # Insert all links
         if links_to_insert:

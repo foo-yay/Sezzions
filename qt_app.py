@@ -624,7 +624,7 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.site_combo.addItems(site_names)
         self.card_combo = QtWidgets.QComboBox()
         self.card_combo.setEditable(True)
-        self.card_combo.addItems(card_names)
+        self.card_combo.lineEdit().setPlaceholderText("Select a user first")
         self._user_lookup = {name.lower(): name for name in user_names}
         self._site_lookup = {name.lower(): name for name in site_names}
 
@@ -1537,8 +1537,12 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.site_combo = QtWidgets.QComboBox()
         self.site_combo.setEditable(True)
         self.site_combo.addItems(site_names)
+        self.method_type_combo = QtWidgets.QComboBox()
+        self.method_type_combo.setEditable(True)
+        self.method_type_combo.lineEdit().setPlaceholderText("Select a user first")
         self.method_combo = QtWidgets.QComboBox()
         self.method_combo.setEditable(True)
+        self.method_combo.lineEdit().setPlaceholderText("Select a method type first")
         self.method_combo.addItems(method_names)
         self._user_lookup = {name.lower(): name for name in user_names}
         self._site_lookup = {name.lower(): name for name in site_names}
@@ -1599,20 +1603,23 @@ class RedemptionDialog(QtWidgets.QDialog):
         form.addWidget(self.user_combo, 2, 1)
         form.addWidget(QtWidgets.QLabel("Site"), 3, 0)
         form.addWidget(self.site_combo, 3, 1)
-        form.addWidget(QtWidgets.QLabel("Method"), 4, 0)
-        form.addWidget(self.method_combo, 4, 1)
-        form.addWidget(QtWidgets.QLabel("Amount"), 5, 0)
-        form.addWidget(self.amount_edit, 5, 1)
-        form.addWidget(QtWidgets.QLabel("Receipt Date"), 6, 0)
-        form.addLayout(receipt_row, 6, 1)
-        form.addWidget(QtWidgets.QLabel("Redemption Type"), 7, 0)
-        form.addLayout(type_row, 7, 1)
-        form.addWidget(QtWidgets.QLabel("Flags"), 8, 0)
-        form.addLayout(checkbox_row, 8, 1)
+        form.addWidget(QtWidgets.QLabel("Method Type"), 4, 0)
+        form.addWidget(self.method_type_combo, 4, 1)
+        form.addWidget(QtWidgets.QLabel("Method"), 5, 0)
+        form.addWidget(self.method_combo, 5, 1)
+        
+        form.addWidget(QtWidgets.QLabel("Amount"), 6, 0)
+        form.addWidget(self.amount_edit, 6, 1)
+        form.addWidget(QtWidgets.QLabel("Receipt Date"), 7, 0)
+        form.addLayout(receipt_row, 7, 1)
+        form.addWidget(QtWidgets.QLabel("Redemption Type"), 8, 0)
+        form.addLayout(type_row, 8, 1)
+        form.addWidget(QtWidgets.QLabel("Flags"), 9, 0)
+        form.addLayout(checkbox_row, 9, 1)
         notes_label = QtWidgets.QLabel("Notes")
         notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.addWidget(notes_label, 9, 0)
-        form.addWidget(self.notes_edit, 9, 1)
+        form.addWidget(notes_label, 10, 0)
+        form.addWidget(self.notes_edit, 10, 1)
 
         layout.addLayout(form)
         layout.addSpacing(8)
@@ -1627,14 +1634,20 @@ class RedemptionDialog(QtWidgets.QDialog):
         btn_row.addWidget(self.clear_btn)
         btn_row.addWidget(self.save_btn)
         layout.addLayout(btn_row)
+        
+        # Set tab order after all widgets added to layout
+        self.setTabOrder(self.site_combo, self.method_type_combo)
+        self.setTabOrder(self.method_type_combo, self.method_combo)
 
         self.clear_btn.clicked.connect(self._clear_form)
         self.cancel_btn.clicked.connect(self.reject)
         self.user_combo.currentTextChanged.connect(self._on_user_change)
+        self.method_type_combo.currentTextChanged.connect(self._on_method_type_change)
         self.date_edit.textChanged.connect(self._validate_inline)
         self.time_edit.textChanged.connect(self._validate_inline)
         self.user_combo.currentTextChanged.connect(self._validate_inline)
         self.site_combo.currentTextChanged.connect(self._validate_inline)
+        self.method_type_combo.currentTextChanged.connect(self._validate_inline)
         self.method_combo.currentTextChanged.connect(self._validate_inline)
         self.amount_edit.textChanged.connect(self._validate_inline)
         self.receipt_edit.textChanged.connect(self._validate_inline)
@@ -1715,10 +1728,74 @@ class RedemptionDialog(QtWidgets.QDialog):
     def _on_user_change(self, value):
         user_name = value.strip()
         if not user_name:
+            self.method_type_combo.clear()
+            self.method_type_combo.setCurrentIndex(-1)
+            self.method_type_combo.setEditText("")
+            self.method_type_combo.lineEdit().setPlaceholderText("Select a user first")
             self.method_combo.clear()
             self.method_combo.setCurrentIndex(-1)
             self.method_combo.setEditText("")
+            self.method_combo.lineEdit().setPlaceholderText("Select a method type first")
             return
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id FROM users WHERE name = ?", (user_name,))
+        user_row = c.fetchone()
+        if not user_row:
+            conn.close()
+            self.method_type_combo.clear()
+            self.method_type_combo.setCurrentIndex(-1)
+            self.method_type_combo.setEditText("")
+            self.method_type_combo.lineEdit().setPlaceholderText("Select a user first")
+            self.method_combo.clear()
+            self.method_combo.setCurrentIndex(-1)
+            self.method_combo.setEditText("")
+            self.method_combo.lineEdit().setPlaceholderText("Select a method type first")
+            return
+        user_id = user_row["id"]
+        
+        # Populate method types for this user
+        c.execute(
+            """
+            SELECT DISTINCT method_type FROM redemption_methods
+            WHERE active = 1 AND (user_id IS NULL OR user_id = ?) AND method_type IS NOT NULL AND method_type != ''
+            ORDER BY method_type
+            """,
+            (user_id,),
+        )
+        method_types = [r["method_type"] for r in c.fetchall()]
+        
+        preserve_type = getattr(self, "_preserve_method_type_selection", False)
+        current_type = self.method_type_combo.currentText().strip()
+        self.method_type_combo.blockSignals(True)
+        self.method_type_combo.clear()
+        self.method_type_combo.addItems(method_types)
+        # Remove placeholder since user is selected
+        self.method_type_combo.lineEdit().setPlaceholderText("")
+        if preserve_type and current_type in method_types:
+            self.method_type_combo.setCurrentText(current_type)
+        else:
+            self.method_type_combo.setCurrentIndex(-1)
+            self.method_type_combo.setEditText("")
+        self.method_type_combo.blockSignals(False)
+        
+        conn.close()
+        
+        # Trigger method type change to populate methods
+        self._on_method_type_change(self.method_type_combo.currentText())
+    
+    def _on_method_type_change(self, value):
+        method_type = value.strip()
+        user_name = self.user_combo.currentText().strip()
+        
+        # Clear method dropdown if no user or no method_type
+        if not user_name or not method_type:
+            self.method_combo.clear()
+            self.method_combo.setCurrentIndex(-1)
+            self.method_combo.setEditText("")
+            self.method_combo.lineEdit().setPlaceholderText("Select a method type first")
+            return
+        
         conn = self.db.get_connection()
         c = conn.cursor()
         c.execute("SELECT id FROM users WHERE name = ?", (user_name,))
@@ -1728,23 +1805,46 @@ class RedemptionDialog(QtWidgets.QDialog):
             self.method_combo.clear()
             self.method_combo.setCurrentIndex(-1)
             self.method_combo.setEditText("")
+            self.method_combo.lineEdit().setPlaceholderText("Select a method type first")
             return
+        
         user_id = user_row["id"]
+        
+        # Check if method_type is valid before populating methods
+        valid_method_types = {
+            self.method_type_combo.itemText(i).lower()
+            for i in range(self.method_type_combo.count())
+            if self.method_type_combo.itemText(i)
+        }
+        
+        # If method_type is not valid, keep placeholder and don't populate
+        if method_type.lower() not in valid_method_types:
+            self.method_combo.clear()
+            self.method_combo.setCurrentIndex(-1)
+            self.method_combo.setEditText("")
+            self.method_combo.lineEdit().setPlaceholderText("Select a method type first")
+            conn.close()
+            return
+        
+        # Populate methods filtered by type and user (only if method_type is valid)
         c.execute(
             """
             SELECT name FROM redemption_methods
-            WHERE active = 1 AND (user_id IS NULL OR user_id = ?)
+            WHERE active = 1 AND (user_id IS NULL OR user_id = ?) AND method_type = ?
             ORDER BY name
             """,
-            (user_id,),
+            (user_id, method_type),
         )
         methods = [r["name"] for r in c.fetchall()]
         conn.close()
+        
         preserve = getattr(self, "_preserve_method_selection", False)
         current = self.method_combo.currentText().strip()
         self.method_combo.blockSignals(True)
         self.method_combo.clear()
         self.method_combo.addItems(methods)
+        # Remove placeholder only when method type is valid
+        self.method_combo.lineEdit().setPlaceholderText("")
         if preserve and current in methods:
             self.method_combo.setCurrentText(current)
         else:
@@ -1796,6 +1896,20 @@ class RedemptionDialog(QtWidgets.QDialog):
             self._set_invalid(self.site_combo, "Select a valid Site.")
         else:
             self._set_valid(self.site_combo)
+
+        # Validate Method Type is required and valid
+        method_type_text = self.method_type_combo.currentText().strip()
+        valid_method_types = {
+            self.method_type_combo.itemText(i).lower()
+            for i in range(self.method_type_combo.count())
+            if self.method_type_combo.itemText(i)
+        }
+        if not method_type_text:
+            self._set_invalid(self.method_type_combo, "Method Type is required.")
+        elif method_type_text.lower() not in valid_method_types:
+            self._set_invalid(self.method_type_combo, "Select a valid Method Type from the list.")
+        else:
+            self._set_valid(self.method_type_combo)
 
         amount_text = self.amount_edit.text().strip()
         amount_value = None
@@ -1849,15 +1963,42 @@ class RedemptionDialog(QtWidgets.QDialog):
     def _load_redemption(self):
         self.date_edit.setText(self._format_date_for_input(self.redemption["redemption_date"]))
         self.time_edit.setText(self._format_time_for_input(self.redemption["redemption_time"]))
+        
+        # Set preserve flags to prevent cascading clears during load
+        self._preserve_method_type_selection = True
         self._preserve_method_selection = True
+        
+        # Block signals during initial setup to prevent premature triggers
+        self.user_combo.blockSignals(True)
+        self.method_type_combo.blockSignals(True)
+        self.method_combo.blockSignals(True)
+        
+        # Load user first
         self.user_combo.setCurrentText(self.redemption["user_name"])
-        self._preserve_method_selection = False
-        self.site_combo.setCurrentText(self.redemption["site_name"])
+        
+        # Unblock and manually trigger user change to populate method_types
+        self.user_combo.blockSignals(False)
+        self._on_user_change(self.redemption["user_name"])
+        
+        # Load method_type from the redemption's method (via JOIN)
+        method_type_value = self.redemption["method_type"] if "method_type" in self.redemption.keys() else None
+        if method_type_value:
+            self.method_type_combo.setCurrentText(method_type_value)
+            # Trigger method population for this type
+            self._on_method_type_change(method_type_value)
+        
+        # Now load method if it exists
         if self.redemption["method_name"]:
             self.method_combo.setCurrentText(self.redemption["method_name"])
-        else:
-            self.method_combo.setCurrentIndex(-1)
-            self.method_combo.setEditText("")
+        
+        # Unblock signals and clear preserve flags
+        self.method_type_combo.blockSignals(False)
+        self.method_combo.blockSignals(False)
+        self._preserve_method_selection = False
+        self._preserve_method_type_selection = False
+        
+        # Load other fields
+        self.site_combo.setCurrentText(self.redemption["site_name"])
         self.amount_edit.setText(str(self.redemption["amount"]))
         if self.redemption["receipt_date"]:
             self.receipt_edit.setText(self._format_date_for_input(self.redemption["receipt_date"]))
@@ -1885,9 +2026,12 @@ class RedemptionDialog(QtWidgets.QDialog):
     def _clear_form(self):
         self.date_edit.clear()
         self.time_edit.clear()
-        for combo in (self.user_combo, self.site_combo, self.method_combo):
+        for combo in (self.user_combo, self.site_combo):
             combo.setCurrentIndex(-1)
             combo.setEditText("")
+        self.method_type_combo.setCurrentIndex(0)
+        self.method_combo.setCurrentIndex(-1)
+        self.method_combo.setEditText("")
         self.amount_edit.clear()
         self.receipt_edit.clear()
         self.partial_radio.setChecked(False)
@@ -2760,11 +2904,7 @@ class GameSessionStartDialog(QtWidgets.QDialog):
 
         self.game_name_combo = QtWidgets.QComboBox()
         self.game_name_combo.setEditable(True)
-        self.game_name_combo.addItems([""])
-
-        self.game_helper = QtWidgets.QLabel("Game Name requires a Game Type.")
-        self.game_helper.setObjectName("HelperText")
-        self.game_helper.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self.game_name_combo.lineEdit().setPlaceholderText("Select a game type first")
 
         self.rtp_tooltip = QtWidgets.QLabel("")
         self.rtp_tooltip.setObjectName("HelperText")
@@ -2775,8 +2915,7 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         game_grid.addWidget(self.game_type_combo, 0, 1)
         game_grid.addWidget(QtWidgets.QLabel("Game Name"), 0, 2)
         game_grid.addWidget(self.game_name_combo, 0, 3)
-        game_grid.addWidget(self.game_helper, 1, 0, 1, 4)
-        game_grid.addWidget(self.rtp_tooltip, 2, 0, 1, 4)
+        game_grid.addWidget(self.rtp_tooltip, 1, 0, 1, 4)
         layout.addWidget(game_group)
 
         # Balances section
@@ -2870,21 +3009,41 @@ class GameSessionStartDialog(QtWidgets.QDialog):
 
     def _update_game_names(self):
         game_type = self.game_type_combo.currentText().strip()
+        
+        # If no game type or invalid, clear and show placeholder
+        if not game_type:
+            self.game_name_combo.blockSignals(True)
+            self.game_name_combo.clear()
+            self.game_name_combo.setEditText("")
+            self.game_name_combo.lineEdit().setPlaceholderText("Select a game type first")
+            self.game_name_combo.blockSignals(False)
+            self._validate_inline()
+            return
+        
+        # Check if game type is valid
+        if game_type.lower() not in self._game_type_lookup:
+            self.game_name_combo.blockSignals(True)
+            self.game_name_combo.clear()
+            self.game_name_combo.setEditText("")
+            self.game_name_combo.lineEdit().setPlaceholderText("Select a game type first")
+            self.game_name_combo.blockSignals(False)
+            self._validate_inline()
+            return
+        
+        # Game type is valid, populate names and remove placeholder
         type_key = None
-        if game_type:
-            for key in self.game_names_by_type:
-                if key.lower() == game_type.lower():
-                    type_key = key
-                    break
-            names = list(self.game_names_by_type.get(type_key, [])) if type_key else []
-        else:
-            names = []
+        for key in self.game_names_by_type:
+            if key.lower() == game_type.lower():
+                type_key = key
+                break
+        names = list(self.game_names_by_type.get(type_key, [])) if type_key else []
         current = self.game_name_combo.currentText().strip()
         if "" not in names:
             names.insert(0, "")
         self.game_name_combo.blockSignals(True)
         self.game_name_combo.clear()
         self.game_name_combo.addItems(names)
+        self.game_name_combo.lineEdit().setPlaceholderText("")  # Remove placeholder
         if current and current in names:
             self.game_name_combo.setCurrentText(current)
         else:
@@ -3667,11 +3826,7 @@ class GameSessionEditDialog(QtWidgets.QDialog):
 
         self.game_name_combo = QtWidgets.QComboBox()
         self.game_name_combo.setEditable(True)
-        self.game_name_combo.addItems([""])
-
-        self.game_helper = QtWidgets.QLabel("Game Name requires a Game Type.")
-        self.game_helper.setObjectName("HelperText")
-        self.game_helper.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self.game_name_combo.lineEdit().setPlaceholderText("Select a game type first")
 
         self.rtp_tooltip = QtWidgets.QLabel("")
         self.rtp_tooltip.setObjectName("HelperText")
@@ -3682,8 +3837,7 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         game_grid.addWidget(self.game_type_combo, 0, 1)
         game_grid.addWidget(QtWidgets.QLabel("Game Name"), 0, 2)
         game_grid.addWidget(self.game_name_combo, 0, 3)
-        game_grid.addWidget(self.game_helper, 1, 0, 1, 4)
-        game_grid.addWidget(self.rtp_tooltip, 2, 0, 1, 4)
+        game_grid.addWidget(self.rtp_tooltip, 1, 0, 1, 4)
         layout.addWidget(game_group)
 
         # Balances section
@@ -3784,21 +3938,41 @@ class GameSessionEditDialog(QtWidgets.QDialog):
 
     def _update_game_names(self):
         game_type = self.game_type_combo.currentText().strip()
+        
+        # If no game type or invalid, clear and show placeholder
+        if not game_type:
+            self.game_name_combo.blockSignals(True)
+            self.game_name_combo.clear()
+            self.game_name_combo.setEditText("")
+            self.game_name_combo.lineEdit().setPlaceholderText("Select a game type first")
+            self.game_name_combo.blockSignals(False)
+            self._validate_inline()
+            return
+        
+        # Check if game type is valid
+        if game_type.lower() not in self._game_type_lookup:
+            self.game_name_combo.blockSignals(True)
+            self.game_name_combo.clear()
+            self.game_name_combo.setEditText("")
+            self.game_name_combo.lineEdit().setPlaceholderText("Select a game type first")
+            self.game_name_combo.blockSignals(False)
+            self._validate_inline()
+            return
+        
+        # Game type is valid, populate names and remove placeholder
         type_key = None
-        if game_type:
-            for key in self.game_names_by_type:
-                if key.lower() == game_type.lower():
-                    type_key = key
-                    break
-            names = list(self.game_names_by_type.get(type_key, [])) if type_key else []
-        else:
-            names = []
+        for key in self.game_names_by_type:
+            if key.lower() == game_type.lower():
+                type_key = key
+                break
+        names = list(self.game_names_by_type.get(type_key, [])) if type_key else []
         current = self.game_name_combo.currentText().strip()
         if "" not in names:
             names.insert(0, "")
         self.game_name_combo.blockSignals(True)
         self.game_name_combo.clear()
         self.game_name_combo.addItems(names)
+        self.game_name_combo.lineEdit().setPlaceholderText("")  # Remove placeholder
         if current and current in names:
             self.game_name_combo.setCurrentText(current)
         else:
@@ -6603,7 +6777,7 @@ class RedemptionsTab(QtWidgets.QWidget):
         c = conn.cursor()
         c.execute(
             """
-            SELECT r.*, s.name as site_name, rm.name as method_name, u.name as user_name
+            SELECT r.*, s.name as site_name, rm.name as method_name, rm.method_type, u.name as user_name
             FROM redemptions r
             JOIN sites s ON r.site_id = s.id
             LEFT JOIN redemption_methods rm ON r.redemption_method_id = rm.id
@@ -6872,33 +7046,44 @@ class RedemptionsTab(QtWidgets.QWidget):
                 self._recalculate_subsequent_redemptions(self._subsequent_ids, site_id, user_id)
 
             # Scoped recalculation for affected pairs
-            # If site/user changed, recalculate both old and new pairs
-            if old_site_id and old_user_id and (old_site_id != site_id or old_user_id != user_id):
-                # Old pair: remove old transaction
-                total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
-                    old_site_id, old_user_id,
-                    old_ts=(old_date, old_time),
-                    new_ts=None,
-                    scoped=True,
-                    entity_type='redemption'
-                )
-                # New pair: add new transaction
-                total_recalc += self.session_mgr.auto_recalculate_affected_sessions(
-                    site_id, user_id,
-                    old_ts=None,
-                    new_ts=(rdate, rtime),
-                    scoped=True,
-                    entity_type='redemption'
-                )
-            else:
-                # Same pair: use both timestamps
-                total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
-                    site_id, user_id,
-                    old_ts=(old_date, old_time),
-                    new_ts=(rdate, rtime),
-                    scoped=True,
-                    entity_type='redemption'
-                )
+            # Skip if nothing changed (same site, user, date, time, and amount)
+            nothing_changed = (
+                old_site_id == site_id and
+                old_user_id == user_id and
+                old_date == rdate and
+                old_time == rtime and
+                abs(old_amount - amount) < 0.01
+            )
+            
+            total_recalc = 0
+            if not nothing_changed:
+                # If site/user changed, recalculate both old and new pairs
+                if old_site_id and old_user_id and (old_site_id != site_id or old_user_id != user_id):
+                    # Old pair: remove old transaction
+                    total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
+                        old_site_id, old_user_id,
+                        old_ts=(old_date, old_time),
+                        new_ts=None,
+                        scoped=True,
+                        entity_type='redemption'
+                    )
+                    # New pair: add new transaction
+                    total_recalc += self.session_mgr.auto_recalculate_affected_sessions(
+                        site_id, user_id,
+                        old_ts=None,
+                        new_ts=(rdate, rtime),
+                        scoped=True,
+                        entity_type='redemption'
+                    )
+                else:
+                    # Same pair: use both timestamps
+                    total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
+                        site_id, user_id,
+                        old_ts=(old_date, old_time),
+                        new_ts=(rdate, rtime),
+                        scoped=True,
+                        entity_type='redemption'
+                    )
 
             message = "Redemption updated"
             if self._has_subsequent:
@@ -13598,6 +13783,8 @@ class MethodEditDialog(SetupEditDialog):
         form.setColumnStretch(1, 1)
 
         self.name_edit = QtWidgets.QLineEdit()
+        self.method_type_edit = QtWidgets.QLineEdit()
+        self.method_type_edit.setPlaceholderText("e.g., Bank/ACH, Card, PayPal, Gift Card")
         self.user_combo = QtWidgets.QComboBox()
         self.user_combo.setEditable(True)
         self.user_combo.addItems(self.users)
@@ -13611,10 +13798,12 @@ class MethodEditDialog(SetupEditDialog):
         form.addWidget(self.name_edit, 0, 1)
         form.addWidget(QtWidgets.QLabel("Active"), 0, 2)
         form.addWidget(self.active_check, 0, 3)
-        form.addWidget(QtWidgets.QLabel("User"), 1, 0)
-        form.addWidget(self.user_combo, 1, 1, 1, 3)
-        form.addWidget(QtWidgets.QLabel("Notes"), 2, 0, QtCore.Qt.AlignTop)
-        form.addWidget(self.notes_edit, 2, 1, 1, 3)
+        form.addWidget(QtWidgets.QLabel("Method Type"), 1, 0)
+        form.addWidget(self.method_type_edit, 1, 1, 1, 3)
+        form.addWidget(QtWidgets.QLabel("User"), 2, 0)
+        form.addWidget(self.user_combo, 2, 1, 1, 3)
+        form.addWidget(QtWidgets.QLabel("Notes"), 3, 0, QtCore.Qt.AlignTop)
+        form.addWidget(self.notes_edit, 3, 1, 1, 3)
         layout.addLayout(form)
 
         btn_row = QtWidgets.QHBoxLayout()
@@ -13623,6 +13812,7 @@ class MethodEditDialog(SetupEditDialog):
         cancel_btn = QtWidgets.QPushButton("Cancel")
         self.save_btn = QtWidgets.QPushButton("Save")
         self.save_btn.setObjectName("PrimaryButton")
+        self.save_btn.setDefault(True)
         btn_row.addWidget(cancel_btn)
         btn_row.addWidget(self.save_btn)
         layout.addLayout(btn_row)
@@ -13630,10 +13820,13 @@ class MethodEditDialog(SetupEditDialog):
         cancel_btn.clicked.connect(self.reject)
         self.save_btn.clicked.connect(self._handle_save)
         self.name_edit.textChanged.connect(self._validate_inline)
+        self.method_type_edit.textChanged.connect(self._validate_inline)
         self.user_combo.currentTextChanged.connect(self._validate_inline)
 
         if method:
             self.name_edit.setText(method["name"])
+            if method["method_type"]:
+                self.method_type_edit.setText(method["method_type"])
             if method["user_name"]:
                 self.user_combo.setCurrentText(method["user_name"])
             self.active_check.setChecked(bool(method["active"]))
@@ -13650,6 +13843,12 @@ class MethodEditDialog(SetupEditDialog):
             ok = False
         else:
             self._set_valid(self.name_edit)
+        
+        if not self.method_type_edit.text().strip():
+            self._set_invalid(self.method_type_edit, "Method type is required.")
+            ok = False
+        else:
+            self._set_valid(self.method_type_edit)
 
         user_text = self.user_combo.currentText().strip()
         if not user_text or user_text.lower() not in self._user_lookup:
@@ -13667,6 +13866,7 @@ class MethodEditDialog(SetupEditDialog):
         user_text = self.user_combo.currentText().strip()
         return {
             "name": self.name_edit.text().strip(),
+            "method_type": self.method_type_edit.text().strip(),
             "user_name": self._user_lookup.get(user_text.lower(), user_text),
             "notes": self.notes_edit.toPlainText().strip() or None,
             "active": 1 if self.active_check.isChecked() else 0,
@@ -13706,12 +13906,19 @@ class MethodViewDialog(QtWidgets.QDialog):
         form.addWidget(active_label, 0, 2)
         form.addWidget(active_check, 0, 3)
 
+        # Method Type field
+        method_type_label = QtWidgets.QLabel("Method Type")
+        method_type_value = QtWidgets.QLabel(method["method_type"] or "—")
+        method_type_value.setObjectName("InfoField")
+        form.addWidget(method_type_label, 1, 0)
+        form.addWidget(method_type_value, 1, 1, 1, 3)
+
         # User field
         user_label = QtWidgets.QLabel("User")
         user_value = QtWidgets.QLabel(method["user_name"] or "—")
         user_value.setObjectName("InfoField")
-        form.addWidget(user_label, 1, 0)
-        form.addWidget(user_value, 1, 1, 1, 3)
+        form.addWidget(user_label, 2, 0)
+        form.addWidget(user_value, 2, 1, 1, 3)
 
         # Notes field
         notes_value = method["notes"] or ""
@@ -13719,7 +13926,7 @@ class MethodViewDialog(QtWidgets.QDialog):
         notes_label.setAlignment(
             QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
         )
-        form.addWidget(notes_label, 2, 0)
+        form.addWidget(notes_label, 3, 0)
         if notes_value:
             notes_edit = QtWidgets.QPlainTextEdit()
             notes_edit.setObjectName("NotesField")
@@ -13728,11 +13935,11 @@ class MethodViewDialog(QtWidgets.QDialog):
             notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
             notes_edit.setPlainText(notes_value)
             notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 4 + 12)
-            form.addWidget(notes_edit, 2, 1, 1, 3)
+            form.addWidget(notes_edit, 3, 1, 1, 3)
         else:
             notes_field = QtWidgets.QLabel("—")
             notes_field.setObjectName("InfoField")
-            form.addWidget(notes_field, 2, 1, 1, 3)
+            form.addWidget(notes_field, 3, 1, 1, 3)
 
         layout.addLayout(form)
         layout.addSpacing(8)
@@ -14943,7 +15150,7 @@ class MethodsSetupTab(SetupListTab):
     def __init__(self, db, parent=None):
         super().__init__(
             db,
-            ["Name", "User", "Active", "Notes"],
+            ["Name", "Method Type", "User", "Active", "Notes"],
             "Search redemption methods...",
             "Add Method",
             "View Method",
@@ -14968,7 +15175,7 @@ class MethodsSetupTab(SetupListTab):
         c = conn.cursor()
         c.execute(
             """
-            SELECT rm.id, rm.name, rm.active, rm.notes, u.name as user_name
+            SELECT rm.id, rm.name, rm.method_type, rm.active, rm.notes, u.name as user_name
             FROM redemption_methods rm
             LEFT JOIN users u ON u.id = rm.user_id
             WHERE rm.id = ?
@@ -14984,7 +15191,7 @@ class MethodsSetupTab(SetupListTab):
         c = conn.cursor()
         c.execute(
             """
-            SELECT rm.id, rm.name, rm.active, rm.notes, u.name as user_name
+            SELECT rm.id, rm.name, rm.method_type, rm.active, rm.notes, u.name as user_name
             FROM redemption_methods rm
             LEFT JOIN users u ON u.id = rm.user_id
             ORDER BY rm.name
@@ -14996,6 +15203,7 @@ class MethodsSetupTab(SetupListTab):
             notes_display = notes[:120]
             display = [
                 row["name"],
+                row["method_type"] or "",
                 row["user_name"] or "",
                 "Yes" if row["active"] else "No",
                 notes_display,
@@ -15011,11 +15219,13 @@ class MethodsSetupTab(SetupListTab):
         self.all_rows = rows
         self.apply_filters()
 
-        # Set custom column widths - make Name column 2x wider
+        # Set custom column widths
         header = self.table.horizontalHeader()
-        header.resizeSection(0, 240)  # Name column - 2x default width
-        header.resizeSection(1, 120)  # User
-        header.resizeSection(2, 80)   # Active
+        header.resizeSection(0, 200)  # Name column
+        header.resizeSection(1, 120)  # Method Type
+        header.resizeSection(2, 120)  # User
+        header.resizeSection(3, 80)   # Active
+        header.resizeSection(4, 200)  # Notes
 
     def add_record(self):
         dialog = MethodEditDialog(self._fetch_users(), parent=self)
@@ -15034,17 +15244,18 @@ class MethodsSetupTab(SetupListTab):
         try:
             c.execute(
                 """
-                INSERT INTO redemption_methods (name, user_id, notes, active)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO redemption_methods (name, method_type, user_id, notes, active)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (data["name"], user_id, data["notes"], data["active"]),
+                (data["name"], data["method_type"], user_id, data["notes"], data["active"]),
             )
             conn.commit()
-        except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
-        finally:
             conn.close()
-        self.load_data()
+            self.load_data()
+            QtWidgets.QMessageBox.information(self, "Success", "Method added successfully.")
+        except Exception as exc:
+            conn.close()
+            QtWidgets.QMessageBox.warning(self, "Error", f"Failed to add method:\n{exc}")
 
     def view_record(self, record_id):
         method = self._fetch_method(record_id)
@@ -15076,17 +15287,18 @@ class MethodsSetupTab(SetupListTab):
             c.execute(
                 """
                 UPDATE redemption_methods
-                SET name = ?, user_id = ?, notes = ?, active = ?
+                SET name = ?, method_type = ?, user_id = ?, notes = ?, active = ?
                 WHERE id = ?
                 """,
-                (data["name"], user_id, data["notes"], data["active"], record_id),
+                (data["name"], data["method_type"], user_id, data["notes"], data["active"], record_id),
             )
             conn.commit()
-        except Exception as exc:
-            QtWidgets.QMessageBox.warning(self, "Error", str(exc))
-        finally:
             conn.close()
-        self.load_data()
+            self.load_data()
+            QtWidgets.QMessageBox.information(self, "Success", "Method updated successfully.")
+        except Exception as exc:
+            conn.close()
+            QtWidgets.QMessageBox.warning(self, "Error", f"Failed to update method:\n{exc}")
 
     def delete_records(self, record_ids):
         confirm = QtWidgets.QMessageBox.question(
@@ -15953,6 +16165,10 @@ class ToolsSetupTab(QtWidgets.QWidget):
             # Mark as required if NOT NULL and no default value
             if not_null and default_val is None:
                 required.add(col_name)
+        
+        # Special case: method_type is required for redemption_methods even though DB allows NULL
+        if table_name == 'redemption_methods' and 'method_type' in columns:
+            required.add('method_type')
 
             # Auto-detect FKs by pattern if not found
             if col_name not in foreign_keys and col_name in fk_patterns:
@@ -16412,6 +16628,12 @@ class ToolsSetupTab(QtWidgets.QWidget):
                         pass
                 if record.get('amount') is not None and record['amount'] <= 0:
                     errors.append(f"Expense amount must be greater than 0 ({record['amount']})")
+
+            # Check all required fields are present and not empty
+            for col in schema['required']:
+                if col not in record or record[col] is None or (isinstance(record[col], str) and not record[col].strip()):
+                    csv_name = schema['csv_names'][col]
+                    errors.append(f"Required field '{csv_name}' is missing or empty")
 
             # If there are validation errors, mark as invalid
             if errors:
@@ -18339,9 +18561,13 @@ class MainWindow(QtWidgets.QMainWindow):
             }
         )
         
-        # Refresh Unrealized tab to reflect changes in purchase basis
+        # Refresh tabs to reflect changes
         if hasattr(self, 'unrealized_tab'):
             self.unrealized_tab.load_data()
+        if hasattr(self, 'daily_sessions_tab'):
+            self.daily_sessions_tab.refresh_view()
+        if hasattr(self, 'realized_tab'):
+            self.realized_tab.refresh_view()
 
     def _rebuild_all(self):
         confirm = QtWidgets.QMessageBox.question(
