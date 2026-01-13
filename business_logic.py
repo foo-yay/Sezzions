@@ -182,6 +182,14 @@ class FIFOCalculator:
 class SessionManager:
     """Manages site sessions and redemption processing"""
     
+    # Administrative fields that don't affect financial calculations
+    # Changes to these fields alone should NOT trigger recalculation
+    ADMINISTRATIVE_FIELDS = {
+        'session': {'notes'},
+        'purchase': {'notes'},
+        'redemption': {'notes', 'redemption_method_id', 'receipt_date', 'processed'}
+    }
+    
     def __init__(self, db, fifo_calc):
         self.db = db
         self.fifo_calc = fifo_calc
@@ -298,6 +306,144 @@ class SessionManager:
                 int(r[7] or 0),
                 is_edit=False,
             )
+
+    def _rebuild_fifo_for_pair_from(self, site_id, user_id, from_date, from_time):
+        """
+        Scoped FIFO rebuild: undo + replay redemptions >= from_dt only.
+        
+        Steps:
+        1. Query suffix redemptions >= from_dt
+        2. Validate free SC (non-free redemptions MUST have allocations)
+        3. Undo allocations (restore purchases.remaining_amount)
+        4. Delete allocations and tax_sessions for suffix
+        5. Replay suffix redemptions chronologically
+        6. Update site_session aggregates
+        
+        Raises exception if missing allocations detected (triggers fallback to full).
+        """
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        
+        # Normalize time
+        from_time = from_time or '00:00:00'
+        if len(from_time) == 5:
+            from_time += ':00'
+        
+        # Step 1: Identify suffix redemptions >= from_dt
+        c.execute("""
+            SELECT id, site_id, user_id, amount, redemption_date, redemption_time,
+                   COALESCE(is_free_sc, 0) as is_free_sc,
+                   COALESCE(more_remaining, 0) AS more_remaining
+            FROM redemptions
+            WHERE site_id = ? AND user_id = ?
+              AND (redemption_date > ? OR 
+                   (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') >= ?))
+            ORDER BY redemption_date ASC, COALESCE(redemption_time,'00:00:00') ASC, id ASC
+        """, (site_id, user_id, from_date, from_date, from_time))
+        
+        suffix_redemptions = c.fetchall()
+        
+        if not suffix_redemptions:
+            conn.close()
+            return  # Nothing to rebuild
+        
+        # Step 2: Validate free SC allocations BEFORE undo
+        suffix_ids = [r['id'] for r in suffix_redemptions]
+        
+        for r in suffix_redemptions:
+            is_free = r['is_free_sc']
+            redemption_amount = r['amount'] or 0
+            
+            if is_free == 0:  # Non-free redemption
+                # REQUIRE allocations that sum to amount
+                c.execute("""
+                    SELECT COALESCE(SUM(allocated_amount), 0) as total_allocated
+                    FROM redemption_allocations
+                    WHERE redemption_id = ?
+                """, (r['id'],))
+                row = c.fetchone()
+                allocated = row['total_allocated'] if row else 0
+                
+                if abs(allocated - redemption_amount) > 0.01:  # Allow small floating point error
+                    conn.close()
+                    raise Exception(
+                        f"Missing/incomplete allocations for non-free redemption {r['id']}: "
+                        f"expected {redemption_amount}, found {allocated}. Fallback to full rebuild."
+                    )
+        
+        # Step 3: Undo allocations - restore purchases.remaining_amount
+        # For each allocation, add back to purchase
+        c.execute("""
+            SELECT purchase_id, allocated_amount
+            FROM redemption_allocations
+            WHERE redemption_id IN ({})
+        """.format(','.join('?' * len(suffix_ids))), suffix_ids)
+        
+        allocations_to_undo = c.fetchall()
+        
+        for alloc in allocations_to_undo:
+            purchase_id = alloc['purchase_id']
+            allocated_amt = alloc['allocated_amount']
+            
+            # Restore, ensuring we don't exceed original amount
+            c.execute("""
+                UPDATE purchases
+                SET remaining_amount = MIN(amount, remaining_amount + ?)
+                WHERE id = ?
+            """, (allocated_amt, purchase_id))
+        
+        # Step 4: Delete allocations and tax_sessions for suffix
+        c.execute("""
+            DELETE FROM redemption_allocations
+            WHERE redemption_id IN ({})
+        """.format(','.join('?' * len(suffix_ids))), suffix_ids)
+        
+        c.execute("""
+            DELETE FROM tax_sessions
+            WHERE redemption_id IN ({})
+        """.format(','.join('?' * len(suffix_ids))), suffix_ids)
+        
+        conn.commit()
+        
+        # Step 5: Replay suffix redemptions chronologically
+        for r in suffix_redemptions:
+            self.process_redemption(
+                r['id'],
+                r['site_id'],
+                float(r['amount'] or 0.0),
+                r['redemption_date'],
+                r['redemption_time'],
+                r['user_id'],
+                int(r['is_free_sc']),
+                int(r['more_remaining']),
+                is_edit=True,  # Don't create duplicate records
+            )
+        
+        # Step 6: Update site_session aggregates for affected site_sessions
+        # Get distinct site_session_ids from suffix redemptions
+        c.execute("""
+            SELECT DISTINCT site_session_id
+            FROM redemptions
+            WHERE id IN ({}) AND site_session_id IS NOT NULL
+        """.format(','.join('?' * len(suffix_ids))), suffix_ids)
+        
+        affected_site_sessions = [row['site_session_id'] for row in c.fetchall()]
+        
+        if affected_site_sessions:
+            for site_session_id in affected_site_sessions:
+                # Recompute total_redeemed from authoritative data
+                c.execute("""
+                    UPDATE site_sessions
+                    SET total_redeemed = (
+                        SELECT COALESCE(SUM(amount), 0)
+                        FROM redemptions
+                        WHERE site_session_id = ?
+                    )
+                    WHERE id = ?
+                """, (site_session_id, site_session_id))
+        
+        conn.commit()
+        conn.close()
 
     def get_last_checkpoint(self, site_id, user_id, as_of_date, as_of_time='00:00:00'):
         """
@@ -1038,6 +1184,277 @@ class SessionManager:
         conn.close()
         return len(sessions), touched_dates
 
+    def _rebuild_session_tax_fields_for_pair_from(self, site_id, user_id, from_date, from_time, old_session_values=None):
+        """
+        Scoped session rebuild: recompute sessions >= from_dt only.
+        
+        Steps:
+        1. Get checkpoint state from last session before from_dt
+        2. Query suffix sessions >= from_dt (use end_dt for filtering)
+        3. Capture old wager/delta/game_id for RTP change detection
+        4. Clear redemption->session links for suffix
+        5. Process suffix sessions (compute expected_balance chain)
+        6. Detect RTP changes and update incrementally
+        
+        Returns: (session_count, touched_dates)
+        """
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        
+        # Normalize time
+        from_time = from_time or '00:00:00'
+        if len(from_time) == 5:
+            from_time += ':00'
+        
+        # Step 1: Get checkpoint state
+        try:
+            checkpoint = self._get_session_checkpoint(site_id, user_id, from_date, from_time)
+            last_end_total = checkpoint['ending_balance']
+            last_end_redeem = checkpoint.get('locked_sc', 0)  # May need adjustment based on schema
+            
+            # If no prior checkpoint, use None to indicate "beginning of history"
+            # This must match full rebuild's initial checkpoint_end_dt = None
+            if checkpoint.get('checkpoint_id') is None:
+                checkpoint_end_dt = None
+            else:
+                # Query the actual end datetime of the checkpoint session
+                c.execute("""
+                    SELECT end_date, end_time
+                    FROM game_sessions
+                    WHERE id = ?
+                """, (checkpoint['checkpoint_id'],))
+                ckpt_row = c.fetchone()
+                if ckpt_row:
+                    checkpoint_end_dt = self._dt(ckpt_row['end_date'], ckpt_row['end_time'])
+                else:
+                    checkpoint_end_dt = None
+        except Exception as e:
+            # Checkpoint validation failed - fallback to full rebuild
+            conn.close()
+            raise Exception(f"Checkpoint validation failed: {e}. Fallback to full rebuild required.")
+        
+        # Step 2: Query suffix sessions where end_dt >= from_dt (inclusive)
+        # We need to recompute any session that could be affected
+        c.execute("""
+            SELECT id, session_date, COALESCE(start_time,'00:00:00') as start_time,
+                   COALESCE(end_date, session_date) as end_date,
+                   COALESCE(end_time,'00:00:00') as end_time,
+                   COALESCE(starting_sc_balance,0) as starting_sc_balance,
+                   COALESCE(ending_sc_balance,0) as ending_sc_balance,
+                   COALESCE(starting_redeemable_sc, COALESCE(starting_sc_balance,0)) as starting_redeemable_sc,
+                   COALESCE(ending_redeemable_sc, COALESCE(ending_sc_balance,0)) as ending_redeemable_sc,
+                   wager_amount, game_id, delta_total
+            FROM game_sessions
+            WHERE site_id = ? AND user_id = ? AND status = 'Closed'
+              AND (COALESCE(end_date, session_date) > ? 
+                   OR (COALESCE(end_date, session_date) = ? AND COALESCE(end_time,'00:00:00') >= ?))
+            ORDER BY session_date ASC, COALESCE(start_time,'00:00:00') ASC, id ASC
+        """, (site_id, user_id, from_date, from_date, from_time))
+        
+        sessions = c.fetchall()
+        
+        if not sessions:
+            conn.close()
+            return 0, set()
+        
+        # Step 3: Capture old state for RTP change detection
+        old_rtp_state = {}  # {session_id: (wager, delta_total, game_id)}
+        for s in sessions:
+            old_rtp_state[s['id']] = (
+                s['wager_amount'] or 0,
+                s['delta_total'] or 0,
+                s['game_id']
+            )
+        
+        # Step 4: Clear redemption->session links for suffix sessions
+        suffix_session_ids = [s['id'] for s in sessions]
+        c.execute("""
+            UPDATE redemptions
+            SET site_session_id = NULL
+            WHERE site_session_id IN ({})
+        """.format(','.join('?' * len(suffix_session_ids))), suffix_session_ids)
+        
+        conn.commit()
+        
+        # Step 5: Process suffix sessions (similar to full rebuild logic)
+        touched_dates = set()
+        pending_basis = 0.0
+        
+        for s in sessions:
+            sid = s['id']
+            session_date = s['session_date']
+            start_time = s['start_time']
+            end_date = s['end_date']
+            end_time = s['end_time']
+            
+            start_total = float(s['starting_sc_balance'] or 0.0)
+            end_total = float(s['ending_sc_balance'] or 0.0)
+            start_red = float(s['starting_redeemable_sc'] or 0.0)
+            end_red = float(s['ending_redeemable_sc'] or 0.0)
+            wager = s['wager_amount']
+            game_id = s['game_id']
+            
+            # Compute expected balances from checkpoint + interim transactions
+            expected_total, expected_redeem = self._compute_expected_for_session(
+                site_id, user_id, session_date, start_time,
+                last_end_total, last_end_redeem, checkpoint_end_dt, c
+            )
+            
+            # Compute delta_total and delta_redeem
+            delta_total = end_total - start_total
+            delta_redeem = end_red - start_red
+            
+            # Compute discoverable freebies and locked SC processing (match full rebuild)
+            discoverable_sc = max(0.0, start_red - expected_redeem) if expected_redeem is not None else 0.0
+            delta_play_sc = delta_redeem
+            locked_start = max(0.0, start_total - start_red)
+            locked_end = max(0.0, end_total - end_red)
+            locked_processed_sc = max(locked_start - locked_end, 0.0)
+            
+            # Use 1:1 SC to dollar rate
+            sc_rate = 1.0
+            locked_processed_value = locked_processed_sc * sc_rate
+            
+            # Compute inferred starting deltas
+            inferred_start_delta_total = (start_total - expected_total) if expected_total is not None else 0.0
+            inferred_start_delta_redeem = (start_red - expected_redeem) if expected_redeem is not None else 0.0
+            
+            # Compute session basis (cash purchases since last checkpoint)
+            session_basis = self._compute_session_basis(site_id, user_id, checkpoint_end_dt, end_date, end_time, c)
+            pending_basis += session_basis
+            
+            # Consume basis against locked processed value
+            basis_consumed = min(pending_basis, locked_processed_value)
+            pending_basis = max(0.0, pending_basis - basis_consumed)
+            
+            # Net taxable = (discoverable + delta_play) * rate - basis_consumed
+            net_taxable_pl = ((discoverable_sc + delta_play_sc) * sc_rate) - basis_consumed
+            
+            # Calculate end_dt for checkpoint advancement (must match full rebuild format)
+            end_dt = self._dt(end_date, end_time)
+            
+            # Note: We don't check for redemptions at session end in scoped rebuild
+            # because the FIFO rebuild already processed all redemptions correctly
+            
+            # Update session with computed fields (match full rebuild columns)
+            c.execute("""
+                UPDATE game_sessions
+                SET expected_start_total_sc = ?,
+                    expected_start_redeemable_sc = ?,
+                    inferred_start_total_delta = ?,
+                    inferred_start_redeemable_delta = ?,
+                    session_basis = ?,
+                    basis_consumed = ?,
+                    delta_total = ?,
+                    delta_redeem = ?,
+                    net_taxable_pl = ?
+                WHERE id = ?
+            """, (expected_total, expected_redeem,
+                  inferred_start_delta_total, inferred_start_delta_redeem,
+                  session_basis, basis_consumed,
+                  delta_total, delta_redeem,
+                  net_taxable_pl, sid))
+            
+            # Step 6: RTP change detection and incremental update
+            old_wager, old_delta, old_game = old_rtp_state.get(sid, (0, 0, None))
+            
+            # Check if wager or delta changed
+            current_wager = wager or 0
+            current_delta = delta_total
+            current_game = game_id
+            
+            if (current_wager != old_wager or current_delta != old_delta or current_game != old_game):
+                # RTP changed - update incrementally
+                
+                # If game changed, remove from old and add to new
+                if old_game != current_game:
+                    if old_game:
+                        self.update_game_rtp_incremental(old_game, -old_wager, -old_delta, False, conn)
+                    if current_game:
+                        self.update_game_rtp_incremental(current_game, current_wager, current_delta, False, conn)
+                else:
+                    # Same game - use deltas
+                    if current_game:
+                        wager_delta = current_wager - old_wager
+                        delta_delta = current_delta - old_delta
+                        
+                        # Check if this is the originally edited session
+                        is_new_session = False
+                        if old_session_values and old_session_values.get('session_id') == sid:
+                            # Use old_session_values for accurate delta if this is edited session
+                            old_wager_from_edit = old_session_values.get('wager_amount', 0) or 0
+                            old_delta_from_edit = old_session_values.get('delta_total', 0) or 0
+                            wager_delta = current_wager - old_wager_from_edit
+                            delta_delta = current_delta - old_delta_from_edit
+                            is_new_session = (old_wager_from_edit == 0 and current_wager > 0)
+                        
+                        if wager_delta != 0 or delta_delta != 0:
+                            self.update_game_rtp_incremental(current_game, wager_delta, delta_delta, is_new_session, conn)
+            
+            # Advance checkpoint to this session's end datetime (must match full rebuild)
+            last_end_total = end_total
+            last_end_redeem = end_red
+            checkpoint_end_dt = end_dt
+            touched_dates.add(session_date)
+        
+        conn.commit()
+        conn.close()
+        return len(sessions), touched_dates
+    
+    def _compute_expected_for_session(self, site_id, user_id, session_date, start_time, 
+                                      last_end_total, last_end_redeem, checkpoint_end_dt, cursor):
+        """Helper to compute expected balances from checkpoint + interim transactions."""
+        # Query purchases/redemptions between checkpoint and session start
+        start_dt = self._dt(session_date, start_time)
+        
+        # If checkpoint_end_dt is None, use a very early date to include all history
+        if checkpoint_end_dt is None:
+            checkpoint_end_dt = '1900-01-01 00:00:00'
+        
+        cursor.execute("""
+            SELECT COALESCE(SUM(sc_received), 0) as total_sc
+            FROM purchases
+            WHERE site_id = ? AND user_id = ?
+              AND (purchase_date > ? OR (purchase_date = ? AND COALESCE(purchase_time,'00:00:00') > ?))
+              AND (purchase_date < ? OR (purchase_date = ? AND COALESCE(purchase_time,'00:00:00') <= ?))
+        """, (site_id, user_id, checkpoint_end_dt, checkpoint_end_dt, '00:00:00', session_date, session_date, start_time))
+        
+        row = cursor.fetchone()
+        purchases_sc = row['total_sc'] if row else 0
+        
+        cursor.execute("""
+            SELECT COALESCE(SUM(amount), 0) as total_redeemed
+            FROM redemptions
+            WHERE site_id = ? AND user_id = ?
+              AND (redemption_date > ? OR (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') > ?))
+              AND (redemption_date < ? OR (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') <= ?))
+        """, (site_id, user_id, checkpoint_end_dt, checkpoint_end_dt, '00:00:00', session_date, session_date, start_time))
+        
+        row = cursor.fetchone()
+        redemptions_sc = row['total_redeemed'] if row else 0
+        
+        expected_total = last_end_total + purchases_sc - redemptions_sc
+        expected_redeem = last_end_redeem - redemptions_sc  # Redeemable DOES NOT include purchases
+        
+        return expected_total, expected_redeem
+    
+    def _compute_session_basis(self, site_id, user_id, checkpoint_end_dt, end_date, end_time, cursor):
+        """Helper to compute cash basis (purchases) for a session window."""
+        # If checkpoint_end_dt is None, use a very early date to include all history
+        if checkpoint_end_dt is None:
+            checkpoint_end_dt = '1900-01-01 00:00:00'
+        
+        cursor.execute("""
+            SELECT COALESCE(SUM(amount), 0) as total_basis
+            FROM purchases
+            WHERE site_id = ? AND user_id = ?
+              AND (purchase_date > ? OR (purchase_date = ? AND COALESCE(purchase_time,'00:00:00') > ?))
+              AND (purchase_date < ? OR (purchase_date = ? AND COALESCE(purchase_time,'00:00:00') <= ?))
+        """, (site_id, user_id, checkpoint_end_dt, checkpoint_end_dt, '00:00:00', end_date, end_date, end_time))
+        
+        row = cursor.fetchone()
+        return row['total_basis'] if row else 0
+
     def start_game_session(self, site_id, user_id, game_type, starting_sc, starting_redeemable_sc=None, 
                           session_date=None, notes=None, start_time=None):
         """
@@ -1176,26 +1593,215 @@ class SessionManager:
         conn2.close()
         return float(row['net_taxable_pl'] or 0.0)
 
-    def auto_recalculate_affected_sessions(self, site_id, user_id, changed_date, changed_time='00:00:00', old_session_values=None):
+    def find_containing_session_start(self, site_id, user_id, d, t):
         """
-        Canonical recompute path for a site/user pair.
-
-        This is a full recompute to keep basis pool and expected balances consistent.
+        Find the start timestamp of the session (open or closed) that contains timestamp (d, t).
         
-        old_session_values: Optional dict with {'session_id', 'wager_amount', 'delta_total', 'game_id'}
-                           for accurate RTP delta calculation when editing a session.
+        A session contains ts if:
+        - start_dt <= ts
+        - AND (end_date IS NULL OR ts <= end_dt)
+        
+        Returns: (start_date, start_time) tuple or None if no containing session found
+        """
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        # Normalize time
+        ts_time = t or '00:00:00'
+        if len(ts_time) == 5:
+            ts_time += ':00'
+        
+        cursor.execute("""
+            SELECT session_date, COALESCE(start_time,'00:00:00') as start_time
+            FROM game_sessions
+            WHERE site_id = ? AND user_id = ?
+              AND (session_date < ? OR (session_date = ? AND COALESCE(start_time,'00:00:00') <= ?))
+              AND (end_date IS NULL 
+                   OR ? < end_date 
+                   OR (? = end_date AND ? <= COALESCE(end_time,'23:59:59')))
+            ORDER BY session_date DESC, COALESCE(start_time,'00:00:00') DESC
+            LIMIT 1
+        """, (site_id, user_id, d, d, ts_time, d, d, ts_time))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return (row['session_date'], row['start_time'])
+        return None
+
+    def _get_session_checkpoint(self, site_id, user_id, boundary_date, boundary_time):
+        """
+        Get checkpoint state from last closed session before boundary.
+        
+        Returns dict with:
+        - ending_balance, locked_sc: State to seed suffix rebuild
+        - checkpoint_id: ID of the checkpoint session
+        
+        Raises CheckpointValidationError if checkpoint is invalid.
+        """
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, end_date, end_time, ending_sc_balance, ending_redeemable_sc
+            FROM game_sessions
+            WHERE site_id = ? AND user_id = ? AND status = 'Closed'
+              AND (session_date < ? OR (session_date = ? AND COALESCE(start_time,'00:00:00') < ?))
+            ORDER BY 
+              COALESCE(end_date, session_date) DESC,
+              COALESCE(end_time, '00:00:00') DESC
+            LIMIT 1
+        """, (site_id, user_id, boundary_date, boundary_date, boundary_time))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            # No prior session - start from zero
+            return {'ending_balance': 0, 'locked_sc': 0, 'checkpoint_id': None}
+        
+        ending_balance = row['ending_sc_balance']
+        locked_sc = row['ending_redeemable_sc']
+        
+        # Validate checkpoint
+        if ending_balance is None or locked_sc is None:
+            raise Exception(f"Checkpoint validation failed: NULL values (session_id={row['id']})")
+        
+        if ending_balance < 0 or locked_sc < 0:
+            raise Exception(f"Checkpoint validation failed: negative values (session_id={row['id']})")
+        
+        return {
+            'ending_balance': ending_balance,
+            'locked_sc': locked_sc,
+            'checkpoint_id': row['id']
+        }
+
+    def auto_recalculate_affected_sessions(self, site_id, user_id, changed_date=None, changed_time='00:00:00', 
+                                           old_session_values=None, old_ts=None, new_ts=None, scoped=True,
+                                           entity_type=None, old_values=None, new_values=None):
+        """
+        Orchestrator for scoped vs full rebuild.
+        
+        Supports both legacy calls and new scoped API:
+        - Legacy: auto_recalculate(site, user, changed_date, changed_time, old_session_values)
+        - New: auto_recalculate(site, user, old_ts=(d,t), new_ts=(d,t), scoped=True, ...)
+        
+        Args:
+            site_id, user_id: Pair to recompute
+            changed_date, changed_time: Legacy params (mapped to new_ts)
+            old_session_values: Legacy RTP dict (for session edits)
+            old_ts, new_ts: New params - tuples of (date, time) for old/new timestamps
+            scoped: If True, attempt scoped rebuild; if False, force full rebuild
+            entity_type: 'session', 'purchase', 'redemption' (for skip logic)
+            old_values, new_values: Full old/new record dicts (for field-specific skip)
+        
+        Execution order:
+        1. Skip logic (notes-only, redemption_method_id-only)
+        2. RTP-only logic (wager/game_id changes)
+        3. Compute boundary T from containing sessions
+        4. Try scoped rebuild (with fallback to full on errors)
+        5. Update daily tax summaries
+        
+        Returns: session_count processed
         """
         if site_id is None or user_id is None:
             return 0
-
-        if changed_date is not None:
-            _ = (changed_date, changed_time)
-
-        self._rebuild_fifo_for_pair(site_id, user_id)
-        session_count, touched_dates = self._rebuild_session_tax_fields_for_pair(site_id, user_id, old_session_values)
-        for d in touched_dates:
-            self.update_daily_tax_session(d, user_id)
-        return session_count
+        
+        # Backward compatibility: map changed_date/changed_time to new_ts
+        if changed_date is not None and new_ts is None:
+            new_ts = (changed_date, changed_time or '00:00:00')
+        
+        # Step 1: Skip logic - administrative-only changes don't affect accounting
+        if old_values and new_values:
+            changed_fields = {k for k in old_values if old_values.get(k) != new_values.get(k)}
+            
+            # Get administrative fields for this entity type
+            admin_fields_for_type = self.ADMINISTRATIVE_FIELDS.get(entity_type, set())
+            
+            # If only administrative fields changed, skip recalculation
+            if changed_fields and changed_fields <= admin_fields_for_type:
+                print(f"[Scoped Recompute] Skipping: only administrative fields changed for {entity_type}: {changed_fields}")
+                return 0
+        
+        # Step 2: RTP-only logic (wager/game_id changes for sessions)
+        if old_values and new_values and entity_type == 'session':
+            rtp_only_fields = {'wager_amount', 'game_id'}
+            changed_fields = {k for k in old_values if old_values.get(k) != new_values.get(k)}
+            
+            if changed_fields and changed_fields <= rtp_only_fields:
+                # Only RTP changed - update incrementally and return
+                print(f"[Scoped Recompute] RTP-only change detected for session {old_values.get('id')}")
+                session_id = old_values.get('id') or new_values.get('id')
+                self._update_session_rtp_only(session_id, old_values, new_values)
+                return 0
+        
+        # Step 3: Determine if we should attempt scoped rebuild
+        if not scoped:
+            print(f"[Scoped Recompute] Full rebuild requested (scoped=False)")
+            # Force full rebuild
+            self._rebuild_fifo_for_pair(site_id, user_id)
+            session_count, touched_dates = self._rebuild_session_tax_fields_for_pair(site_id, user_id, old_session_values)
+            for d in touched_dates:
+                self.update_daily_tax_session(d, user_id)
+            return session_count
+        
+        # Step 4: Compute boundary T for scoped rebuild
+        try:
+            boundaries = []
+            
+            # Consider old_ts
+            if old_ts and len(old_ts) == 2:
+                old_date, old_time = old_ts
+                containing = self.find_containing_session_start(site_id, user_id, old_date, old_time)
+                boundaries.append(containing if containing else old_ts)
+            
+            # Consider new_ts
+            if new_ts and len(new_ts) == 2:
+                new_date, new_time = new_ts
+                containing = self.find_containing_session_start(site_id, user_id, new_date, new_time)
+                boundaries.append(containing if containing else new_ts)
+            
+            if not boundaries:
+                # No timestamps provided - fallback to full
+                print(f"[Scoped Recompute] No timestamps provided, using full rebuild")
+                raise Exception("No timestamps for boundary computation")
+            
+            # T = earliest boundary
+            T_date, T_time = min(boundaries, key=lambda x: (x[0], x[1]))
+            
+            print(f"[Scoped Recompute] Boundary T = {T_date} {T_time}")
+            
+            # Step 5: Execute scoped rebuild
+            print(f"[Scoped Recompute] Starting scoped FIFO rebuild from {T_date} {T_time}")
+            self._rebuild_fifo_for_pair_from(site_id, user_id, T_date, T_time)
+            
+            print(f"[Scoped Recompute] Starting scoped session rebuild from {T_date} {T_time}")
+            session_count, touched_dates = self._rebuild_session_tax_fields_for_pair_from(
+                site_id, user_id, T_date, T_time, old_session_values
+            )
+            
+            print(f"[Scoped Recompute] Scoped rebuild complete: {session_count} sessions, {len(touched_dates)} dates")
+            
+            # Update daily tax summaries
+            for d in touched_dates:
+                self.update_daily_tax_session(d, user_id)
+            
+            return session_count
+            
+        except Exception as e:
+            # Fallback to full rebuild on any error
+            print(f"[Scoped Recompute] Fallback to FULL rebuild: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            self._rebuild_fifo_for_pair(site_id, user_id)
+            session_count, touched_dates = self._rebuild_session_tax_fields_for_pair(site_id, user_id, old_session_values)
+            for d in touched_dates:
+                self.update_daily_tax_session(d, user_id)
+            
+            print(f"[Scoped Recompute] Full rebuild complete: {session_count} sessions")
+            return session_count
 
     def update_daily_tax_session(self, session_date, user_id):
         """
@@ -1322,6 +1928,69 @@ class SessionManager:
                 conn.rollback()
         finally:
             if close_conn:
+                conn.close()
+
+    def _update_session_rtp_only(self, session_id, old_values, new_values, conn=None):
+        """
+        Update RTP aggregates for a session whose ONLY wager/game_id changed.
+        Does NOT trigger FIFO or session chain recomputation.
+        
+        Args:
+            session_id: ID of the session
+            old_values: Dict with old wager_amount, delta_total, game_id
+            new_values: Dict with new wager_amount, delta_total, game_id
+            conn: Optional database connection (reuse to prevent locks)
+        """
+        own_conn = conn is None
+        if own_conn:
+            conn = self.db.get_connection()
+        
+        try:
+            # Use the passed-in values directly (don't re-query database)
+            new_wager = new_values.get('wager_amount', 0) or 0
+            new_delta = new_values.get('delta_total', 0) or 0
+            new_game_id = new_values.get('game_id')
+            
+            old_wager = old_values.get('wager_amount', 0) or 0
+            old_delta = old_values.get('delta_total', 0) or 0
+            old_game_id = old_values.get('game_id')
+            
+            print(f"[RTP Update] Session {session_id}:")
+            print(f"  Old: wager={old_wager}, delta={old_delta}, game_id={old_game_id}")
+            print(f"  New: wager={new_wager}, delta={new_delta}, game_id={new_game_id}")
+            
+            # Handle game_id change (remove from old, add to new)
+            if old_game_id != new_game_id:
+                print(f"  Game changed: {old_game_id} -> {new_game_id}")
+                if old_game_id:
+                    # Remove from old game
+                    self.update_game_rtp_incremental(
+                        old_game_id, -old_wager, -old_delta, False, conn
+                    )
+                if new_game_id:
+                    # Add to new game
+                    self.update_game_rtp_incremental(
+                        new_game_id, new_wager, new_delta, False, conn
+                    )
+            else:
+                # Same game - apply deltas
+                if new_game_id:
+                    wager_delta = new_wager - old_wager
+                    delta_delta = new_delta - old_delta
+                    print(f"  Deltas: wager_delta={wager_delta}, delta_delta={delta_delta}")
+                    if wager_delta != 0 or delta_delta != 0:
+                        self.update_game_rtp_incremental(
+                            new_game_id, wager_delta, delta_delta, False, conn
+                        )
+            
+            if own_conn:
+                conn.commit()
+        except Exception as e:
+            print(f"Error in _update_session_rtp_only: {e}")
+            if own_conn:
+                conn.rollback()
+        finally:
+            if own_conn:
                 conn.close()
 
     def recalculate_game_rtp_full(self, game_id):

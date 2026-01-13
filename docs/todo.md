@@ -93,29 +93,30 @@ Follow the Planner’s decisions and keep changes minimal.
 
 ### Recalculation Engine
 - [X] Add a one-click **“Recalculate Everything”** action in `qt_app.py`
-- [ ] Narrow recalculation scope so only affected sessions and downstream
+- [X] Narrow recalculation scope so only affected sessions and downstream
       records are recomputed
-- [ ] Ensure editing receipt dates does NOT trigger full site recompute
-- [ ] Preserve global recompute as a fallback only
+- [X] Ensure editing receipt dates does NOT trigger full site recompute
+- [X] Preserve global recompute as a fallback only
 
 ---
 
 ### Game RTP System
-- [ ] Rename existing `RTP` → **Expected RTP**
-- [ ] Add `actual_rtp` to `game_names` table (derived, not editable)
-- [ ] Incrementally update Actual RTP when:
+- [X] Rename existing `RTP` → **Expected RTP**
+- [X] Add `actual_rtp` to `game_names` table (derived, not editable)
+- [X] Incrementally update Actual RTP when:
   - a session is closed
   - a session is edited
-- [ ] Display Expected + Actual RTP in Games setup
-- [ ] Show both values as a tooltip in Game selection dialogs
-- [ ] Add “Recalculate RTP” button (game-scoped, not global)
+- [X] Display Expected + Actual RTP in Games setup
+- [X] Show both values as a tooltip in Game selection dialogs
+- [X] Add “Recalculate RTP” button (game-scoped, not global)
 
 ---
 
 ### Sessions & Data Integrity
 - [X] Add ability to “Start a New Session” after a purchase
 - [X] Implement CSV upload with duplicate detection (additive only)
-- [ ] Fix Unrealized basis not updating correctly when redemptions are backdated
+- [X] Fix Unrealized basis not updating correctly when redemptions are backdated
+      (Fixed by scoped recalculation - boundary detection + FIFO rebuild)
 
 ---
 
@@ -123,9 +124,9 @@ Follow the Planner’s decisions and keep changes minimal.
 
 ### Payments & Cards
 - [ ] Evaluate whether `method_type` in redemption methods is used; remove if unused
-- [ ] Add “Last 4” field to Cards
-- [ ] Display cards as `<Card Name> – x####` in dropdowns
-- [ ] Ensure full CRUD works everywhere cards are referenced
+- [X] Add “Last 4” field to Cards
+- [X] Display cards as `<Card Name> – x####` in dropdowns
+- [X] Ensure full CRUD works everywhere cards are referenced
 
 ---
 
@@ -183,7 +184,5 @@ Follow the Planner’s decisions and keep changes minimal.
 
 
 ## 🐞 Bugs / Issues (Triage Needed)
-- [ ] BUG: Unrealized basis incorrect after backdated redemption
-  - Trigger: Edit redemption date earlier than session start
-  - Expected: Unrealized updates for affected session only
-  - Actual: Unrealized remains unchanged
+
+(No open bugs at this time)

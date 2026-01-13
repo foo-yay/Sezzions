@@ -787,16 +787,44 @@ class PurchaseDialog(QtWidgets.QDialog):
             self.cashback_edit.clear()
             return
         user_id = user_row["id"]
-        c.execute("SELECT name FROM cards WHERE user_id = ? AND active = 1 ORDER BY name", (user_id,))
-        cards = [r["name"] for r in c.fetchall()]
+        c.execute("SELECT name, last_four FROM cards WHERE user_id = ? AND active = 1 ORDER BY name", (user_id,))
+        card_rows = c.fetchall()
         conn.close()
+        
+        # Build name map and formatted display list
+        self._card_name_map = {}
+        cards = []
+        for row in card_rows:
+            card_name = row["name"]
+            last_four = row["last_four"]
+            if last_four:
+                display_name = f"{card_name} – x{last_four}"
+            else:
+                display_name = card_name
+            cards.append(display_name)
+            self._card_name_map[display_name.lower()] = card_name
+        
         preserve = getattr(self, "_preserve_card_selection", False)
         current = self.card_combo.currentText().strip()
         self.card_combo.blockSignals(True)
         self.card_combo.clear()
         self.card_combo.addItems(cards)
-        if preserve and current in cards:
-            self.card_combo.setCurrentText(current)
+        
+        if preserve and current:
+            # Find display name that matches original card name
+            found = False
+            for display_name, mapped_name in self._card_name_map.items():
+                if mapped_name == current:
+                    # Find case-sensitive match in combo
+                    for i in range(self.card_combo.count()):
+                        if self.card_combo.itemText(i).lower() == display_name:
+                            self.card_combo.setCurrentIndex(i)
+                            found = True
+                            break
+                    break
+            if not found:
+                self.card_combo.setCurrentIndex(-1)
+                self.card_combo.setEditText("")
         else:
             self.card_combo.setCurrentIndex(-1)
             self.card_combo.setEditText("")
@@ -814,9 +842,15 @@ class PurchaseDialog(QtWidgets.QDialog):
             self.cashback_edit.clear()
             return
 
+        # Map display name back to actual card name if needed
+        if hasattr(self, '_card_name_map') and card_name.lower() in self._card_name_map:
+            actual_card_name = self._card_name_map[card_name.lower()]
+        else:
+            actual_card_name = card_name
+
         conn = self.db.get_connection()
         c = conn.cursor()
-        c.execute("SELECT cashback_rate FROM cards WHERE name = ?", (card_name,))
+        c.execute("SELECT cashback_rate FROM cards WHERE name = ?", (actual_card_name,))
         card_row = c.fetchone()
         conn.close()
 
@@ -834,9 +868,15 @@ class PurchaseDialog(QtWidgets.QDialog):
         if not card_name:
             return
 
+        # Map display name back to actual card name if needed
+        if hasattr(self, '_card_name_map') and card_name.lower() in self._card_name_map:
+            actual_card_name = self._card_name_map[card_name.lower()]
+        else:
+            actual_card_name = card_name
+
         conn = self.db.get_connection()
         c = conn.cursor()
-        c.execute("SELECT cashback_rate FROM cards WHERE name = ?", (card_name,))
+        c.execute("SELECT cashback_rate FROM cards WHERE name = ?", (actual_card_name,))
         card_row = c.fetchone()
         conn.close()
 
@@ -903,12 +943,8 @@ class PurchaseDialog(QtWidgets.QDialog):
             self._set_valid(self.site_combo)
 
         card_text = self.card_combo.currentText().strip()
-        valid_cards = {
-            self.card_combo.itemText(i).lower()
-            for i in range(self.card_combo.count())
-            if self.card_combo.itemText(i)
-        }
-        if not card_text or card_text.lower() not in valid_cards:
+        # Check if card text is valid using the name map
+        if not card_text or (hasattr(self, '_card_name_map') and card_text.lower() not in self._card_name_map):
             self._set_invalid(self.card_combo, "Select a valid Card for the chosen User.")
         else:
             self._set_valid(self.card_combo)
@@ -948,14 +984,32 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.time_edit.setText(self._format_time_for_input(self.purchase["purchase_time"]))
 
         # Load user first (this will populate the card dropdown)
-        self._preserve_card_selection = True
         self.user_combo.setCurrentText(self.purchase["user_name"])
-        # Trigger user change to filter cards
+        # Trigger user change to filter cards and populate _card_name_map
         self._on_user_change(self.purchase["user_name"])
-        self._preserve_card_selection = False
 
         self.site_combo.setCurrentText(self.purchase["site_name"])
-        self.card_combo.setCurrentText(self.purchase["card_name"])
+        
+        # Find the formatted display name for the card
+        card_name = self.purchase["card_name"]
+        if hasattr(self, '_card_name_map'):
+            # Find the display name that maps to this card name
+            display_name = None
+            for disp, actual in self._card_name_map.items():
+                if actual == card_name:
+                    # Find the actual case-sensitive display text in combo
+                    for i in range(self.card_combo.count()):
+                        if self.card_combo.itemText(i).lower() == disp:
+                            display_name = self.card_combo.itemText(i)
+                            break
+                    break
+            if display_name:
+                self.card_combo.setCurrentText(display_name)
+            else:
+                self.card_combo.setCurrentText(card_name)
+        else:
+            self.card_combo.setCurrentText(card_name)
+        
         self.amount_edit.setText(str(self.purchase["amount"]))
         self.sc_edit.setText(str(self.purchase["sc_received"]))
         self.start_sc_edit.setText(str(self.purchase["starting_sc_balance"]))
@@ -1055,7 +1109,12 @@ class PurchaseDialog(QtWidgets.QDialog):
             # Auto-calculate if not provided
             conn = self.db.get_connection()
             c = conn.cursor()
-            c.execute("SELECT cashback_rate FROM cards WHERE name = ?", (card_name,))
+            # Map display name back to actual card name if needed
+            if hasattr(self, '_card_name_map') and card_name.lower() in self._card_name_map:
+                actual_card_name = self._card_name_map[card_name.lower()]
+            else:
+                actual_card_name = card_name
+            c.execute("SELECT cashback_rate FROM cards WHERE name = ?", (actual_card_name,))
             card_row = c.fetchone()
             conn.close()
             if card_row:
@@ -1086,6 +1145,19 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         self._on_delete = on_delete
         self.setWindowTitle("View Purchase")
         self.resize(600, 560)
+
+        # Fetch card's last_four if available
+        from database import Database
+        db = Database()
+        conn = db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT last_four FROM cards WHERE id = ?", (purchase["card_id"],))
+        card_row = c.fetchone()
+        conn.close()
+        
+        card_display = purchase["card_name"] or "—"
+        if card_row and card_row["last_four"]:
+            card_display = f"{purchase['card_name']} – x{card_row['last_four']}"
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -1125,7 +1197,7 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         row = add_row("Time", format_time(purchase["purchase_time"]), row)
         row = add_row("User", purchase["user_name"] or "—", row)
         row = add_row("Site", purchase["site_name"] or "—", row)
-        row = add_row("Card", purchase["card_name"] or "—", row)
+        row = add_row("Card", card_display, row)
         row = add_row("Amount", format_currency(purchase["amount"]), row)
         row = add_row("SC Received", f"{float(purchase['sc_received'] or 0):.2f}", row)
         row = add_row("Starting SC", f"{float(purchase['starting_sc_balance'] or 0):.2f}", row)
@@ -1837,7 +1909,7 @@ class RedemptionViewDialog(QtWidgets.QDialog):
     def _populate_allocations(self):
         self.allocations_table.setRowCount(len(self.allocations))
         for row_idx, row in enumerate(self.allocations):
-            purchase_time = row.get("purchase_time") or "00:00:00"
+            purchase_time = row["purchase_time"] if row["purchase_time"] else "00:00:00"
             date_display = format_date_time(row["purchase_date"], purchase_time)
             amount = format_currency(row["amount"])
             sc_received = f"{float(row['sc_received'] or 0.0):.2f}"
@@ -4862,7 +4934,12 @@ class PurchasesTab(QtWidgets.QWidget):
             return False, f"Site '{site_name}' not found."
         site_id = site_row["id"]
 
-        c.execute("SELECT id FROM cards WHERE name = ? AND user_id = ?", (card_name, user_id))
+        # Map display name back to actual card name if needed
+        if hasattr(self, '_card_name_map') and card_name.lower() in self._card_name_map:
+            actual_card_name = self._card_name_map[card_name.lower()]
+        else:
+            actual_card_name = card_name
+        c.execute("SELECT id FROM cards WHERE name = ? AND user_id = ?", (actual_card_name, user_id))
         card_row = c.fetchone()
         if not card_row:
             conn.close()
@@ -4874,7 +4951,7 @@ class PurchasesTab(QtWidgets.QWidget):
 
         if purchase_id:
             c.execute(
-                "SELECT amount, remaining_amount, site_id, user_id FROM purchases WHERE id = ?",
+                "SELECT amount, remaining_amount, site_id, user_id, purchase_date, purchase_time FROM purchases WHERE id = ?",
                 (purchase_id,),
             )
             old_purchase = c.fetchone()
@@ -4885,6 +4962,8 @@ class PurchasesTab(QtWidgets.QWidget):
             old_remaining = float(old_purchase["remaining_amount"] or 0)
             old_site_id = old_purchase["site_id"]
             old_user_id = old_purchase["user_id"]
+            old_date = old_purchase["purchase_date"]
+            old_time = old_purchase["purchase_time"] or "00:00:00"
             consumed = old_amount - old_remaining
 
             if consumed > 0:
@@ -4991,22 +5070,59 @@ class PurchasesTab(QtWidgets.QWidget):
                 conn.commit()
                 conn.close()
 
-            # If we forced a site/user change, do targeted recalculation for both old and new (site, user) pairs
+            # If we forced a site/user change, do scoped recalculation for both old and new (site, user) pairs
             if force_site_user_change and (old_site_id != site_id or old_user_id != user_id):
-                # Recalculate FIFO for old (site, user) pair
-                self.session_mgr.rebuild_all_derived(old_site_id, old_user_id)
-                # Recalculate FIFO for new (site, user) pair if different
+                # Recalculate for old pair (remove old transaction)
+                self.session_mgr.auto_recalculate_affected_sessions(
+                    old_site_id, old_user_id,
+                    old_ts=(old_date, old_time),
+                    new_ts=None,
+                    scoped=True,
+                    entity_type='purchase'
+                )
+                # Recalculate for new pair (add new transaction)
                 if site_id != old_site_id or user_id != old_user_id:
-                    self.session_mgr.rebuild_all_derived(site_id, user_id)
-                message = "Purchase updated with forced site/user change. FIFO recalculated for affected users."
+                    self.session_mgr.auto_recalculate_affected_sessions(
+                        site_id, user_id,
+                        old_ts=None,
+                        new_ts=(pdate, ptime),
+                        scoped=True,
+                        entity_type='purchase'
+                    )
+                message = "Purchase updated with forced site/user change (scoped recalculation)."
                 return True, message
 
+            # Normal edit: use scoped recalculation with both old and new timestamps
+            # Build old_values and new_values for skip logic detection
+            old_purchase_values = {
+                'amount': old_amount,
+                'purchase_date': old_date,
+                'purchase_time': old_time,
+                'site_id': old_site_id,
+                'user_id': old_user_id,
+                'notes': old_purchase["notes"] if "notes" in old_purchase.keys() else ""
+            }
+            new_purchase_values = {
+                'amount': amount,
+                'purchase_date': pdate,
+                'purchase_time': ptime,
+                'site_id': site_id,
+                'user_id': user_id,
+                'notes': notes
+            }
+            
             recalc_count = self.session_mgr.auto_recalculate_affected_sessions(
-                site_id, user_id, pdate, ptime
+                site_id, user_id,
+                old_ts=(old_date, old_time),
+                new_ts=(pdate, ptime),
+                scoped=True,
+                entity_type='purchase',
+                old_values=old_purchase_values,
+                new_values=new_purchase_values
             )
             message = "Purchase updated"
             if recalc_count > 0:
-                message += f" (recalculated {recalc_count} affected session{'s' if recalc_count != 1 else ''})"
+                message += f" (scoped recalc: {recalc_count} session{'s' if recalc_count != 1 else ''})"
             return True, message
 
         c.execute(
@@ -5047,7 +5163,15 @@ class PurchasesTab(QtWidgets.QWidget):
 
         session_id = self.session_mgr.get_or_create_site_session(site_id, user_id, pdate)
         self.session_mgr.add_purchase_to_session(session_id, amount)
-        recalc_count = self.session_mgr.auto_recalculate_affected_sessions(site_id, user_id, pdate, ptime)
+        
+        # Add purchase: use scoped recalculation with new_ts only
+        recalc_count = self.session_mgr.auto_recalculate_affected_sessions(
+            site_id, user_id,
+            old_ts=None,
+            new_ts=(pdate, ptime),
+            scoped=True,
+            entity_type='purchase'
+        )
         message = "Purchase added"
         if recalc_count > 0:
             message += f" (recalculated {recalc_count} affected session{'s' if recalc_count != 1 else ''})"
@@ -5225,11 +5349,16 @@ class PurchasesTab(QtWidgets.QWidget):
             except Exception:
                 pass
 
-        # Now do the expensive recalculations
+        # Now do the expensive recalculations using scoped API
         total_recalc = 0
         for site_id, user_id, pdate, ptime in recalc_needed:
+            # Delete purchase: use old_ts (removing transaction)
             total_recalc += self.session_mgr.auto_recalculate_affected_sessions(
-                site_id, user_id, pdate, ptime
+                site_id, user_id,
+                old_ts=(pdate, ptime),
+                new_ts=None,
+                scoped=True,
+                entity_type='purchase'
             )
 
         self.load_data()
@@ -5239,13 +5368,13 @@ class PurchasesTab(QtWidgets.QWidget):
         if error_messages:
             message = f"Deleted {deleted_count} purchase(s)."
             if total_recalc > 0:
-                message += f" Recalculated {total_recalc} session{'s' if total_recalc != 1 else ''}."
+                message += f" Scoped recalc: {total_recalc} session{'s' if total_recalc != 1 else ''}."
             message += "\n\nErrors:\n" + "\n".join(error_messages)
             QtWidgets.QMessageBox.warning(self, "Partial Success", message)
         else:
             message = f"Deleted {deleted_count} purchase{'s' if deleted_count != 1 else ''}"
             if total_recalc > 0:
-                message += f" (recalculated {total_recalc} affected session{'s' if total_recalc != 1 else ''})"
+                message += f" (scoped recalc: {total_recalc} session{'s' if total_recalc != 1 else ''})"
             QtWidgets.QMessageBox.information(self, "Success", message)
 
     def _delete_purchase_by_id(self, purchase_id):
@@ -6071,6 +6200,7 @@ class RedemptionsTab(QtWidgets.QWidget):
             c.execute(
                 """
                 SELECT r.amount, r.site_session_id, r.site_id, r.user_id,
+                       r.redemption_date, r.redemption_time,
                        ts.cost_basis
                 FROM redemptions r
                 LEFT JOIN tax_sessions ts ON ts.redemption_id = r.id
@@ -6083,6 +6213,8 @@ class RedemptionsTab(QtWidgets.QWidget):
             old_session_id = old_data["site_session_id"] if old_data else None
             old_site_id = old_data["site_id"] if old_data else None
             old_user_id = old_data["user_id"] if old_data else None
+            old_date = old_data["redemption_date"] if old_data else None
+            old_time = old_data["redemption_time"] or "00:00:00" if old_data else "00:00:00"
             old_cost_basis = float(old_data["cost_basis"] or 0.0) if old_data else 0.0
 
             c.execute(
@@ -6130,18 +6262,40 @@ class RedemptionsTab(QtWidgets.QWidget):
             if self._has_subsequent and self._subsequent_ids:
                 self._recalculate_subsequent_redemptions(self._subsequent_ids, site_id, user_id)
 
-            pairs_to_recalc = {(site_id, user_id)}
-            if old_site_id and old_user_id:
-                pairs_to_recalc.add((old_site_id, old_user_id))
-            total_recalc = 0
-            for sid, uid in pairs_to_recalc:
-                total_recalc += self.session_mgr.auto_recalculate_affected_sessions(sid, uid, rdate, rtime)
+            # Scoped recalculation for affected pairs
+            # If site/user changed, recalculate both old and new pairs
+            if old_site_id and old_user_id and (old_site_id != site_id or old_user_id != user_id):
+                # Old pair: remove old transaction
+                total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
+                    old_site_id, old_user_id,
+                    old_ts=(old_date, old_time),
+                    new_ts=None,
+                    scoped=True,
+                    entity_type='redemption'
+                )
+                # New pair: add new transaction
+                total_recalc += self.session_mgr.auto_recalculate_affected_sessions(
+                    site_id, user_id,
+                    old_ts=None,
+                    new_ts=(rdate, rtime),
+                    scoped=True,
+                    entity_type='redemption'
+                )
+            else:
+                # Same pair: use both timestamps
+                total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
+                    site_id, user_id,
+                    old_ts=(old_date, old_time),
+                    new_ts=(rdate, rtime),
+                    scoped=True,
+                    entity_type='redemption'
+                )
 
             message = "Redemption updated"
             if self._has_subsequent:
                 message += f" (recalculated {len(self._subsequent_ids)} subsequent redemptions)"
             if total_recalc:
-                message += f" (recalculated {total_recalc} sessions)"
+                message += f" (scoped recalc: {total_recalc} sessions)"
             return True, message
 
         c.execute(
@@ -6169,11 +6323,17 @@ class RedemptionsTab(QtWidgets.QWidget):
         conn.commit()
         conn.close()
 
-        # No need to call process_redemption() here - auto_recalculate does full rebuild
-        recalc_count = self.session_mgr.auto_recalculate_affected_sessions(site_id, user_id, rdate, rtime)
+        # Add redemption: use scoped recalculation with new_ts only
+        recalc_count = self.session_mgr.auto_recalculate_affected_sessions(
+            site_id, user_id,
+            old_ts=None,
+            new_ts=(rdate, rtime),
+            scoped=True,
+            entity_type='redemption'
+        )
         message = "Redemption logged"
         if recalc_count:
-            message += f" (recalculated {recalc_count} sessions)"
+            message += f" (scoped recalc: {recalc_count} sessions)"
         return True, message
 
     def _recalculate_subsequent_redemptions(self, redemption_ids, site_id, user_id):
@@ -6302,7 +6462,13 @@ class RedemptionsTab(QtWidgets.QWidget):
 
         total_recalc = 0
         for site_id, user_id, rdate, rtime in pairs_to_recalc:
-            total_recalc += self.session_mgr.auto_recalculate_affected_sessions(site_id, user_id, rdate, rtime)
+            total_recalc += self.session_mgr.auto_recalculate_affected_sessions(
+                site_id, user_id,
+                old_ts=(rdate, rtime),
+                new_ts=None,
+                scoped=True,
+                entity_type='redemption'
+            )
 
         self.load_data()
         if self.on_data_changed:
@@ -6318,7 +6484,7 @@ class RedemptionsTab(QtWidgets.QWidget):
         else:
             message = f"Deleted {deleted_count} redemption{'s' if deleted_count != 1 else ''}"
             if total_recalc:
-                message += f" (recalculated {total_recalc} sessions)"
+                message += f" (scoped recalc: {total_recalc} sessions)"
             QtWidgets.QMessageBox.information(self, "Success", message)
 
     def _update_action_visibility(self):
@@ -8074,14 +8240,122 @@ class GameSessionsTab(QtWidgets.QWidget):
         old_user_id = old_session["user_id"]
         old_date = old_session["session_date"]
         old_time = old_session["start_time"] or "00:00:00"
+        
+        # Look up game_id from game_name
+        new_game_id = None
+        if data["game_name"]:
+            c.execute("SELECT id FROM games WHERE name = ?", (data["game_name"],))
+            game_row = c.fetchone()
+            if game_row:
+                new_game_id = game_row["id"]
 
         # Capture old values for RTP delta calculation
         old_session_values = {
             'session_id': old_session['id'],
             'wager_amount': old_session['wager_amount'] if 'wager_amount' in old_session.keys() else None,
             'delta_total': old_session['delta_total'] if 'delta_total' in old_session.keys() else None,
-            'game_id': old_session['game_id'] if 'game_id' in old_session.keys() else None
+            'game_id': old_session['game_id'] if 'game_id' in old_session.keys() else None,
+            'id': old_session['id'],
+            'notes': old_session['notes'] if 'notes' in old_session.keys() else None
         }
+        
+        # Build new values dict for comparison
+        # Calculate delta_total that will be saved
+        calculated_delta_total = data["ending_total_sc"] - data["starting_total_sc"]
+        
+        new_session_values = {
+            'wager_amount': data["wager_amount"],
+            'delta_total': calculated_delta_total,
+            'game_id': new_game_id,
+            'notes': data["notes"],
+            'starting_total_sc': data["starting_total_sc"],
+            'starting_redeemable_sc': data["starting_redeemable_sc"],
+            'ending_total_sc': data["ending_total_sc"],
+            'ending_redeemable_sc': data["ending_redeemable_sc"],
+            'session_date': data["session_date"],
+            'end_date': data["end_date"],
+            'start_time': data["start_time"],
+            'end_time': data["end_time"],
+            'site_id': new_site_id,
+            'user_id': new_user_id
+        }
+        
+        # RTP-only pre-check (Layer 1 optimization)
+        changed_fields = {k for k in old_session_values if k in new_session_values and old_session_values.get(k) != new_session_values.get(k)}
+        
+        # Notes-only change - skip recomputation entirely
+        if changed_fields == {'notes'}:
+            if data["end_date"] < data["session_date"]:
+                conn.close()
+                QtWidgets.QMessageBox.warning(self, "Invalid Dates", "End date is before start date.")
+                return
+            
+            c.execute(
+                """
+                UPDATE game_sessions
+                SET notes=?
+                WHERE id=?
+                """,
+                (data["notes"], old_session["id"]),
+            )
+            conn.commit()
+            conn.close()
+            
+            dialog.accept()
+            self.load_data()
+            if self.on_data_changed:
+                self.on_data_changed()
+            
+            QtCore.QTimer.singleShot(
+                0, lambda: QtWidgets.QMessageBox.information(self, "Success", "Session notes updated (no recalculation needed)")
+            )
+            return
+        
+        # RTP-only change - update RTP directly without full rebuild
+        rtp_only_fields = {'wager_amount', 'game_id'}
+        if changed_fields and changed_fields <= rtp_only_fields:
+            if data["end_date"] < data["session_date"]:
+                conn.close()
+                QtWidgets.QMessageBox.warning(self, "Invalid Dates", "End date is before start date.")
+                return
+            
+            # Calculate delta_total (may have changed if balances were also edited)
+            delta_total = data["ending_total_sc"] - data["starting_total_sc"]
+            
+            # Calculate RTP: (wager + delta_total) / wager * 100
+            wager = data["wager_amount"]
+            if wager and float(wager) > 0:
+                rtp = ((float(wager) + delta_total) / float(wager)) * 100
+            else:
+                rtp = None
+            
+            c.execute(
+                """
+                UPDATE game_sessions
+                SET wager_amount=?,
+                    game_id=?,
+                    game_name=?,
+                    delta_total=?,
+                    rtp=?
+                WHERE id=?
+                """,
+                (wager, new_game_id, data["game_name"], delta_total, rtp, old_session["id"]),
+            )
+            conn.commit()
+            conn.close()
+            
+            # Update RTP aggregates
+            self.session_mgr._update_session_rtp_only(old_session["id"], old_session_values, new_session_values)
+            
+            dialog.accept()
+            self.load_data()
+            if self.on_data_changed:
+                self.on_data_changed()
+            
+            QtCore.QTimer.singleShot(
+                0, lambda: QtWidgets.QMessageBox.information(self, "Success", "Session updated (RTP-only, fast path)")
+            )
+            return
 
         if data["end_date"] < data["session_date"]:
             conn.close()
@@ -8128,15 +8402,41 @@ class GameSessionsTab(QtWidgets.QWidget):
         conn.commit()
         conn.close()
 
-        pairs = {
-            (new_site_id, new_user_id, data["session_date"], data["start_time"]),
-            (old_site_id, old_user_id, old_date, old_time),
-        }
-        total_recalc = 0
-        for site_id, user_id, sdate, stime in pairs:
-            # Pass old session values to first recalc (for the edited session's site/user pair)
-            old_vals = old_session_values if (site_id, user_id) == (new_site_id, new_user_id) else None
-            total_recalc += self.session_mgr.auto_recalculate_affected_sessions(site_id, user_id, sdate, stime, old_vals)
+        # Scoped recalculation using new API
+        # If site/user changed, recalculate both pairs
+        if (new_site_id, new_user_id) != (old_site_id, old_user_id):
+            # Old pair: remove old timestamp
+            total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
+                old_site_id, old_user_id,
+                old_ts=(old_date, old_time),
+                new_ts=None,
+                scoped=True,
+                entity_type='session',
+                old_values=old_session_values,
+                new_values=new_session_values
+            )
+            # New pair: add new timestamp
+            total_recalc += self.session_mgr.auto_recalculate_affected_sessions(
+                new_site_id, new_user_id,
+                old_ts=None,
+                new_ts=(data["session_date"], data["start_time"]),
+                scoped=True,
+                entity_type='session',
+                old_values=old_session_values,
+                new_values=new_session_values
+            )
+        else:
+            # Same pair: use both timestamps
+            total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
+                new_site_id, new_user_id,
+                old_ts=(old_date, old_time),
+                new_ts=(data["session_date"], data["start_time"]),
+                old_session_values=old_session_values,
+                scoped=True,
+                entity_type='session',
+                old_values=old_session_values,
+                new_values=new_session_values
+            )
 
         dialog.accept()
         self.load_data()
@@ -8145,7 +8445,7 @@ class GameSessionsTab(QtWidgets.QWidget):
 
         message = "Session updated"
         if total_recalc:
-            message += f" (recalculated {total_recalc} sessions)"
+            message += f" (recalculated {total_recalc} sessions via scoped rebuild)"
         QtCore.QTimer.singleShot(
             0, lambda: QtWidgets.QMessageBox.information(self, "Success", message)
         )
@@ -9456,7 +9756,7 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
     def _populate_purchases(self):
         self.table.setRowCount(len(self.purchases))
         for row_idx, row in enumerate(self.purchases):
-            purchase_time = row.get("purchase_time") or "00:00:00"
+            purchase_time = row["purchase_time"] if row["purchase_time"] else "00:00:00"
             date_display = format_date_time(row["purchase_date"], purchase_time)
             amount = format_currency(row["amount"])
             sc_received = f"{float(row['sc_received'] or 0.0):.2f}"
@@ -10725,7 +11025,7 @@ class RealizedPositionDialog(QtWidgets.QDialog):
     def _populate_allocations(self):
         self.table.setRowCount(len(self.allocations))
         for row_idx, row in enumerate(self.allocations):
-            purchase_time = row.get("purchase_time") or "00:00:00"
+            purchase_time = row["purchase_time"] if row["purchase_time"] else "00:00:00"
             date_display = format_date_time(row["purchase_date"], purchase_time)
             amount = format_currency(row["amount"])
             sc_received = f"{float(row['sc_received'] or 0.0):.2f}"
@@ -12118,6 +12418,11 @@ class CardEditDialog(SetupEditDialog):
         form.setColumnMinimumWidth(2, 80)
 
         self.name_edit = QtWidgets.QLineEdit()
+        self.last_four_edit = QtWidgets.QLineEdit()
+        self.last_four_edit.setPlaceholderText("1234")
+        self.last_four_edit.setMaxLength(4)
+        self.last_four_edit.setMaximumWidth(80)
+        self.last_four_edit.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self.cashback_edit = QtWidgets.QLineEdit()
         self.cashback_edit.setPlaceholderText("0.00")
         self.cashback_edit.setMaximumWidth(80)
@@ -12138,10 +12443,12 @@ class CardEditDialog(SetupEditDialog):
         form.addWidget(self.active_check, 0, 3)
         form.addWidget(QtWidgets.QLabel("User"), 1, 0)
         form.addWidget(self.user_combo, 1, 1)
-        form.addWidget(QtWidgets.QLabel("Cashback %"), 1, 2)
-        form.addWidget(self.cashback_edit, 1, 3)
-        form.addWidget(QtWidgets.QLabel("Notes"), 2, 0, QtCore.Qt.AlignTop)
-        form.addWidget(self.notes_edit, 2, 1, 1, 3)
+        form.addWidget(QtWidgets.QLabel("Last 4"), 1, 2)
+        form.addWidget(self.last_four_edit, 1, 3)
+        form.addWidget(QtWidgets.QLabel("Cashback %"), 2, 0)
+        form.addWidget(self.cashback_edit, 2, 1)
+        form.addWidget(QtWidgets.QLabel("Notes"), 3, 0, QtCore.Qt.AlignTop)
+        form.addWidget(self.notes_edit, 3, 1, 1, 3)
         layout.addLayout(form)
 
         # Add recalculate cashback button only when editing existing card
@@ -12175,6 +12482,7 @@ class CardEditDialog(SetupEditDialog):
 
         if card:
             self.name_edit.setText(card["name"])
+            self.last_four_edit.setText(card["last_four"] if "last_four" in card.keys() and card["last_four"] else "")
             self.cashback_edit.setText(f"{float(card['cashback_rate'] or 0):.2f}")
             if card["user_name"]:
                 self.user_combo.setCurrentText(card["user_name"])
@@ -12314,6 +12622,7 @@ class CardEditDialog(SetupEditDialog):
         user_text = self.user_combo.currentText().strip()
         return {
             "name": self.name_edit.text().strip(),
+            "last_four": self.last_four_edit.text().strip() or None,
             "cashback_rate": float(self.cashback_edit.text().strip() or 0.0),
             "user_name": self._user_lookup.get(user_text.lower(), user_text),
             "notes": self.notes_edit.toPlainText().strip() or None,
@@ -12363,13 +12672,21 @@ class CardViewDialog(QtWidgets.QDialog):
         form.addWidget(user_label, 1, 0)
         form.addWidget(user_value, 1, 1)
 
+        # Last 4 field
+        last_four_label = QtWidgets.QLabel("Last 4")
+        last_four_value = QtWidgets.QLabel(card["last_four"] if "last_four" in card.keys() and card["last_four"] else "—")
+        last_four_value.setObjectName("InfoField")
+        last_four_value.setMaximumWidth(80)
+        form.addWidget(last_four_label, 1, 2)
+        form.addWidget(last_four_value, 1, 3)
+
         # Cashback % field
         cashback_label = QtWidgets.QLabel("Cashback %")
         cashback_value = QtWidgets.QLabel(f"{float(card['cashback_rate'] or 0):.2f}")
         cashback_value.setObjectName("InfoField")
         cashback_value.setMaximumWidth(80)
-        form.addWidget(cashback_label, 1, 2)
-        form.addWidget(cashback_value, 1, 3)
+        form.addWidget(cashback_label, 2, 0)
+        form.addWidget(cashback_value, 2, 1)
 
         # Notes field
         notes_value = card["notes"] or ""
@@ -12377,7 +12694,7 @@ class CardViewDialog(QtWidgets.QDialog):
         notes_label.setAlignment(
             QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
         )
-        form.addWidget(notes_label, 2, 0)
+        form.addWidget(notes_label, 3, 0)
         if notes_value:
             notes_edit = QtWidgets.QPlainTextEdit()
             notes_edit.setObjectName("NotesField")
@@ -12386,11 +12703,11 @@ class CardViewDialog(QtWidgets.QDialog):
             notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
             notes_edit.setPlainText(notes_value)
             notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 4 + 12)
-            form.addWidget(notes_edit, 2, 1, 1, 3)
+            form.addWidget(notes_edit, 3, 1, 1, 3)
         else:
             notes_field = QtWidgets.QLabel("—")
             notes_field.setObjectName("InfoField")
-            form.addWidget(notes_field, 2, 1, 1, 3)
+            form.addWidget(notes_field, 3, 1, 1, 3)
 
         layout.addLayout(form)
         layout.addSpacing(8)
@@ -13594,7 +13911,7 @@ class CardsSetupTab(SetupListTab):
     def __init__(self, db, parent=None):
         super().__init__(
             db,
-            ["Name", "Cashback %", "User", "Active", "Notes"],
+            ["Name", "Last 4", "Cashback %", "User", "Active", "Notes"],
             "Search cards...",
             "Add Card",
             "View Card",
@@ -13620,7 +13937,7 @@ class CardsSetupTab(SetupListTab):
         c = conn.cursor()
         c.execute(
             """
-            SELECT cards.id, cards.name, cards.cashback_rate, cards.active, cards.notes,
+            SELECT cards.id, cards.name, cards.last_four, cards.cashback_rate, cards.active, cards.notes,
                    users.name as user_name
             FROM cards
             LEFT JOIN users ON users.id = cards.user_id
@@ -13637,7 +13954,7 @@ class CardsSetupTab(SetupListTab):
         c = conn.cursor()
         c.execute(
             """
-            SELECT cards.id, cards.name, cards.cashback_rate, cards.active, cards.notes,
+            SELECT cards.id, cards.name, cards.last_four, cards.cashback_rate, cards.active, cards.notes,
                    users.name as user_name
             FROM cards
             LEFT JOIN users ON users.id = cards.user_id
@@ -13650,6 +13967,7 @@ class CardsSetupTab(SetupListTab):
             notes_display = notes[:120]
             display = [
                 row["name"],
+                row["last_four"] or "",
                 f"{float(row['cashback_rate'] or 0):.2f}",
                 row["user_name"] or "",
                 "Yes" if row["active"] else "No",
@@ -13668,10 +13986,11 @@ class CardsSetupTab(SetupListTab):
 
         # Set custom column widths - make Name column 2x wider
         header = self.table.horizontalHeader()
-        header.resizeSection(0, 240)  # Name column - 2x default width
-        header.resizeSection(1, 120)  # Cashback %
-        header.resizeSection(2, 120)  # User
-        header.resizeSection(3, 80)   # Active
+        header.resizeSection(0, 200)  # Name column
+        header.resizeSection(1, 80)   # Last 4
+        header.resizeSection(2, 100)  # Cashback %
+        header.resizeSection(3, 120)  # User
+        header.resizeSection(4, 80)   # Active
 
     def add_record(self):
         dialog = CardEditDialog(self._fetch_users(), parent=self)
@@ -13690,10 +14009,10 @@ class CardsSetupTab(SetupListTab):
         try:
             c.execute(
                 """
-                INSERT INTO cards (name, cashback_rate, user_id, notes, active)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO cards (name, last_four, cashback_rate, user_id, notes, active)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (data["name"], data["cashback_rate"], user_id, data["notes"], data["active"]),
+                (data["name"], data["last_four"], data["cashback_rate"], user_id, data["notes"], data["active"]),
             )
             conn.commit()
         except Exception as exc:
@@ -13732,10 +14051,10 @@ class CardsSetupTab(SetupListTab):
             c.execute(
                 """
                 UPDATE cards
-                SET name = ?, cashback_rate = ?, user_id = ?, notes = ?, active = ?
+                SET name = ?, last_four = ?, cashback_rate = ?, user_id = ?, notes = ?, active = ?
                 WHERE id = ?
                 """,
-                (data["name"], data["cashback_rate"], user_id, data["notes"], data["active"], record_id),
+                (data["name"], data["last_four"], data["cashback_rate"], user_id, data["notes"], data["active"], record_id),
             )
             conn.commit()
         except Exception as exc:
@@ -17177,6 +17496,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 "sessions": sessions,
             }
         )
+        
+        # Refresh Unrealized tab to reflect changes in purchase basis
+        if hasattr(self, 'unrealized_tab'):
+            self.unrealized_tab.load_data()
 
     def _rebuild_all(self):
         confirm = QtWidgets.QMessageBox.question(
