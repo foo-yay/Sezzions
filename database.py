@@ -437,6 +437,38 @@ class Database:
             self.set_schema_version(conn, 13)
             conn.commit()
 
+        if current_version < 14:
+            print("Creating game_session_event_links table...")
+            try:
+                c.execute('''
+                    CREATE TABLE IF NOT EXISTS game_session_event_links (
+                        id INTEGER PRIMARY KEY,
+                        game_session_id INTEGER NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
+                        event_type TEXT NOT NULL CHECK(event_type IN ('purchase','redemption')),
+                        event_id INTEGER NOT NULL,
+                        relation TEXT NOT NULL CHECK(relation IN ('BEFORE','DURING','AFTER','MANUAL')),
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(game_session_id, event_type, event_id, relation)
+                    )
+                ''')
+                
+                # Create indexes for efficient lookups
+                c.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_gsel_session 
+                    ON game_session_event_links(game_session_id)
+                ''')
+                c.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_gsel_event 
+                    ON game_session_event_links(event_type, event_id)
+                ''')
+                
+                print("  Created game_session_event_links table with indexes")
+            except sqlite3.OperationalError as e:
+                print(f"  Note: {e}")
+            
+            self.set_schema_version(conn, 14)
+            conn.commit()
+
         conn.close()
     
     def init_database(self):

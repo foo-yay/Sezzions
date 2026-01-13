@@ -25,9 +25,13 @@ class FIFOCalculator:
     def __init__(self, db):
         self.db = db
     
-    def calculate_cost_basis(self, site_id, redemption_amount, user_id, redemption_date):
+    def calculate_cost_basis(self, site_id, redemption_amount, user_id, redemption_date, redemption_time='23:59:59'):
         """
         Calculate FIFO cost basis for a redemption
+        
+        Args:
+            redemption_time: Time of redemption (defaults to end-of-day for backwards compatibility)
+                           Ensures FIFO only allocates from purchases on or before redemption timestamp
         
         Returns:
             tuple: (cost_basis, allocations) where allocations is list of (purchase_id, allocated_amount)
@@ -35,13 +39,20 @@ class FIFOCalculator:
         conn = self.db.get_connection()
         c = conn.cursor()
         
+        # Treat NULL redemption_time as '00:00:00' for consistency
+        if not redemption_time:
+            redemption_time = '00:00:00'
+        
         # Get purchases with remaining balance, ordered by FIFO (oldest first)
+        # Only include purchases on or before the redemption timestamp
         c.execute('''
             SELECT id, amount, remaining_amount, sc_received
             FROM purchases
             WHERE site_id = ? AND user_id = ? AND remaining_amount > 0
-            ORDER BY purchase_date ASC, purchase_time ASC, id ASC
-        ''', (site_id, user_id))
+              AND (purchase_date < ? OR 
+                   (purchase_date = ? AND COALESCE(purchase_time, '00:00:00') <= ?))
+            ORDER BY purchase_date ASC, COALESCE(purchase_time, '00:00:00') ASC, id ASC
+        ''', (site_id, user_id, redemption_date, redemption_date, redemption_time))
         
         purchases = c.fetchall()
         conn.close()
@@ -238,6 +249,9 @@ class SessionManager:
 
                 for d in touched_dates:
                     self.update_daily_tax_session(d, u_id)
+                
+                # Rebuild game session event links after session tax fields
+                self.rebuild_game_session_event_links_for_pair(s_id, u_id)
 
         return {
             "pairs": pairs,
@@ -618,12 +632,12 @@ class SessionManager:
                 
                 # Use FIFO to consume ALL remaining basis (not just redemption amount)
                 cost_basis, allocations = self.fifo_calc.calculate_cost_basis(
-                    site_id, total_remaining, user_id, redemption_date
+                    site_id, total_remaining, user_id, redemption_date, redemption_time
                 )
             else:
                 # More redemptions expected - just use FIFO for this redemption amount
                 cost_basis, allocations = self.fifo_calc.calculate_cost_basis(
-                    site_id, redemption_amount, user_id, redemption_date
+                    site_id, redemption_amount, user_id, redemption_date, redemption_time
                 )
             
             self.fifo_calc.apply_allocation(allocations)
@@ -756,8 +770,9 @@ class SessionManager:
         conn.close()
         
         # Apply FIFO against the remaining balance to get cost basis
+        # Loss date has no specific time, use end-of-day default
         cost_basis, allocations = self.fifo_calc.calculate_cost_basis(
-            site_id, remaining_balance, user_id, loss_date
+            site_id, remaining_balance, user_id, loss_date, '23:59:59'
         )
         
         if allocations:
@@ -1744,6 +1759,8 @@ class SessionManager:
             session_count, touched_dates = self._rebuild_session_tax_fields_for_pair(site_id, user_id, old_session_values)
             for d in touched_dates:
                 self.update_daily_tax_session(d, user_id)
+            # Rebuild game session event links (full)
+            self.rebuild_game_session_event_links_for_pair(site_id, user_id)
             return session_count
         
         # Step 4: Compute boundary T for scoped rebuild
@@ -1787,6 +1804,10 @@ class SessionManager:
             for d in touched_dates:
                 self.update_daily_tax_session(d, user_id)
             
+            # Rebuild game session event links (scoped)
+            print(f"[Scoped Recompute] Starting scoped link rebuild from {T_date} {T_time}")
+            self.rebuild_game_session_event_links_for_pair_from(site_id, user_id, T_date, T_time)
+            
             return session_count
             
         except Exception as e:
@@ -1799,6 +1820,8 @@ class SessionManager:
             session_count, touched_dates = self._rebuild_session_tax_fields_for_pair(site_id, user_id, old_session_values)
             for d in touched_dates:
                 self.update_daily_tax_session(d, user_id)
+            # Rebuild game session event links (full)
+            self.rebuild_game_session_event_links_for_pair(site_id, user_id)
             
             print(f"[Scoped Recompute] Full rebuild complete: {session_count} sessions")
             return session_count
@@ -2138,5 +2161,383 @@ class SessionManager:
             conn.rollback()
         finally:
             conn.close()
+
+    # ========== Game Session Event Linking ==========
+    
+    def _ensure_unique_session_start(self, site_id, user_id, session_date, start_time, conn):
+        """
+        Ensure session start time is unique for the (site_id, user_id) pair.
+        If conflict exists, increment start_time by 1 second until unique.
+        
+        Returns:
+            tuple: (final_date, final_time) that is guaranteed unique
+        """
+        # Treat NULL time as '00:00:00'
+        if not start_time:
+            start_time = '00:00:00'
+        
+        c = conn.cursor()
+        current_date = session_date
+        current_time = start_time
+        
+        while True:
+            # Check if this datetime already exists
+            c.execute('''
+                SELECT id FROM game_sessions
+                WHERE site_id = ? AND user_id = ? 
+                  AND session_date = ? 
+                  AND COALESCE(start_time, '00:00:00') = ?
+            ''', (site_id, user_id, current_date, current_time))
+            
+            if not c.fetchone():
+                # No conflict, this datetime is unique
+                return current_date, current_time
+            
+            # Increment by 1 second
+            from datetime import datetime, timedelta
+            dt = datetime.strptime(f"{current_date} {current_time}", "%Y-%m-%d %H:%M:%S")
+            dt += timedelta(seconds=1)
+            current_date = dt.strftime("%Y-%m-%d")
+            current_time = dt.strftime("%H:%M:%S")
+    
+    def rebuild_game_session_event_links_for_pair(self, site_id, user_id):
+        """
+        Full rebuild of game_session_event_links for a site/user pair.
+        Links purchases and redemptions to sessions based on timestamp windows.
+        """
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        
+        # Clear existing links for this pair
+        c.execute('''
+            DELETE FROM game_session_event_links
+            WHERE game_session_id IN (
+                SELECT id FROM game_sessions WHERE site_id = ? AND user_id = ?
+            )
+        ''', (site_id, user_id))
+        
+        # Load CLOSED sessions in chronological order
+        c.execute('''
+            SELECT id, session_date, 
+                   COALESCE(start_time, '00:00:00') as start_time,
+                   end_date, COALESCE(end_time, '23:59:59') as end_time,
+                   status
+            FROM game_sessions
+            WHERE site_id = ? AND user_id = ?
+              AND status = 'Closed'
+              AND end_date IS NOT NULL
+            ORDER BY end_date ASC, COALESCE(end_time, '00:00:00') ASC, id ASC
+        ''', (site_id, user_id))
+        
+        sessions = c.fetchall()
+        
+        if not sessions:
+            conn.commit()
+            conn.close()
+            return
+        
+        # Load all purchases and redemptions for this pair
+        c.execute('''
+            SELECT id, purchase_date, COALESCE(purchase_time, '00:00:00') as purchase_time
+            FROM purchases
+            WHERE site_id = ? AND user_id = ?
+              AND purchase_date IS NOT NULL
+            ORDER BY purchase_date ASC, COALESCE(purchase_time, '00:00:00') ASC, id ASC
+        ''', (site_id, user_id))
+        purchases = c.fetchall()
+        
+        c.execute('''
+            SELECT id, redemption_date, COALESCE(redemption_time, '00:00:00') as redemption_time
+            FROM redemptions
+            WHERE site_id = ? AND user_id = ?
+              AND redemption_date IS NOT NULL
+            ORDER BY redemption_date ASC, COALESCE(redemption_time, '00:00:00') ASC, id ASC
+        ''', (site_id, user_id))
+        redemptions = c.fetchall()
+        
+        links_to_insert = []
+        
+        # Process each session
+        for i, session in enumerate(sessions):
+            session_id = session['id']
+            start_dt = self._dt(session['session_date'], session['start_time'])
+            end_dt = self._dt(session['end_date'], session['end_time'])
+            
+            # Determine prev_end_dt and next_start_dt for gap windows
+            prev_end_dt = None
+            if i > 0:
+                prev_session = sessions[i - 1]
+                prev_end_dt = self._dt(prev_session['end_date'], prev_session['end_time'])
+            
+            next_start_dt = None
+            if i < len(sessions) - 1:
+                next_session = sessions[i + 1]
+                next_start_dt = self._dt(next_session['session_date'], next_session['start_time'])
+            
+            # Link purchases
+            for p in purchases:
+                p_dt = self._dt(p['purchase_date'], p['purchase_time'])
+                
+                # DURING: >= start_dt AND <= end_dt (inclusive both ends)
+                if start_dt <= p_dt <= end_dt:
+                    links_to_insert.append((session_id, 'purchase', p['id'], 'DURING'))
+                # BEFORE: > prev_end_dt AND < start_dt (exclusive both ends)
+                elif prev_end_dt is None or (prev_end_dt < p_dt < start_dt):
+                    if prev_end_dt is None and p_dt < start_dt:
+                        # All purchases before first session
+                        links_to_insert.append((session_id, 'purchase', p['id'], 'BEFORE'))
+                    elif prev_end_dt is not None and prev_end_dt < p_dt < start_dt:
+                        # Purchases in gap
+                        links_to_insert.append((session_id, 'purchase', p['id'], 'BEFORE'))
+            
+            # Link redemptions
+            for r in redemptions:
+                r_dt = self._dt(r['redemption_date'], r['redemption_time'])
+                
+                # DURING: >= start_dt AND <= end_dt
+                if start_dt <= r_dt <= end_dt:
+                    links_to_insert.append((session_id, 'redemption', r['id'], 'DURING'))
+                # AFTER: > end_dt AND < next_start_dt (exclusive both ends)
+                elif next_start_dt is None or (end_dt < r_dt < next_start_dt):
+                    if next_start_dt is None and r_dt > end_dt:
+                        # All redemptions after last session
+                        links_to_insert.append((session_id, 'redemption', r['id'], 'AFTER'))
+                    elif next_start_dt is not None and end_dt < r_dt < next_start_dt:
+                        # Redemptions in gap
+                        links_to_insert.append((session_id, 'redemption', r['id'], 'AFTER'))
+        
+        # Insert all links
+        if links_to_insert:
+            c.executemany('''
+                INSERT OR IGNORE INTO game_session_event_links 
+                (game_session_id, event_type, event_id, relation)
+                VALUES (?, ?, ?, ?)
+            ''', links_to_insert)
+        
+        conn.commit()
+        conn.close()
+    
+    def rebuild_game_session_event_links_for_pair_from(self, site_id, user_id, from_date, from_time='00:00:00'):
+        """
+        Scoped rebuild of game_session_event_links starting from a boundary date/time.
+        Only rebuilds links for sessions whose end_dt >= boundary.
+        
+        This mirrors the scoped session rebuild pattern for performance.
+        """
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        
+        boundary_dt = self._dt(from_date, from_time or '00:00:00')
+        
+        # Find sessions to rebuild (suffix sessions with end_dt >= boundary)
+        c.execute('''
+            SELECT id, session_date, 
+                   COALESCE(start_time, '00:00:00') as start_time,
+                   end_date, COALESCE(end_time, '23:59:59') as end_time,
+                   status
+            FROM game_sessions
+            WHERE site_id = ? AND user_id = ?
+              AND status = 'Closed'
+              AND end_date IS NOT NULL
+              AND (end_date > ? OR (end_date = ? AND COALESCE(end_time, '00:00:00') >= ?))
+            ORDER BY end_date ASC, COALESCE(end_time, '00:00:00') ASC, id ASC
+        ''', (site_id, user_id, from_date, from_date, from_time))
+        
+        suffix_sessions = c.fetchall()
+        
+        if not suffix_sessions:
+            conn.commit()
+            conn.close()
+            return
+        
+        suffix_session_ids = [s['id'] for s in suffix_sessions]
+        
+        # Delete existing links for suffix sessions only
+        placeholders = ','.join('?' * len(suffix_session_ids))
+        c.execute(f'''
+            DELETE FROM game_session_event_links
+            WHERE game_session_id IN ({placeholders})
+        ''', suffix_session_ids)
+        
+        # Find checkpoint session (last session before boundary)
+        checkpoint_session = self._get_session_checkpoint(site_id, user_id, from_date, from_time)
+        
+        prev_end_dt = None
+        if checkpoint_session:
+            prev_end_dt = self._dt(
+                checkpoint_session['end_date'],
+                checkpoint_session['end_time'] if checkpoint_session['end_time'] else '23:59:59'
+            )
+        
+        # Load purchases/redemptions that might link to suffix sessions
+        # Need to include events from prev_end_dt onwards (or all if no checkpoint)
+        if prev_end_dt:
+            prev_date = prev_end_dt[:10]  # Extract date portion
+            prev_time = prev_end_dt[11:]  # Extract time portion
+        else:
+            prev_date = '1900-01-01'
+            prev_time = '00:00:00'
+        
+        c.execute('''
+            SELECT id, purchase_date, COALESCE(purchase_time, '00:00:00') as purchase_time
+            FROM purchases
+            WHERE site_id = ? AND user_id = ?
+              AND purchase_date IS NOT NULL
+              AND (purchase_date > ? OR (purchase_date = ? AND COALESCE(purchase_time, '00:00:00') > ?))
+            ORDER BY purchase_date ASC, COALESCE(purchase_time, '00:00:00') ASC, id ASC
+        ''', (site_id, user_id, prev_date, prev_date, prev_time))
+        purchases = c.fetchall()
+        
+        c.execute('''
+            SELECT id, redemption_date, COALESCE(redemption_time, '00:00:00') as redemption_time
+            FROM redemptions
+            WHERE site_id = ? AND user_id = ?
+              AND redemption_date IS NOT NULL
+              AND (redemption_date > ? OR (redemption_date = ? AND COALESCE(redemption_time, '00:00:00') > ?))
+            ORDER BY redemption_date ASC, COALESCE(redemption_time, '00:00:00') ASC, id ASC
+        ''', (site_id, user_id, prev_date, prev_date, prev_time))
+        redemptions = c.fetchall()
+        
+        links_to_insert = []
+        
+        # Process suffix sessions
+        for i, session in enumerate(suffix_sessions):
+            session_id = session['id']
+            start_dt = self._dt(session['session_date'], session['start_time'])
+            end_dt = self._dt(session['end_date'], session['end_time'])
+            
+            # For first suffix session, prev is checkpoint (if exists)
+            if i == 0:
+                current_prev_end_dt = prev_end_dt
+            else:
+                prev_session = suffix_sessions[i - 1]
+                current_prev_end_dt = self._dt(prev_session['end_date'], prev_session['end_time'])
+            
+            # Next session (within suffix)
+            next_start_dt = None
+            if i < len(suffix_sessions) - 1:
+                next_session = suffix_sessions[i + 1]
+                next_start_dt = self._dt(next_session['session_date'], next_session['start_time'])
+            
+            # Link purchases
+            for p in purchases:
+                p_dt = self._dt(p['purchase_date'], p['purchase_time'])
+                
+                if start_dt <= p_dt <= end_dt:
+                    links_to_insert.append((session_id, 'purchase', p['id'], 'DURING'))
+                elif current_prev_end_dt is None or (current_prev_end_dt < p_dt < start_dt):
+                    if current_prev_end_dt is None and p_dt < start_dt:
+                        links_to_insert.append((session_id, 'purchase', p['id'], 'BEFORE'))
+                    elif current_prev_end_dt is not None and current_prev_end_dt < p_dt < start_dt:
+                        links_to_insert.append((session_id, 'purchase', p['id'], 'BEFORE'))
+            
+            # Link redemptions
+            for r in redemptions:
+                r_dt = self._dt(r['redemption_date'], r['redemption_time'])
+                
+                if start_dt <= r_dt <= end_dt:
+                    links_to_insert.append((session_id, 'redemption', r['id'], 'DURING'))
+                elif next_start_dt is None or (end_dt < r_dt < next_start_dt):
+                    if next_start_dt is None and r_dt > end_dt:
+                        links_to_insert.append((session_id, 'redemption', r['id'], 'AFTER'))
+                    elif next_start_dt is not None and end_dt < r_dt < next_start_dt:
+                        links_to_insert.append((session_id, 'redemption', r['id'], 'AFTER'))
+        
+        # Insert all links
+        if links_to_insert:
+            c.executemany('''
+                INSERT OR IGNORE INTO game_session_event_links 
+                (game_session_id, event_type, event_id, relation)
+                VALUES (?, ?, ?, ?)
+            ''', links_to_insert)
+        
+        conn.commit()
+        conn.close()
+    
+    def get_links_for_purchase(self, purchase_id):
+        """
+        Get all game sessions linked to a purchase.
+        
+        Returns:
+            list of dicts with keys: game_session_id, relation, session_date, start_time, end_date, end_time
+        """
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        
+        c.execute('''
+            SELECT gsel.game_session_id, gsel.relation,
+                   gs.session_date, gs.start_time, gs.end_date, gs.end_time,
+                   gs.status, gs.game_type
+            FROM game_session_event_links gsel
+            JOIN game_sessions gs ON gs.id = gsel.game_session_id
+            WHERE gsel.event_type = 'purchase' AND gsel.event_id = ?
+            ORDER BY gs.end_date ASC, COALESCE(gs.end_time, '00:00:00') ASC, gs.id ASC
+        ''', (purchase_id,))
+        
+        results = c.fetchall()
+        conn.close()
+        return results
+    
+    def get_links_for_redemption(self, redemption_id):
+        """
+        Get all game sessions linked to a redemption.
+        
+        Returns:
+            list of dicts with keys: game_session_id, relation, session_date, start_time, end_date, end_time
+        """
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        
+        c.execute('''
+            SELECT gsel.game_session_id, gsel.relation,
+                   gs.session_date, gs.start_time, gs.end_date, gs.end_time,
+                   gs.status, gs.game_type
+            FROM game_session_event_links gsel
+            JOIN game_sessions gs ON gs.id = gsel.game_session_id
+            WHERE gsel.event_type = 'redemption' AND gsel.event_id = ?
+            ORDER BY gs.end_date ASC, COALESCE(gs.end_time, '00:00:00') ASC, gs.id ASC
+        ''', (redemption_id,))
+        
+        results = c.fetchall()
+        conn.close()
+        return results
+    
+    def get_links_for_session(self, session_id):
+        """
+        Get all purchases and redemptions linked to a session.
+        
+        Returns:
+            dict with keys 'purchases' and 'redemptions', each a list of dicts
+        """
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        
+        # Get linked purchases
+        c.execute('''
+            SELECT gsel.relation, p.id, p.purchase_date, p.purchase_time,
+                   p.amount, p.sc_received
+            FROM game_session_event_links gsel
+            JOIN purchases p ON p.id = gsel.event_id
+            WHERE gsel.game_session_id = ? AND gsel.event_type = 'purchase'
+            ORDER BY p.purchase_date ASC, COALESCE(p.purchase_time, '00:00:00') ASC, p.id ASC
+        ''', (session_id,))
+        purchases = c.fetchall()
+        
+        # Get linked redemptions
+        c.execute('''
+            SELECT gsel.relation, r.id, r.redemption_date, r.redemption_time, r.amount
+            FROM game_session_event_links gsel
+            JOIN redemptions r ON r.id = gsel.event_id
+            WHERE gsel.game_session_id = ? AND gsel.event_type = 'redemption'
+            ORDER BY r.redemption_date ASC, COALESCE(r.redemption_time, '00:00:00') ASC, r.id ASC
+        ''', (session_id,))
+        redemptions = c.fetchall()
+        
+        conn.close()
+        
+        return {
+            'purchases': purchases,
+            'redemptions': redemptions
+        }
 
 

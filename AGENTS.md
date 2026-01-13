@@ -57,6 +57,12 @@ Accuracy and auditability are critical.
 - Access columns using bracket notation: `row["column_name"]`
 - Check column existence: `"column_name" in row.keys()`
 - Access by index: `row[0]`, `row[1]`, etc.
+- IMPORTANT: In this project, DB results are sqlite3.Row (row_factory=sqlite3.Row). sqlite3.Row does NOT support .get().
+Do NOT use `.get()` on any DB row objects.
+Always access values with `row["col"]` and guard with `"col" in row.keys()` OR use the helper `row_get(row, key, default)`.
+
+Before outputting any changes, scan your edits for `.get(` on variables that could be sqlite3.Row and replace them.
+If you need dict-like behavior, use `dict(row)` explicitly.
 
 ## Protected Areas
 - Do not reintroduce Gameplay P/L columns

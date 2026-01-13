@@ -12,29 +12,7 @@ AI agents must follow the role definitions in `AGENTS.md`.
 These items require architectural or accounting decisions
 before any code should be written.
 
-### 1. Recalculation Scoping Rules
-- Define how to determine:
-  - which records are *part of* a session
-  - which records are *downstream* of a change
-  - which records are unaffected and must NOT be recalculated
-- Editing a field like a redemption receipt date must NOT trigger
-  site-wide or user-wide recomputation.
-- Explicitly define when a **global recompute is allowed vs forbidden**.
-
----
-
-### 2. Incremental Game RTP Strategy
-- Rename current `RTP` concept to **Expected RTP** (user-entered).
-- Define **Actual RTP** as a derived value.
-- Decide:
-  - weighting formula (based on wager size)
-  - how edits, deletions, and backdated sessions affect RTP
-  - how to update RTP incrementally without full DB traversal
-- Define when a manual “Recalculate RTP” is appropriate.
-
----
-
-### 3. Multi-Currency / Denominations Model
+### 1. Multi-Currency / Denominations Model
 - Support alternate units on Purchases and Redemptions:
   - Fortune Coins (1:100)
   - USDC / crypto
@@ -45,7 +23,7 @@ before any code should be written.
 
 ---
 
-### 4. Redemption Fees Accounting Treatment
+### 2. Redemption Fees Accounting Treatment
 - Decide between:
   - net-only redemption entry
   - explicit fee tracking
@@ -57,15 +35,6 @@ before any code should be written.
 
 ---
 
-### 5. Session ↔ Transaction Linking Strategy
-- Define how purchases and redemptions link to sessions.
-- Must support:
-  - partial redemptions
-  - accurate tax reporting
-  - historical correctness.
-
----
-
 ### 6. Tax Reporting Logic (Conceptual)
 - Define:
   - when profit becomes taxable
@@ -74,6 +43,17 @@ before any code should be written.
 - Identify authoritative reports.
 
 ---
+
+### 7. Unit testing
+- Determine unit tests to test all functionality
+- May require several dozen or more tests to test all logic
+- Purchases - adding, editing, deleting purchases
+  - with sessions, without sessions, with redemptions, without redemptions
+- Redemptions - same thing
+- Sessions - editing session content, start DT, end DT, ending values, amounts, etc.  Need to ensure data integrity across a massive number of potential scenarios and edits.
+
+### 8. Code Consolidation
+- Top-down, and ground-up review of all code with edits to enforce modularity, re-use, class-based code, removal of deprecated logic, use of globally accessible parameters and methods where possible, etc.
 
 ## 🛠️ IMPLEMENTER — Approved for Coding
 
@@ -93,8 +73,7 @@ Follow the Planner’s decisions and keep changes minimal.
 
 ### Recalculation Engine
 - [X] Add a one-click **“Recalculate Everything”** action in `qt_app.py`
-- [X] Narrow recalculation scope so only affected sessions and downstream
-      records are recomputed
+- [X] Narrow recalculation scope so only affected sessions and downstream records are recomputed
 - [X] Ensure editing receipt dates does NOT trigger full site recompute
 - [X] Preserve global recompute as a fallback only
 
