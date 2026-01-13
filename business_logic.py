@@ -519,7 +519,7 @@ class SessionManager:
             FROM purchases
             WHERE site_id = ? AND user_id = ?
               AND (purchase_date > ? OR (purchase_date = ? AND COALESCE(purchase_time,'00:00:00') >= ?))
-              AND (purchase_date < ? OR (purchase_date = ? AND COALESCE(purchase_time,'00:00:00') < ?))
+              AND (purchase_date < ? OR (purchase_date = ? AND COALESCE(purchase_time,'00:00:00') <= ?))
             ORDER BY purchase_date ASC, COALESCE(purchase_time,'00:00:00') ASC, id ASC
         """, (site_id, user_id, chk_date, chk_date, chk_time, as_of_date, as_of_date, as_of_time))
         for r in c.fetchall():
@@ -530,7 +530,7 @@ class SessionManager:
             FROM redemptions
             WHERE site_id = ? AND user_id = ?
               AND (redemption_date > ? OR (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') >= ?))
-              AND (redemption_date < ? OR (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') < ?))
+              AND (redemption_date < ? OR (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') <= ?))
             ORDER BY redemption_date ASC, COALESCE(redemption_time,'00:00:00') ASC, id ASC
         """, (site_id, user_id, chk_date, chk_date, chk_time, as_of_date, as_of_date, as_of_time))
         for r in c.fetchall():
@@ -1547,6 +1547,9 @@ class SessionManager:
         conn.commit()
         conn.close()
         
+        # Rebuild event links for this session
+        self.rebuild_game_session_event_links_for_pair(site_id, user_id)
+        
         # Update daily tax session
         self.update_daily_tax_session(session_date, user_id)
         
@@ -2216,7 +2219,8 @@ class SessionManager:
             )
         ''', (site_id, user_id))
         
-        # Load CLOSED sessions in chronological order
+        # Load all sessions (Active and Closed) in chronological order
+        # Active sessions use session_date + start_time as their effective end for linking purposes
         c.execute('''
             SELECT id, session_date, 
                    COALESCE(start_time, '00:00:00') as start_time,
@@ -2224,9 +2228,10 @@ class SessionManager:
                    status
             FROM game_sessions
             WHERE site_id = ? AND user_id = ?
-              AND status = 'Closed'
-              AND end_date IS NOT NULL
-            ORDER BY end_date ASC, COALESCE(end_time, '00:00:00') ASC, id ASC
+            ORDER BY 
+                COALESCE(end_date, session_date) ASC, 
+                COALESCE(end_time, start_time, '00:00:00') ASC, 
+                id ASC
         ''', (site_id, user_id))
         
         sessions = c.fetchall()
@@ -2261,13 +2266,19 @@ class SessionManager:
         for i, session in enumerate(sessions):
             session_id = session['id']
             start_dt = self._dt(session['session_date'], session['start_time'])
-            end_dt = self._dt(session['end_date'], session['end_time'])
+            
+            # For Active sessions, end_dt is not yet known - treat as "now" for linking purposes
+            if session['status'] == 'Active' or session['end_date'] is None:
+                end_dt = None  # Active session has no end yet
+            else:
+                end_dt = self._dt(session['end_date'], session['end_time'])
             
             # Determine prev_end_dt and next_start_dt for gap windows
             prev_end_dt = None
             if i > 0:
                 prev_session = sessions[i - 1]
-                prev_end_dt = self._dt(prev_session['end_date'], prev_session['end_time'])
+                if prev_session['end_date']:
+                    prev_end_dt = self._dt(prev_session['end_date'], prev_session['end_time'])
             
             next_start_dt = None
             if i < len(sessions) - 1:
@@ -2278,8 +2289,8 @@ class SessionManager:
             for p in purchases:
                 p_dt = self._dt(p['purchase_date'], p['purchase_time'])
                 
-                # DURING: >= start_dt AND <= end_dt (inclusive both ends)
-                if start_dt <= p_dt <= end_dt:
+                # DURING: >= start_dt AND <= end_dt (only for closed sessions)
+                if end_dt and start_dt <= p_dt <= end_dt:
                     links_to_insert.append((session_id, 'purchase', p['id'], 'DURING'))
                 # BEFORE: > prev_end_dt AND < start_dt (exclusive both ends)
                 elif prev_end_dt is None or (prev_end_dt < p_dt < start_dt):
@@ -2290,21 +2301,22 @@ class SessionManager:
                         # Purchases in gap
                         links_to_insert.append((session_id, 'purchase', p['id'], 'BEFORE'))
             
-            # Link redemptions
-            for r in redemptions:
-                r_dt = self._dt(r['redemption_date'], r['redemption_time'])
-                
-                # DURING: >= start_dt AND <= end_dt
-                if start_dt <= r_dt <= end_dt:
-                    links_to_insert.append((session_id, 'redemption', r['id'], 'DURING'))
-                # AFTER: > end_dt AND < next_start_dt (exclusive both ends)
-                elif next_start_dt is None or (end_dt < r_dt < next_start_dt):
-                    if next_start_dt is None and r_dt > end_dt:
-                        # All redemptions after last session
-                        links_to_insert.append((session_id, 'redemption', r['id'], 'AFTER'))
-                    elif next_start_dt is not None and end_dt < r_dt < next_start_dt:
-                        # Redemptions in gap
-                        links_to_insert.append((session_id, 'redemption', r['id'], 'AFTER'))
+            # Link redemptions (only for closed sessions)
+            if end_dt:
+                for r in redemptions:
+                    r_dt = self._dt(r['redemption_date'], r['redemption_time'])
+                    
+                    # DURING: >= start_dt AND <= end_dt
+                    if start_dt <= r_dt <= end_dt:
+                        links_to_insert.append((session_id, 'redemption', r['id'], 'DURING'))
+                    # AFTER: > end_dt AND < next_start_dt (exclusive both ends)
+                    elif next_start_dt is None or (end_dt < r_dt < next_start_dt):
+                        if next_start_dt is None and r_dt > end_dt:
+                            # All redemptions after last session
+                            links_to_insert.append((session_id, 'redemption', r['id'], 'AFTER'))
+                        elif next_start_dt is not None and end_dt < r_dt < next_start_dt:
+                            # Redemptions in gap
+                            links_to_insert.append((session_id, 'redemption', r['id'], 'AFTER'))
         
         # Insert all links
         if links_to_insert:
@@ -2329,7 +2341,8 @@ class SessionManager:
         
         boundary_dt = self._dt(from_date, from_time or '00:00:00')
         
-        # Find sessions to rebuild (suffix sessions with end_dt >= boundary)
+        # Find sessions to rebuild (suffix sessions with effective_end >= boundary)
+        # Active sessions use session_date + start_time as their effective end
         c.execute('''
             SELECT id, session_date, 
                    COALESCE(start_time, '00:00:00') as start_time,
@@ -2337,11 +2350,18 @@ class SessionManager:
                    status
             FROM game_sessions
             WHERE site_id = ? AND user_id = ?
-              AND status = 'Closed'
-              AND end_date IS NOT NULL
-              AND (end_date > ? OR (end_date = ? AND COALESCE(end_time, '00:00:00') >= ?))
-            ORDER BY end_date ASC, COALESCE(end_time, '00:00:00') ASC, id ASC
-        ''', (site_id, user_id, from_date, from_date, from_time))
+              AND (
+                  (status = 'Closed' AND end_date IS NOT NULL 
+                   AND (end_date > ? OR (end_date = ? AND COALESCE(end_time, '00:00:00') >= ?)))
+                  OR
+                  (status = 'Active' 
+                   AND (session_date > ? OR (session_date = ? AND COALESCE(start_time, '00:00:00') >= ?)))
+              )
+            ORDER BY 
+                COALESCE(end_date, session_date) ASC, 
+                COALESCE(end_time, start_time, '00:00:00') ASC, 
+                id ASC
+        ''', (site_id, user_id, from_date, from_date, from_time, from_date, from_date, from_time))
         
         suffix_sessions = c.fetchall()
         
@@ -2404,14 +2424,22 @@ class SessionManager:
         for i, session in enumerate(suffix_sessions):
             session_id = session['id']
             start_dt = self._dt(session['session_date'], session['start_time'])
-            end_dt = self._dt(session['end_date'], session['end_time'])
+            
+            # For Active sessions, end_dt is not yet known
+            if session['status'] == 'Active' or session['end_date'] is None:
+                end_dt = None
+            else:
+                end_dt = self._dt(session['end_date'], session['end_time'])
             
             # For first suffix session, prev is checkpoint (if exists)
             if i == 0:
                 current_prev_end_dt = prev_end_dt
             else:
                 prev_session = suffix_sessions[i - 1]
-                current_prev_end_dt = self._dt(prev_session['end_date'], prev_session['end_time'])
+                if prev_session['end_date']:
+                    current_prev_end_dt = self._dt(prev_session['end_date'], prev_session['end_time'])
+                else:
+                    current_prev_end_dt = None
             
             # Next session (within suffix)
             next_start_dt = None
@@ -2423,7 +2451,7 @@ class SessionManager:
             for p in purchases:
                 p_dt = self._dt(p['purchase_date'], p['purchase_time'])
                 
-                if start_dt <= p_dt <= end_dt:
+                if end_dt and start_dt <= p_dt <= end_dt:
                     links_to_insert.append((session_id, 'purchase', p['id'], 'DURING'))
                 elif current_prev_end_dt is None or (current_prev_end_dt < p_dt < start_dt):
                     if current_prev_end_dt is None and p_dt < start_dt:
@@ -2431,9 +2459,10 @@ class SessionManager:
                     elif current_prev_end_dt is not None and current_prev_end_dt < p_dt < start_dt:
                         links_to_insert.append((session_id, 'purchase', p['id'], 'BEFORE'))
             
-            # Link redemptions
-            for r in redemptions:
-                r_dt = self._dt(r['redemption_date'], r['redemption_time'])
+            # Link redemptions (only for closed sessions)
+            if end_dt:
+                for r in redemptions:
+                    r_dt = self._dt(r['redemption_date'], r['redemption_time'])
                 
                 if start_dt <= r_dt <= end_dt:
                     links_to_insert.append((session_id, 'redemption', r['id'], 'DURING'))

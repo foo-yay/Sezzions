@@ -4266,7 +4266,7 @@ class DailySessionNotesDialog(QtWidgets.QDialog):
 
 
 class GameSessionViewDialog(QtWidgets.QDialog):
-    def __init__(self, session, parent=None, on_open_session=None, on_open_purchase=None, on_open_redemption=None, on_edit=None, on_delete=None):
+    def __init__(self, session, parent=None, on_open_session=None, on_open_purchase=None, on_open_redemption=None, on_edit=None, on_delete=None, on_view_in_daily=None):
         super().__init__(parent)
         self.session = session
         self._on_open_session = on_open_session
@@ -4274,6 +4274,7 @@ class GameSessionViewDialog(QtWidgets.QDialog):
         self.on_open_redemption = on_open_redemption
         self._on_edit = on_edit
         self._on_delete = on_delete
+        self._on_view_in_daily = on_view_in_daily
         self.setWindowTitle("View Game Session")
         self.resize(750, 650)
 
@@ -4316,9 +4317,15 @@ class GameSessionViewDialog(QtWidgets.QDialog):
             btn_row.addWidget(delete_btn)
 
         btn_row.addStretch(1)
+        
+        view_daily_btn = None
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("Edit")
             btn_row.addWidget(edit_btn)
+        if self._on_view_in_daily and not is_active:
+            # Only show for closed sessions
+            view_daily_btn = QtWidgets.QPushButton("View in Daily Sessions")
+            btn_row.addWidget(view_daily_btn)
         if self._on_open_session:
             open_btn = QtWidgets.QPushButton("View in Game Sessions")
             btn_row.addWidget(open_btn)
@@ -4332,6 +4339,8 @@ class GameSessionViewDialog(QtWidgets.QDialog):
             delete_btn.clicked.connect(self._handle_delete)
         if self._on_edit:
             edit_btn.clicked.connect(self._handle_edit)
+        if view_daily_btn:
+            view_daily_btn.clicked.connect(self._handle_view_in_daily)
         if self._on_open_session:
             open_btn.clicked.connect(self._handle_open_session)
         close_btn.clicked.connect(self.accept)
@@ -4675,6 +4684,11 @@ class GameSessionViewDialog(QtWidgets.QDialog):
             QtCore.QTimer.singleShot(0, self._on_open_session)
             return
         self.accept()
+
+    def _handle_view_in_daily(self):
+        if self._on_view_in_daily:
+            self.accept()
+            QtCore.QTimer.singleShot(0, self._on_view_in_daily)
 
     def _handle_end_session(self):
         """Open the End Session dialog for this active session"""
@@ -5320,8 +5334,10 @@ class PurchasesTab(QtWidgets.QWidget):
             self.on_data_changed()
 
         # Only show start session prompt for new purchases (not edits)
+        # Use 100ms delay to ensure purchase transaction is fully committed and visible
+        # to subsequent database connections (prevents "detected extra SC" false positive)
         if purchase_id is None and new_purchase_id:
-            self._prompt_start_session(new_purchase_id, message)
+            QtCore.QTimer.singleShot(100, lambda: self._prompt_start_session(new_purchase_id, message))
         else:
             QtCore.QTimer.singleShot(0, lambda: self._show_info_message("Success", message))
 
@@ -5430,7 +5446,8 @@ class PurchasesTab(QtWidgets.QWidget):
 
         # Pre-fill the fields
         dialog.date_edit.setText(dialog._format_date_for_input(session_date))
-        dialog.time_edit.setText(dialog._format_time_for_input(session_time))
+        # Set time directly without truncating seconds (needed for purchase -> session flow)
+        dialog.time_edit.setText(session_time if len(session_time) == 8 else session_time + ":00")
         dialog.site_combo.setCurrentText(site_name)
         dialog.user_combo.setCurrentText(user_name)
         dialog.start_total_edit.setText(str(starting_total_sc))
@@ -8533,19 +8550,7 @@ class GameSessionsTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "Multiple Selection", "Select one session to view.")
             return
         session_id = selected_ids[0]
-        session = self._fetch_session(session_id)
-        if not session:
-            QtWidgets.QMessageBox.warning(self, "Not Found", "Selected session was not found.")
-            return
-        dialog = GameSessionViewDialog(
-            session,
-            parent=self,
-            on_open_purchase=lambda pid: self.main_window.open_purchase(pid) if self.main_window else None,
-            on_open_redemption=lambda rid: self.main_window.open_redemption(rid) if self.main_window else None,
-            on_edit=lambda: self.edit_session_by_id(session_id),
-            on_delete=lambda: self._delete_session_by_id(session_id)
-        )
-        dialog.exec()
+        self.view_session_by_id(session_id)
 
     def _save_start_session(self, dialog, session_id):
         data, error = dialog.collect_data()
@@ -9075,13 +9080,25 @@ class GameSessionsTab(QtWidgets.QWidget):
         if not session:
             QtWidgets.QMessageBox.warning(self, "Not Found", "Selected session was not found.")
             return
+        
+        # Debug: Check status
+        print(f"DEBUG: Session {session_id} status = {session['status']}")
+        print(f"DEBUG: main_window = {self.main_window}")
+        
+        # Create callback for View in Daily Sessions if main_window is available
+        view_in_daily_callback = None
+        if self.main_window:
+            view_in_daily_callback = lambda: self.main_window.view_session_in_daily(session_id)
+            print(f"DEBUG: view_in_daily_callback created")
+        
         dialog = GameSessionViewDialog(
             session,
             parent=self,
             on_open_purchase=lambda pid: self.main_window.open_purchase(pid) if self.main_window else None,
             on_open_redemption=lambda rid: self.main_window.open_redemption(rid) if self.main_window else None,
             on_edit=lambda: self.edit_session_by_id(session_id),
-            on_delete=lambda: self._delete_session_by_id(session_id)
+            on_delete=lambda: self._delete_session_by_id(session_id),
+            on_view_in_daily=view_in_daily_callback
         )
         dialog.exec()
 
@@ -10150,6 +10167,54 @@ class DailySessionsTab(QtWidgets.QWidget):
         row = c.fetchone()
         conn.close()
         return row
+
+    def find_and_select_session(self, session_id):
+        """
+        Find and select a game session in the tree by session_id.
+        Expands parent items (date -> user) and scrolls to center the session.
+        Returns True if found, False otherwise.
+        """
+        # Recursively search all tree items
+        def search_tree(parent_item, level=0):
+            if parent_item is None:
+                # Search top-level items
+                for i in range(self.tree.topLevelItemCount()):
+                    item = self.tree.topLevelItem(i)
+                    result = search_tree(item, level=1)
+                    if result:
+                        return result
+                return None
+            else:
+                # Check current item
+                meta = parent_item.data(0, QtCore.Qt.UserRole) or {}
+                if meta.get("kind") == "session" and meta.get("session_id") == session_id:
+                    return parent_item
+                
+                # Search children
+                for i in range(parent_item.childCount()):
+                    child = parent_item.child(i)
+                    result = search_tree(child, level + 1)
+                    if result:
+                        return result
+                return None
+        
+        # Find the session item
+        session_item = search_tree(None)
+        
+        if not session_item:
+            return False
+        
+        # Expand all parent items
+        parent = session_item.parent()
+        while parent:
+            parent.setExpanded(True)
+            parent = parent.parent()
+        
+        # Select and scroll to the item
+        self.tree.setCurrentItem(session_item)
+        self.tree.scrollToItem(session_item, QtWidgets.QAbstractItemView.PositionAtCenter)
+        
+        return True
 
     def export_csv(self):
         import csv
@@ -18707,6 +18772,23 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Not Found",
                 "This redemption is not currently visible in the Realized tab. "
                 "It may be filtered out by date or site/user filters."
+            )
+
+    def view_session_in_daily(self, session_id):
+        """Navigate to Daily Sessions tab and highlight the specified session."""
+        # Switch to Daily Sessions tab (index 3)
+        daily_tab_index = 3
+        if self.tab_group.button(daily_tab_index):
+            self.tab_group.button(daily_tab_index).setChecked(True)
+            self.stacked.setCurrentIndex(daily_tab_index)
+        
+        # Find and select the session in the tree
+        if not self.daily_sessions_tab.find_and_select_session(session_id):
+            QtWidgets.QMessageBox.information(
+                self,
+                "Not Found",
+                "This session is not currently visible in the Daily Sessions tab. "
+                "It may be filtered out by date or site/user filters, or is still Active."
             )
 
     def open_redemption(self, redemption_id):

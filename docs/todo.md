@@ -71,34 +71,6 @@ Follow the Planner’s decisions and keep changes minimal.
 
 ---
 
-### Recalculation Engine
-- [X] Add a one-click **“Recalculate Everything”** action in `qt_app.py`
-- [X] Narrow recalculation scope so only affected sessions and downstream records are recomputed
-- [X] Ensure editing receipt dates does NOT trigger full site recompute
-- [X] Preserve global recompute as a fallback only
-
----
-
-### Game RTP System
-- [X] Rename existing `RTP` → **Expected RTP**
-- [X] Add `actual_rtp` to `game_names` table (derived, not editable)
-- [X] Incrementally update Actual RTP when:
-  - a session is closed
-  - a session is edited
-- [X] Display Expected + Actual RTP in Games setup
-- [X] Show both values as a tooltip in Game selection dialogs
-- [X] Add “Recalculate RTP” button (game-scoped, not global)
-
----
-
-### Sessions & Data Integrity
-- [X] Add ability to “Start a New Session” after a purchase
-- [X] Implement CSV upload with duplicate detection (additive only)
-- [X] Fix Unrealized basis not updating correctly when redemptions are backdated
-      (Fixed by scoped recalculation - boundary detection + FIFO rebuild)
-
----
-
 ## 🟠 Medium Priority — IMPLEMENTER TASKS
 
 ### Payments & Cards
