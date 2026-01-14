@@ -2414,8 +2414,8 @@ class SessionManager:
         # Load purchases/redemptions that might link to suffix sessions
         # Need to include events from prev_end_dt onwards (or all if no checkpoint)
         if prev_end_dt:
-            prev_date = prev_end_dt[:10]  # Extract date portion
-            prev_time = prev_end_dt[11:]  # Extract time portion
+            prev_date = prev_end_dt.strftime("%Y-%m-%d")  # Extract date portion
+            prev_time = prev_end_dt.strftime("%H:%M:%S")  # Extract time portion
         else:
             prev_date = '1900-01-01'
             prev_time = '00:00:00'

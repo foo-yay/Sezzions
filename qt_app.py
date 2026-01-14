@@ -6,11 +6,14 @@ Run: python3 qt_app.py
 import sys
 import os
 import re
+import csv
 from datetime import date, datetime, timedelta
 from PySide6 import QtCore, QtGui, QtWidgets
+from PySide6.QtCharts import QChart, QChartView, QLineSeries, QBarSeries, QBarSet, QValueAxis, QBarCategoryAxis
 
 from database import Database
 from business_logic import FIFOCalculator, SessionManager
+from reporting import ReportingService, ReportFilters
 
 
 def format_currency(value):
@@ -13249,6 +13252,669 @@ class RealizedTab(QtWidgets.QWidget):
                 write_item(self.tree.topLevelItem(idx))
 
 
+class ReportsTab(QtWidgets.QWidget):
+    """Reports Hub with left navigation and right panel for report display"""
+    
+    def __init__(self, db, refresh_stats_callback, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.refresh_stats = refresh_stats_callback
+        self.reporting_service = ReportingService(db)
+        self.current_report = None
+        self.current_filters = ReportFilters()
+        
+        main_layout = QtWidgets.QHBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # Left navigation panel
+        left_panel = QtWidgets.QWidget()
+        left_panel.setObjectName("ReportsNav")
+        left_panel.setFixedWidth(200)
+        left_layout = QtWidgets.QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(12, 12, 12, 12)
+        left_layout.setSpacing(8)
+        
+        nav_title = QtWidgets.QLabel("Reports")
+        nav_title.setObjectName("SectionTitle")
+        left_layout.addWidget(nav_title)
+        
+        # Navigation list
+        self.nav_list = QtWidgets.QListWidget()
+        self.nav_list.setObjectName("ReportsNavList")
+        self.nav_list.currentRowChanged.connect(self._on_nav_changed)
+        
+        # Load available reports
+        available_reports = self.reporting_service.list_available_reports()
+        self.reports_by_category = {}
+        for report in available_reports:
+            if report.category not in self.reports_by_category:
+                self.reports_by_category[report.category] = []
+            self.reports_by_category[report.category].append(report)
+        
+        # Build navigation tree
+        for category in ["Dashboard", "Sites", "Games", "Sessions", "Redemptions", "Cashback", "Tax Center"]:
+            if category in self.reports_by_category:
+                # Category header
+                category_item = QtWidgets.QListWidgetItem(category)
+                category_item.setFlags(QtCore.Qt.ItemIsEnabled)
+                category_item.setData(QtCore.Qt.UserRole, {"type": "category"})
+                font = category_item.font()
+                font.setBold(True)
+                category_item.setFont(font)
+                self.nav_list.addItem(category_item)
+                
+                # Reports in category
+                for report in self.reports_by_category[category]:
+                    report_item = QtWidgets.QListWidgetItem(f"  {report.title}")
+                    report_item.setData(QtCore.Qt.UserRole, {"type": "report", "report": report})
+                    self.nav_list.addItem(report_item)
+        
+        left_layout.addWidget(self.nav_list)
+        left_layout.addStretch()
+        
+        # Right panel (report display area)
+        self.right_panel = QtWidgets.QWidget()
+        right_layout = QtWidgets.QVBoxLayout(self.right_panel)
+        right_layout.setContentsMargins(12, 12, 12, 12)
+        right_layout.setSpacing(12)
+        
+        # Filter bar
+        self.filter_bar = ReportFilterBar(db)
+        self.filter_bar.filters_applied.connect(self._on_filters_applied)
+        right_layout.addWidget(self.filter_bar)
+        
+        # Scroll area for report content
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { background-color: transparent; border: none; }")
+        
+        self.report_content = QtWidgets.QWidget()
+        self.report_content.setObjectName("ReportContent")
+        self.report_layout = QtWidgets.QVBoxLayout(self.report_content)
+        self.report_layout.setContentsMargins(15, 15, 15, 15)
+        self.report_layout.setSpacing(16)
+        
+        scroll.setWidget(self.report_content)
+        right_layout.addWidget(scroll, 1)
+        
+        main_layout.addWidget(left_panel)
+        main_layout.addWidget(self.right_panel, 1)
+        
+        # Show welcome message initially
+        self._show_welcome()
+    
+    def _show_welcome(self):
+        """Display welcome message when no report is selected"""
+        self._clear_report_content()
+        welcome = QtWidgets.QLabel(
+            "Select a report from the left navigation to begin.\n\n"
+            "All reports support date range filtering, grouping intervals, "
+            "and CSV export."
+        )
+        welcome.setAlignment(QtCore.Qt.AlignCenter)
+        welcome.setWordWrap(True)
+        welcome.setStyleSheet("color: #666; font-size: 14px; padding: 40px;")
+        self.report_layout.addWidget(welcome)
+        self.report_layout.addStretch()
+    
+    def _clear_report_content(self):
+        """Remove all widgets from report content area"""
+        while self.report_layout.count():
+            item = self.report_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+    
+    def _on_nav_changed(self, row):
+        """Handle navigation selection change"""
+        if row < 0:
+            return
+        
+        item = self.nav_list.item(row)
+        data = item.data(QtCore.Qt.UserRole)
+        
+        if data["type"] == "category":
+            # Category header clicked - do nothing
+            return
+        elif data["type"] == "report":
+            self.current_report = data["report"]
+            self._load_report()
+    
+    def _on_filters_applied(self, filters: ReportFilters):
+        """Handle filter changes"""
+        self.current_filters = filters
+        if self.current_report:
+            self._load_report()
+    
+    def _load_report(self):
+        """Load and display the current report"""
+        if not self.current_report:
+            return
+        
+        try:
+            result = self.reporting_service.run_report(
+                self.current_report.report_id,
+                self.current_filters
+            )
+            self._display_report(result)
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Report Error",
+                f"Failed to generate report: {str(e)}"
+            )
+    
+    def _display_report(self, result):
+        """Display report results"""
+        self._clear_report_content()
+        
+        # Report title
+        title = QtWidgets.QLabel(result.title)
+        title.setObjectName("SectionTitle")
+        self.report_layout.addWidget(title)
+        
+        # KPI cards
+        if result.kpis:
+            kpi_widget = KPICardsWidget(result.kpis)
+            self.report_layout.addWidget(kpi_widget)
+        
+        # Charts (combine all series into one chart)
+        if result.series:
+            chart_widget = self._create_chart_widget(result.series)
+            self.report_layout.addWidget(chart_widget)
+        
+        # Data table
+        if result.rows:
+            table_widget = ReportTableWidget(result.rows)
+            table_widget.export_requested.connect(
+                lambda: self._export_csv(result)
+            )
+            self.report_layout.addWidget(table_widget)
+        
+        self.report_layout.addStretch()
+    
+    def _create_chart_widget(self, series_list):
+        """Create a chart widget from series data (supports multiple series)"""
+        from PySide6.QtGui import QColor, QPen
+        
+        if not series_list:
+            return QtWidgets.QWidget()
+        
+        # Handle single series (backward compatibility)
+        if not isinstance(series_list, list):
+            series_list = [series_list]
+        
+        chart = QChart()
+        chart.setAnimationOptions(QChart.SeriesAnimations)
+        
+        # Determine chart type from first series
+        first_series_type = series_list[0].series_type
+        
+        if first_series_type == "bar":
+            series = QBarSeries()
+            categories = []
+            
+            for series_data in series_list:
+                bar_set = QBarSet(series_data.name)
+                for label, value in series_data.data:
+                    bar_set.append(value)
+                    if not categories or label not in categories:
+                        categories.append(str(label))
+                
+                if series_data.color:
+                    bar_set.setColor(QColor(series_data.color))
+                
+                series.append(bar_set)
+            
+            chart.addSeries(series)
+            
+            axis_x = QBarCategoryAxis()
+            axis_x.append(categories)
+            chart.addAxis(axis_x, QtCore.Qt.AlignBottom)
+            series.attachAxis(axis_x)
+            
+            axis_y = QValueAxis()
+            chart.addAxis(axis_y, QtCore.Qt.AlignLeft)
+            series.attachAxis(axis_y)
+        
+        elif first_series_type == "line":
+            for series_data in series_list:
+                line_series = QLineSeries()
+                line_series.setName(series_data.name)
+                
+                for idx, (label, value) in enumerate(series_data.data):
+                    line_series.append(idx, value)
+                
+                # Apply color if specified
+                if series_data.color:
+                    pen = QPen(QColor(series_data.color))
+                    pen.setWidth(2)
+                    line_series.setPen(pen)
+                
+                chart.addSeries(line_series)
+            
+            chart.createDefaultAxes()
+        
+        chart.legend().setVisible(True)
+        chart.legend().setAlignment(QtCore.Qt.AlignBottom)
+        
+        chart_view = QChartView(chart)
+        chart_view.setRenderHint(QtGui.QPainter.Antialiasing)
+        chart_view.setMinimumHeight(300)
+        
+        return chart_view
+    
+    def _export_csv(self, result):
+        """Export report data to CSV"""
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Report",
+            f"{result.report_id}_{date.today().strftime('%Y%m%d')}.csv",
+            "CSV Files (*.csv)"
+        )
+        
+        if not filename:
+            return
+        
+        try:
+            with open(filename, 'w', newline='', encoding='utf-8') as f:
+                if result.rows:
+                    writer = csv.DictWriter(f, fieldnames=result.rows[0].keys())
+                    writer.writeheader()
+                    writer.writerows(result.rows)
+            
+            QtWidgets.QMessageBox.information(
+                self,
+                "Export Complete",
+                f"Report exported to:\n{filename}"
+            )
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Export Failed",
+                f"Failed to export report: {str(e)}"
+            )
+
+
+class ReportFilterBar(QtWidgets.QWidget):
+    """Reusable filter bar for reports"""
+    
+    filters_applied = QtCore.Signal(ReportFilters)
+    
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+        
+        # Date range with calendar pickers
+        layout.addWidget(QtWidgets.QLabel("From:"))
+        start_date_container = QtWidgets.QHBoxLayout()
+        start_date_container.setSpacing(4)
+        self.start_date_edit = QtWidgets.QLineEdit()
+        self.start_date_edit.setPlaceholderText("MM/DD/YY")
+        self.start_date_edit.setFixedWidth(90)
+        start_date_container.addWidget(self.start_date_edit)
+        self.start_calendar_btn = QtWidgets.QPushButton("📅")
+        self.start_calendar_btn.setFixedWidth(44)
+        self.start_calendar_btn.clicked.connect(self._pick_start_date)
+        start_date_container.addWidget(self.start_calendar_btn)
+        layout.addLayout(start_date_container)
+        
+        layout.addWidget(QtWidgets.QLabel("To:"))
+        end_date_container = QtWidgets.QHBoxLayout()
+        end_date_container.setSpacing(4)
+        self.end_date_edit = QtWidgets.QLineEdit()
+        self.end_date_edit.setPlaceholderText("MM/DD/YY")
+        self.end_date_edit.setFixedWidth(90)
+        end_date_container.addWidget(self.end_date_edit)
+        self.end_calendar_btn = QtWidgets.QPushButton("📅")
+        self.end_calendar_btn.setFixedWidth(44)
+        self.end_calendar_btn.clicked.connect(self._pick_end_date)
+        end_date_container.addWidget(self.end_calendar_btn)
+        layout.addLayout(end_date_container)
+        
+        # Group interval
+        layout.addWidget(QtWidgets.QLabel("Group:"))
+        self.group_combo = QtWidgets.QComboBox()
+        self.group_combo.addItems(["All Time", "Daily", "Weekly", "Monthly", "Quarterly", "Yearly"])
+        self.group_combo.setCurrentText("Monthly")
+        self.group_combo.setFixedWidth(120)
+        layout.addWidget(self.group_combo)
+        
+        # User filter (autocomplete with placeholder)
+        layout.addWidget(QtWidgets.QLabel("User:"))
+        self.user_combo = QtWidgets.QComboBox()
+        self.user_combo.setEditable(True)
+        self._load_users()
+        self.user_combo.setCurrentIndex(-1)  # No selection
+        self.user_combo.lineEdit().setPlaceholderText("All Users")
+        self.user_combo.setFixedWidth(160)
+        layout.addWidget(self.user_combo)
+        
+        # Site filter (autocomplete with placeholder)
+        layout.addWidget(QtWidgets.QLabel("Site:"))
+        self.site_combo = QtWidgets.QComboBox()
+        self.site_combo.setEditable(True)
+        self._load_sites()
+        self.site_combo.setCurrentIndex(-1)  # No selection
+        self.site_combo.lineEdit().setPlaceholderText("All Sites")
+        self.site_combo.setFixedWidth(160)
+        layout.addWidget(self.site_combo)
+        
+        layout.addStretch()
+        
+        # Buttons
+        apply_btn = QtWidgets.QPushButton("Apply")
+        apply_btn.clicked.connect(self._apply_filters)
+        layout.addWidget(apply_btn)
+        
+        reset_btn = QtWidgets.QPushButton("Reset")
+        reset_btn.clicked.connect(self._reset_filters)
+        layout.addWidget(reset_btn)
+        
+        # Set default to current year
+        today = date.today()
+        self.start_date_edit.setText(f"01/01/{today.year % 100:02d}")
+        self.end_date_edit.setText(today.strftime("%m/%d/%y"))
+        
+        # Setup autocompleters
+        self._update_completers()
+    
+    def _load_users(self):
+        """Load users into combo box"""
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id, name FROM users ORDER BY name")
+        for row in c.fetchall():
+            self.user_combo.addItem(row["name"], row["id"])
+        conn.close()
+    
+    def _load_sites(self):
+        """Load sites into combo box"""
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("SELECT id, name FROM sites ORDER BY name")
+        for row in c.fetchall():
+            self.site_combo.addItem(row["name"], row["id"])
+        conn.close()
+    
+    def _update_completers(self):
+        """Setup autocomplete for user and site combos"""
+        for combo in (self.user_combo, self.site_combo):
+            if not combo.isEditable():
+                combo.setCompleter(None)
+                continue
+            completer = QtWidgets.QCompleter(combo.model())
+            completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+            completer.setFilterMode(QtCore.Qt.MatchContains)
+            completer.setCompletionMode(QtWidgets.QCompleter.PopupCompletion)
+            popup = QtWidgets.QListView()
+            popup.setStyleSheet(
+                "QListView { background: #fdfdfe; color: #1e1f24; }"
+                "QListView::item:selected { background: #d0dfff; color: #1e1f24; }"
+            )
+            completer.setPopup(popup)
+            combo.setCompleter(completer)
+            line_edit = combo.lineEdit()
+            if line_edit is not None:
+                line_edit.setCompleter(completer)
+    
+    def _pick_start_date(self):
+        """Show calendar picker for start date"""
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Select Start Date")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        calendar = QtWidgets.QCalendarWidget()
+        
+        # Set initial date from current text
+        current_text = self.start_date_edit.text().strip()
+        if current_text:
+            try:
+                parsed = parse_date_input(current_text)
+                calendar.setSelectedDate(QtCore.QDate(parsed.year, parsed.month, parsed.day))
+            except:
+                calendar.setSelectedDate(QtCore.QDate.currentDate())
+        else:
+            calendar.setSelectedDate(QtCore.QDate.currentDate())
+        
+        layout.addWidget(calendar)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        ok_btn = QtWidgets.QPushButton("Select")
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+        cancel_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            self.start_date_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+    
+    def _pick_end_date(self):
+        """Show calendar picker for end date"""
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Select End Date")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        calendar = QtWidgets.QCalendarWidget()
+        
+        # Set initial date from current text
+        current_text = self.end_date_edit.text().strip()
+        if current_text:
+            try:
+                parsed = parse_date_input(current_text)
+                calendar.setSelectedDate(QtCore.QDate(parsed.year, parsed.month, parsed.day))
+            except:
+                calendar.setSelectedDate(QtCore.QDate.currentDate())
+        else:
+            calendar.setSelectedDate(QtCore.QDate.currentDate())
+        
+        layout.addWidget(calendar)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        ok_btn = QtWidgets.QPushButton("Select")
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+        cancel_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            self.end_date_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+    
+    def _apply_filters(self):
+        """Apply current filter settings"""
+        filters = ReportFilters()
+        
+        # Parse dates
+        start_text = self.start_date_edit.text().strip()
+        if start_text:
+            try:
+                start_date = parse_date_input(start_text)
+                filters.start_date = start_date.strftime("%Y-%m-%d")
+            except:
+                pass
+        
+        end_text = self.end_date_edit.text().strip()
+        if end_text:
+            try:
+                end_date = parse_date_input(end_text)
+                filters.end_date = end_date.strftime("%Y-%m-%d")
+            except:
+                pass
+        
+        # Group interval (handle "All Time" option)
+        group_text = self.group_combo.currentText()
+        if group_text != "All Time":
+            filters.group_interval = group_text.lower()
+        else:
+            filters.group_interval = None
+        
+        # User filter - handle editable combo
+        user_text = self.user_combo.currentText().strip()
+        if user_text and user_text.lower() != "all users":
+            # Try to match by text first
+            user_id = None
+            for i in range(self.user_combo.count()):
+                if self.user_combo.itemText(i).lower() == user_text.lower():
+                    user_id = self.user_combo.itemData(i)
+                    break
+            if user_id is not None:
+                filters.user_ids = [user_id]
+        
+        # Site filter - handle editable combo
+        site_text = self.site_combo.currentText().strip()
+        if site_text and site_text.lower() != "all sites":
+            # Try to match by text first
+            site_id = None
+            for i in range(self.site_combo.count()):
+                if self.site_combo.itemText(i).lower() == site_text.lower():
+                    site_id = self.site_combo.itemData(i)
+                    break
+            if site_id is not None:
+                filters.site_ids = [site_id]
+        
+        self.filters_applied.emit(filters)
+    
+    def _reset_filters(self):
+        """Reset filters to defaults"""
+        today = date.today()
+        self.start_date_edit.setText(f"01/01/{today.year % 100:02d}")
+        self.end_date_edit.setText(today.strftime("%m/%d/%y"))
+        self.group_combo.setCurrentText("Monthly")
+        self.user_combo.setCurrentIndex(-1)  # Clear to show placeholder
+        self.user_combo.clearEditText()
+        self.site_combo.setCurrentIndex(-1)  # Clear to show placeholder
+        self.site_combo.clearEditText()
+        self._apply_filters()
+
+
+class KPICardsWidget(QtWidgets.QWidget):
+    """Display KPI cards grouped by sections"""
+    
+    def __init__(self, kpis, parent=None):
+        super().__init__(parent)
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(16)
+        
+        # Group KPIs by section
+        sections = {}
+        for kpi in kpis:
+            section = kpi.section if hasattr(kpi, 'section') and kpi.section else "Overview"
+            if section not in sections:
+                sections[section] = []
+            sections[section].append(kpi)
+        
+        # Display each section
+        for section_name, section_kpis in sections.items():
+            # Section header
+            section_label = QtWidgets.QLabel(section_name)
+            section_label.setObjectName("SectionHeader")
+            main_layout.addWidget(section_label)
+            
+            # KPI cards in a row
+            cards_layout = QtWidgets.QHBoxLayout()
+            cards_layout.setSpacing(12)
+            
+            for kpi in section_kpis:
+                card = self._create_kpi_card(kpi)
+                cards_layout.addWidget(card)
+            
+            cards_layout.addStretch()
+            main_layout.addLayout(cards_layout)
+        
+        main_layout.addStretch()
+    
+    def _create_kpi_card(self, kpi):
+        """Create a single KPI card"""
+        card = QtWidgets.QFrame()
+        card.setObjectName("KPICard")
+        card.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        card.setMinimumWidth(150)
+        
+        layout = QtWidgets.QVBoxLayout(card)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(4)
+        
+        label = QtWidgets.QLabel(kpi.label)
+        label.setObjectName("KPILabel")
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        
+        value = QtWidgets.QLabel(kpi.formatted_value())
+        value.setObjectName("KPIValue")
+        layout.addWidget(value)
+        
+        if kpi.trend is not None:
+            trend_text = f"{kpi.trend:+.1f}%"
+            trend_color = "green" if kpi.trend > 0 else "red" if kpi.trend < 0 else "gray"
+            trend = QtWidgets.QLabel(trend_text)
+            trend.setStyleSheet(f"color: {trend_color}; font-size: 11px;")
+            layout.addWidget(trend)
+        
+        return card
+
+
+class ReportTableWidget(QtWidgets.QWidget):
+    """Display report data in a table with export button"""
+    
+    export_requested = QtCore.Signal()
+    
+    def __init__(self, rows, parent=None):
+        super().__init__(parent)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        
+        # Header with export button
+        header = QtWidgets.QHBoxLayout()
+        header.addWidget(QtWidgets.QLabel("Data Table"))
+        header.addStretch()
+        export_btn = QtWidgets.QPushButton("Export CSV")
+        export_btn.clicked.connect(self.export_requested.emit)
+        header.addWidget(export_btn)
+        layout.addLayout(header)
+        
+        # Table
+        self.table = QtWidgets.QTableWidget()
+        self.table.setAlternatingRowColors(True)
+        self.table.setSortingEnabled(True)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        
+        if rows:
+            # Set up columns
+            headers = list(rows[0].keys())
+            self.table.setColumnCount(len(headers))
+            self.table.setHorizontalHeaderLabels(headers)
+            
+            # Populate rows
+            self.table.setRowCount(len(rows))
+            for row_idx, row_data in enumerate(rows):
+                for col_idx, (key, value) in enumerate(row_data.items()):
+                    # Format value
+                    if isinstance(value, float):
+                        if key.lower().endswith(("rate", "percent", "rtp")):
+                            display = f"{value:.1f}%"
+                        else:
+                            display = f"{value:,.2f}"
+                    elif value is None:
+                        display = ""
+                    else:
+                        display = str(value)
+                    
+                    item = QtWidgets.QTableWidgetItem(display)
+                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                    self.table.setItem(row_idx, col_idx, item)
+            
+            self.table.resizeColumnsToContents()
+        
+        layout.addWidget(self.table)
+
+
 class PlaceholderTab(QtWidgets.QWidget):
     def __init__(self, label, parent=None):
         super().__init__(parent)
@@ -19486,6 +20152,7 @@ class MainWindow(QtWidgets.QMainWindow):
             on_open_purchase=self.open_purchase,
         )
         self.expenses_tab = ExpensesTab(self.db, self.refresh_stats)
+        self.reports_tab = ReportsTab(self.db, self.refresh_stats, self)
         self.setup_tab = SetupTab(self.db, self.session_mgr, self)
 
         tabs = [
@@ -19496,7 +20163,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ("Unrealized", self.unrealized_tab),
             ("Realized", self.realized_tab),
             ("Expenses", self.expenses_tab),
-            ("Reports", PlaceholderTab("Reports")),
+            ("Reports", self.reports_tab),
             ("Setup", self.setup_tab),
         ]
 
@@ -20133,7 +20800,8 @@ class MainWindow(QtWidgets.QMainWindow):
             QFrame#StatsBar QLabel {{
                 color: {colors['text']};
             }}
-            QLabel#SectionTitle {{ font-size: 14px; font-weight: 600; }}
+            QLabel#SectionTitle {{ font-size: 14px; font-weight: 600; color: {colors['text']}; }}
+            QLabel#SectionHeader {{ font-size: 13px; font-weight: 600; color: {colors['text_muted']}; }}
 
             #TabButton {{
                 background: {colors['surface']};
@@ -20396,6 +21064,45 @@ class MainWindow(QtWidgets.QMainWindow):
             }}
             QTabBar::tab:hover {{
                 background: {colors['surface2']};
+            }}
+            
+            /* Reports Tab Styles */
+            QWidget#ReportsNav {{
+                background: {colors['surface']};
+                border-right: 1px solid {colors['border']};
+            }}
+            QListWidget#ReportsNavList {{
+                background: {colors['surface']};
+                border: none;
+                font-size: 13px;
+            }}
+            QListWidget#ReportsNavList::item {{
+                padding: 8px 12px;
+                border-radius: 6px;
+                margin: 2px 0;
+            }}
+            QListWidget#ReportsNavList::item:hover {{
+                background: {colors['surface2']};
+            }}
+            QListWidget#ReportsNavList::item:selected {{
+                background: {colors['selection']};
+                color: {colors['accent']};
+                font-weight: 500;
+            }}
+            QFrame#KPICard {{
+                background: {colors['surface']};
+                border: 1px solid {colors['border']};
+                border-radius: 8px;
+            }}
+            QLabel#KPILabel {{
+                color: {colors['text_muted']};
+                font-size: 11px;
+                font-weight: 500;
+            }}
+            QLabel#KPIValue {{
+                color: {colors['text']};
+                font-size: 18px;
+                font-weight: 600;
             }}
             """
         )

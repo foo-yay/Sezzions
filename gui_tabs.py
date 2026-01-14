@@ -879,6 +879,7 @@ def build_users_section(app, parent):
             
             # CASCADE DELETE in proper order
             c.execute("DELETE FROM tax_sessions WHERE user_id = ?", (uid,))
+            c.execute("DELETE FROM redemption_allocations WHERE redemption_id IN (SELECT id FROM redemptions WHERE user_id = ?)", (uid,))
             c.execute("DELETE FROM redemptions WHERE user_id = ?", (uid,))
             c.execute("DELETE FROM purchases WHERE user_id = ?", (uid,))
             c.execute("DELETE FROM cards WHERE user_id = ?", (uid,))
@@ -1124,6 +1125,7 @@ def build_sites_section(app, parent):
             conn = app.db.get_connection()
             c = conn.cursor()
             c.execute("DELETE FROM tax_sessions WHERE site_id = ?", (sid,))
+            c.execute("DELETE FROM redemption_allocations WHERE redemption_id IN (SELECT id FROM redemptions WHERE site_id = ?)", (sid,))
             c.execute("DELETE FROM redemptions WHERE site_id = ?", (sid,))
             c.execute("DELETE FROM purchases WHERE site_id = ?", (sid,))
             c.execute("DELETE FROM site_sessions WHERE site_id = ?", (sid,))
