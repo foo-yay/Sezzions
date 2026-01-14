@@ -262,7 +262,7 @@ class SessionManager:
         }
 
     def _rebuild_fifo_for_pair(self, site_id, user_id):
-        """Rebuild FIFO purchase remaining_amount and tax_sessions for all redemptions in scope."""
+        """Rebuild FIFO purchase remaining_amount and realized_transactions for all redemptions in scope."""
         conn = self.db.get_connection()
         c = conn.cursor()
 
@@ -273,7 +273,7 @@ class SessionManager:
         """, (site_id, user_id))
 
         c.execute("""
-            DELETE FROM tax_sessions
+            DELETE FROM realized_transactions
             WHERE site_id = ? AND user_id = ?
         """, (site_id, user_id))
 
@@ -329,7 +329,7 @@ class SessionManager:
         1. Query suffix redemptions >= from_dt
         2. Validate free SC (non-free redemptions MUST have allocations)
         3. Undo allocations (restore purchases.remaining_amount)
-        4. Delete allocations and tax_sessions for suffix
+        4. Delete allocations and realized_transactions for suffix
         5. Replay suffix redemptions chronologically
         6. Update site_session aggregates
         
@@ -378,10 +378,10 @@ class SessionManager:
                 row = c.fetchone()
                 allocated = row['total_allocated'] if row else 0
                 
-                # Get cost_basis from tax_sessions table (this is what SHOULD have been allocated)
+                # Get cost_basis from realized_transactions table (this is what SHOULD have been allocated)
                 c.execute("""
                     SELECT cost_basis
-                    FROM tax_sessions
+                    FROM realized_transactions
                     WHERE redemption_id = ?
                 """, (r['id'],))
                 tax_row = c.fetchone()
@@ -417,14 +417,14 @@ class SessionManager:
                 WHERE id = ?
             """, (allocated_amt, purchase_id))
         
-        # Step 4: Delete allocations and tax_sessions for suffix
+        # Step 4: Delete allocations and realized_transactions for suffix
         c.execute("""
             DELETE FROM redemption_allocations
             WHERE redemption_id IN ({})
         """.format(','.join('?' * len(suffix_ids))), suffix_ids)
         
         c.execute("""
-            DELETE FROM tax_sessions
+            DELETE FROM realized_transactions
             WHERE redemption_id IN ({})
         """.format(','.join('?' * len(suffix_ids))), suffix_ids)
         
@@ -598,7 +598,7 @@ class SessionManager:
     def process_redemption(self, redemption_id, site_id, redemption_amount, redemption_date,
                           redemption_time, user_id, is_free_sc, more_remaining, is_edit=False):
         """
-        Process redemption: calculate FIFO, create tax session, update site session
+        Process redemption: calculate FIFO, create realized transaction, update site session
         
         FIXED VERSION: Links redemptions to sessions without overriding processed flags
         
@@ -668,10 +668,10 @@ class SessionManager:
                 [(redemption_id, purchase_id, allocated) for purchase_id, allocated in allocations],
             )
 
-        # Create tax session record
+        # Create realized transaction record
         c.execute('''
-            INSERT INTO tax_sessions 
-            (session_date, site_id, redemption_id, cost_basis, payout, net_pl, user_id)
+            INSERT INTO realized_transactions 
+            (redemption_date, site_id, redemption_id, cost_basis, payout, net_pl, user_id)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (redemption_date, site_id, redemption_id, cost_basis, redemption_amount, net_pl, user_id))
         
@@ -789,13 +789,13 @@ class SessionManager:
         if allocations:
             self.fifo_calc.apply_allocation(allocations)
         
-        # Create tax session showing loss of the remaining cost basis
+        # Create realized transaction showing loss of the remaining cost basis
         conn = self.db.get_connection()
         c = conn.cursor()
         
         c.execute('''
-            INSERT INTO tax_sessions 
-            (session_date, site_id, redemption_id, cost_basis, payout, net_pl, user_id)
+            INSERT INTO realized_transactions 
+            (redemption_date, site_id, redemption_id, cost_basis, payout, net_pl, user_id)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (loss_date, site_id, redemption_id, cost_basis, 0.0, -cost_basis, user_id))
         
@@ -810,7 +810,7 @@ class SessionManager:
         Delete a redemption and reverse all accounting
         
         This needs to:
-        1. Get the cost_basis from tax_sessions to restore FIFO
+        1. Get the cost_basis from realized_transactions to restore FIFO
         2. Update site_session's total_redeemed
         3. Potentially reopen the site_session if it was closed
         4. Delete tax_session and redemption records
@@ -821,9 +821,9 @@ class SessionManager:
         # Get redemption details
         c.execute('''
             SELECT r.site_session_id, r.site_id, r.amount, r.user_id, r.is_free_sc,
-                   ts.cost_basis
+                   rt.cost_basis
             FROM redemptions r
-            LEFT JOIN tax_sessions ts ON ts.redemption_id = r.id
+            LEFT JOIN realized_transactions rt ON rt.redemption_id = r.id
             WHERE r.id = ?
         ''', (redemption_id,))
         
@@ -842,7 +842,7 @@ class SessionManager:
         
         # Delete tax_session and redemption
         c.execute("DELETE FROM redemption_allocations WHERE redemption_id = ?", (redemption_id,))
-        c.execute("DELETE FROM tax_sessions WHERE redemption_id = ?", (redemption_id,))
+        c.execute("DELETE FROM realized_transactions WHERE redemption_id = ?", (redemption_id,))
         c.execute("DELETE FROM redemptions WHERE id = ?", (redemption_id,))
         
         # If not free SC and has a site session, reverse the accounting

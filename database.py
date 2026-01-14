@@ -153,7 +153,7 @@ class Database:
             _add_col("purchases", "status TEXT DEFAULT 'active'")
             _add_col("redemptions", "more_remaining INTEGER DEFAULT 0")
             _add_col("redemptions", "notes TEXT")
-            _add_col("tax_sessions", "notes TEXT")
+            _add_col("realized_transactions", "notes TEXT")
             _add_col("game_sessions", "total_taxable REAL")
             _add_col("game_sessions", "sc_change REAL")
             _add_col("game_sessions", "dollar_value REAL")
@@ -527,6 +527,59 @@ class Database:
             self.set_schema_version(conn, 14)
             conn.commit()
 
+        # Migration 15: Rename tax_sessions to realized_transactions
+        if current_version < 15:
+            print("Renaming tax_sessions to realized_transactions...")
+            try:
+                # Check if old table exists and has data
+                c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tax_sessions'")
+                old_table_exists = c.fetchone() is not None
+                
+                if old_table_exists:
+                    # Check if new table exists
+                    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='realized_transactions'")
+                    new_table_exists = c.fetchone() is not None
+                    
+                    if not new_table_exists:
+                        # Create new table with correct schema
+                        c.execute('''
+                            CREATE TABLE realized_transactions (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                redemption_date DATE NOT NULL,
+                                site_id INTEGER NOT NULL,
+                                redemption_id INTEGER NOT NULL,
+                                cost_basis REAL NOT NULL,
+                                payout REAL NOT NULL,
+                                net_pl REAL NOT NULL,
+                                user_id INTEGER NOT NULL,
+                                notes TEXT,
+                                FOREIGN KEY (site_id) REFERENCES sites(id),
+                                FOREIGN KEY (redemption_id) REFERENCES redemptions(id),
+                                FOREIGN KEY (user_id) REFERENCES users(id)
+                            )
+                        ''')
+                    
+                    # Copy data (map session_date → redemption_date)
+                    c.execute('''
+                        INSERT INTO realized_transactions 
+                            (id, redemption_date, site_id, redemption_id, cost_basis, payout, net_pl, user_id, notes)
+                        SELECT 
+                            id, session_date, site_id, redemption_id, cost_basis, payout, net_pl, user_id, notes
+                        FROM tax_sessions
+                    ''')
+                    
+                    # Drop old table
+                    c.execute("DROP TABLE tax_sessions")
+                    print("  Renamed tax_sessions to realized_transactions successfully")
+                else:
+                    print("  tax_sessions table does not exist, migration skipped")
+                    
+            except sqlite3.OperationalError as e:
+                print(f"  Error during migration: {e}")
+            
+            self.set_schema_version(conn, 15)
+            conn.commit()
+
         conn.close()
     
     def init_database(self):
@@ -644,10 +697,10 @@ class Database:
             FOREIGN KEY (redemption_method_id) REFERENCES redemption_methods(id),
             FOREIGN KEY (user_id) REFERENCES users(id))''')
         
-        # Tax sessions table
-        c.execute('''CREATE TABLE IF NOT EXISTS tax_sessions (
+        # Realized transactions table (formerly tax_sessions)
+        c.execute('''CREATE TABLE IF NOT EXISTS realized_transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_date DATE NOT NULL,
+            redemption_date DATE NOT NULL,
             site_id INTEGER NOT NULL,
             redemption_id INTEGER NOT NULL,
             cost_basis REAL NOT NULL,

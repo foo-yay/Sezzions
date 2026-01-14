@@ -636,9 +636,9 @@ class ReportingService:
         
         c.execute(
             f"""
-            SELECT COALESCE(SUM(ts.net_pl), 0)
-            FROM tax_sessions ts
-            JOIN redemptions r ON r.id = ts.redemption_id
+            SELECT COALESCE(SUM(rt.net_pl), 0)
+            FROM realized_transactions rt
+            JOIN redemptions r ON r.id = rt.redemption_id
             WHERE {where_r_qualified}
             """,
             params_r_query
@@ -1060,32 +1060,42 @@ class ReportingService:
         # Build filter conditions
         date_where_sessions = "1=1"
         date_where_daily = "1=1"
+        date_where_realized = "1=1"  # For realized_transactions table
         params_s = []
         params_d = []
+        params_r = []
         
         if filters.start_date:
             date_where_sessions += " AND session_date >= ?"
             date_where_daily += " AND session_date >= ?"
+            date_where_realized += " AND redemption_date >= ?"
             params_s.append(filters.start_date)
             params_d.append(filters.start_date)
+            params_r.append(filters.start_date)
         
         if filters.end_date:
             date_where_sessions += " AND session_date <= ?"
             date_where_daily += " AND session_date <= ?"
+            date_where_realized += " AND redemption_date <= ?"
             params_s.append(filters.end_date)
             params_d.append(filters.end_date)
+            params_r.append(filters.end_date)
         
         if filters.user_ids:
             placeholders = ",".join("?" * len(filters.user_ids))
             date_where_sessions += f" AND user_id IN ({placeholders})"
             date_where_daily += f" AND user_id IN ({placeholders})"
+            date_where_realized += f" AND user_id IN ({placeholders})"
             params_s.extend(filters.user_ids)
             params_d.extend(filters.user_ids)
+            params_r.extend(filters.user_ids)
         
         if filters.site_ids:
             placeholders = ",".join("?" * len(filters.site_ids))
             date_where_sessions += f" AND site_id IN ({placeholders})"
+            date_where_realized += f" AND site_id IN ({placeholders})"
             params_s.extend(filters.site_ids)
+            params_r.extend(filters.site_ids)
         
         # KPIs
         kpis = []
@@ -1568,12 +1578,12 @@ class ReportingService:
             f"""
             SELECT 
                 COUNT(*) as winning_sessions,
-                COALESCE(SUM(ts.net_pl), 0) as total_wins
-            FROM tax_sessions ts
-            WHERE {date_where_sessions}
-              AND ts.net_pl > 0
+                COALESCE(SUM(rt.net_pl), 0) as total_wins
+            FROM realized_transactions rt
+            WHERE {date_where_realized}
+              AND rt.net_pl > 0
             """,
-            params_s,
+            params_r,
         )
         wins_row = c.fetchone()
         winning_sessions = wins_row["winning_sessions"]
@@ -1584,12 +1594,12 @@ class ReportingService:
             f"""
             SELECT 
                 COUNT(*) as losing_sessions,
-                COALESCE(SUM(ABS(ts.net_pl)), 0) as total_losses
-            FROM tax_sessions ts
-            WHERE {date_where_sessions}
-              AND ts.net_pl < 0
+                COALESCE(SUM(ABS(rt.net_pl)), 0) as total_losses
+            FROM realized_transactions rt
+            WHERE {date_where_realized}
+              AND rt.net_pl < 0
             """,
-            params_s,
+            params_r,
         )
         losses_row = c.fetchone()
         losing_sessions = losses_row["losing_sessions"]
@@ -1643,15 +1653,15 @@ class ReportingService:
             f"""
             SELECT 
                 {bucket_expr} as period,
-                SUM(CASE WHEN ts.net_pl > 0 THEN ts.net_pl ELSE 0 END) as period_wins,
-                SUM(CASE WHEN ts.net_pl < 0 THEN ABS(ts.net_pl) ELSE 0 END) as period_losses,
-                SUM(ts.net_pl) as period_net
-            FROM tax_sessions ts
-            WHERE {date_where_sessions}
+                SUM(CASE WHEN rt.net_pl > 0 THEN rt.net_pl ELSE 0 END) as period_wins,
+                SUM(CASE WHEN rt.net_pl < 0 THEN ABS(rt.net_pl) ELSE 0 END) as period_losses,
+                SUM(rt.net_pl) as period_net
+            FROM realized_transactions rt
+            WHERE {date_where_realized}
             GROUP BY period
             ORDER BY period
             """,
-            params_s,
+            params_r,
         )
         time_data = [self._row_to_dict(row) for row in c.fetchall()]
         
@@ -1682,8 +1692,8 @@ class ReportingService:
                     ELSE 0
                 END as win_rate
             FROM sites s
-            LEFT JOIN tax_sessions ts ON s.id = ts.site_id AND {date_where_sessions}
-            WHERE ts.id IS NOT NULL
+            LEFT JOIN realized_transactions rt ON s.id = rt.site_id AND {date_where_sessions}
+            WHERE rt.id IS NOT NULL
             GROUP BY s.id, s.name
             HAVING total_sessions > 0
             ORDER BY net_result DESC

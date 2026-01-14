@@ -7074,9 +7074,9 @@ class RedemptionsTab(QtWidgets.QWidget):
                 """
                 SELECT r.amount, r.site_session_id, r.site_id, r.user_id,
                        r.redemption_date, r.redemption_time,
-                       ts.cost_basis
+                       rt.cost_basis
                 FROM redemptions r
-                LEFT JOIN tax_sessions ts ON ts.redemption_id = r.id
+                LEFT JOIN realized_transactions rt ON rt.redemption_id = r.id
                 WHERE r.id = ?
                 """,
                 (redemption_id,),
@@ -7119,7 +7119,7 @@ class RedemptionsTab(QtWidgets.QWidget):
             # Determine which fields changed
             changed_fields = {k for k in old_record if old_record.get(k) != new_record.get(k)}
 
-            # Administrative fields that don't affect tax_sessions
+            # Administrative fields that don't affect realized_transactions
             admin_fields = {'notes', 'redemption_method_id', 'receipt_date', 'processed', 'fees'}
 
             # Check if only administrative fields changed
@@ -7161,9 +7161,9 @@ class RedemptionsTab(QtWidgets.QWidget):
                     (amount, session_id),
                 )
 
-            # Only delete and recalculate tax_sessions if accounting fields changed
+            # Only delete and recalculate realized_transactions if accounting fields changed
             if accounting_changed:
-                c.execute("DELETE FROM tax_sessions WHERE redemption_id = ?", (redemption_id,))
+                c.execute("DELETE FROM realized_transactions WHERE redemption_id = ?", (redemption_id,))
             conn.commit()
             conn.close()
 
@@ -7323,10 +7323,10 @@ class RedemptionsTab(QtWidgets.QWidget):
             amount = float(redemption["amount"])
             rdate = redemption["redemption_date"]
             rtime = redemption["redemption_time"] or "00:00:00"
-            c.execute("SELECT cost_basis FROM tax_sessions WHERE redemption_id = ?", (rid,))
+            c.execute("SELECT cost_basis FROM realized_transactions WHERE redemption_id = ?", (rid,))
             old_tax = c.fetchone()
             old_cost_basis = float(old_tax["cost_basis"]) if old_tax and old_tax["cost_basis"] else 0.0
-            c.execute("DELETE FROM tax_sessions WHERE redemption_id = ?", (rid,))
+            c.execute("DELETE FROM realized_transactions WHERE redemption_id = ?", (rid,))
             conn.commit()
             conn.close()
             if old_cost_basis > 0:
@@ -11796,8 +11796,8 @@ class UnrealizedTab(QtWidgets.QWidget):
 
         c.execute(
             """
-            INSERT INTO tax_sessions
-            (session_date, site_id, redemption_id, cost_basis, payout, net_pl, user_id)
+            INSERT INTO realized_transactions
+            (redemption_date, site_id, redemption_id, cost_basis, payout, net_pl, user_id)
             VALUES (?, ?, ?, ?, 0, ?, ?)
             """,
             (today, site_id, redemption_id, net_loss, -net_loss, user_id),
@@ -12469,7 +12469,7 @@ class RealizedTab(QtWidgets.QWidget):
         conn = self.db.get_connection()
         c = conn.cursor()
         try:
-            c.execute("PRAGMA table_info(tax_sessions)")
+            c.execute("PRAGMA table_info(realized_transactions)")
             has_notes = any(row["name"] == "notes" for row in c.fetchall())
         finally:
             conn.close()
@@ -12754,27 +12754,27 @@ class RealizedTab(QtWidgets.QWidget):
     def _fetch_transactions(self):
         conn = self.db.get_connection()
         c = conn.cursor()
-        notes_select = "ts.notes as session_notes" if self.has_tax_session_notes else "NULL as session_notes"
+        notes_select = "rt.notes as session_notes" if self.has_tax_session_notes else "NULL as session_notes"
         query = f"""
             SELECT
-                ts.id as tax_session_id,
-                ts.session_date,
-                ts.redemption_id as redemption_id,
-                ts.cost_basis,
-                ts.net_pl,
-                ts.site_id,
+                rt.id as tax_session_id,
+                rt.redemption_date as session_date,
+                rt.redemption_id as redemption_id,
+                rt.cost_basis,
+                rt.net_pl,
+                rt.site_id,
                 s.name as site_name,
-                ts.user_id,
+                rt.user_id,
                 u.name as user_name,
                 r.amount as redemption_amount,
                 r.fees as fees,
                 r.is_free_sc,
                 r.notes as redemption_notes,
                 {notes_select}
-            FROM tax_sessions ts
-            JOIN sites s ON ts.site_id = s.id
-            JOIN users u ON ts.user_id = u.id
-            LEFT JOIN redemptions r ON ts.redemption_id = r.id
+            FROM realized_transactions rt
+            JOIN sites s ON rt.site_id = s.id
+            JOIN users u ON rt.user_id = u.id
+            LEFT JOIN redemptions r ON rt.redemption_id = r.id
         """
         params = []
         conditions = []
@@ -12788,14 +12788,14 @@ class RealizedTab(QtWidgets.QWidget):
             params.extend(list(self.selected_users))
         start_date, end_date = self.active_date_filter
         if start_date:
-            conditions.append("ts.session_date >= ?")
+            conditions.append("rt.redemption_date >= ?")
             params.append(start_date)
         if end_date:
-            conditions.append("ts.session_date <= ?")
+            conditions.append("rt.redemption_date <= ?")
             params.append(end_date)
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
-        query += " ORDER BY ts.session_date DESC, s.name ASC, u.name ASC, ts.id ASC"
+        query += " ORDER BY rt.redemption_date DESC, s.name ASC, u.name ASC, rt.id ASC"
         c.execute(query, params)
         transactions = []
         for row in c.fetchall():
@@ -13153,20 +13153,20 @@ class RealizedTab(QtWidgets.QWidget):
         c.execute(
             """
             SELECT
-                ts.id as tax_session_id,
-                ts.session_date,
-                ts.cost_basis,
-                ts.net_pl,
-                ts.redemption_id,
+                rt.id as tax_session_id,
+                rt.redemption_date as session_date,
+                rt.cost_basis,
+                rt.net_pl,
+                rt.redemption_id,
                 r.amount as redemption_amount,
                 r.notes as redemption_notes,
                 s.name as site_name,
                 u.name as user_name
-            FROM tax_sessions ts
-            JOIN redemptions r ON ts.redemption_id = r.id
-            JOIN sites s ON ts.site_id = s.id
-            JOIN users u ON ts.user_id = u.id
-            WHERE ts.id = ?
+            FROM realized_transactions rt
+            JOIN redemptions r ON rt.redemption_id = r.id
+            JOIN sites s ON rt.site_id = s.id
+            JOIN users u ON rt.user_id = u.id
+            WHERE rt.id = ?
             """,
             (tax_session_id,),
         )
@@ -15609,7 +15609,7 @@ class UsersSetupTab(SetupListTab):
             ("expenses", "SELECT COUNT(*) as cnt FROM expenses WHERE user_id = ?"),
             ("cards", "SELECT COUNT(*) as cnt FROM cards WHERE user_id = ?"),
             ("methods", "SELECT COUNT(*) as cnt FROM redemption_methods WHERE user_id = ?"),
-            ("tax sessions", "SELECT COUNT(*) as cnt FROM tax_sessions WHERE user_id = ?"),
+            ("realized transactions", "SELECT COUNT(*) as cnt FROM realized_transactions WHERE user_id = ?"),
             ("daily sessions", "SELECT COUNT(*) as cnt FROM daily_tax_sessions WHERE user_id = ?"),
             ("site sessions", "SELECT COUNT(*) as cnt FROM site_sessions WHERE user_id = ?"),
             ("other income", "SELECT COUNT(*) as cnt FROM other_income WHERE user_id = ?"),
@@ -15770,7 +15770,7 @@ class SitesSetupTab(SetupListTab):
             ("purchases", "SELECT COUNT(*) as cnt FROM purchases WHERE site_id = ?"),
             ("redemptions", "SELECT COUNT(*) as cnt FROM redemptions WHERE site_id = ?"),
             ("game sessions", "SELECT COUNT(*) as cnt FROM game_sessions WHERE site_id = ?"),
-            ("tax sessions", "SELECT COUNT(*) as cnt FROM tax_sessions WHERE site_id = ?"),
+            ("realized transactions", "SELECT COUNT(*) as cnt FROM realized_transactions WHERE site_id = ?"),
             ("site sessions", "SELECT COUNT(*) as cnt FROM site_sessions WHERE site_id = ?"),
         ]
         details = []
@@ -19589,7 +19589,7 @@ class ToolsSetupTab(QtWidgets.QWidget):
             # Delete all transaction data
             c.execute("DELETE FROM game_sessions")
             c.execute("DELETE FROM daily_tax_sessions")
-            c.execute("DELETE FROM tax_sessions")
+            c.execute("DELETE FROM realized_transactions")
             c.execute("DELETE FROM purchases")
             c.execute("DELETE FROM redemptions")
             c.execute("DELETE FROM expenses")
