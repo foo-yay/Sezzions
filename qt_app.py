@@ -1087,6 +1087,10 @@ class PurchaseDialog(QtWidgets.QDialog):
         if not all([user_name, site_name, card_name]):
             return None, "Please select User, Site, and Card."
 
+        # Map display name back to actual card name if needed
+        if hasattr(self, '_card_name_map') and card_name.lower() in self._card_name_map:
+            card_name = self._card_name_map[card_name.lower()]
+
         date_str = self.date_edit.text().strip()
         if not date_str:
             return None, "Please enter a purchase date."
@@ -5797,12 +5801,7 @@ class PurchasesTab(QtWidgets.QWidget):
             return False, f"Site '{site_name}' not found."
         site_id = site_row["id"]
 
-        # Map display name back to actual card name if needed
-        if hasattr(self, '_card_name_map') and card_name.lower() in self._card_name_map:
-            actual_card_name = self._card_name_map[card_name.lower()]
-        else:
-            actual_card_name = card_name
-        c.execute("SELECT id FROM cards WHERE name = ? AND user_id = ?", (actual_card_name, user_id))
+        c.execute("SELECT id FROM cards WHERE name = ? AND user_id = ?", (card_name, user_id))
         card_row = c.fetchone()
         if not card_row:
             conn.close()
@@ -6269,15 +6268,30 @@ class PurchasesTab(QtWidgets.QWidget):
         )
         if not path:
             return
+        # Custom headers with split date/time
         headers = [
-            self.table.horizontalHeaderItem(i).text()
-            for i in range(self.table.columnCount())
+            "Date", "Time", "User", "Site", "Amount", "SC Received",
+            "Starting SC Balance", "Card", "Cashback Earned", "Remaining Amount", "Notes"
         ]
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(headers)
             for row in self.filtered_rows:
-                writer.writerow(row["display"])
+                # Export raw data without formatting
+                csv_row = [
+                    row["purchase_date"],
+                    row["purchase_time"],
+                    row["user_name"],
+                    row["site"],
+                    row["amount"],
+                    row["sc_received"],
+                    row["starting_sc_balance"],
+                    row["card_name"],
+                    row["cashback_earned"],
+                    row["remaining_amount"],
+                    row["notes"],
+                ]
+                writer.writerow(csv_row)
 
     def _show_info_message(self, title, message):
         box = QtWidgets.QMessageBox(self)
@@ -7505,15 +7519,28 @@ class RedemptionsTab(QtWidgets.QWidget):
         )
         if not path:
             return
+        # Custom headers with split date/time
         headers = [
-            self.table.horizontalHeaderItem(i).text()
-            for i in range(self.table.columnCount())
+            "Date", "Time", "User", "Site", "Amount",
+            "Receipt Date", "Method", "Processed", "Notes"
         ]
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(headers)
-        for row in self.filtered_rows:
-            writer.writerow(row["display"])
+            for row in self.filtered_rows:
+                # Export raw data without formatting
+                csv_row = [
+                    row["redemption_date"],
+                    row["redemption_time"],
+                    row["user_name"],
+                    row["site"],
+                    row["amount"],
+                    row["receipt_date"],
+                    row["method"],
+                    "Yes" if row["processed"] else "No",
+                    row["notes"],
+                ]
+                writer.writerow(csv_row)
 
     def _show_info_message(self, title, message):
         box = QtWidgets.QMessageBox(self)
@@ -8163,15 +8190,22 @@ class ExpensesTab(QtWidgets.QWidget):
         )
         if not path:
             return
-        headers = [
-            self.table.horizontalHeaderItem(i).text()
-            for i in range(self.table.columnCount())
-        ]
+        # Custom headers
+        headers = ["Date", "Category", "Vendor", "User", "Amount", "Description"]
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(headers)
             for row in self.filtered_rows:
-                writer.writerow(row["display"])
+                # Export raw data without formatting
+                csv_row = [
+                    row["expense_date"],
+                    row["category"],
+                    row["vendor"],
+                    row["user_name"],
+                    row["amount"],
+                    row["description"],
+                ]
+                writer.writerow(csv_row)
 
 
 class GameSessionsTab(QtWidgets.QWidget):
@@ -9566,15 +9600,35 @@ class GameSessionsTab(QtWidgets.QWidget):
         )
         if not path:
             return
+        # Custom headers with split date/time
         headers = [
-            self.table.horizontalHeaderItem(i).text()
-            for i in range(self.table.columnCount())
+            "Date", "Time", "Site", "User", "Game Type", "Game Name", 
+            "Start Total", "End Total", "Start Redeemable", "End Redeemable",
+            "Delta Redeemable", "Basis Consumed", "Net P/L", "Status", "Notes"
         ]
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow(headers)
             for row in self.filtered_rows:
-                writer.writerow(row["display"])
+                # Export raw data without formatting
+                csv_row = [
+                    row["session_date"],
+                    row["start_time"],
+                    row["site_name"],
+                    row["user_name"],
+                    row["game_type"],
+                    row["game_name"],
+                    row["start_total"],
+                    row["end_total"] if row["end_total"] is not None else "",
+                    row["start_redeem"],
+                    row["end_redeem"] if row["end_redeem"] is not None else "",
+                    row["delta_redeem"] if row["delta_redeem"] is not None else "",
+                    row["basis_consumed"] if row["basis_consumed"] is not None else "",
+                    row["net_pl"] if row["net_pl"] is not None else "",
+                    row["status"],
+                    row["notes"],
+                ]
+                writer.writerow(csv_row)
 
 
 class DailySessionsTab(QtWidgets.QWidget):
@@ -10599,7 +10653,15 @@ class DailySessionsTab(QtWidgets.QWidget):
             writer.writerow(self.columns)
             for idx in range(self.tree.topLevelItemCount()):
                 item = self.tree.topLevelItem(idx)
-                writer.writerow([item.text(col) for col in range(len(self.columns))])
+                # Clean currency symbols from displayed values
+                row_data = []
+                for col in range(len(self.columns)):
+                    text = item.text(col)
+                    # Remove $ and , from currency values
+                    if text.startswith('$') or text.startswith('-$'):
+                        text = text.replace('$', '').replace(',', '')
+                    row_data.append(text)
+                writer.writerow(row_data)
 
 
 class UnrealizedNotesDialog(QtWidgets.QDialog):
@@ -11847,7 +11909,13 @@ class UnrealizedTab(QtWidgets.QWidget):
             writer = csv.writer(f)
             writer.writerow(self.columns)
             for row in self.filtered_rows:
-                writer.writerow(row["display"])
+                # Clean currency symbols from displayed values
+                row_data = []
+                for value in row["display"]:
+                    if isinstance(value, str) and (value.startswith('$') or value.startswith('+$') or value.startswith('-$')):
+                        value = value.replace('$', '').replace(',', '').replace('+', '')
+                    row_data.append(value)
+                writer.writerow(row_data)
 
 
 class RealizedNotesDialog(QtWidgets.QDialog):
@@ -13244,7 +13312,15 @@ class RealizedTab(QtWidgets.QWidget):
             writer.writerow(self.columns)
 
             def write_item(item):
-                writer.writerow([item.text(col) for col in range(len(self.columns))])
+                # Clean currency symbols from displayed values
+                row_data = []
+                for col in range(len(self.columns)):
+                    text = item.text(col)
+                    # Remove $ and , from currency values
+                    if text.startswith('$') or text.startswith('-$'):
+                        text = text.replace('$', '').replace(',', '')
+                    row_data.append(text)
+                writer.writerow(row_data)
                 for idx in range(item.childCount()):
                     write_item(item.child(idx))
 
@@ -13270,7 +13346,7 @@ class ReportsTab(QtWidgets.QWidget):
         # Left navigation panel
         left_panel = QtWidgets.QWidget()
         left_panel.setObjectName("ReportsNav")
-        left_panel.setFixedWidth(200)
+        left_panel.setFixedWidth(280)
         left_layout = QtWidgets.QVBoxLayout(left_panel)
         left_layout.setContentsMargins(12, 12, 12, 12)
         left_layout.setSpacing(8)
@@ -13282,6 +13358,7 @@ class ReportsTab(QtWidgets.QWidget):
         # Navigation list
         self.nav_list = QtWidgets.QListWidget()
         self.nav_list.setObjectName("ReportsNavList")
+        self.nav_list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.nav_list.currentRowChanged.connect(self._on_nav_changed)
         
         # Load available reports
@@ -13310,8 +13387,7 @@ class ReportsTab(QtWidgets.QWidget):
                     report_item.setData(QtCore.Qt.UserRole, {"type": "report", "report": report})
                     self.nav_list.addItem(report_item)
         
-        left_layout.addWidget(self.nav_list)
-        left_layout.addStretch()
+        left_layout.addWidget(self.nav_list, 1)
         
         # Right panel (report display area)
         self.right_panel = QtWidgets.QWidget()
@@ -13451,6 +13527,33 @@ class ReportsTab(QtWidgets.QWidget):
         # Determine chart type from first series
         first_series_type = series_list[0].series_type
         
+        # Calculate min/max values across all series for proper scaling
+        all_values = []
+        for series_data in series_list:
+            for label, value in series_data.data:
+                all_values.append(value)
+        
+        min_value = min(all_values) if all_values else 0
+        max_value = max(all_values) if all_values else 0
+        
+        # Add 10% padding to min/max for better visualization
+        value_range = max_value - min_value
+        if value_range > 0:
+            padding = value_range * 0.1
+            min_value = min_value - padding if min_value > 0 else min(0, min_value - padding)
+            max_value = max_value + padding
+        else:
+            # Handle case where all values are the same
+            if max_value > 0:
+                min_value = 0
+                max_value = max_value * 1.2
+            elif max_value < 0:
+                min_value = min_value * 1.2
+                max_value = 0
+            else:
+                min_value = -1
+                max_value = 1
+        
         if first_series_type == "bar":
             series = QBarSeries()
             categories = []
@@ -13471,14 +13574,30 @@ class ReportsTab(QtWidgets.QWidget):
             
             axis_x = QBarCategoryAxis()
             axis_x.append(categories)
+            axis_x.setTitleText("Period")
             chart.addAxis(axis_x, QtCore.Qt.AlignBottom)
             series.attachAxis(axis_x)
             
             axis_y = QValueAxis()
+            axis_y.setTitleText("Amount ($)")
+            axis_y.setRange(min_value, max_value)
             chart.addAxis(axis_y, QtCore.Qt.AlignLeft)
             series.attachAxis(axis_y)
         
         elif first_series_type == "line":
+            # Create axes first
+            axis_x = QValueAxis()
+            axis_x.setTitleText("Period")
+            axis_x.setLabelFormat("%d")
+            
+            # Set X-axis range based on data points
+            max_points = max(len(sd.data) for sd in series_list)
+            axis_x.setRange(0, max_points - 1 if max_points > 0 else 1)
+            
+            axis_y = QValueAxis()
+            axis_y.setTitleText("Amount ($)")
+            axis_y.setRange(min_value, max_value)
+            
             for series_data in series_list:
                 line_series = QLineSeries()
                 line_series.setName(series_data.name)
@@ -13494,16 +13613,44 @@ class ReportsTab(QtWidgets.QWidget):
                 
                 chart.addSeries(line_series)
             
-            chart.createDefaultAxes()
+            chart.addAxis(axis_x, QtCore.Qt.AlignBottom)
+            chart.addAxis(axis_y, QtCore.Qt.AlignLeft)
+            
+            # Attach all series to the axes
+            for series_obj in chart.series():
+                series_obj.attachAxis(axis_x)
+                series_obj.attachAxis(axis_y)
         
         chart.legend().setVisible(True)
         chart.legend().setAlignment(QtCore.Qt.AlignBottom)
         
+        # Set margins to prevent label cutoff
+        chart.setMargins(QtCore.QMargins(10, 10, 10, 10))
+        
         chart_view = QChartView(chart)
         chart_view.setRenderHint(QtGui.QPainter.Antialiasing)
-        chart_view.setMinimumHeight(300)
+        chart_view.setMinimumHeight(400)
+        chart_view.setMinimumWidth(600)
+        
+        # Enable tooltips on hover
+        for series_obj in chart.series():
+            # Only set point labels for series that support it (not QBarSeries)
+            if hasattr(series_obj, 'setPointLabelsVisible'):
+                series_obj.setPointLabelsVisible(False)  # Don't show labels on all points
+            if hasattr(series_obj, 'hovered'):
+                series_obj.hovered.connect(lambda point, state, s=series_obj: self._on_chart_hover(point, state))
         
         return chart_view
+    
+    def _on_chart_hover(self, point, state):
+        """Handle chart hover events to show tooltips"""
+        if state:
+            # Show tooltip with value
+            tooltip = f"${point.y():,.2f}"
+            QtWidgets.QToolTip.showText(
+                QtGui.QCursor.pos(),
+                tooltip
+            )
     
     def _export_csv(self, result):
         """Export report data to CSV"""
@@ -13557,6 +13704,8 @@ class ReportFilterBar(QtWidgets.QWidget):
         self.start_date_edit = QtWidgets.QLineEdit()
         self.start_date_edit.setPlaceholderText("MM/DD/YY")
         self.start_date_edit.setFixedWidth(90)
+        self.start_date_edit.returnPressed.connect(self._apply_filters)
+        self.start_date_edit.editingFinished.connect(self._apply_filters)
         start_date_container.addWidget(self.start_date_edit)
         self.start_calendar_btn = QtWidgets.QPushButton("📅")
         self.start_calendar_btn.setFixedWidth(44)
@@ -13570,6 +13719,8 @@ class ReportFilterBar(QtWidgets.QWidget):
         self.end_date_edit = QtWidgets.QLineEdit()
         self.end_date_edit.setPlaceholderText("MM/DD/YY")
         self.end_date_edit.setFixedWidth(90)
+        self.end_date_edit.returnPressed.connect(self._apply_filters)
+        self.end_date_edit.editingFinished.connect(self._apply_filters)
         end_date_container.addWidget(self.end_date_edit)
         self.end_calendar_btn = QtWidgets.QPushButton("📅")
         self.end_calendar_btn.setFixedWidth(44)
@@ -13583,6 +13734,7 @@ class ReportFilterBar(QtWidgets.QWidget):
         self.group_combo.addItems(["All Time", "Daily", "Weekly", "Monthly", "Quarterly", "Yearly"])
         self.group_combo.setCurrentText("Monthly")
         self.group_combo.setFixedWidth(120)
+        self.group_combo.currentTextChanged.connect(self._apply_filters)
         layout.addWidget(self.group_combo)
         
         # User filter (autocomplete with placeholder)
@@ -13593,6 +13745,7 @@ class ReportFilterBar(QtWidgets.QWidget):
         self.user_combo.setCurrentIndex(-1)  # No selection
         self.user_combo.lineEdit().setPlaceholderText("All Users")
         self.user_combo.setFixedWidth(160)
+        self.user_combo.currentTextChanged.connect(self._apply_filters)
         layout.addWidget(self.user_combo)
         
         # Site filter (autocomplete with placeholder)
@@ -13603,15 +13756,12 @@ class ReportFilterBar(QtWidgets.QWidget):
         self.site_combo.setCurrentIndex(-1)  # No selection
         self.site_combo.lineEdit().setPlaceholderText("All Sites")
         self.site_combo.setFixedWidth(160)
+        self.site_combo.currentTextChanged.connect(self._apply_filters)
         layout.addWidget(self.site_combo)
         
         layout.addStretch()
         
-        # Buttons
-        apply_btn = QtWidgets.QPushButton("Apply")
-        apply_btn.clicked.connect(self._apply_filters)
-        layout.addWidget(apply_btn)
-        
+        # Reset button only (Apply removed for auto-apply)
         reset_btn = QtWidgets.QPushButton("Reset")
         reset_btn.clicked.connect(self._reset_filters)
         layout.addWidget(reset_btn)
@@ -13693,6 +13843,7 @@ class ReportFilterBar(QtWidgets.QWidget):
         ok_btn.clicked.connect(dialog.accept)
         if dialog.exec() == QtWidgets.QDialog.Accepted:
             self.start_date_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+            self._apply_filters()
     
     def _pick_end_date(self):
         """Show calendar picker for end date"""
@@ -13724,6 +13875,7 @@ class ReportFilterBar(QtWidgets.QWidget):
         ok_btn.clicked.connect(dialog.accept)
         if dialog.exec() == QtWidgets.QDialog.Accepted:
             self.end_date_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+            self._apply_filters()
     
     def _apply_filters(self):
         """Apply current filter settings"""
@@ -15488,7 +15640,13 @@ class SetupListTab(QtWidgets.QWidget):
             writer = csv.writer(f)
             writer.writerow(self.columns)
             for row in self.filtered_rows:
-                writer.writerow(row["display"])
+                # Clean currency symbols from displayed values if present
+                row_data = []
+                for value in row["display"]:
+                    if isinstance(value, str) and (value.startswith('$') or value.startswith('-$')):
+                        value = value.replace('$', '').replace(',', '')
+                    row_data.append(value)
+                writer.writerow(row_data)
 
     def load_data(self):
         raise NotImplementedError
@@ -21067,9 +21225,15 @@ class MainWindow(QtWidgets.QMainWindow):
             }}
             
             /* Reports Tab Styles */
+            ReportsTab {{
+                background: {colors['bg']};
+            }}
             QWidget#ReportsNav {{
                 background: {colors['surface']};
                 border-right: 1px solid {colors['border']};
+            }}
+            QWidget#ReportContent {{
+                background: {colors['bg']};
             }}
             QListWidget#ReportsNavList {{
                 background: {colors['surface']};

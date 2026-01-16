@@ -40,7 +40,6 @@ Follow the Planner’s decisions and keep changes minimal.
 ### UI & Structure
 - [ ] Finalize UI redesign in `qt_app.py`
 - [ ] Safely deprecate `session2.py` (no breaking imports)
-- [ ] Finish incorporating all remaining tabs into the new UI
 
 ---
 
@@ -50,7 +49,6 @@ Follow the Planner’s decisions and keep changes minimal.
 - [ ] Add user-defined tax withholding rate (Settings)
 - [ ] Consolidated tax reporting based on session outcomes
 - [ ] Consolidated balance tracker per Site/User (cleaner Unrealized-style view)
-- [ ] Determine best method to link transactions to sessions (after Planner approval)
 
 ---
 
@@ -63,7 +61,7 @@ Follow the Planner’s decisions and keep changes minimal.
 ## 🟢 Low Priority — IMPLEMENTER TASKS / IDEAS
 
 - [ ] Export reports to CSV
-- [ ] Daily taxable P/L metrics (hourly, etc.)
+- [X] Daily taxable P/L metrics (hourly, etc.)
 - [ ] Export/backup to Google Sheets / Drive (optional automation)
 - [ ] Support ticket / bug submission system
 - [ ] Web and/or mobile platform exploration
@@ -94,9 +92,10 @@ Follow the Planner’s decisions and keep changes minimal.
 
 - [ ] Create notifications when played through balances haven't been redeemed in more than 1 week?  72 hours? 96 hours?
 - [ ] Create notifications when sessions go longer than 24 hours
-- [X] UX: Warn before editing transactions that trigger recalculation
 
 
 ## 🐞 Bugs / Issues (Triage Needed)
-
+- [ ] Export CSV's were outputting empty CSV's
+- [ ] Unit testing
+- [ ] Additional redemption statuses
 (No open bugs at this time)

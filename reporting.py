@@ -156,8 +156,8 @@ class ReportingService:
             ),
             ReportInfo(
                 report_id="tax_winnings_losses",
-                title="Session-Method Winnings/Losses",
-                description="Tax diary method summary: wins, losses, expenses, fees",
+                title="Tax Diary: Wins/Losses",
+                description="Session wins, losses, net P/L, expenses, and fees breakdown",
                 category="Tax Center",
                 requires_filters=[],
             ),
@@ -245,12 +245,15 @@ class ReportingService:
         
         Args:
             date_column: Name of the date column to bucket
-            group_interval: One of daily, weekly, monthly, quarterly, yearly
+            group_interval: One of daily, weekly, monthly, quarterly, yearly, or None for all-time
             
         Returns:
             SQL expression for grouping
         """
-        if group_interval == "daily":
+        if not group_interval or group_interval == "all_time":
+            # For all-time, create a single bucket labeled "All Time"
+            return "'All Time'"
+        elif group_interval == "daily":
             return date_column
         elif group_interval == "weekly":
             # Week starting Monday: use strftime %W for ISO week
@@ -263,7 +266,7 @@ class ReportingService:
         elif group_interval == "yearly":
             return f"strftime('%Y', {date_column})"
         else:
-            return date_column  # Default to daily
+            return f"strftime('%Y-%m', {date_column})"  # Default to monthly
     
     # =========================================================================
     # Report Implementations
@@ -1206,18 +1209,35 @@ class ReportingService:
         
         c.execute(
             f"""
+            WITH site_purchases AS (
+                SELECT 
+                    site_id,
+                    SUM(amount) as total_purchases
+                FROM purchases
+                WHERE {date_where_purchases}
+                GROUP BY site_id
+            ),
+            site_redemptions AS (
+                SELECT 
+                    site_id,
+                    SUM(amount) as total_redemptions,
+                    SUM(COALESCE(fees, 0)) as total_fees,
+                    SUM(amount - COALESCE(fees, 0)) as net_redemptions
+                FROM redemptions
+                WHERE {date_where_redemptions}
+                GROUP BY site_id
+            )
             SELECT 
                 s.name as site_name,
-                COALESCE(SUM(p.amount), 0) as total_purchases,
-                COALESCE(SUM(r.amount), 0) as total_redemptions,
-                COALESCE(SUM(r.fees), 0) as total_fees,
-                COALESCE(SUM(r.amount - COALESCE(r.fees, 0)), 0) as net_redemptions,
-                COALESCE(SUM(r.amount - COALESCE(r.fees, 0)), 0) - COALESCE(SUM(p.amount), 0) as net_cashflow
+                COALESCE(sp.total_purchases, 0) as total_purchases,
+                COALESCE(sr.total_redemptions, 0) as total_redemptions,
+                COALESCE(sr.total_fees, 0) as total_fees,
+                COALESCE(sr.net_redemptions, 0) as net_redemptions,
+                COALESCE(sr.net_redemptions, 0) - COALESCE(sp.total_purchases, 0) as net_cashflow
             FROM sites s
-            LEFT JOIN purchases p ON s.id = p.site_id AND {date_where_purchases}
-            LEFT JOIN redemptions r ON s.id = r.site_id AND {date_where_redemptions}
-            GROUP BY s.id, s.name
-            HAVING total_purchases > 0 OR total_redemptions > 0
+            LEFT JOIN site_purchases sp ON s.id = sp.site_id
+            LEFT JOIN site_redemptions sr ON s.id = sr.site_id
+            WHERE sp.total_purchases > 0 OR sr.total_redemptions > 0
             ORDER BY total_purchases DESC
             """,
             params_p + params_r,
@@ -1546,7 +1566,7 @@ class ReportingService:
         )
     
     def _run_tax_winnings_losses(self, filters: ReportFilters) -> ReportResult:
-        """Tax Center: Session-method Winnings/Losses Summary"""
+        """Tax Center: Tax Diary - Wins/Losses Summary"""
         conn = self.db.get_connection()
         c = conn.cursor()
         
@@ -1580,7 +1600,7 @@ class ReportingService:
                 COUNT(*) as winning_sessions,
                 COALESCE(SUM(rt.net_pl), 0) as total_wins
             FROM realized_transactions rt
-            WHERE {date_where_realized}
+            WHERE {date_where_redemptions}
               AND rt.net_pl > 0
             """,
             params_r,
@@ -1596,7 +1616,7 @@ class ReportingService:
                 COUNT(*) as losing_sessions,
                 COALESCE(SUM(ABS(rt.net_pl)), 0) as total_losses
             FROM realized_transactions rt
-            WHERE {date_where_realized}
+            WHERE {date_where_redemptions}
               AND rt.net_pl < 0
             """,
             params_r,
@@ -1647,7 +1667,7 @@ class ReportingService:
         ]
         
         # Time series: wins and losses over time
-        bucket_expr = self._bucket_sql("ts.session_date", filters.group_interval)
+        bucket_expr = self._bucket_sql("rt.redemption_date", filters.group_interval)
         
         c.execute(
             f"""
@@ -1657,7 +1677,7 @@ class ReportingService:
                 SUM(CASE WHEN rt.net_pl < 0 THEN ABS(rt.net_pl) ELSE 0 END) as period_losses,
                 SUM(rt.net_pl) as period_net
             FROM realized_transactions rt
-            WHERE {date_where_realized}
+            WHERE {date_where_redemptions}
             GROUP BY period
             ORDER BY period
             """,
@@ -1680,25 +1700,25 @@ class ReportingService:
             f"""
             SELECT 
                 s.name as site_name,
-                COUNT(ts.id) as total_sessions,
-                SUM(CASE WHEN ts.net_pl > 0 THEN 1 ELSE 0 END) as winning_sessions,
-                SUM(CASE WHEN ts.net_pl < 0 THEN 1 ELSE 0 END) as losing_sessions,
-                COALESCE(SUM(CASE WHEN ts.net_pl > 0 THEN ts.net_pl ELSE 0 END), 0) as total_wins,
-                COALESCE(SUM(CASE WHEN ts.net_pl < 0 THEN ABS(ts.net_pl) ELSE 0 END), 0) as total_losses,
-                COALESCE(SUM(ts.net_pl), 0) as net_result,
+                COUNT(rt.id) as total_sessions,
+                SUM(CASE WHEN rt.net_pl > 0 THEN 1 ELSE 0 END) as winning_sessions,
+                SUM(CASE WHEN rt.net_pl < 0 THEN 1 ELSE 0 END) as losing_sessions,
+                COALESCE(SUM(CASE WHEN rt.net_pl > 0 THEN rt.net_pl ELSE 0 END), 0) as total_wins,
+                COALESCE(SUM(CASE WHEN rt.net_pl < 0 THEN ABS(rt.net_pl) ELSE 0 END), 0) as total_losses,
+                COALESCE(SUM(rt.net_pl), 0) as net_result,
                 CASE 
-                    WHEN COUNT(ts.id) > 0
-                    THEN SUM(CASE WHEN ts.net_pl > 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(ts.id)
+                    WHEN COUNT(rt.id) > 0
+                    THEN SUM(CASE WHEN rt.net_pl > 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(rt.id)
                     ELSE 0
                 END as win_rate
             FROM sites s
-            LEFT JOIN realized_transactions rt ON s.id = rt.site_id AND {date_where_sessions}
+            LEFT JOIN realized_transactions rt ON s.id = rt.site_id AND {date_where_redemptions}
             WHERE rt.id IS NOT NULL
             GROUP BY s.id, s.name
             HAVING total_sessions > 0
             ORDER BY net_result DESC
             """,
-            params_s,
+            params_r,
         )
         rows = [self._row_to_dict(row) for row in c.fetchall()]
         
