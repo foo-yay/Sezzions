@@ -54,3 +54,5 @@ Short: help a coding agent be productive immediately in this repo.
 - Prefer changing `business_logic.py` for pure accounting fixes and `session2.py` only for orchestration/guarding code.
 
 Feedback: I added this file with repository-specific guidance — tell me which sections need more detail or any missing patterns to include.
+
+10) We have MIGRATED to a new OOP architecture in the /sezzions folder.  See sezzions/IMPLEMENTATION_PLAN.md for details as well as sezzions/README.md and other docs in sezzions/docs.  The legacy code in the root folder (session2.py, business_logic.py, etc) is still the main app for now, but new development should happen in the sezzions/ folder, with reference to the legacy app to ensure strict adherance to logic and algorithmic processing of data.

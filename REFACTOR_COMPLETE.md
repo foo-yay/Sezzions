@@ -9,7 +9,7 @@ Renamed the `tax_sessions` table to `realized_transactions` and changed the `ses
 ## Why This Change?
 - **Problem:** Name "tax_sessions" was confusing - users thought it was for tax reporting
 - **Reality:** Table tracks per-redemption P/L calculations (cost basis, payout, net profit)
-- **Actual tax reporting:** Lives in `daily_tax_sessions` table (IRS reportable units)
+- **Actual tax reporting:** Lives in `daily_sessions` table (IRS reportable units)
 - **Column confusion:** `session_date` was actually the redemption date, not game session date
 
 ## What Changed
@@ -98,9 +98,9 @@ Renamed the `tax_sessions` table to `realized_transactions` and changed the `ses
 - `redemptions` table: Cash-out events
 - `redemption_allocations` table: Detailed FIFO purchase links
 - `game_sessions` table: Individual gameplay (generates taxable P/L)
-- `daily_tax_sessions` table: IRS reporting rollup (actual tax data)
+- `daily_sessions` table: IRS reporting rollup (actual tax data)
 
 ## Notes
 - Functions with "tax" in name are still correct (they work with actual tax calculations, not the renamed table)
-- `update_daily_tax_session()` - Correctly works with daily_tax_sessions
+- `update_daily_tax_session()` - Correctly works with daily_sessions
 - `_rebuild_session_tax_fields_for_pair()` - Correctly rebuilds game_sessions tax fields

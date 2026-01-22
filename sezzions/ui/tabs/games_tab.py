@@ -1,0 +1,429 @@
+"""
+Games tab - Manage individual games
+"""
+from PySide6 import QtWidgets, QtCore, QtGui
+from app_facade import AppFacade
+from models.game import Game
+
+
+class GamesTab(QtWidgets.QWidget):
+    """Tab for managing games"""
+
+    def __init__(self, facade: AppFacade):
+        super().__init__()
+        self.facade = facade
+        self.games = []
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        header_layout = QtWidgets.QHBoxLayout()
+        title = QtWidgets.QLabel("Games")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+
+        self.search_edit = QtWidgets.QLineEdit()
+        self.search_edit.setPlaceholderText("Search games...")
+        self.search_edit.setMaximumWidth(300)
+        self.search_edit.textChanged.connect(self._filter_games)
+        header_layout.addWidget(self.search_edit)
+
+        self.clear_search_btn = QtWidgets.QPushButton("Clear")
+        self.clear_search_btn.clicked.connect(self._clear_search)
+        header_layout.addWidget(self.clear_search_btn)
+
+        self.clear_filters_btn = QtWidgets.QPushButton("Clear All Filters")
+        self.clear_filters_btn.clicked.connect(self._clear_all_filters)
+        header_layout.addWidget(self.clear_filters_btn)
+
+        layout.addLayout(header_layout)
+
+        toolbar = QtWidgets.QHBoxLayout()
+
+        add_btn = QtWidgets.QPushButton("➕ Add Game")
+        add_btn.setObjectName("PrimaryButton")
+        add_btn.clicked.connect(self._add_game)
+        toolbar.addWidget(add_btn)
+
+        self.view_btn = QtWidgets.QPushButton("👁️ View")
+        self.view_btn.clicked.connect(self._view_game)
+        self.view_btn.setVisible(False)
+        toolbar.addWidget(self.view_btn)
+
+        self.edit_btn = QtWidgets.QPushButton("✏️ Edit")
+        self.edit_btn.clicked.connect(self._edit_game)
+        self.edit_btn.setVisible(False)
+        toolbar.addWidget(self.edit_btn)
+
+        self.delete_btn = QtWidgets.QPushButton("🗑️ Delete")
+        self.delete_btn.clicked.connect(self._delete_game)
+        self.delete_btn.setVisible(False)
+        toolbar.addWidget(self.delete_btn)
+
+        toolbar.addStretch()
+
+        refresh_btn = QtWidgets.QPushButton("🔄 Refresh")
+        refresh_btn.clicked.connect(self.refresh_data)
+        toolbar.addWidget(refresh_btn)
+
+        layout.addLayout(toolbar)
+
+        self.table = QtWidgets.QTableWidget()
+        self.table.setColumnCount(5)
+        self.table.setHorizontalHeaderLabels(["Name", "Game Type", "RTP", "Status", "Notes"])
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        header.setStretchLastSection(True)
+        self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QTableWidget.SingleSelection)
+        self.table.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
+        self.table.verticalHeader().setVisible(False)
+        self.table.itemSelectionChanged.connect(self._on_selection_changed)
+        self.table.itemDoubleClicked.connect(self._edit_game)
+        layout.addWidget(self.table)
+
+        self.refresh_data()
+
+    def refresh_data(self):
+        self.games = self.facade.list_all_games()
+        self._populate_table()
+
+    def _populate_table(self):
+        search_text = self.search_edit.text().lower()
+        game_types = {t.id: t.name for t in self.facade.get_all_game_types()}
+
+        if search_text:
+            filtered = [g for g in self.games
+                        if search_text in g.name.lower()
+                        or (g.notes and search_text in g.notes.lower())
+                        or (game_types.get(g.game_type_id, "").lower().find(search_text) >= 0)]
+        else:
+            filtered = self.games
+
+        self.table.setRowCount(len(filtered))
+        for row, game in enumerate(filtered):
+            name_item = QtWidgets.QTableWidgetItem(game.name)
+            name_item.setData(QtCore.Qt.UserRole, game.id)
+            self.table.setItem(row, 0, name_item)
+
+            game_type_name = game_types.get(game.game_type_id, "—")
+            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(game_type_name))
+
+            rtp_display = f"{game.rtp:.2f}%" if game.rtp is not None else "—"
+            rtp_item = QtWidgets.QTableWidgetItem(rtp_display)
+            rtp_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            self.table.setItem(row, 2, rtp_item)
+
+            status = "Active" if game.is_active else "Inactive"
+            status_item = QtWidgets.QTableWidgetItem(status)
+            if not game.is_active:
+                status_item.setForeground(QtGui.QColor("#999"))
+            self.table.setItem(row, 3, status_item)
+
+            notes = (game.notes or "")[:100]
+            self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(notes))
+
+        # Column sizing handled by header resize mode
+
+    def _filter_games(self):
+        self._populate_table()
+
+    def _clear_search(self):
+        self.search_edit.clear()
+        self._populate_table()
+
+    def _clear_all_filters(self):
+        self._clear_search()
+
+    def _on_selection_changed(self):
+        has_selection = len(self.table.selectedItems()) > 0
+        self.view_btn.setVisible(has_selection)
+        self.edit_btn.setVisible(has_selection)
+        self.delete_btn.setVisible(has_selection)
+
+    def _get_selected_game_id(self):
+        selected = self.table.selectedItems()
+        if not selected:
+            return None
+        row = selected[0].row()
+        return self.table.item(row, 0).data(QtCore.Qt.UserRole)
+
+    def _add_game(self):
+        dialog = GameDialog(self, self.facade)
+        if dialog.exec():
+            try:
+                created = self.facade.create_game(
+                    name=dialog.name_edit.text(),
+                    game_type_id=dialog.type_combo.currentData(),
+                    rtp=dialog.get_rtp_value(),
+                    notes=dialog.notes_edit.toPlainText() or None,
+                )
+                self.refresh_data()
+                QtWidgets.QMessageBox.information(
+                    self, "Success", f"Game '{created.name}' created"
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(
+                    self, "Error", f"Failed to create game:\n{str(e)}"
+                )
+
+    def _edit_game(self):
+        game_id = self._get_selected_game_id()
+        if not game_id:
+            return
+
+        game = self.facade.get_game(game_id)
+        if not game:
+            return
+
+        dialog = GameDialog(self, self.facade, game)
+        if dialog.exec():
+            try:
+                updated = self.facade.update_game(
+                    game_id,
+                    name=dialog.name_edit.text(),
+                    game_type_id=dialog.type_combo.currentData(),
+                    rtp=dialog.get_rtp_value(),
+                    notes=dialog.notes_edit.toPlainText() or None,
+                    is_active=dialog.active_check.isChecked(),
+                )
+                self.refresh_data()
+                QtWidgets.QMessageBox.information(
+                    self, "Success", f"Game '{updated.name}' updated"
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(
+                    self, "Error", f"Failed to update game:\n{str(e)}"
+                )
+
+    def _delete_game(self):
+        game_id = self._get_selected_game_id()
+        if not game_id:
+            return
+
+        game = self.facade.get_game(game_id)
+        if not game:
+            return
+
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Delete game '{game.name}'?\n\nThis cannot be undone.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if reply == QtWidgets.QMessageBox.Yes:
+            try:
+                self.facade.delete_game(game_id)
+                self.refresh_data()
+                QtWidgets.QMessageBox.information(
+                    self, "Success", f"Game '{game.name}' deleted"
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(
+                    self, "Error", f"Failed to delete game:\n{str(e)}"
+                )
+
+    def _view_game(self):
+        game_id = self._get_selected_game_id()
+        if not game_id:
+            return
+        game = self.facade.get_game(game_id)
+        if not game:
+            return
+        def handle_edit():
+            dialog.close()
+            self._edit_game()
+
+        def handle_delete():
+            dialog.close()
+            self._delete_game()
+
+        dialog = GameDialog(self, self.facade, game, read_only=True, on_edit=handle_edit, on_delete=handle_delete)
+        dialog.exec()
+
+
+class GameDialog(QtWidgets.QDialog):
+    """Dialog for adding/editing games"""
+
+    def __init__(self, parent, facade: AppFacade, game: Game = None, read_only: bool = False, on_edit=None, on_delete=None):
+        super().__init__(parent)
+        self.facade = facade
+        self.game = game
+        self.read_only = read_only
+        self._on_edit = on_edit
+        self._on_delete = on_delete
+        if self.read_only:
+            self.setWindowTitle("View Game")
+        else:
+            self.setWindowTitle("Edit Game" if game else "Add Game")
+        self.resize(520, 340)
+
+        layout = QtWidgets.QGridLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setHorizontalSpacing(10)
+        layout.setVerticalSpacing(12)
+        layout.setColumnStretch(1, 1)
+
+        self.name_edit = QtWidgets.QLineEdit()
+        if game:
+            self.name_edit.setText(game.name)
+        name_label = QtWidgets.QLabel("Name:")
+        name_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        layout.addWidget(name_label, 0, 0)
+        layout.addWidget(self.name_edit, 0, 1)
+
+        self.type_combo = QtWidgets.QComboBox()
+        self.type_combo.setEditable(True)
+        self.type_combo.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
+        types = self.facade.get_all_game_types()
+        for game_type in types:
+            self.type_combo.addItem(game_type.name, game_type.id)
+        if game:
+            idx = self.type_combo.findData(game.game_type_id)
+            if idx >= 0:
+                self.type_combo.setCurrentIndex(idx)
+        else:
+            self.type_combo.setCurrentIndex(-1)
+            if self.type_combo.isEditable():
+                self.type_combo.setEditText("")
+                if self.type_combo.lineEdit() is not None:
+                    self.type_combo.lineEdit().setPlaceholderText("Select a game type")
+        type_label = QtWidgets.QLabel("Game Type:")
+        type_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        layout.addWidget(type_label, 1, 0)
+        layout.addWidget(self.type_combo, 1, 1, 1, 3)
+
+        self.rtp_edit = QtWidgets.QLineEdit()
+        if game and game.rtp is not None:
+            self.rtp_edit.setText(str(game.rtp))
+        self.rtp_edit.setPlaceholderText("Optional (0-100)")
+        rtp_label = QtWidgets.QLabel("RTP (%):")
+        rtp_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        layout.addWidget(rtp_label, 2, 0)
+        layout.addWidget(self.rtp_edit, 2, 1)
+
+        self.active_check = QtWidgets.QCheckBox()
+        self.active_check.setChecked(game.is_active if game else True)
+        active_label = QtWidgets.QLabel("Active")
+        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        layout.addWidget(active_label, 0, 2)
+        layout.addWidget(self.active_check, 0, 3)
+
+        self.notes_edit = QtWidgets.QTextEdit()
+        if game and game.notes:
+            self.notes_edit.setPlainText(game.notes)
+        notes_label = QtWidgets.QLabel("Notes:")
+        notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+        layout.addWidget(notes_label, 3, 0, QtCore.Qt.AlignTop)
+        layout.addWidget(self.notes_edit, 3, 1, 1, 3)
+
+        button_layout = QtWidgets.QHBoxLayout()
+        if self.read_only:
+            if self._on_delete:
+                delete_btn = QtWidgets.QPushButton("Delete")
+                delete_btn.clicked.connect(self._on_delete)
+                button_layout.addWidget(delete_btn)
+            button_layout.addStretch(1)
+            if self._on_edit:
+                edit_btn = QtWidgets.QPushButton("Edit")
+                edit_btn.clicked.connect(self._on_edit)
+                button_layout.addWidget(edit_btn)
+            close_btn = QtWidgets.QPushButton("Close")
+            close_btn.clicked.connect(self.accept)
+            button_layout.addWidget(close_btn)
+            layout.addLayout(button_layout, 4, 0, 1, 4)
+        else:
+            save_btn = QtWidgets.QPushButton("Save")
+            cancel_btn = QtWidgets.QPushButton("Cancel")
+            save_btn.setObjectName("PrimaryButton")
+            save_btn.clicked.connect(self.accept)
+            cancel_btn.clicked.connect(self.reject)
+            button_layout.addStretch(1)
+            button_layout.addWidget(cancel_btn)
+            button_layout.addWidget(save_btn)
+            layout.addLayout(button_layout, 4, 0, 1, 4)
+
+        if self.read_only:
+            for widget in (self.name_edit, self.type_combo, self.rtp_edit, self.active_check, self.notes_edit):
+                widget.setEnabled(False)
+            if not (game and game.notes):
+                notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+                self.notes_edit.setPlaceholderText("-")
+                self.notes_edit.setFixedHeight(self.notes_edit.fontMetrics().lineSpacing() + 12)
+
+        self.name_edit.textChanged.connect(self._validate_inline)
+        self.type_combo.currentTextChanged.connect(self._validate_inline)
+        self.rtp_edit.textChanged.connect(self._validate_inline)
+        self._validate_inline()
+
+        completer = QtWidgets.QCompleter(self.type_combo.model())
+        completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        completer.setFilterMode(QtCore.Qt.MatchStartsWith)
+        completer.setCompletionMode(QtWidgets.QCompleter.InlineCompletion)
+        self.type_combo.setCompleter(completer)
+        if self.type_combo.lineEdit() is not None:
+            self.type_combo.lineEdit().setCompleter(completer)
+            app = QtWidgets.QApplication.instance()
+            if app is not None and hasattr(app, "_completer_filter"):
+                self.type_combo.lineEdit().installEventFilter(app._completer_filter)
+
+    def _set_invalid(self, widget, message):
+        widget.setProperty("invalid", True)
+        widget.setToolTip(message)
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _set_valid(self, widget):
+        widget.setProperty("invalid", False)
+        widget.setToolTip("")
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _validate_inline(self):
+        if self.read_only:
+            return
+        if not self.name_edit.text().strip():
+            self._set_invalid(self.name_edit, "Name is required")
+        else:
+            self._set_valid(self.name_edit)
+        if not self.type_combo.currentText().strip():
+            self._set_invalid(self.type_combo, "Game Type is required")
+        else:
+            self._set_valid(self.type_combo)
+        if self.rtp_edit.text().strip():
+            try:
+                rtp = float(self.rtp_edit.text())
+                if rtp < 0 or rtp > 100:
+                    raise ValueError
+                self._set_valid(self.rtp_edit)
+            except Exception:
+                self._set_invalid(self.rtp_edit, "RTP must be between 0 and 100")
+        else:
+            self._set_valid(self.rtp_edit)
+
+    def get_rtp_value(self):
+        text = self.rtp_edit.text().strip()
+        if not text:
+            return None
+        return float(text)
+
+    def accept(self):
+        if not self.name_edit.text().strip():
+            QtWidgets.QMessageBox.warning(self, "Validation Error", "Name is required")
+            return
+        if self.type_combo.currentIndex() < 0:
+            QtWidgets.QMessageBox.warning(self, "Validation Error", "Game Type is required")
+            return
+        if self.rtp_edit.text().strip():
+            try:
+                rtp = float(self.rtp_edit.text())
+                if rtp < 0 or rtp > 100:
+                    raise ValueError("RTP out of range")
+            except Exception:
+                QtWidgets.QMessageBox.warning(self, "Validation Error", "RTP must be between 0 and 100")
+                return
+        super().accept()

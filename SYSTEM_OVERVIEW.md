@@ -35,7 +35,7 @@ The application implements a **session-based FIFO tax accounting system**:
 
 **Derived/Calculated Data:**
 - `tax_sessions` - Realized P/L from redemptions (one per redemption)
-- `daily_tax_sessions` - Aggregated daily tax totals
+- `daily_sessions` - Aggregated daily tax totals
 - `redemption_allocations` - FIFO tracking: which purchases funded which redemptions
 - `site_sessions` - Tracking container for grouping redemptions (legacy, minimal use)
 
@@ -174,7 +174,7 @@ For each (site_id, user_id) pair:
 
     2. _rebuild_session_tax_fields_for_pair(site_id, user_id)
        - Recalculate all game_sessions tax fields
-       - Update daily_tax_sessions for affected dates
+      - Update daily_sessions for affected dates
 ```
 
 **When Called**:
@@ -201,7 +201,7 @@ INPUT: site_id, user_id, changed_date, changed_time
 2. Call _rebuild_session_tax_fields_for_pair(site_id, user_id)
    - Recalculate session tax fields
 
-3. Update daily_tax_sessions for all affected dates
+3. Update daily_sessions for all affected dates
 
 RETURNS: count of sessions recalculated
 ```
@@ -353,7 +353,7 @@ Apply defaults BEFORE validation:
 - `purchases`: `remaining_amount`, `processed`, `status`
 - `redemptions`: `site_session_id`
 - `game_sessions`: `sc_change`, `dollar_value`, `status`, `processed`, `freebies_detected`, `rtp`, `total_taxable`, `session_basis`, `basis_consumed`, all expected/inferred/delta fields
-- All fields in `tax_sessions`, `daily_tax_sessions`, `redemption_allocations`
+- All fields in `tax_sessions`, `daily_sessions`, `redemption_allocations`
 
 **User-Providable (Can be in CSV)**:
 - `redemptions`: `processed` flag (external tracking indicator)

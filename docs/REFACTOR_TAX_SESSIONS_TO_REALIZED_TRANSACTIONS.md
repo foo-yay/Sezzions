@@ -121,7 +121,7 @@ grep -r "session_date" business_logic.py reporting.py | grep -i "tax\|redemption
 
 ### Phase 3: Careful review
 - Verify each `session_date` replacement is for the right table
-- Don't change `session_date` in `game_sessions` or `daily_tax_sessions`
+- Don't change `session_date` in `game_sessions` or `daily_sessions`
 
 ---
 
@@ -216,7 +216,7 @@ DROP TABLE realized_transactions;
 
 After review, all existing function names are accurate and should NOT be renamed:
 
-- `update_daily_tax_session()` - Works with `daily_tax_sessions` table (IRS tax reporting rollup of game_sessions) ✓
+- `update_daily_tax_session()` - Works with `daily_sessions` table (IRS tax reporting rollup of game_sessions) ✓
 - `_rebuild_session_tax_fields_for_pair()` - Rebuilds tax fields ON game_sessions (net_taxable_pl, total_taxable, etc.) ✓
 - `_rebuild_session_tax_fields_for_pair_from()` - Same as above, scoped version ✓
 
@@ -274,7 +274,7 @@ After migration, verify these workflows work:
 - [ ] Run "Recalculate Everything" for one site
 - [ ] Verify totals match pre-migration
 - [ ] Check game_sessions table still intact
-- [ ] Check daily_tax_sessions table still intact
+- [ ] Check daily_sessions table still intact
 
 ---
 
@@ -345,8 +345,8 @@ After successful migration:
 
 - The term "tax_sessions" appears to be a legacy naming artifact
 - The table actually tracks realized profit from redemptions, not tax-related sessions
-- `daily_tax_sessions` is the actual tax reporting table (aggregates game_sessions)
+- `daily_sessions` is the actual tax reporting table (aggregates game_sessions)
 - This refactor clarifies the distinction between:
   - **game_sessions**: Individual gameplay (generates taxable P/L)
   - **realized_transactions**: Redemption events (realizes the P/L)
-  - **daily_tax_sessions**: IRS reporting format (daily rollup)
+    - **daily_sessions**: IRS reporting format (daily rollup)
