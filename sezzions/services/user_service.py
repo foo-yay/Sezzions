@@ -60,3 +60,7 @@ class UserService:
     def get_user(self, user_id: int) -> Optional[User]:
         """Get user by ID"""
         return self.user_repo.get_by_id(user_id)
+
+    def delete_user(self, user_id: int) -> None:
+        """Delete user"""
+        self.user_repo.delete(user_id)

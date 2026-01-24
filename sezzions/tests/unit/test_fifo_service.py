@@ -21,7 +21,9 @@ def test_fifo_calculate_cost_basis_single_purchase(fifo_service, purchase_repo, 
     cost_basis, profit, allocations = fifo_service.calculate_cost_basis(
         sample_user.id,
         sample_site.id,
-        Decimal("50.00")
+        Decimal("50.00"),
+        date(2026, 1, 3),
+        "12:00:00",
     )
     
     assert cost_basis == Decimal("50.00")
@@ -50,7 +52,9 @@ def test_fifo_calculate_cost_basis_multiple_purchases(fifo_service, purchase_rep
     cost_basis, profit, allocations = fifo_service.calculate_cost_basis(
         sample_user.id,
         sample_site.id,
-        Decimal("100.00")
+        Decimal("100.00"),
+        date(2026, 1, 3),
+        "12:00:00",
     )
     
     assert cost_basis == Decimal("100.00")
@@ -71,12 +75,16 @@ def test_fifo_insufficient_purchases(fifo_service, purchase_repo, sample_user, s
     ))
     
     # Try to redeem more than available
-    with pytest.raises(ValueError, match="Insufficient purchases"):
-        fifo_service.calculate_cost_basis(
-            sample_user.id,
-            sample_site.id,
-            Decimal("100.00")
-        )
+    cost_basis, profit, allocations = fifo_service.calculate_cost_basis(
+        sample_user.id,
+        sample_site.id,
+        Decimal("100.00"),
+        date(2026, 1, 2),
+        "12:00:00",
+    )
+    assert cost_basis == Decimal("50.00")
+    assert profit == Decimal("50.00")
+    assert len(allocations) == 1
 
 
 def test_fifo_apply_allocation(fifo_service, purchase_repo, sample_user, sample_site):
@@ -145,7 +153,9 @@ def test_fifo_respects_chronological_order(fifo_service, purchase_repo, sample_u
     cost_basis, profit, allocations = fifo_service.calculate_cost_basis(
         sample_user.id,
         sample_site.id,
-        Decimal("150.00")
+        Decimal("150.00"),
+        date(2026, 1, 4),
+        "12:00:00",
     )
     
     # Verify oldest purchase used first
@@ -174,7 +184,9 @@ def test_fifo_skips_consumed_purchases(fifo_service, purchase_repo, sample_user,
     cost_basis, profit, allocations = fifo_service.calculate_cost_basis(
         sample_user.id,
         sample_site.id,
-        Decimal("50.00")
+        Decimal("50.00"),
+        date(2026, 1, 3),
+        "12:00:00",
     )
     
     # Should only use p2

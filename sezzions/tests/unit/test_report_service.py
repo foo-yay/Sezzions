@@ -27,13 +27,21 @@ def test_get_user_summary(test_db, sample_user, sample_site, purchase_repo, rede
         apply_fifo=False
     )
     
-    game_session_service.create_session(
+    session = game_session_service.create_session(
         user_id=sample_user.id,
         site_id=sample_site.id,
         game_id=sample_game.id,
         session_date=date(2026, 1, 10),
         starting_balance=Decimal("100.00"),
-        ending_balance=Decimal("120.00")
+        starting_redeemable=Decimal("0.00"),
+        ending_balance=Decimal("120.00"),
+        ending_redeemable=Decimal("20.00")
+    )
+    game_session_service.update_session(
+        session.id,
+        status="Closed",
+        end_date=date(2026, 1, 10),
+        end_time="23:59:59",
     )
     
     # Get summary
@@ -196,23 +204,39 @@ def test_get_tax_report_with_filters(test_db, sample_user, sample_site, purchase
 def test_get_session_profit_loss_report(test_db, sample_user, sample_site, sample_game, game_session_service):
     """Test session P/L report"""
     # Create winning session
-    game_session_service.create_session(
+    win = game_session_service.create_session(
         user_id=sample_user.id,
         site_id=sample_site.id,
         game_id=sample_game.id,
         session_date=date(2026, 1, 10),
         starting_balance=Decimal("100.00"),
-        ending_balance=Decimal("150.00")
+        starting_redeemable=Decimal("0.00"),
+        ending_balance=Decimal("150.00"),
+        ending_redeemable=Decimal("50.00")
+    )
+    game_session_service.update_session(
+        win.id,
+        status="Closed",
+        end_date=win.session_date,
+        end_time="23:59:59",
     )
     
     # Create losing session
-    game_session_service.create_session(
+    loss = game_session_service.create_session(
         user_id=sample_user.id,
         site_id=sample_site.id,
         game_id=sample_game.id,
         session_date=date(2026, 1, 11),
         starting_balance=Decimal("100.00"),
-        ending_balance=Decimal("80.00")
+        starting_redeemable=Decimal("50.00"),
+        ending_balance=Decimal("80.00"),
+        ending_redeemable=Decimal("30.00")
+    )
+    game_session_service.update_session(
+        loss.id,
+        status="Closed",
+        end_date=loss.session_date,
+        end_time="23:59:59",
     )
     
     report_service = ReportService(test_db)
@@ -227,13 +251,21 @@ def test_get_session_profit_loss_report(test_db, sample_user, sample_site, sampl
 
 def test_get_session_profit_loss_report_with_filters(test_db, sample_user, sample_site, sample_game, game_session_service):
     """Test session P/L report with date filters"""
-    game_session_service.create_session(
+    session = game_session_service.create_session(
         user_id=sample_user.id,
         site_id=sample_site.id,
         game_id=sample_game.id,
         session_date=date(2026, 1, 10),
         starting_balance=Decimal("100.00"),
-        ending_balance=Decimal("120.00")
+        starting_redeemable=Decimal("0.00"),
+        ending_balance=Decimal("120.00"),
+        ending_redeemable=Decimal("20.00")
+    )
+    game_session_service.update_session(
+        session.id,
+        status="Closed",
+        end_date=session.session_date,
+        end_time="23:59:59",
     )
     
     report_service = ReportService(test_db)

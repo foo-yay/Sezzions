@@ -8,6 +8,7 @@ from typing import Optional
 from app_facade import AppFacade
 from models.purchase import Purchase
 from ui.date_filter_widget import DateFilterWidget
+from ui.table_header_filters import TableHeaderFilter
 
 
 class PurchasesTab(QtWidgets.QWidget):
@@ -64,17 +65,17 @@ class PurchasesTab(QtWidgets.QWidget):
         add_btn.clicked.connect(self._add_purchase)
         toolbar.addWidget(add_btn)
 
-        self.view_btn = QtWidgets.QPushButton("👁️ View")
+        self.view_btn = QtWidgets.QPushButton("👁️ View Purchase")
         self.view_btn.clicked.connect(self._view_purchase)
         self.view_btn.setVisible(False)
         toolbar.addWidget(self.view_btn)
         
-        self.edit_btn = QtWidgets.QPushButton("✏️ Edit")
+        self.edit_btn = QtWidgets.QPushButton("✏️ Edit Purchase")
         self.edit_btn.clicked.connect(self._edit_purchase)
         self.edit_btn.setVisible(False)
         toolbar.addWidget(self.edit_btn)
         
-        self.delete_btn = QtWidgets.QPushButton("🗑️ Delete")
+        self.delete_btn = QtWidgets.QPushButton("🗑️ Delete Purchase")
         self.delete_btn.clicked.connect(self._delete_purchase)
         self.delete_btn.setVisible(False)
         toolbar.addWidget(self.delete_btn)
@@ -102,12 +103,14 @@ class PurchasesTab(QtWidgets.QWidget):
         header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
         header.setStretchLastSection(True)
         self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectRows)
-        self.table.setSelectionMode(QtWidgets.QTableWidget.SingleSelection)
+        self.table.setSelectionMode(QtWidgets.QTableWidget.ExtendedSelection)
         self.table.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         self.table.itemDoubleClicked.connect(self._view_purchase)
         layout.addWidget(self.table)
+
+        self.table_filter = TableHeaderFilter(self.table, date_columns=[0], refresh_callback=self.refresh_data)
 
         self._header_initialized = False
         
@@ -126,12 +129,23 @@ class PurchasesTab(QtWidgets.QWidget):
         
         # Filter purchases
         if search_text:
-            filtered = [p for p in self.purchases 
-                       if search_text in str(p.purchase_date).lower()
-                       or (hasattr(p, 'user_name') and p.user_name and search_text in p.user_name.lower())
-                       or (hasattr(p, 'site_name') and p.site_name and search_text in p.site_name.lower())
-                       or (hasattr(p, 'card_name') and p.card_name and search_text in p.card_name.lower())
-                       or (p.notes and search_text in p.notes.lower())]
+            filtered = []
+            for p in self.purchases:
+                parts = [
+                    str(p.purchase_date),
+                    getattr(p, 'user_name', '') or '',
+                    getattr(p, 'site_name', '') or '',
+                    getattr(p, 'card_name', '') or '',
+                    str(p.amount),
+                    str(p.sc_received),
+                    str(p.starting_sc_balance),
+                    str(p.cashback_earned),
+                    str(p.remaining_amount),
+                    p.notes or '',
+                ]
+                haystack = " ".join(parts).lower()
+                if search_text in haystack:
+                    filtered.append(p)
         else:
             filtered = self.purchases
         
@@ -201,6 +215,7 @@ class PurchasesTab(QtWidgets.QWidget):
             self.table.setItem(row, 9, QtWidgets.QTableWidgetItem(notes))
         
         self._apply_header_sizing()
+        self.table_filter.apply_filters()
     
     def _filter_purchases(self):
         """Filter table based on search"""
@@ -210,6 +225,7 @@ class PurchasesTab(QtWidgets.QWidget):
         header = self.table.horizontalHeader()
         if header is None:
             return
+        self.table.resizeColumnToContents(0)
         fm = header.fontMetrics()
         for col in range(self.table.columnCount()):
             item = self.table.horizontalHeaderItem(col)
@@ -225,34 +241,70 @@ class PurchasesTab(QtWidgets.QWidget):
     
     def _on_selection_changed(self):
         """Enable/disable buttons based on selection"""
-        has_selection = len(self.table.selectedItems()) > 0
-        self.view_btn.setVisible(has_selection)
-        self.edit_btn.setVisible(has_selection)
+        selected_rows = self.table.selectionModel().selectedRows()
+        has_selection = bool(selected_rows)
+        self.view_btn.setVisible(len(selected_rows) == 1)
+        self.edit_btn.setVisible(len(selected_rows) == 1)
         self.delete_btn.setVisible(has_selection)
     
     def _get_selected_purchase_id(self):
         """Get ID of selected purchase"""
-        selected = self.table.selectedItems()
-        if not selected:
-            return None
-        row = selected[0].row()
-        return self.table.item(row, 0).data(QtCore.Qt.UserRole)
+        ids = self._get_selected_purchase_ids()
+        return ids[0] if ids else None
+
+    def _get_selected_purchase_ids(self):
+        ids = []
+        for row in self.table.selectionModel().selectedRows():
+            item = self.table.item(row.row(), 0)
+            if item is not None:
+                value = item.data(QtCore.Qt.UserRole)
+                if value is not None:
+                    ids.append(value)
+        return ids
     
     def _add_purchase(self):
         """Show dialog to add new purchase"""
         dialog = PurchaseDialog(self.facade, self)
         if dialog.exec():
             try:
+                purchase_date = dialog.get_date()
+                purchase_time = dialog.get_time()
+                expected_total, _expected_redeem = self.facade.compute_expected_balances(
+                    user_id=dialog.user_id,
+                    site_id=dialog.site_id,
+                    session_date=purchase_date,
+                    session_time=purchase_time,
+                )
+                starting_sc = dialog.get_starting_sc_balance()
+                balance_delta = Decimal(str(starting_sc)) - Decimal(str(expected_total))
+                if abs(balance_delta) > Decimal("0.50"):
+                    direction = "higher" if balance_delta > 0 else "lower"
+                    response = QtWidgets.QMessageBox.question(
+                        self,
+                        "Starting Balance Mismatch",
+                        "The purchase starting SC does not match the expected balance from recorded sessions.\n\n"
+                        f"Starting SC: {float(starting_sc):,.2f} SC\n"
+                        f"Expected balance: {float(expected_total):,.2f} SC\n"
+                        f"Difference: {float(balance_delta):,.2f} SC ({direction})\n\n"
+                        "This usually means:\n"
+                        "• Untracked wins/losses or freebies\n"
+                        "• A missing Game Session\n\n"
+                        "Continue anyway?",
+                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                        QtWidgets.QMessageBox.No,
+                    )
+                    if response != QtWidgets.QMessageBox.Yes:
+                        return
                 purchase = self.facade.create_purchase(
                     user_id=dialog.user_id,
                     site_id=dialog.site_id,
                     amount=dialog.get_amount(),
                     sc_received=dialog.get_sc_received(),
-                    starting_sc_balance=dialog.get_starting_sc_balance(),
+                    starting_sc_balance=starting_sc,
                     cashback_earned=dialog.get_cashback_earned(),
-                    purchase_date=dialog.get_date(),
+                    purchase_date=purchase_date,
                     card_id=dialog.card_id,
-                    purchase_time=dialog.get_time(),
+                    purchase_time=purchase_time,
                     notes=dialog.notes_edit.toPlainText() or None
                 )
                 self.refresh_data()
@@ -304,6 +356,35 @@ class PurchasesTab(QtWidgets.QWidget):
                             return
                         force_site_user_change = True
 
+                purchase_date = dialog.get_date()
+                purchase_time = dialog.get_time()
+                expected_total, _expected_redeem = self.facade.compute_expected_balances(
+                    user_id=dialog.user_id,
+                    site_id=dialog.site_id,
+                    session_date=purchase_date,
+                    session_time=purchase_time,
+                )
+                starting_sc = dialog.get_starting_sc_balance()
+                balance_delta = Decimal(str(starting_sc)) - Decimal(str(expected_total))
+                if abs(balance_delta) > Decimal("0.50"):
+                    direction = "higher" if balance_delta > 0 else "lower"
+                    response = QtWidgets.QMessageBox.question(
+                        self,
+                        "Starting Balance Mismatch",
+                        "The purchase starting SC does not match the expected balance from recorded sessions.\n\n"
+                        f"Starting SC: {float(starting_sc):,.2f} SC\n"
+                        f"Expected balance: {float(expected_total):,.2f} SC\n"
+                        f"Difference: {float(balance_delta):,.2f} SC ({direction})\n\n"
+                        "This usually means:\n"
+                        "• Untracked wins/losses or freebies\n"
+                        "• A missing Game Session\n\n"
+                        "Continue anyway?",
+                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                        QtWidgets.QMessageBox.No,
+                    )
+                    if response != QtWidgets.QMessageBox.Yes:
+                        return
+
                 updated = self.facade.update_purchase(
                     purchase_id,
                     force_site_user_change=force_site_user_change,
@@ -311,11 +392,11 @@ class PurchasesTab(QtWidgets.QWidget):
                     site_id=dialog.site_id,
                     amount=dialog.get_amount(),
                     sc_received=dialog.get_sc_received(),
-                    starting_sc_balance=dialog.get_starting_sc_balance(),
+                    starting_sc_balance=starting_sc,
                     cashback_earned=dialog.get_cashback_earned(),
-                    purchase_date=dialog.get_date(),
+                    purchase_date=purchase_date,
                     card_id=dialog.card_id,
-                    purchase_time=dialog.get_time(),
+                    purchase_time=purchase_time,
                     notes=dialog.notes_edit.toPlainText() or None
                 )
                 self.refresh_data()
@@ -331,41 +412,64 @@ class PurchasesTab(QtWidgets.QWidget):
     
     def _delete_purchase(self):
         """Delete selected purchase"""
-        purchase_id = self._get_selected_purchase_id()
-        if not purchase_id:
+        purchase_ids = self._get_selected_purchase_ids()
+        if not purchase_ids:
             return
-        
-        purchase = self.facade.get_purchase(purchase_id)
-        if not purchase:
-            return
-        
-        # Check if consumed
-        if purchase.consumed_amount > 0:
+
+        purchases = []
+        blocked = []
+        for purchase_id in purchase_ids:
+            purchase = self.facade.get_purchase(purchase_id)
+            if not purchase:
+                continue
+            if purchase.consumed_amount > 0:
+                blocked.append(purchase)
+            purchases.append(purchase)
+
+        if blocked:
             QtWidgets.QMessageBox.warning(
                 self, "Cannot Delete",
-                f"This purchase has ${float(purchase.consumed_amount):.2f} consumed.\n\n"
+                "One or more selected purchases have FIFO allocations.\n\n"
                 "Purchases with allocations cannot be deleted to preserve FIFO integrity."
             )
             return
-        
+
+        count = len(purchases)
+        if count == 0:
+            return
+
+        if count == 1:
+            purchase = purchases[0]
+            prompt = (
+                f"Delete purchase of ${float(purchase.amount):.2f} on {purchase.purchase_date}?\n\n"
+                "This cannot be undone."
+            )
+        else:
+            prompt = (
+                f"Delete {count} purchases?\n\n"
+                "This cannot be undone."
+            )
+
         reply = QtWidgets.QMessageBox.question(
             self,
             "Confirm Delete",
-            f"Delete purchase of ${float(purchase.amount):.2f} on {purchase.purchase_date}?\n\n"
-            "This cannot be undone.",
+            prompt,
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         )
-        
+
         if reply == QtWidgets.QMessageBox.Yes:
             try:
-                self.facade.delete_purchase(purchase_id)
+                for purchase in purchases:
+                    self.facade.delete_purchase(purchase.id)
                 self.refresh_data()
+                if hasattr(self, "main_window") and self.main_window is not None:
+                    self.main_window.refresh_all_tabs()
                 QtWidgets.QMessageBox.information(
-                    self, "Success", "Purchase deleted"
+                    self, "Success", "Purchase(s) deleted"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
-                    self, "Error", f"Failed to delete purchase:\n{str(e)}"
+                    self, "Error", f"Failed to delete purchase(s):\n{str(e)}"
                 )
 
     def _view_purchase(self):
@@ -502,7 +606,8 @@ class PurchasesTab(QtWidgets.QWidget):
                     calculate_pl=False,
                 )
                 dialog.accept()
-                self.main_window.tab_bar.setCurrentIndex(2)
+                index = getattr(self.main_window, "_tab_index", {}).get("game_sessions", 2)
+                self.main_window.tab_bar.setCurrentIndex(index)
                 if hasattr(self.main_window.game_sessions_tab, "load_data"):
                     self.main_window.game_sessions_tab.load_data()
             except Exception as e:
@@ -514,17 +619,23 @@ class PurchasesTab(QtWidgets.QWidget):
     def _clear_search(self):
         """Clear search filter"""
         self.search_edit.clear()
+        self.table.clearSelection()
+        self._on_selection_changed()
         self._populate_table()
 
     def _clear_all_filters(self):
         """Clear search and reset date filter"""
         self.search_edit.clear()
         self.date_filter.set_all_time()
+        self.table.clearSelection()
+        self._on_selection_changed()
+        if hasattr(self, "table_filter"):
+            self.table_filter.clear_all_filters()
         self.refresh_data()
 
     def _export_csv(self):
         """Export purchases to CSV"""
-        if not self.purchases:
+        if self.table.rowCount() == 0:
             QtWidgets.QMessageBox.information(self, "Export", "No data to export")
             return
 
@@ -540,28 +651,20 @@ class PurchasesTab(QtWidgets.QWidget):
                 import csv
                 with open(filename, 'w', newline='') as f:
                     writer = csv.writer(f)
-                    writer.writerow([
-                        "Date", "Time", "User", "Site", "Amount", "SC Received",
-                        "Starting SC", "Card", "Cashback", "Remaining", "Notes"
-                    ])
-                    for purchase in self.purchases:
-                        writer.writerow([
-                            purchase.purchase_date,
-                            purchase.purchase_time or "",
-                            getattr(purchase, 'user_name', '') or "",
-                            getattr(purchase, 'site_name', '') or "",
-                            purchase.amount,
-                            purchase.sc_received,
-                            purchase.starting_sc_balance,
-                            getattr(purchase, 'card_name', '') or "",
-                            purchase.cashback_earned,
-                            purchase.remaining_amount,
-                            purchase.notes or ""
-                        ])
+                    headers = [self.table.horizontalHeaderItem(c).text() for c in range(self.table.columnCount())]
+                    writer.writerow(headers)
+                    for row in range(self.table.rowCount()):
+                        if self.table.isRowHidden(row):
+                            continue
+                        row_values = []
+                        for col in range(self.table.columnCount()):
+                            item = self.table.item(row, col)
+                            row_values.append(item.text() if item else "")
+                        writer.writerow(row_values)
 
                 QtWidgets.QMessageBox.information(
                     self, "Export Complete",
-                    f"Exported {len(self.purchases)} purchases to:\n{filename}"
+                    f"Exported purchases to:\n{filename}"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.critical(
@@ -580,7 +683,7 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.card_id = purchase.card_id if purchase else None
         
         self.setWindowTitle("Edit Purchase" if purchase else "Add Purchase")
-        self.resize(600, 520)
+        self.resize(700, 520)
         
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -635,55 +738,75 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.amount_edit = QtWidgets.QLineEdit()
         self.sc_edit = QtWidgets.QLineEdit()
         self.start_sc_edit = QtWidgets.QLineEdit()
+        self.balance_check_label = QtWidgets.QLabel("—")
+        self.balance_check_label.setObjectName("HelperText")
+        self.balance_check_label.setProperty("status", "neutral")
 
-        self.cashback_rate_label = QtWidgets.QLabel("—")
+        self.cashback_rate_label = QtWidgets.QLabel("Cashback: —")
         self.cashback_rate_label.setObjectName("HelperText")
         self.cashback_edit = QtWidgets.QLineEdit()
         self.cashback_edit.setPlaceholderText("Auto-calculated")
 
         self.notes_edit = QtWidgets.QPlainTextEdit()
         self.notes_edit.setPlaceholderText("Notes...")
-        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+        self.notes_edit.setFixedHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
 
-        form.addWidget(QtWidgets.QLabel("Date"), 0, 0)
-        form.addLayout(date_row, 0, 1)
-        form.addWidget(QtWidgets.QLabel("Time"), 1, 0)
-        form.addLayout(time_row, 1, 1)
-        form.addWidget(QtWidgets.QLabel("User"), 2, 0)
-        form.addWidget(self.user_combo, 2, 1)
-        form.addWidget(QtWidgets.QLabel("Site"), 3, 0)
-        form.addWidget(self.site_combo, 3, 1)
+        date_time_row = QtWidgets.QHBoxLayout()
+        date_time_row.setSpacing(12)
+        date_time_row.addLayout(date_row, 1)
+        date_time_row.addWidget(QtWidgets.QLabel("Time:"))
+        date_time_row.addLayout(time_row, 1)
 
-        card_label = QtWidgets.QLabel("Card")
-        form.addWidget(card_label, 4, 0)
-        card_container = QtWidgets.QVBoxLayout()
-        card_container.setSpacing(4)
-        card_container.addWidget(self.card_combo)
-        card_container.addWidget(self.cashback_rate_label)
-        form.addLayout(card_container, 4, 1)
+        user_site_row = QtWidgets.QHBoxLayout()
+        user_site_row.setSpacing(12)
+        user_site_row.addWidget(self.user_combo, 1)
+        user_site_row.addWidget(QtWidgets.QLabel("Site:"))
+        user_site_row.addWidget(self.site_combo, 1)
 
-        form.addWidget(QtWidgets.QLabel("Amount"), 5, 0)
-        form.addWidget(self.amount_edit, 5, 1)
-        form.addWidget(QtWidgets.QLabel("SC Received"), 6, 0)
-        form.addWidget(self.sc_edit, 6, 1)
-        form.addWidget(QtWidgets.QLabel("Starting SC"), 7, 0)
-        form.addWidget(self.start_sc_edit, 7, 1)
-        form.addWidget(QtWidgets.QLabel("Cashback Earned"), 8, 0)
-        form.addWidget(self.cashback_edit, 8, 1)
+        amount_container = QtWidgets.QVBoxLayout()
+        amount_container.setSpacing(4)
+        amount_container.addWidget(self.amount_edit)
+        amount_container.addWidget(self.cashback_rate_label)
+
+        card_amount_row = QtWidgets.QHBoxLayout()
+        card_amount_row.setSpacing(12)
+        card_amount_row.addWidget(self.card_combo, 1)
+        card_amount_row.addWidget(QtWidgets.QLabel("Amount:"))
+        card_amount_row.addLayout(amount_container, 1)
+
+        start_sc_container = QtWidgets.QVBoxLayout()
+        start_sc_container.setSpacing(4)
+        start_sc_container.addWidget(self.start_sc_edit)
+        start_sc_container.addWidget(self.balance_check_label)
+
+        sc_start_row = QtWidgets.QHBoxLayout()
+        sc_start_row.setSpacing(12)
+        sc_start_row.addWidget(self.sc_edit, 1)
+        sc_start_row.addWidget(QtWidgets.QLabel("Starting SC:"))
+        sc_start_row.addLayout(start_sc_container, 1)
+
+        form.addWidget(QtWidgets.QLabel("Date:"), 0, 0)
+        form.addLayout(date_time_row, 0, 1)
+        form.addWidget(QtWidgets.QLabel("User:"), 1, 0)
+        form.addLayout(user_site_row, 1, 1)
+        form.addWidget(QtWidgets.QLabel("Card:"), 2, 0)
+        form.addLayout(card_amount_row, 2, 1)
+        form.addWidget(QtWidgets.QLabel("SC Received:"), 3, 0)
+        form.addLayout(sc_start_row, 3, 1)
 
         notes_label = QtWidgets.QLabel("Notes")
         notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.addWidget(notes_label, 9, 0)
-        form.addWidget(self.notes_edit, 9, 1)
+        form.addWidget(notes_label, 4, 0)
+        form.addWidget(self.notes_edit, 4, 1)
 
         layout.addLayout(form)
         layout.addSpacing(8)
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
-        self.cancel_btn = QtWidgets.QPushButton("Cancel")
-        self.clear_btn = QtWidgets.QPushButton("Clear")
-        self.save_btn = QtWidgets.QPushButton("Save")
+        self.cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
+        self.clear_btn = QtWidgets.QPushButton("🧹 Clear")
+        self.save_btn = QtWidgets.QPushButton("💾 Save")
         self.save_btn.setObjectName("PrimaryButton")
         btn_row.addWidget(self.cancel_btn)
         btn_row.addWidget(self.clear_btn)
@@ -705,6 +828,11 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.amount_edit.textChanged.connect(self._validate_inline)
         self.sc_edit.textChanged.connect(self._validate_inline)
         self.start_sc_edit.textChanged.connect(self._validate_inline)
+        self.user_combo.currentTextChanged.connect(self._update_balance_check)
+        self.site_combo.currentTextChanged.connect(self._update_balance_check)
+        self.date_edit.textChanged.connect(self._update_balance_check)
+        self.time_edit.textChanged.connect(self._update_balance_check)
+        self.start_sc_edit.textChanged.connect(self._update_balance_check)
 
         if purchase:
             self._load_purchase()
@@ -713,6 +841,7 @@ class PurchaseDialog(QtWidgets.QDialog):
 
         self._update_completers()
         self._validate_inline()
+        self._update_balance_check()
 
     def _update_completers(self):
         for combo in (self.user_combo, self.site_combo, self.card_combo):
@@ -851,6 +980,101 @@ class PurchaseDialog(QtWidgets.QDialog):
                 valid = False
 
         return valid
+
+    def _update_balance_check(self):
+        site_text = self.site_combo.currentText().strip()
+        user_text = self.user_combo.currentText().strip()
+        start_sc_text = self.start_sc_edit.text().strip()
+
+        if not site_text or not user_text or not start_sc_text:
+            self.balance_check_label.setText("—")
+            self.balance_check_label.setProperty("status", "neutral")
+            self.balance_check_label.style().unpolish(self.balance_check_label)
+            self.balance_check_label.style().polish(self.balance_check_label)
+            return
+
+        if user_text.lower() not in self._user_lookup or site_text.lower() not in self._site_lookup:
+            self.balance_check_label.setText("—")
+            self.balance_check_label.setProperty("status", "neutral")
+            self.balance_check_label.style().unpolish(self.balance_check_label)
+            self.balance_check_label.style().polish(self.balance_check_label)
+            return
+
+        try:
+            start_sc_val = Decimal(start_sc_text)
+        except Exception:
+            self.balance_check_label.setText("—")
+            self.balance_check_label.setProperty("status", "neutral")
+            self.balance_check_label.style().unpolish(self.balance_check_label)
+            self.balance_check_label.style().polish(self.balance_check_label)
+            return
+
+        date_text = self.date_edit.text().strip()
+        if date_text:
+            parsed_date = None
+            for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d"):
+                try:
+                    parsed_date = datetime.strptime(date_text, fmt).date()
+                    break
+                except ValueError:
+                    continue
+            if parsed_date is None:
+                self.balance_check_label.setText("—")
+                self.balance_check_label.setProperty("status", "neutral")
+                self.balance_check_label.style().unpolish(self.balance_check_label)
+                self.balance_check_label.style().polish(self.balance_check_label)
+                return
+        else:
+            parsed_date = date.today()
+
+        time_text = self.time_edit.text().strip()
+        if time_text:
+            try:
+                if len(time_text) == 5:
+                    datetime.strptime(time_text, "%H:%M")
+                    parsed_time = f"{time_text}:00"
+                elif len(time_text) == 8:
+                    datetime.strptime(time_text, "%H:%M:%S")
+                    parsed_time = time_text
+                else:
+                    raise ValueError("Invalid format")
+            except Exception:
+                self.balance_check_label.setText("—")
+                self.balance_check_label.setProperty("status", "neutral")
+                self.balance_check_label.style().unpolish(self.balance_check_label)
+                self.balance_check_label.style().polish(self.balance_check_label)
+                return
+        else:
+            parsed_time = datetime.now().strftime("%H:%M:%S")
+
+        user_id = self._user_lookup[user_text.lower()]
+        site_id = self._site_lookup[site_text.lower()]
+        expected_total, _expected_redeem = self.facade.compute_expected_balances(
+            user_id=user_id,
+            site_id=site_id,
+            session_date=parsed_date,
+            session_time=parsed_time,
+        )
+
+        delta = Decimal(str(start_sc_val)) - Decimal(str(expected_total))
+        if delta > Decimal("0.01"):
+            self.balance_check_label.setProperty("status", "positive")
+            self.balance_check_label.setText(
+                f"+ Detected {float(delta):.2f} SC above expected ({float(expected_total):.2f} SC)"
+            )
+        elif delta < Decimal("-0.01"):
+            self.balance_check_label.setProperty("status", "negative")
+            self.balance_check_label.setText(
+                f"- WARNING: Starting SC is {float(abs(delta)):.2f} less than expected ({float(expected_total):.2f} SC)"
+            )
+        else:
+            self.balance_check_label.setProperty("status", "neutral")
+            self.balance_check_label.setText(
+                f"Matches expected balance ({float(expected_total):.2f} SC)"
+            )
+
+        self.balance_check_label.style().unpolish(self.balance_check_label)
+        self.balance_check_label.style().polish(self.balance_check_label)
     
     def _on_user_changed(self, _value: str = ""):
         """Update user_id when selection changes"""
@@ -863,7 +1087,7 @@ class PurchaseDialog(QtWidgets.QDialog):
             self.card_combo.setEditText("")
             self.card_combo.lineEdit().setPlaceholderText("Select a user first")
             self.card_combo.blockSignals(False)
-            self.cashback_rate_label.setText("—")
+            self.cashback_rate_label.setText("Cashback: —")
             self.cashback_edit.clear()
             self._card_map = {}
             return
@@ -876,19 +1100,18 @@ class PurchaseDialog(QtWidgets.QDialog):
         card_name = value.strip()
         if not card_name:
             self.card_id = None
-            self.cashback_rate_label.setText("—")
+            self.cashback_rate_label.setText("Cashback: —")
             self.cashback_edit.clear()
             return
 
         if not hasattr(self, "_card_map") or card_name.lower() not in self._card_map:
             self.card_id = None
-            self.cashback_rate_label.setText("—")
+            self.cashback_rate_label.setText("Cashback: —")
             self.cashback_edit.clear()
             return
 
         card = self._card_map[card_name.lower()]
         self.card_id = card.id
-        self.cashback_rate_label.setText(f"Cashback: {card.cashback_rate:.2f}%")
         self._recalculate_cashback(card.cashback_rate)
 
     def _on_amount_changed(self, _value: str):
@@ -903,13 +1126,18 @@ class PurchaseDialog(QtWidgets.QDialog):
         amount_text = self.amount_edit.text().strip()
         if not amount_text:
             self.cashback_edit.clear()
+            self.cashback_rate_label.setText(f"Cashback: {cashback_rate:.2f}%")
             return
         try:
             amount_val = Decimal(amount_text)
             cashback = (amount_val * Decimal(str(cashback_rate)) / Decimal("100")).quantize(Decimal("0.01"))
             self.cashback_edit.setText(f"{cashback:.2f}")
+            self.cashback_rate_label.setText(
+                f"Cashback: {cashback_rate:.2f}% → ${cashback:.2f}"
+            )
         except Exception:
             self.cashback_edit.clear()
+            self.cashback_rate_label.setText(f"Cashback: {cashback_rate:.2f}%")
 
     def _load_cards_for_user(self):
         """Load cards for selected user"""
@@ -941,7 +1169,7 @@ class PurchaseDialog(QtWidgets.QDialog):
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
         ok_btn = QtWidgets.QPushButton("Select")
-        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
         btn_row.addWidget(cancel_btn)
         btn_row.addWidget(ok_btn)
         layout.addLayout(btn_row)
@@ -1124,13 +1352,17 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.card_combo.setCurrentIndex(-1)
         self.card_combo.setEditText("")
         self.card_combo.lineEdit().setPlaceholderText("Select a user first")
-        self.cashback_rate_label.setText("—")
+        self.cashback_rate_label.setText("Cashback: —")
         self.amount_edit.clear()
         self.sc_edit.clear()
         self.start_sc_edit.clear()
         self.cashback_edit.clear()
         self.notes_edit.clear()
         self._set_today()
+        self.balance_check_label.setText("—")
+        self.balance_check_label.setProperty("status", "neutral")
+        self.balance_check_label.style().unpolish(self.balance_check_label)
+        self.balance_check_label.style().polish(self.balance_check_label)
 
     def _load_purchase(self):
         self.date_edit.setText(self.purchase.purchase_date.strftime("%m/%d/%y"))
@@ -1167,6 +1399,7 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.cashback_edit.setText(f"{self.purchase.cashback_earned:.2f}")
         if self.purchase.notes:
             self.notes_edit.setPlainText(self.purchase.notes)
+        self._update_balance_check()
 
 
 class PurchaseViewDialog(QtWidgets.QDialog):
@@ -1203,6 +1436,8 @@ class PurchaseViewDialog(QtWidgets.QDialog):
 
         self.linked_sessions = self._get_linked_sessions()
         self.linked_redemptions = self._get_linked_redemptions()
+        self._game_types = {t.id: t.name for t in self.facade.get_all_game_types()}
+        self._games = {g.id: g for g in self.facade.list_all_games()}
 
         tabs = QtWidgets.QTabWidget()
         tabs.setObjectName("SetupSubTabs")
@@ -1212,18 +1447,18 @@ class PurchaseViewDialog(QtWidgets.QDialog):
 
         btn_row = QtWidgets.QHBoxLayout()
         if self._on_delete:
-            delete_btn = QtWidgets.QPushButton("Delete")
+            delete_btn = QtWidgets.QPushButton("🗑️ Delete")
             delete_btn.clicked.connect(self._on_delete)
             btn_row.addWidget(delete_btn)
 
         btn_row.addStretch(1)
 
         if self._on_edit:
-            edit_btn = QtWidgets.QPushButton("Edit")
+            edit_btn = QtWidgets.QPushButton("✏️ Edit")
             edit_btn.clicked.connect(self._on_edit)
             btn_row.addWidget(edit_btn)
 
-        close_btn = QtWidgets.QPushButton("Close")
+        close_btn = QtWidgets.QPushButton("✖️ Close")
         close_btn.clicked.connect(self.accept)
         btn_row.addWidget(close_btn)
 
@@ -1244,13 +1479,17 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         form.setColumnMinimumWidth(0, 120)
         form.setColumnMinimumWidth(1, 300)
 
-        def add_row(label_text, value, row, wrap=False):
-            label = QtWidgets.QLabel(label_text)
-            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        def make_value_label(value, wrap=False):
             value_label = QtWidgets.QLabel(value)
             value_label.setObjectName("InfoField")
             value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
             value_label.setWordWrap(wrap)
+            return value_label
+
+        def add_row(label_text, value, row, wrap=False):
+            label = QtWidgets.QLabel(label_text)
+            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label = make_value_label(value, wrap=wrap)
             form.addWidget(label, row, 0)
             form.addWidget(value_label, row, 1)
             return row + 1
@@ -1269,15 +1508,72 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             return value[:5] if value else "—"
 
         row = 0
-        row = add_row("Date", format_date(self.purchase.purchase_date), row)
-        row = add_row("Time", format_time(self.purchase.purchase_time), row)
-        row = add_row("User", user_name or "—", row)
-        row = add_row("Site", site_name or "—", row)
-        row = add_row("Card", card_name or "—", row)
-        row = add_row("Amount", f"${float(self.purchase.amount):.2f}", row)
-        row = add_row("SC Received", f"{float(self.purchase.sc_received):.2f}", row)
-        row = add_row("Starting SC", f"{float(self.purchase.starting_sc_balance):.2f}", row)
-        row = add_row("Cashback Earned", f"${float(self.purchase.cashback_earned):.2f}", row)
+        date_val = format_date(self.purchase.purchase_date)
+        time_val = format_time(self.purchase.purchase_time)
+        date_row_label = QtWidgets.QLabel("Date:")
+        date_row_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        date_value = make_value_label(date_val)
+        time_label = QtWidgets.QLabel("Time:")
+        time_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        time_value = make_value_label(time_val)
+        date_time_row = QtWidgets.QHBoxLayout()
+        date_time_row.setSpacing(12)
+        date_time_row.addWidget(date_value, 1)
+        date_time_row.addWidget(time_label)
+        date_time_row.addWidget(time_value, 1)
+        form.addWidget(date_row_label, row, 0)
+        form.addLayout(date_time_row, row, 1)
+        row += 1
+
+        user_label = QtWidgets.QLabel("User:")
+        user_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        user_value = make_value_label(user_name or "—")
+        site_label = QtWidgets.QLabel("Site:")
+        site_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        site_value = make_value_label(site_name or "—")
+        user_site_row = QtWidgets.QHBoxLayout()
+        user_site_row.setSpacing(12)
+        user_site_row.addWidget(user_value, 1)
+        user_site_row.addWidget(site_label)
+        user_site_row.addWidget(site_value, 1)
+        form.addWidget(user_label, row, 0)
+        form.addLayout(user_site_row, row, 1)
+        row += 1
+
+        amount_val = f"${float(self.purchase.amount):.2f}"
+        cashback_val = f"${float(self.purchase.cashback_earned):.2f}"
+        card_label = QtWidgets.QLabel("Card:")
+        card_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        card_value = make_value_label(card_name or "—")
+        amount_label = QtWidgets.QLabel("Amount:")
+        amount_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        amount_value = make_value_label(f"{amount_val} (Cashback {cashback_val})")
+        card_amount_row = QtWidgets.QHBoxLayout()
+        card_amount_row.setSpacing(12)
+        card_amount_row.addWidget(card_value, 1)
+        card_amount_row.addWidget(amount_label)
+        card_amount_row.addWidget(amount_value, 1)
+        form.addWidget(card_label, row, 0)
+        form.addLayout(card_amount_row, row, 1)
+        row += 1
+
+        sc_received_val = f"{float(self.purchase.sc_received):.2f}"
+        starting_sc_val = f"{float(self.purchase.starting_sc_balance):.2f}"
+        sc_label = QtWidgets.QLabel("SC Received:")
+        sc_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        sc_value = make_value_label(sc_received_val)
+        starting_label = QtWidgets.QLabel("Starting SC:")
+        starting_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        starting_value = make_value_label(starting_sc_val)
+        sc_row = QtWidgets.QHBoxLayout()
+        sc_row.setSpacing(12)
+        sc_row.addWidget(sc_value, 1)
+        sc_row.addWidget(starting_label)
+        sc_row.addWidget(starting_value, 1)
+        form.addWidget(sc_label, row, 0)
+        form.addLayout(sc_row, row, 1)
+        row += 1
+
         row = add_row("Remaining", f"${float(self.purchase.remaining_amount):.2f}", row)
 
         notes_label = QtWidgets.QLabel("Notes")
@@ -1314,12 +1610,78 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
-        if not self.linked_sessions and not self.linked_redemptions:
+        allocations = self._fetch_allocated_redemptions()
+
+        if not self.linked_sessions and not allocations:
             placeholder = QtWidgets.QLabel("No related sessions or redemptions found.")
             placeholder.setStyleSheet("color: #666; font-style: italic;")
             layout.addWidget(placeholder)
             layout.addStretch()
             return widget
+
+        if allocations:
+            summary_layout = QtWidgets.QHBoxLayout()
+            allocated_total = sum(Decimal(str(a.get("allocated_amount") or "0")) for a in allocations)
+            original_amount = Decimal(str(self.purchase.amount or 0))
+            remaining_amount = Decimal(str(self.purchase.remaining_amount or 0))
+            summary_layout.addWidget(QtWidgets.QLabel(f"Original Amount: ${original_amount:.2f}"))
+            summary_layout.addSpacing(12)
+            summary_layout.addWidget(QtWidgets.QLabel(f"Allocated: ${allocated_total:.2f}"))
+            summary_layout.addSpacing(12)
+            summary_layout.addWidget(QtWidgets.QLabel(f"Remaining Basis: ${remaining_amount:.2f}"))
+            summary_layout.addStretch(1)
+            layout.addLayout(summary_layout)
+
+            redemptions_group = QtWidgets.QGroupBox("Allocated Redemptions")
+            redemptions_layout = QtWidgets.QVBoxLayout(redemptions_group)
+            redemptions_layout.setContentsMargins(8, 10, 8, 8)
+
+            table = QtWidgets.QTableWidget(0, 4)
+            table.setHorizontalHeaderLabels([
+                "Redemption Date/Time", "Redemption Amount", "Allocated", "View Redemption"
+            ])
+            table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+            table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+            table.verticalHeader().setVisible(False)
+            table.horizontalHeader().setStretchLastSection(True)
+            header = table.horizontalHeader()
+            header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+            table.setColumnWidth(0, 160)
+            table.setColumnWidth(1, 140)
+            table.setColumnWidth(2, 110)
+            table.setColumnWidth(3, 120)
+
+            table.setRowCount(len(allocations))
+            for row, alloc in enumerate(allocations):
+                date_val = str(alloc.get("redemption_date") or "—")
+                time_val = (alloc.get("redemption_time") or "00:00:00")[:5]
+                date_time_display = f"{date_val} {time_val}" if date_val != "—" else time_val
+                date_item = QtWidgets.QTableWidgetItem(date_time_display)
+                date_item.setData(QtCore.Qt.UserRole, alloc.get("redemption_id"))
+                table.setItem(row, 0, date_item)
+                table.setItem(row, 1, QtWidgets.QTableWidgetItem(f"${float(alloc.get('amount') or 0):.2f}"))
+                table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"${float(alloc.get('allocated_amount') or 0):.2f}"))
+
+                view_btn = QtWidgets.QPushButton("👁️ View Redemption")
+                view_btn.setObjectName("MiniButton")
+                view_btn.setFixedHeight(24)
+                view_btn.setFixedWidth(view_btn.sizeHint().width() + 12)
+                rid = alloc.get("redemption_id")
+                view_btn.clicked.connect(lambda _checked=False, rid=rid: self._open_redemption_by_id(rid))
+                view_container = QtWidgets.QWidget()
+                view_container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+                view_layout = QtWidgets.QGridLayout(view_container)
+                view_layout.setContentsMargins(6, 4, 6, 4)
+                view_layout.addWidget(view_btn, 0, 0, QtCore.Qt.AlignCenter)
+                table.setCellWidget(row, 3, view_container)
+                table.setRowHeight(
+                    row,
+                    max(table.rowHeight(row), view_btn.sizeHint().height() + 16),
+                )
+
+            redemptions_layout.addWidget(table)
+            layout.addWidget(redemptions_group)
 
         if self.linked_sessions:
             sessions_group = QtWidgets.QGroupBox("Linked Game Sessions")
@@ -1327,7 +1689,9 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             sessions_layout.setContentsMargins(8, 10, 8, 8)
 
             table = QtWidgets.QTableWidget(0, 5)
-            table.setHorizontalHeaderLabels(["Session Date", "Start Time", "End SC", "Status", "View Session"])
+            table.setHorizontalHeaderLabels([
+                "Session Date/Time", "End Date/Time", "Game", "Status", "View Session"
+            ])
             table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
             table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
             table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -1336,25 +1700,35 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             table.horizontalHeader().setStretchLastSection(True)
             header = table.horizontalHeader()
             header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
-            table.setColumnWidth(0, 110)
-            table.setColumnWidth(1, 90)
-            table.setColumnWidth(2, 90)
-            table.setColumnWidth(3, 80)
-            table.setColumnWidth(4, 110)
+            table.setColumnWidth(0, 160)
+            table.setColumnWidth(1, 140)
+            table.setColumnWidth(2, 150)
+            table.setColumnWidth(3, 90)
+            table.setColumnWidth(4, 120)
 
             table.setRowCount(len(self.linked_sessions))
             for row, session in enumerate(self.linked_sessions):
-                date_item = QtWidgets.QTableWidgetItem(str(session.session_date))
+                session_date = str(session.session_date)
+                start_time = (session.session_time or "")[:5]
+                start_display = f"{session_date} {start_time}" if session_date else "—"
+                date_item = QtWidgets.QTableWidgetItem(start_display)
                 date_item.setData(QtCore.Qt.UserRole, session.id)
                 table.setItem(row, 0, date_item)
-                table.setItem(row, 1, QtWidgets.QTableWidgetItem((session.session_time or "")[:5]))
-                end_val = "" if session.status == "Active" else f"{float(session.ending_balance or 0):.2f}"
-                table.setItem(row, 2, QtWidgets.QTableWidgetItem(end_val))
+                end_display = "—"
+                if getattr(session, "end_date", None):
+                    end_time = (getattr(session, "end_time", None) or "00:00:00")[:5]
+                    end_display = f"{session.end_date} {end_time}"
+                table.setItem(row, 1, QtWidgets.QTableWidgetItem(end_display))
+
+                game = self._games.get(session.game_id)
+                game_name = game.name if game else "—"
+                table.setItem(row, 2, QtWidgets.QTableWidgetItem(game_name))
                 table.setItem(row, 3, QtWidgets.QTableWidgetItem(session.status or "Active"))
-                view_btn = QtWidgets.QPushButton("View Session")
+
+                view_btn = QtWidgets.QPushButton("👁️ View Session")
                 view_btn.setObjectName("MiniButton")
                 view_btn.setFixedHeight(24)
-                view_btn.setFixedWidth(110)
+                view_btn.setFixedWidth(view_btn.sizeHint().width() + 12)
                 view_btn.clicked.connect(lambda _checked=False, sid=session.id: self._open_session_by_id(sid))
                 view_container = QtWidgets.QWidget()
                 view_container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
@@ -1370,54 +1744,20 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             sessions_layout.addWidget(table)
             layout.addWidget(sessions_group)
 
-        if self.linked_redemptions:
-            redemptions_group = QtWidgets.QGroupBox("Linked Redemptions")
-            redemptions_layout = QtWidgets.QVBoxLayout(redemptions_group)
-            redemptions_layout.setContentsMargins(8, 10, 8, 8)
-
-            table = QtWidgets.QTableWidget(0, 4)
-            table.setHorizontalHeaderLabels(["Date", "Amount", "Method", "View Redemption"])
-            table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-            table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-            table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-            table.verticalHeader().setVisible(False)
-            table.horizontalHeader().setStretchLastSection(True)
-
-            table.setColumnWidth(0, 110)
-            table.setColumnWidth(1, 100)
-            table.setColumnWidth(2, 140)
-            table.setColumnWidth(3, 130)
-
-            table.setRowCount(len(self.linked_redemptions))
-            for row, redemption in enumerate(self.linked_redemptions):
-                date_item = QtWidgets.QTableWidgetItem(str(redemption.redemption_date))
-                date_item.setData(QtCore.Qt.UserRole, redemption.id)
-                table.setItem(row, 0, date_item)
-                table.setItem(row, 1, QtWidgets.QTableWidgetItem(f"${float(redemption.amount):.2f}"))
-                method = getattr(redemption, "method_name", None) or ""
-                table.setItem(row, 2, QtWidgets.QTableWidgetItem(method))
-
-                view_btn = QtWidgets.QPushButton("View Redemption")
-                view_btn.setObjectName("MiniButton")
-                view_btn.setFixedHeight(24)
-                view_btn.setFixedWidth(120)
-                view_btn.clicked.connect(lambda _checked=False, rid=redemption.id: self._open_redemption_by_id(rid))
-                view_container = QtWidgets.QWidget()
-                view_container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-                view_layout = QtWidgets.QGridLayout(view_container)
-                view_layout.setContentsMargins(6, 4, 6, 4)
-                view_layout.addWidget(view_btn, 0, 0, QtCore.Qt.AlignCenter)
-                table.setCellWidget(row, 3, view_container)
-                table.setRowHeight(
-                    row,
-                    max(table.rowHeight(row), view_btn.sizeHint().height() + 16),
-                )
-
-            redemptions_layout.addWidget(table)
-            layout.addWidget(redemptions_group)
-
         layout.addStretch()
         return widget
+
+    def _fetch_allocated_redemptions(self):
+        if not getattr(self.purchase, "id", None):
+            return []
+        query = """
+            SELECT r.id as redemption_id, r.redemption_date, r.redemption_time, r.amount, ra.allocated_amount
+            FROM redemption_allocations ra
+            JOIN redemptions r ON r.id = ra.redemption_id
+            WHERE ra.purchase_id = ?
+            ORDER BY r.redemption_date ASC, COALESCE(r.redemption_time,'00:00:00') ASC, r.id ASC
+        """
+        return self.facade.db.fetch_all(query, (self.purchase.id,))
 
     def _open_session_by_id(self, session_id: int):
         parent = self.parent()

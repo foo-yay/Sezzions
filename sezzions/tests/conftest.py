@@ -205,9 +205,9 @@ def fifo_service(purchase_repo):
 
 
 @pytest.fixture
-def redemption_service(redemption_repo, fifo_service):
+def redemption_service(redemption_repo, fifo_service, test_db):
     """Redemption service with test repositories"""
-    return RedemptionService(redemption_repo, fifo_service)
+    return RedemptionService(redemption_repo, fifo_service, db_manager=test_db)
 
 
 @pytest.fixture
@@ -242,7 +242,7 @@ def sample_game_session(game_session_service, sample_user, sample_site, sample_g
     """Create a sample game session for testing"""
     from decimal import Decimal
     from datetime import date
-    return game_session_service.create_session(
+    session = game_session_service.create_session(
         user_id=sample_user.id,
         site_id=sample_site.id,
         game_id=sample_game.id,
@@ -250,4 +250,10 @@ def sample_game_session(game_session_service, sample_user, sample_site, sample_g
         starting_balance=Decimal("100.00"),
         ending_balance=Decimal("120.00"),
         notes="Sample session for testing"
+    )
+    return game_session_service.update_session(
+        session.id,
+        status="Closed",
+        end_date=session.session_date,
+        end_time="23:59:59",
     )

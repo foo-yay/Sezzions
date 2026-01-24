@@ -9,13 +9,14 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QMessageBox, QDialog, QLineEdit, QComboBox,
     QLabel, QHeaderView, QCalendarWidget, QFileDialog, QGroupBox,
     QPlainTextEdit, QTabWidget, QListView, QCompleter, QSizePolicy,
-    QGridLayout, QApplication
+    QGridLayout, QApplication, QCheckBox
 )
 from PySide6.QtCore import Qt, QTime, QDate, QTimer
 from PySide6.QtGui import QColor
 from ui.date_filter_widget import DateFilterWidget
 from ui.tabs.purchases_tab import PurchaseViewDialog
 from ui.tabs.redemptions_tab import RedemptionViewDialog
+from ui.table_header_filters import TableHeaderFilter
 
 
 TIME_24H_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d(?:\:[0-5]\d)?$")
@@ -194,6 +195,7 @@ class GameSessionsTab(QWidget):
         header.setMinimumSectionSize(40)
         self.table.verticalHeader().setVisible(False)
         self.table.itemDoubleClicked.connect(self.view_session)
+        self.table_filter = TableHeaderFilter(self.table, date_columns=[0], refresh_callback=self.load_data)
         layout.addWidget(self.table)
 
         self.table.selectionModel().selectionChanged.connect(self._on_selection_changed)
@@ -238,14 +240,28 @@ class GameSessionsTab(QWidget):
 
         search_text = self.search_edit.text().lower().strip()
         if search_text:
-            rows = [
-                s for s in rows
-                if search_text in str(s.session_date).lower()
-                or (hasattr(s, 'user_name') and s.user_name and search_text in s.user_name.lower())
-                or (hasattr(s, 'site_name') and s.site_name and search_text in s.site_name.lower())
-                or (hasattr(s, 'game_name') and s.game_name and search_text in s.game_name.lower())
-                or (s.notes and search_text in s.notes.lower())
-            ]
+            filtered = []
+            for s in rows:
+                parts = [
+                    str(s.session_date),
+                    getattr(s, 'user_name', '') or '',
+                    getattr(s, 'site_name', '') or '',
+                    getattr(s, 'game_name', '') or '',
+                    getattr(s, 'status', '') or '',
+                    str(s.starting_balance),
+                    str(s.ending_balance),
+                    str(s.starting_redeemable),
+                    str(s.ending_redeemable),
+                    str(s.delta_total),
+                    str(s.delta_redeem),
+                    str(s.basis_consumed),
+                    str(s.net_taxable_pl),
+                    s.notes or '',
+                ]
+                haystack = " ".join(parts).lower()
+                if search_text in haystack:
+                    filtered.append(s)
+            rows = filtered
 
         rows.sort(key=lambda s: (s.session_date, s.session_time or "00:00:00"), reverse=True)
         return rows
@@ -306,6 +322,8 @@ class GameSessionsTab(QWidget):
                             pl_item.setForeground(QColor(0, 128, 0))
                         elif net_pl < 0:
                             pl_item.setForeground(QColor(200, 0, 0))
+            self.table.resizeColumnToContents(0)
+            self.table_filter.apply_filters()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load sessions: {e}")
     
@@ -386,6 +404,7 @@ class GameSessionsTab(QWidget):
                             "ending_redeemable": data["ending_redeemable_sc"],
                             "end_date": data["end_date"],
                             "end_time": data["end_time"],
+                            "wager_amount": Decimal(str(data.get("wager_amount") or 0)),
                             "status": "Closed",
                         }
                     )
@@ -430,6 +449,15 @@ class GameSessionsTab(QWidget):
         def handle_open_redemption(redemption_id: int):
             self._open_redemption_by_id(redemption_id)
 
+        def handle_view_in_daily():
+            if not self.main_window or not hasattr(self.main_window, "daily_sessions_tab"):
+                return
+            index = getattr(self.main_window, "_tab_index", {}).get("daily_sessions", 3)
+            self.main_window.tab_bar.setCurrentIndex(index)
+            daily_tab = self.main_window.daily_sessions_tab
+            if hasattr(daily_tab, "find_and_select_session"):
+                QtCore.QTimer.singleShot(0, lambda: daily_tab.find_and_select_session(session_id))
+
         dialog = ViewSessionDialog(
             self.facade,
             session=session,
@@ -438,6 +466,7 @@ class GameSessionsTab(QWidget):
             on_delete=handle_delete,
             on_open_purchase=handle_open_purchase,
             on_open_redemption=handle_open_redemption,
+            on_view_in_daily=handle_view_in_daily,
             on_end=handle_end,
         )
         dialog.exec()
@@ -496,6 +525,7 @@ class GameSessionsTab(QWidget):
                     ending_redeemable=data["ending_redeemable_sc"],
                     end_date=data["end_date"],
                     end_time=data["end_time"],
+                    wager_amount=Decimal(str(data["wager_amount"] or 0)),
                     notes=data["notes"],
                     status="Closed",
                     recalculate_pl=True,
@@ -557,7 +587,7 @@ class GameSessionsTab(QWidget):
     def export_csv(self):
         import csv
 
-        if not self.filtered_sessions:
+        if self.table.rowCount() == 0:
             QMessageBox.information(self, "Export", "No data to export")
             return
 
@@ -571,41 +601,18 @@ class GameSessionsTab(QWidget):
         if not path:
             return
 
-        users = {u.id: u.name for u in self.facade.get_all_users()}
-        sites = {s.id: s.name for s in self.facade.get_all_sites()}
-        game_types = {t.id: t.name for t in self.facade.get_all_game_types()}
-        games = {g.id: g for g in self.facade.list_all_games()}
-
-        headers = [
-            "Date", "Time", "Site", "User", "Game Type", "Game Name",
-            "Start Total", "End Total", "Start Redeemable", "End Redeemable",
-            "Delta Redeemable", "Basis Consumed", "Net P/L", "Status", "Notes"
-        ]
-
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
+            headers = [self.table.horizontalHeaderItem(c).text() for c in range(self.table.columnCount())]
             writer.writerow(headers)
-            for session in self.filtered_sessions:
-                game = games.get(session.game_id)
-                game_name = game.name if game else ""
-                game_type = game_types.get(game.game_type_id, "") if game else ""
-                writer.writerow([
-                    session.session_date,
-                    session.session_time,
-                    sites.get(session.site_id, ""),
-                    users.get(session.user_id, ""),
-                    game_type,
-                    game_name,
-                    session.starting_balance,
-                    session.ending_balance if session.status != "Active" else "",
-                    session.starting_redeemable,
-                    session.ending_redeemable if session.status != "Active" else "",
-                    session.delta_redeem if session.status != "Active" else "",
-                    session.basis_consumed if session.status != "Active" else "",
-                    session.net_taxable_pl if session.status != "Active" else "",
-                    session.status,
-                    session.notes or "",
-                ])
+            for row in range(self.table.rowCount()):
+                if self.table.isRowHidden(row):
+                    continue
+                row_values = []
+                for col in range(self.table.columnCount()):
+                    item = self.table.item(row, col)
+                    row_values.append(item.text() if item else "")
+                writer.writerow(row_values)
 
     def _selected_ids(self):
         selected_rows = self.table.selectionModel().selectedRows()
@@ -623,9 +630,10 @@ class GameSessionsTab(QWidget):
         selected_sessions = [sessions_by_id.get(i) for i in ids if i in sessions_by_id]
         has_active = any(s and s.status == "Active" for s in selected_sessions)
 
-        self.view_button.setVisible(len(ids) == 1)
-        self.end_button.setVisible(has_active)
-        self.edit_button.setVisible(has_selection)
+        single_selected = len(ids) == 1
+        self.view_button.setVisible(single_selected)
+        self.end_button.setVisible(single_selected and has_active)
+        self.edit_button.setVisible(single_selected)
         self.delete_button.setVisible(has_selection)
 
     def _update_active_label(self):
@@ -634,11 +642,17 @@ class GameSessionsTab(QWidget):
 
     def _clear_search(self):
         self.search_edit.clear()
+        self.table.clearSelection()
+        self._on_selection_changed()
         self.apply_filters()
 
     def clear_all_filters(self):
         self.search_edit.clear()
         self.date_filter.set_all_time()
+        self.table.clearSelection()
+        self._on_selection_changed()
+        if hasattr(self, "table_filter"):
+            self.table_filter.clear_all_filters()
         self.apply_filters()
 
 
@@ -647,6 +661,7 @@ class StartSessionDialog(QDialog):
         super().__init__(parent)
         self.facade = facade
         self.session = session
+        self._time_edited = False
         self._game_names_by_type = {}
         self._game_lookup = {}
         self._game_types_by_id = {}
@@ -722,10 +737,10 @@ class StartSessionDialog(QDialog):
         session_grid.addLayout(date_row, 0, 1)
         session_grid.addWidget(QLabel("Start Time"), 0, 2)
         session_grid.addLayout(time_row, 0, 3)
-        session_grid.addWidget(QLabel("Site"), 1, 0)
-        session_grid.addWidget(self.site_combo, 1, 1)
-        session_grid.addWidget(QLabel("User"), 1, 2)
-        session_grid.addWidget(self.user_combo, 1, 3)
+        session_grid.addWidget(QLabel("User"), 1, 0)
+        session_grid.addWidget(self.user_combo, 1, 1)
+        session_grid.addWidget(QLabel("Site"), 1, 2)
+        session_grid.addWidget(self.site_combo, 1, 3)
         layout.addWidget(session_group)
 
         game_group = QGroupBox("Game")
@@ -801,9 +816,9 @@ class StartSessionDialog(QDialog):
 
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
-        self.cancel_btn = QPushButton("Cancel")
-        self.clear_btn = QPushButton("Clear")
-        self.save_btn = QPushButton("Save")
+        self.cancel_btn = QPushButton("✖️ Cancel")
+        self.clear_btn = QPushButton("🧹 Clear")
+        self.save_btn = QPushButton("💾 Save")
         self.save_btn.setObjectName("PrimaryButton")
         btn_row.addWidget(self.cancel_btn)
         btn_row.addWidget(self.clear_btn)
@@ -821,6 +836,7 @@ class StartSessionDialog(QDialog):
         self.start_total_edit.textChanged.connect(self._update_freebie_label)
         self.date_edit.textChanged.connect(self._update_freebie_label)
         self.time_edit.textChanged.connect(self._update_freebie_label)
+        self.time_edit.textEdited.connect(self._mark_time_edited)
         self.date_edit.textChanged.connect(self._validate_inline)
         self.time_edit.textChanged.connect(self._validate_inline)
         self.user_combo.currentTextChanged.connect(self._validate_inline)
@@ -1009,7 +1025,7 @@ class StartSessionDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
         ok_btn = QPushButton("Select")
-        cancel_btn = QPushButton("Cancel")
+        cancel_btn = QPushButton("✖️ Cancel")
         btn_row.addWidget(cancel_btn)
         btn_row.addWidget(ok_btn)
         layout.addLayout(btn_row)
@@ -1076,6 +1092,12 @@ class StartSessionDialog(QDialog):
             self.freebie_label.style().polish(self.freebie_label)
             return
 
+        if not self._time_edited and parsed_date == date.today():
+            now_text = datetime.now().strftime("%H:%M")
+            if self.time_edit.text().strip() != now_text:
+                self.time_edit.setText(now_text)
+            parsed_time = parse_time_input(now_text)
+
         expected_total, _expected_redeem = self.facade.compute_expected_balances(
             user_id=user_id,
             site_id=site_id,
@@ -1112,13 +1134,15 @@ class StartSessionDialog(QDialog):
         game = self._game_lookup.get((game_type.lower(), game_name.lower()))
         if game and game.rtp is not None:
             exp_str = f"{float(game.rtp):.2f}%"
-            self.rtp_tooltip.setText(f"Exp RTP: {exp_str} / Act RTP: —")
+            act_str = f"{float(game.actual_rtp):.2f}%" if getattr(game, "actual_rtp", None) is not None else "—"
+            self.rtp_tooltip.setText(f"Exp RTP: {exp_str} / Act RTP: {act_str}")
         else:
             self.rtp_tooltip.setText("")
 
     def _load_session(self):
         self.date_edit.setText(self._format_date_for_input(self.session.session_date))
         self.time_edit.setText(self._format_time_for_input(self.session.session_time))
+        self._time_edited = True
 
         user_name = None
         for name, user_obj in self._user_lookup.items():
@@ -1186,12 +1210,16 @@ class StartSessionDialog(QDialog):
         self.notes_edit.clear()
         self._set_today()
         self._set_now()
+        self._time_edited = False
         self.freebie_label.setText("—")
         self.freebie_label.setProperty("status", "neutral")
         self.freebie_label.style().unpolish(self.freebie_label)
         self.freebie_label.style().polish(self.freebie_label)
         self.rtp_tooltip.setText("")
         self._validate_inline()
+
+    def _mark_time_edited(self, _text):
+        self._time_edited = True
 
     def collect_data(self):
         user_name = self.user_combo.currentText().strip()
@@ -1291,6 +1319,7 @@ class EditClosedSessionDialog(StartSessionDialog):
         self.end_time_edit.setPlaceholderText("HH:MM")
         self.end_total_edit = QLineEdit()
         self.end_redeem_edit = QLineEdit()
+        self.wager_edit = QLineEdit()
 
         end_grid.addWidget(QLabel("End Date"), 0, 0)
         end_grid.addWidget(self.end_date_edit, 0, 1)
@@ -1300,6 +1329,8 @@ class EditClosedSessionDialog(StartSessionDialog):
         end_grid.addWidget(self.end_total_edit, 1, 1)
         end_grid.addWidget(QLabel("Ending Redeemable"), 1, 2)
         end_grid.addWidget(self.end_redeem_edit, 1, 3)
+        end_grid.addWidget(QLabel("Wager Amount"), 2, 0)
+        end_grid.addWidget(self.wager_edit, 2, 1)
 
         layout = self.layout()
         insert_at = layout.indexOf(self.notes_group) if self.notes_group else max(layout.count() - 2, 0)
@@ -1313,11 +1344,14 @@ class EditClosedSessionDialog(StartSessionDialog):
             self.end_time_edit.setText(end_time[:5])
         self.end_total_edit.setText(str(session.ending_balance or ""))
         self.end_redeem_edit.setText(str(session.ending_redeemable or ""))
+        if getattr(session, "wager_amount", None) is not None:
+            self.wager_edit.setText(str(session.wager_amount or ""))
 
         self.end_date_edit.textChanged.connect(self._validate_inline)
         self.end_time_edit.textChanged.connect(self._validate_inline)
         self.end_total_edit.textChanged.connect(self._validate_inline)
         self.end_redeem_edit.textChanged.connect(self._validate_inline)
+        self.wager_edit.textChanged.connect(self._validate_inline)
         self._validate_inline()
 
     def _validate_inline(self):
@@ -1368,6 +1402,16 @@ class EditClosedSessionDialog(StartSessionDialog):
             else:
                 self._set_valid(self.end_redeem_edit)
 
+        wager_text = self.wager_edit.text().strip()
+        if wager_text:
+            valid, _result = validate_currency(wager_text)
+            if not valid:
+                self._set_invalid(self.wager_edit, "Enter a valid amount (max 2 decimals).")
+            else:
+                self._set_valid(self.wager_edit)
+        else:
+            self._set_valid(self.wager_edit)
+
     def collect_data(self):
         data, error = super().collect_data()
         if error:
@@ -1408,12 +1452,21 @@ class EditClosedSessionDialog(StartSessionDialog):
         if end_redeem > end_total:
             return None, "Ending Redeemable SC cannot exceed Ending Total SC."
 
+        wager_amount = None
+        wager_text = self.wager_edit.text().strip()
+        if wager_text:
+            valid, result = validate_currency(wager_text)
+            if not valid:
+                return None, result
+            wager_amount = result
+
         data.update(
             {
                 "end_date": end_date,
                 "end_time": end_time,
                 "ending_total_sc": Decimal(str(end_total)),
                 "ending_redeemable_sc": Decimal(str(end_redeem)),
+                "wager_amount": wager_amount,
             }
         )
         return data, None
@@ -1485,7 +1538,7 @@ class ViewSessionDialog(QDialog):
         if self._on_open_session:
             open_btn = QPushButton("🎮 View in Game Sessions")
             btn_row.addWidget(open_btn)
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton("✖️ Close")
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
 
@@ -1595,7 +1648,11 @@ class ViewSessionDialog(QDialog):
         game = games.get(self.session.game_id)
         game_name = game.name if game else "—"
         game_type = game_types.get(game.game_type_id, "—") if game else "—"
-        rtp_display = f"{float(game.rtp):.2f}%" if game and game.rtp is not None else "—"
+        exp_rtp = float(game.rtp) if game and game.rtp is not None else None
+        act_rtp = float(game.actual_rtp) if game and getattr(game, "actual_rtp", None) is not None else None
+        rtp_display = f"Exp {exp_rtp:.2f}% / Act {act_rtp:.2f}%" if exp_rtp is not None and act_rtp is not None else (
+            f"{exp_rtp:.2f}%" if exp_rtp is not None else "—"
+        )
 
         is_active = not self.session.status or self.session.status == "Active"
         start_total = self.session.starting_balance
@@ -1618,7 +1675,7 @@ class ViewSessionDialog(QDialog):
             f"${float(net_val):.2f}" if net_val is not None else "—"
         )
 
-        session_group, session_grid = build_group("Session")
+        session_group, session_grid = build_group(f"Session - {self.session.status or 'Active'}")
         add_pair(
             session_grid,
             0,
@@ -1628,16 +1685,19 @@ class ViewSessionDialog(QDialog):
         )
         end_value = format_dt(self.session.end_date, self.session.end_time) if self.session.end_date else "—"
         add_pair(session_grid, 0, 1, "End", end_value)
-        add_pair(session_grid, 1, 0, "Site", sites.get(self.session.site_id, "—"))
-        add_pair(session_grid, 1, 1, "User", users.get(self.session.user_id, "—"))
-        add_pair(session_grid, 2, 0, "Status", self.session.status or "Active")
+        add_pair(session_grid, 1, 0, "User", users.get(self.session.user_id, "—"))
+        add_pair(session_grid, 1, 1, "Site", sites.get(self.session.site_id, "—"))
         layout.addWidget(session_group)
 
         game_group, game_grid = build_group("Game")
         add_pair(game_grid, 0, 0, "Game Type", game_type or "—")
         add_pair(game_grid, 0, 1, "Game Name", game_name or "—")
-        add_pair(game_grid, 1, 0, "Wager Amount", "—")
-        add_pair(game_grid, 1, 1, "RTP", rtp_display)
+        wager_value = self.session.wager_amount if self.session.wager_amount is not None else None
+        wager_display = format_currency(wager_value) if wager_value not in (None, "") else "—"
+        session_rtp = self.session.rtp
+        rtp_value = f"{float(session_rtp):.2f}%" if session_rtp is not None else rtp_display
+        add_pair(game_grid, 1, 0, "Wager Amount", wager_display)
+        add_pair(game_grid, 1, 1, "RTP", rtp_value)
         layout.addWidget(game_group)
 
         balance_group, balance_grid = build_group("Balances")
@@ -1690,14 +1750,15 @@ class ViewSessionDialog(QDialog):
         purchases_group = QGroupBox("Purchases Contributing to Basis (Before/During)")
         purchases_layout = QVBoxLayout(purchases_group)
         purchases_layout.setContentsMargins(8, 10, 8, 8)
-        if not self.linked_purchases:
+        purchases = self._filter_purchases(self.linked_purchases)
+        if not purchases:
             note = QLabel("No purchases contributed basis before or during this session.")
             note.setWordWrap(True)
             purchases_layout.addWidget(note)
         else:
-            self.purchases_table = QTableWidget(0, 5)
+            self.purchases_table = QTableWidget(0, 4)
             self.purchases_table.setHorizontalHeaderLabels(
-                ["Date", "Time", "Amount", "SC Received", "View"]
+                ["Date/Time", "Amount", "SC Received", "View"]
             )
             self.purchases_table.setEditTriggers(QTableWidget.NoEditTriggers)
             self.purchases_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -1708,26 +1769,26 @@ class ViewSessionDialog(QDialog):
             header.setStretchLastSection(True)
             header.setSectionResizeMode(QHeaderView.Interactive)
             self.purchases_table.verticalHeader().setVisible(False)
-            self.purchases_table.setColumnWidth(0, 90)
-            self.purchases_table.setColumnWidth(1, 60)
+            self.purchases_table.setColumnWidth(0, 140)
+            self.purchases_table.setColumnWidth(1, 90)
             self.purchases_table.setColumnWidth(2, 90)
-            self.purchases_table.setColumnWidth(3, 90)
-            self.purchases_table.setColumnWidth(4, 70)
+            self.purchases_table.setColumnWidth(3, 120)
             purchases_layout.addWidget(self.purchases_table)
-            self._populate_purchases_table(self.linked_purchases)
+            self._populate_purchases_table(purchases)
         layout.addWidget(purchases_group, 1)
 
         redemptions_group = QGroupBox("Redemptions Affecting This Session")
         redemptions_layout = QVBoxLayout(redemptions_group)
         redemptions_layout.setContentsMargins(8, 10, 8, 8)
-        if not self.linked_redemptions:
+        redemptions = self._filter_redemptions(self.linked_redemptions, include_after=True)
+        if not redemptions:
             note = QLabel("No redemptions affected this session.")
             note.setWordWrap(True)
             redemptions_layout.addWidget(note)
         else:
-            self.redemptions_table = QTableWidget(0, 5)
+            self.redemptions_table = QTableWidget(0, 4)
             self.redemptions_table.setHorizontalHeaderLabels(
-                ["Date", "Time", "Amount", "Method", "View Redemption"]
+                ["Date/Time", "Amount", "Method", "View Redemption"]
             )
             self.redemptions_table.setEditTriggers(QTableWidget.NoEditTriggers)
             self.redemptions_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -1738,35 +1799,61 @@ class ViewSessionDialog(QDialog):
             header.setStretchLastSection(True)
             header.setSectionResizeMode(QHeaderView.Interactive)
             self.redemptions_table.verticalHeader().setVisible(False)
-            self.redemptions_table.setColumnWidth(0, 90)
-            self.redemptions_table.setColumnWidth(1, 60)
-            self.redemptions_table.setColumnWidth(2, 100)
-            self.redemptions_table.setColumnWidth(3, 120)
-            self.redemptions_table.setColumnWidth(4, 130)
+            self.redemptions_table.setColumnWidth(0, 140)
+            self.redemptions_table.setColumnWidth(1, 100)
+            self.redemptions_table.setColumnWidth(2, 140)
+            self.redemptions_table.setColumnWidth(3, 130)
             redemptions_layout.addWidget(self.redemptions_table)
-            self._populate_redemptions_table(self.linked_redemptions)
+            self._populate_redemptions_table(redemptions)
         layout.addWidget(redemptions_group, 1)
         return widget
+
+    def _filter_purchases(self, purchases):
+        allowed = {"BEFORE", "DURING", "MANUAL"}
+        filtered = []
+        for purchase in purchases:
+            relation = (getattr(purchase, "link_relation", None) or "DURING").upper()
+            if relation in allowed:
+                filtered.append(purchase)
+        return filtered
+
+    def _filter_redemptions(self, redemptions, include_after: bool):
+        allowed = {"DURING", "MANUAL"}
+        if include_after:
+            allowed.add("AFTER")
+        filtered = []
+        for redemption in redemptions:
+            relation = (getattr(redemption, "link_relation", None) or "DURING").upper()
+            if relation in allowed:
+                filtered.append(redemption)
+        return filtered
+
+    def _toggle_after_cashouts(self):
+        if not getattr(self, "redemptions_table", None):
+            return
+        include_after = self.include_after_check.isChecked()
+        redemptions = self._filter_redemptions(self.linked_redemptions, include_after=include_after)
+        self._populate_redemptions_table(redemptions)
 
     def _populate_purchases_table(self, purchases):
         self.purchases_table.setRowCount(len(purchases))
         for row_idx, purchase in enumerate(purchases):
             date_display = self._format_date(purchase.purchase_date) if purchase.purchase_date else "—"
             time_display = purchase.purchase_time[:5] if purchase.purchase_time else "—"
+            date_time_display = f"{date_display} {time_display}" if date_display != "—" else time_display
             amount = format_currency(purchase.amount)
             sc_received = f"{float(purchase.sc_received or 0.0):.2f}"
-
-            values = [date_display, time_display, amount, sc_received]
+            values = [date_time_display, amount, sc_received]
             for col_idx, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
-                if col_idx in (2, 3):
+                if col_idx in (1, 2):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.purchases_table.setItem(row_idx, col_idx, item)
 
-            view_btn = QPushButton("View Purchase")
+            view_btn = QPushButton("👁️ View Purchase")
             view_btn.setObjectName("MiniButton")
             view_btn.setFixedHeight(24)
-            view_btn.setFixedWidth(120)
+            view_btn.setFixedWidth(view_btn.sizeHint().width() + 12)
             view_btn.clicked.connect(
                 lambda _checked=False, pid=purchase.id: self._open_purchase(pid)
             )
@@ -1775,7 +1862,7 @@ class ViewSessionDialog(QDialog):
             view_layout = QGridLayout(view_container)
             view_layout.setContentsMargins(6, 4, 6, 4)
             view_layout.addWidget(view_btn, 0, 0, Qt.AlignCenter)
-            self.purchases_table.setCellWidget(row_idx, 4, view_container)
+            self.purchases_table.setCellWidget(row_idx, 3, view_container)
             self.purchases_table.setRowHeight(
                 row_idx,
                 max(self.purchases_table.rowHeight(row_idx), view_btn.sizeHint().height() + 16),
@@ -1786,22 +1873,23 @@ class ViewSessionDialog(QDialog):
         for row_idx, redemption in enumerate(redemptions):
             date_display = self._format_date(redemption.redemption_date) if redemption.redemption_date else "—"
             time_display = (redemption.redemption_time or "00:00:00")[:5]
+            date_time_display = f"{date_display} {time_display}" if date_display != "—" else time_display
             amount = format_currency(redemption.amount)
 
             is_total_loss = float(redemption.amount) == 0
             method_display = "Loss" if is_total_loss else (getattr(redemption, "method_name", None) or "—")
 
-            values = [date_display, time_display, amount, method_display]
+            values = [date_time_display, amount, method_display]
             for col_idx, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
-                if col_idx == 2:
+                if col_idx == 1:
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 self.redemptions_table.setItem(row_idx, col_idx, item)
 
-            view_btn = QPushButton("View Redemption")
+            view_btn = QPushButton("👁️ View Redemption")
             view_btn.setObjectName("MiniButton")
             view_btn.setFixedHeight(24)
-            view_btn.setFixedWidth(120)
+            view_btn.setFixedWidth(view_btn.sizeHint().width() + 12)
             view_btn.clicked.connect(
                 lambda _checked=False, rid=redemption.id: self._open_redemption(rid)
             )
@@ -1810,7 +1898,7 @@ class ViewSessionDialog(QDialog):
             view_layout = QGridLayout(view_container)
             view_layout.setContentsMargins(6, 4, 6, 4)
             view_layout.addWidget(view_btn, 0, 0, Qt.AlignCenter)
-            self.redemptions_table.setCellWidget(row_idx, 4, view_container)
+            self.redemptions_table.setCellWidget(row_idx, 3, view_container)
             self.redemptions_table.setRowHeight(
                 row_idx,
                 max(self.redemptions_table.rowHeight(row_idx), view_btn.sizeHint().height() + 16),
@@ -1927,7 +2015,7 @@ class EndSessionDialog(QDialog):
 
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
-        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn = QPushButton("✖️ Cancel")
         self.save_btn = QPushButton("End Session")
         self.save_btn.setObjectName("PrimaryButton")
         btn_row.addWidget(self.cancel_btn)
@@ -1964,7 +2052,7 @@ class EndSessionDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
         ok_btn = QPushButton("Select")
-        cancel_btn = QPushButton("Cancel")
+        cancel_btn = QPushButton("✖️ Cancel")
         btn_row.addWidget(cancel_btn)
         btn_row.addWidget(ok_btn)
         layout.addLayout(btn_row)

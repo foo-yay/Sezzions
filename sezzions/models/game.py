@@ -12,6 +12,7 @@ class Game:
     name: str
     game_type_id: int
     rtp: Optional[float] = None
+    actual_rtp: Optional[float] = None
     is_active: bool = True
     notes: Optional[str] = None
     id: Optional[int] = None

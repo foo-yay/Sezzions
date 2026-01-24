@@ -18,7 +18,9 @@ class FIFOService:
         self, 
         user_id: int, 
         site_id: int, 
-        redemption_amount: Decimal
+        redemption_amount: Decimal,
+        redemption_date,
+        redemption_time: str = "23:59:59",
     ) -> Tuple[Decimal, Decimal, List[Tuple[int, Decimal]]]:
         """
         Calculate cost basis and profit for a redemption using FIFO.
@@ -33,7 +35,13 @@ class FIFOService:
             ValueError: If insufficient purchases available
         """
         # Get available purchases in FIFO order (oldest first)
-        available_purchases = self.purchase_repo.get_available_for_fifo(user_id, site_id)
+        # Only include purchases on or before the redemption timestamp
+        available_purchases = self.purchase_repo.get_available_for_fifo_as_of(
+            user_id,
+            site_id,
+            redemption_date,
+            redemption_time,
+        )
         
         # Allocate from purchases using FIFO
         # NOTE: It's OK if total_available < redemption_amount (that's profit!)

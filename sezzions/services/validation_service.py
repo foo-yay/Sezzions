@@ -59,11 +59,11 @@ class ValidationService:
         
         # Check redemptions with FIFO that have invalid cost basis
         query = """
-            SELECT id, amount, cost_basis, taxable_profit
-            FROM redemptions
-            WHERE user_id = ? AND site_id = ?
-            AND cost_basis IS NOT NULL
-            AND CAST(cost_basis AS REAL) > CAST(amount AS REAL)
+            SELECT r.id, r.amount, rt.cost_basis, rt.net_pl
+            FROM realized_transactions rt
+            JOIN redemptions r ON r.id = rt.redemption_id
+            WHERE r.user_id = ? AND r.site_id = ?
+            AND CAST(rt.cost_basis AS REAL) > CAST(r.amount AS REAL)
         """
         invalid_redemptions = self.db.fetch_all(query, (user_id, site_id))
         
@@ -75,10 +75,13 @@ class ValidationService:
         
         # Check for redemptions without FIFO when they should have it
         query = """
-            SELECT id, amount, redemption_date
-            FROM redemptions
-            WHERE user_id = ? AND site_id = ?
-            AND cost_basis IS NULL
+            SELECT r.id, r.amount, r.redemption_date
+            FROM redemptions r
+            WHERE r.user_id = ? AND r.site_id = ?
+            AND NOT EXISTS (
+                SELECT 1 FROM redemption_allocations ra
+                WHERE ra.redemption_id = r.id
+            )
         """
         redemptions_without_fifo = self.db.fetch_all(query, (user_id, site_id))
         
@@ -106,25 +109,23 @@ class ValidationService:
         
         # Get all sessions with calculated P/L
         query = """
-            SELECT id, starting_balance, purchases_during, 
-                   redemptions_during, ending_balance, profit_loss
-            FROM game_sessions
-            WHERE user_id = ? AND site_id = ?
-            AND profit_loss IS NOT NULL
+            SELECT gs.id, gs.discoverable_sc, gs.delta_redeem, gs.basis_consumed,
+                   gs.net_taxable_pl, s.sc_rate
+            FROM game_sessions gs
+            JOIN sites s ON s.id = gs.site_id
+            WHERE gs.user_id = ? AND gs.site_id = ?
+            AND gs.net_taxable_pl IS NOT NULL
         """
         sessions = self.db.fetch_all(query, (user_id, site_id))
         
         for session in sessions:
-            starting = Decimal(session["starting_balance"])
-            purchases = Decimal(session["purchases_during"])
-            redemptions = Decimal(session["redemptions_during"])
-            ending = Decimal(session["ending_balance"])
-            stored_pl = Decimal(session["profit_loss"])
+            discoverable_sc = Decimal(str(session["discoverable_sc"] or 0))
+            delta_redeem = Decimal(str(session["delta_redeem"] or 0))
+            basis_consumed = Decimal(str(session["basis_consumed"] or 0))
+            sc_rate = Decimal(str(session["sc_rate"] or 1))
+            stored_pl = Decimal(str(session["net_taxable_pl"] or 0))
             
-            # Calculate expected P/L
-            total_in = starting + purchases
-            total_out = redemptions + ending
-            expected_pl = total_out - total_in
+            expected_pl = ((discoverable_sc + delta_redeem) * sc_rate) - basis_consumed
             
             # Check if stored P/L matches calculation
             if stored_pl != expected_pl:
@@ -137,7 +138,7 @@ class ValidationService:
             SELECT COUNT(*) as count
             FROM game_sessions
             WHERE user_id = ? AND site_id = ?
-            AND profit_loss IS NULL
+            AND net_taxable_pl IS NULL
         """
         result = self.db.fetch_one(query, (user_id, site_id))
         

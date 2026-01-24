@@ -61,8 +61,16 @@ class RedemptionService:
         # Apply FIFO if requested
         if apply_fifo:
             cost_basis, taxable_profit, allocations = self.fifo_service.calculate_cost_basis(
-                user_id, site_id, amount
+                user_id,
+                site_id,
+                amount,
+                redemption_date,
+                redemption_time or "23:59:59",
             )
+
+            redemption.cost_basis = cost_basis
+            redemption.taxable_profit = taxable_profit
+            redemption._has_fifo_allocation = True
             
             # Save redemption first (without FIFO results)
             redemption = self.redemption_repo.create(redemption)

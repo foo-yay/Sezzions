@@ -125,6 +125,7 @@ class DatabaseManager:
                 name TEXT NOT NULL,
                 game_type_id INTEGER NOT NULL,
                 rtp REAL,
+                actual_rtp REAL DEFAULT 0,
                 is_active INTEGER DEFAULT 1,
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -132,6 +133,7 @@ class DatabaseManager:
                 FOREIGN KEY (game_type_id) REFERENCES game_types(id) ON DELETE CASCADE
             )
         ''')
+        self._migrate_games_table()
         
         # Purchases table
         cursor.execute('''
@@ -147,6 +149,7 @@ class DatabaseManager:
                 purchase_time TEXT,
                 card_id INTEGER,
                 remaining_amount TEXT NOT NULL,
+                status TEXT DEFAULT 'active',
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP,
@@ -158,6 +161,22 @@ class DatabaseManager:
 
         # Migration: Add new columns if table already exists
         self._migrate_purchases_table()
+
+        # Unrealized positions notes table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS unrealized_positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                site_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP,
+                UNIQUE(site_id, user_id),
+                FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        ''')
+        self._migrate_unrealized_positions_table()
         
         # Redemptions table
         cursor.execute('''
@@ -201,6 +220,8 @@ class DatabaseManager:
                 ending_balance TEXT DEFAULT '0.00',
                 starting_redeemable TEXT DEFAULT '0.00',
                 ending_redeemable TEXT DEFAULT '0.00',
+                wager_amount TEXT DEFAULT '0.00',
+                rtp REAL,
                 purchases_during TEXT DEFAULT '0.00',
                 redemptions_during TEXT DEFAULT '0.00',
                 expected_start_total TEXT,
@@ -231,6 +252,17 @@ class DatabaseManager:
                 relation TEXT NOT NULL CHECK(relation IN ('BEFORE','DURING','AFTER','MANUAL')),
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(game_session_id, event_type, event_id, relation)
+            )
+        ''')
+
+        # Game RTP aggregates (legacy parity)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS game_rtp_aggregates (
+                game_id INTEGER PRIMARY KEY REFERENCES games(id),
+                total_wager REAL DEFAULT 0,
+                total_delta REAL DEFAULT 0,
+                session_count INTEGER DEFAULT 0,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
@@ -271,6 +303,29 @@ class DatabaseManager:
             )
         ''')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS realized_daily_notes (
+                session_date TEXT PRIMARY KEY,
+                notes TEXT
+            )
+        ''')
+
+        # Expenses table (legacy parity)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                expense_date TEXT NOT NULL,
+                amount TEXT NOT NULL,
+                vendor TEXT NOT NULL,
+                description TEXT,
+                category TEXT DEFAULT 'Other Expenses',
+                user_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+        ''')
+
         # Daily sessions table (daily notes + aggregates)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS daily_sessions (
@@ -288,6 +343,22 @@ class DatabaseManager:
             )
         ''')
 
+        # Expenses table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                expense_date TEXT NOT NULL,
+                amount TEXT NOT NULL,
+                vendor TEXT NOT NULL,
+                description TEXT,
+                category TEXT DEFAULT 'Other Expenses',
+                user_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+            )
+        ''')
+
         # One-time migration from legacy daily_tax_sessions -> daily_sessions
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='daily_tax_sessions'"
@@ -302,6 +373,8 @@ class DatabaseManager:
                 FROM daily_tax_sessions
             ''')
             cursor.execute("DROP TABLE daily_tax_sessions")
+
+        self._migrate_expenses_table()
         
         # Audit log table (compliance trail)
         # Reference: DATABASE_DESIGN.md §12
@@ -470,6 +543,8 @@ class DatabaseManager:
             ("ending_redeemable", "TEXT DEFAULT '0.00'"),
             ("end_date", "TEXT"),
             ("end_time", "TEXT"),
+            ("wager_amount", "TEXT DEFAULT '0.00'"),
+            ("rtp", "REAL"),
             ("expected_start_total", "TEXT"),
             ("expected_start_redeemable", "TEXT"),
             ("discoverable_sc", "TEXT"),
@@ -493,6 +568,21 @@ class DatabaseManager:
         if "profit_loss" in existing_columns and "net_taxable_pl" in existing_columns:
             # Can't drop columns in SQLite easily, but net_taxable_pl will be used going forward
             pass
+
+    def _migrate_games_table(self):
+        """Add new columns to games if they don't exist"""
+        cursor = self._connection.cursor()
+        cursor.execute("PRAGMA table_info(games)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        migrations = [
+            ("actual_rtp", "REAL DEFAULT 0"),
+        ]
+        for column_name, column_def in migrations:
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE games ADD COLUMN {column_name} {column_def}")
+                except Exception:
+                    pass
 
     def _migrate_redemptions_table(self):
         """Add new columns to redemptions if they don't exist"""
@@ -534,6 +624,25 @@ class DatabaseManager:
                 except Exception:
                     pass
 
+    def _migrate_expenses_table(self):
+        """Add new columns to expenses if they don't exist"""
+        cursor = self._connection.cursor()
+        cursor.execute("PRAGMA table_info(expenses)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        migrations = [
+            ("description", "TEXT"),
+            ("category", "TEXT DEFAULT 'Other Expenses'"),
+            ("user_id", "INTEGER"),
+            ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("updated_at", "TIMESTAMP"),
+        ]
+        for column_name, column_def in migrations:
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE expenses ADD COLUMN {column_name} {column_def}")
+                except Exception:
+                    pass
+
     def _migrate_purchases_table(self):
         """Add new columns to purchases if they don't exist"""
         cursor = self._connection.cursor()
@@ -545,12 +654,30 @@ class DatabaseManager:
             ("sc_received", "TEXT DEFAULT '0.00'"),
             ("starting_sc_balance", "TEXT DEFAULT '0.00'"),
             ("cashback_earned", "TEXT DEFAULT '0.00'"),
+            ("status", "TEXT DEFAULT 'active'"),
         ]
 
         for column_name, column_def in migrations:
             if column_name not in existing_columns:
                 try:
                     cursor.execute(f"ALTER TABLE purchases ADD COLUMN {column_name} {column_def}")
+                except Exception:
+                    pass
+
+    def _migrate_unrealized_positions_table(self):
+        """Add new columns to unrealized_positions if they don't exist"""
+        cursor = self._connection.cursor()
+        cursor.execute("PRAGMA table_info(unrealized_positions)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        migrations = [
+            ("notes", "TEXT"),
+            ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("updated_at", "TIMESTAMP"),
+        ]
+        for column_name, column_def in migrations:
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE unrealized_positions ADD COLUMN {column_name} {column_def}")
                 except Exception:
                     pass
 

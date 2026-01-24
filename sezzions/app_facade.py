@@ -5,7 +5,7 @@ This facade provides a single entry point for the Qt UI to interact with
 all backend services while maintaining backward compatibility during migration.
 """
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime
 from typing import Optional, List, Dict, Any, Tuple
 
 from repositories.database import DatabaseManager
@@ -23,6 +23,7 @@ from repositories.unrealized_position_repository import UnrealizedPositionReposi
 from repositories.realized_transaction_repository import RealizedTransactionRepository
 from repositories.daily_session_repository import DailySessionRepository
 from repositories.game_session_event_link_repository import GameSessionEventLinkRepository
+from repositories.expense_repository import ExpenseRepository
 
 from services.user_service import UserService
 from services.site_service import SiteService
@@ -40,6 +41,7 @@ from services.daily_sessions_service import DailySessionsService
 from services.validation_service import ValidationService
 from services.recalculation_service import RecalculationService
 from services.game_session_event_link_service import GameSessionEventLinkService
+from services.expense_service import ExpenseService
 
 from models.user import User
 from models.site import Site
@@ -53,6 +55,7 @@ from models.redemption import Redemption
 from models.game_session import GameSession
 from models.unrealized_position import UnrealizedPosition
 from models.realized_transaction import RealizedTransaction
+from models.expense import Expense
 
 
 class AppFacade:
@@ -88,6 +91,7 @@ class AppFacade:
         self.realized_transaction_repo = RealizedTransactionRepository(self.db)
         self.daily_session_repo = DailySessionRepository(self.db)
         self.game_session_event_link_repo = GameSessionEventLinkRepository(self.db)
+        self.expense_repo = ExpenseRepository(self.db)
         
         # Initialize services
         self.user_service = UserService(self.user_repo)
@@ -117,6 +121,7 @@ class AppFacade:
         self.validation_service = ValidationService(self.db)
         self.report_service = ReportService(self.db)
         self.daily_sessions_service = DailySessionsService(self.db, self.daily_session_repo)
+        self.expense_service = ExpenseService(self.expense_repo)
 
         # Bulk rebuild / recalculation orchestration (legacy parity)
         self.recalculation_service = RecalculationService(self.db)
@@ -127,6 +132,95 @@ class AppFacade:
             self.redemption_repo,
             self.db,
         )
+
+    @staticmethod
+    def _normalize_time(value: Optional[str]) -> str:
+        if not value:
+            return "00:00:00"
+        value = value.strip()
+        if len(value) == 5:
+            return f"{value}:00"
+        return value
+
+    @classmethod
+    def _to_dt(cls, date_value: date, time_value: Optional[str]) -> datetime:
+        time_str = cls._normalize_time(time_value)
+        return datetime.combine(date_value, datetime.strptime(time_str, "%H:%M:%S").time())
+
+    @classmethod
+    def _earliest_boundary(
+        cls,
+        first_date: date,
+        first_time: Optional[str],
+        second_date: date,
+        second_time: Optional[str],
+    ) -> Tuple[date, str]:
+        first_dt = cls._to_dt(first_date, first_time)
+        second_dt = cls._to_dt(second_date, second_time)
+        if second_dt < first_dt:
+            return second_date, cls._normalize_time(second_time)
+        return first_date, cls._normalize_time(first_time)
+
+    def _find_containing_session_start(
+        self,
+        site_id: int,
+        user_id: int,
+        session_date: date,
+        session_time: Optional[str],
+    ) -> Optional[Tuple[date, str]]:
+        ts_time = self._normalize_time(session_time)
+        date_str = session_date.isoformat() if hasattr(session_date, "isoformat") else str(session_date)
+
+        row = self.db.fetch_one(
+            """
+            SELECT session_date, COALESCE(session_time,'00:00:00') as start_time
+            FROM game_sessions
+            WHERE site_id = ? AND user_id = ?
+              AND (session_date < ? OR (session_date = ? AND COALESCE(session_time,'00:00:00') <= ?))
+              AND (end_date IS NULL
+                   OR ? < end_date
+                   OR (? = end_date AND ? <= COALESCE(end_time,'23:59:59')))
+            ORDER BY session_date DESC, COALESCE(session_time,'00:00:00') DESC
+            LIMIT 1
+            """,
+            (site_id, user_id, date_str, date_str, ts_time, date_str, date_str, ts_time),
+        )
+        if not row:
+            return None
+        start_date = row["session_date"]
+        if isinstance(start_date, str):
+            start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+        return start_date, row["start_time"]
+
+    def _containing_boundary(
+        self,
+        site_id: int,
+        user_id: int,
+        session_date: date,
+        session_time: Optional[str],
+    ) -> Tuple[date, str]:
+        containing = self._find_containing_session_start(
+            site_id,
+            user_id,
+            session_date,
+            session_time,
+        )
+        if containing:
+            return containing
+        return session_date, self._normalize_time(session_time)
+
+    def _earliest_boundary_with_containing(
+        self,
+        site_id: int,
+        user_id: int,
+        first_date: date,
+        first_time: Optional[str],
+        second_date: date,
+        second_time: Optional[str],
+    ) -> Tuple[date, str]:
+        first = self._containing_boundary(site_id, user_id, first_date, first_time)
+        second = self._containing_boundary(site_id, user_id, second_date, second_time)
+        return self._earliest_boundary(first[0], first[1], second[0], second[1])
     # ==========================================================================
     # User Operations
     # ==========================================================================
@@ -387,7 +481,30 @@ class AppFacade:
             purchase_time=purchase_time,
             notes=notes
         )
-        self.game_session_event_link_service.rebuild_links_for_pair(site_id, user_id)
+        boundary_date, boundary_time = self._containing_boundary(
+            site_id,
+            user_id,
+            purchase.purchase_date,
+            purchase.purchase_time,
+        )
+        self.recalculation_service.rebuild_fifo_for_pair_from(
+            user_id,
+            site_id,
+            boundary_date.isoformat(),
+            boundary_time,
+        )
+        self.game_session_service.recalculate_closed_sessions_for_pair_from(
+            user_id,
+            site_id,
+            boundary_date,
+            boundary_time,
+        )
+        self.game_session_event_link_service.rebuild_links_for_pair_from(
+            site_id,
+            user_id,
+            boundary_date.isoformat(),
+            boundary_time,
+        )
         return purchase
     
     def update_purchase(self, purchase_id: int, force_site_user_change: bool = False, **kwargs) -> Purchase:
@@ -428,12 +545,87 @@ class AppFacade:
                 break
 
         if changed:
-            impacted_pairs = {(old_purchase.user_id, old_purchase.site_id), (updated.user_id, updated.site_id)}
-            for user_id, site_id in impacted_pairs:
-                self.recalculation_service.rebuild_fifo_for_pair(user_id, site_id)
-                # Session P/L depends on purchase/redemption chronology.
-                self.game_session_service.recalculate_closed_sessions_for_pair(user_id, site_id)
-                self.game_session_event_link_service.rebuild_links_for_pair(site_id, user_id)
+            old_pair = (old_purchase.user_id, old_purchase.site_id)
+            new_pair = (updated.user_id, updated.site_id)
+
+            if old_pair == new_pair:
+                boundary_date, boundary_time = self._earliest_boundary_with_containing(
+                    old_pair[1],
+                    old_pair[0],
+                    old_purchase.purchase_date,
+                    old_purchase.purchase_time,
+                    updated.purchase_date,
+                    updated.purchase_time,
+                )
+                user_id, site_id = old_pair
+                self.recalculation_service.rebuild_fifo_for_pair_from(
+                    user_id,
+                    site_id,
+                    boundary_date.isoformat(),
+                    boundary_time,
+                )
+                self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                    user_id,
+                    site_id,
+                    boundary_date,
+                    boundary_time,
+                )
+                self.game_session_event_link_service.rebuild_links_for_pair_from(
+                    site_id,
+                    user_id,
+                    boundary_date.isoformat(),
+                    boundary_time,
+                )
+            else:
+                old_date, old_time = self._containing_boundary(
+                    old_pair[1],
+                    old_pair[0],
+                    old_purchase.purchase_date,
+                    old_purchase.purchase_time,
+                )
+                self.recalculation_service.rebuild_fifo_for_pair_from(
+                    old_pair[0],
+                    old_pair[1],
+                    old_date.isoformat(),
+                    old_time,
+                )
+                self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                    old_pair[0],
+                    old_pair[1],
+                    old_date,
+                    old_time,
+                )
+                self.game_session_event_link_service.rebuild_links_for_pair_from(
+                    old_pair[1],
+                    old_pair[0],
+                    old_date.isoformat(),
+                    old_time,
+                )
+
+                new_date, new_time = self._containing_boundary(
+                    new_pair[1],
+                    new_pair[0],
+                    updated.purchase_date,
+                    updated.purchase_time,
+                )
+                self.recalculation_service.rebuild_fifo_for_pair_from(
+                    new_pair[0],
+                    new_pair[1],
+                    new_date.isoformat(),
+                    new_time,
+                )
+                self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                    new_pair[0],
+                    new_pair[1],
+                    new_date,
+                    new_time,
+                )
+                self.game_session_event_link_service.rebuild_links_for_pair_from(
+                    new_pair[1],
+                    new_pair[0],
+                    new_date.isoformat(),
+                    new_time,
+                )
 
         return updated
 
@@ -467,7 +659,30 @@ class AppFacade:
         purchase = self.purchase_repo.get_by_id(purchase_id)
         self.purchase_service.delete_purchase(purchase_id)
         if purchase:
-            self.game_session_event_link_service.rebuild_links_for_pair(purchase.site_id, purchase.user_id)
+            boundary_date, boundary_time = self._containing_boundary(
+                purchase.site_id,
+                purchase.user_id,
+                purchase.purchase_date,
+                purchase.purchase_time,
+            )
+            self.recalculation_service.rebuild_fifo_for_pair_from(
+                purchase.user_id,
+                purchase.site_id,
+                boundary_date.isoformat(),
+                boundary_time,
+            )
+            self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                purchase.user_id,
+                purchase.site_id,
+                boundary_date,
+                boundary_time,
+            )
+            self.game_session_event_link_service.rebuild_links_for_pair_from(
+                purchase.site_id,
+                purchase.user_id,
+                boundary_date.isoformat(),
+                boundary_time,
+            )
     
     def get_available_purchases_for_fifo(self, user_id: int, site_id: int) -> List[Purchase]:
         """Get purchases available for FIFO allocation."""
@@ -517,27 +732,291 @@ class AppFacade:
             more_remaining=more_remaining,
             notes=notes
         )
-        self.game_session_event_link_service.rebuild_links_for_pair(site_id, user_id)
+        boundary_date, boundary_time = self._containing_boundary(
+            site_id,
+            user_id,
+            redemption.redemption_date,
+            redemption.redemption_time,
+        )
+        if apply_fifo:
+            self.recalculation_service.rebuild_fifo_for_pair_from(
+                user_id,
+                site_id,
+                boundary_date.isoformat(),
+                boundary_time,
+            )
+        self.game_session_service.recalculate_closed_sessions_for_pair_from(
+            user_id,
+            site_id,
+            boundary_date,
+            boundary_time,
+        )
+        self.game_session_event_link_service.rebuild_links_for_pair_from(
+            site_id,
+            user_id,
+            boundary_date.isoformat(),
+            boundary_time,
+        )
         return redemption
+
+    def update_redemption_reprocess(self, redemption_id: int, **kwargs) -> Redemption:
+        """Update redemption and fully reprocess FIFO/realized/session cascades (legacy parity)."""
+        old_redemption = self.redemption_repo.get_by_id(redemption_id)
+        if not old_redemption:
+            raise ValueError(f"Redemption {redemption_id} not found")
+
+        updated = Redemption(
+            id=old_redemption.id,
+            user_id=kwargs.get("user_id", old_redemption.user_id),
+            site_id=kwargs.get("site_id", old_redemption.site_id),
+            amount=kwargs.get("amount", old_redemption.amount),
+            fees=kwargs.get("fees", old_redemption.fees),
+            redemption_date=kwargs.get("redemption_date", old_redemption.redemption_date),
+            redemption_time=kwargs.get("redemption_time", old_redemption.redemption_time),
+            redemption_method_id=kwargs.get("redemption_method_id", old_redemption.redemption_method_id),
+            receipt_date=kwargs.get("receipt_date", old_redemption.receipt_date),
+            processed=kwargs.get("processed", old_redemption.processed),
+            more_remaining=kwargs.get("more_remaining", old_redemption.more_remaining),
+            is_free_sc=kwargs.get("is_free_sc", old_redemption.is_free_sc),
+            notes=kwargs.get("notes", old_redemption.notes),
+        )
+        updated.__post_init__()
+        self.redemption_repo.update(updated)
+
+        old_pair = (old_redemption.user_id, old_redemption.site_id)
+        new_pair = (updated.user_id, updated.site_id)
+
+        if old_pair == new_pair:
+            boundary_date, boundary_time = self._earliest_boundary_with_containing(
+                old_pair[1],
+                old_pair[0],
+                old_redemption.redemption_date,
+                old_redemption.redemption_time,
+                updated.redemption_date,
+                updated.redemption_time,
+            )
+            self.recalculation_service.rebuild_fifo_for_pair_from(
+                old_pair[0],
+                old_pair[1],
+                boundary_date.isoformat(),
+                boundary_time,
+            )
+            self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                old_pair[0],
+                old_pair[1],
+                boundary_date,
+                boundary_time,
+            )
+            self.game_session_event_link_service.rebuild_links_for_pair_from(
+                old_pair[1],
+                old_pair[0],
+                boundary_date.isoformat(),
+                boundary_time,
+            )
+        else:
+            old_date, old_time = self._containing_boundary(
+                old_pair[1],
+                old_pair[0],
+                old_redemption.redemption_date,
+                old_redemption.redemption_time,
+            )
+            self.recalculation_service.rebuild_fifo_for_pair_from(
+                old_pair[0],
+                old_pair[1],
+                old_date.isoformat(),
+                old_time,
+            )
+            self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                old_pair[0],
+                old_pair[1],
+                old_date,
+                old_time,
+            )
+            self.game_session_event_link_service.rebuild_links_for_pair_from(
+                old_pair[1],
+                old_pair[0],
+                old_date.isoformat(),
+                old_time,
+            )
+
+            new_date, new_time = self._containing_boundary(
+                new_pair[1],
+                new_pair[0],
+                updated.redemption_date,
+                updated.redemption_time,
+            )
+            self.recalculation_service.rebuild_fifo_for_pair_from(
+                new_pair[0],
+                new_pair[1],
+                new_date.isoformat(),
+                new_time,
+            )
+            self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                new_pair[0],
+                new_pair[1],
+                new_date,
+                new_time,
+            )
+            self.game_session_event_link_service.rebuild_links_for_pair_from(
+                new_pair[1],
+                new_pair[0],
+                new_date.isoformat(),
+                new_time,
+            )
+
+        return self.redemption_repo.get_by_id(redemption_id)
     
     def update_redemption(self, redemption_id: int, **kwargs) -> Redemption:
         """Update redemption (with FIFO allocation protection)."""
         old_redemption = self.redemption_repo.get_by_id(redemption_id)
         updated = self.redemption_service.update_redemption(redemption_id, **kwargs)
-        impacted_pairs = set()
         if old_redemption:
-            impacted_pairs.add((old_redemption.user_id, old_redemption.site_id))
-        impacted_pairs.add((updated.user_id, updated.site_id))
-        for user_id, site_id in impacted_pairs:
-            self.game_session_event_link_service.rebuild_links_for_pair(site_id, user_id)
+            derived_fields = {
+                "user_id",
+                "site_id",
+                "amount",
+                "redemption_date",
+                "redemption_time",
+                "is_free_sc",
+                "notes",
+            }
+            changed = False
+            for field in derived_fields:
+                if field in kwargs and getattr(old_redemption, field) != getattr(updated, field):
+                    changed = True
+                    break
+            if changed:
+                old_pair = (old_redemption.user_id, old_redemption.site_id)
+                new_pair = (updated.user_id, updated.site_id)
+
+                if old_pair == new_pair:
+                    boundary_date, boundary_time = self._earliest_boundary_with_containing(
+                        old_pair[1],
+                        old_pair[0],
+                        old_redemption.redemption_date,
+                        old_redemption.redemption_time,
+                        updated.redemption_date,
+                        updated.redemption_time,
+                    )
+                    self.recalculation_service.rebuild_fifo_for_pair_from(
+                        old_pair[0],
+                        old_pair[1],
+                        boundary_date.isoformat(),
+                        boundary_time,
+                    )
+                    self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                        old_pair[0],
+                        old_pair[1],
+                        boundary_date,
+                        boundary_time,
+                    )
+                    self.game_session_event_link_service.rebuild_links_for_pair_from(
+                        old_pair[1],
+                        old_pair[0],
+                        boundary_date.isoformat(),
+                        boundary_time,
+                    )
+                else:
+                    old_date, old_time = self._containing_boundary(
+                        old_pair[1],
+                        old_pair[0],
+                        old_redemption.redemption_date,
+                        old_redemption.redemption_time,
+                    )
+                    self.recalculation_service.rebuild_fifo_for_pair_from(
+                        old_pair[0],
+                        old_pair[1],
+                        old_date.isoformat(),
+                        old_time,
+                    )
+                    self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                        old_pair[0],
+                        old_pair[1],
+                        old_date,
+                        old_time,
+                    )
+                    self.game_session_event_link_service.rebuild_links_for_pair_from(
+                        old_pair[1],
+                        old_pair[0],
+                        old_date.isoformat(),
+                        old_time,
+                    )
+
+                    new_date, new_time = self._containing_boundary(
+                        new_pair[1],
+                        new_pair[0],
+                        updated.redemption_date,
+                        updated.redemption_time,
+                    )
+                    self.recalculation_service.rebuild_fifo_for_pair_from(
+                        new_pair[0],
+                        new_pair[1],
+                        new_date.isoformat(),
+                        new_time,
+                    )
+                    self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                        new_pair[0],
+                        new_pair[1],
+                        new_date,
+                        new_time,
+                    )
+                    self.game_session_event_link_service.rebuild_links_for_pair_from(
+                        new_pair[1],
+                        new_pair[0],
+                        new_date.isoformat(),
+                        new_time,
+                    )
+            else:
+                self.game_session_event_link_service.rebuild_links_for_pair(
+                    updated.site_id,
+                    updated.user_id,
+                )
+        else:
+            self.game_session_event_link_service.rebuild_links_for_pair(
+                updated.site_id,
+                updated.user_id,
+            )
         return updated
     
     def delete_redemption(self, redemption_id: int) -> None:
         """Delete redemption (reverses FIFO if allocated)."""
         redemption = self.redemption_repo.get_by_id(redemption_id)
+        if redemption and redemption.amount == 0 and (redemption.notes or "").startswith("Balance Closed"):
+            self.db.execute(
+                """
+                UPDATE purchases
+                SET status = 'active', updated_at = CURRENT_TIMESTAMP
+                WHERE site_id = ? AND user_id = ? AND remaining_amount > 0
+                  AND status = 'dormant'
+                """,
+                (redemption.site_id, redemption.user_id),
+            )
         self.redemption_service.delete_redemption(redemption_id)
         if redemption:
-            self.game_session_event_link_service.rebuild_links_for_pair(redemption.site_id, redemption.user_id)
+            boundary_date, boundary_time = self._containing_boundary(
+                redemption.site_id,
+                redemption.user_id,
+                redemption.redemption_date,
+                redemption.redemption_time,
+            )
+            self.recalculation_service.rebuild_fifo_for_pair_from(
+                redemption.user_id,
+                redemption.site_id,
+                boundary_date.isoformat(),
+                boundary_time,
+            )
+            self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                redemption.user_id,
+                redemption.site_id,
+                boundary_date,
+                boundary_time,
+            )
+            self.game_session_event_link_service.rebuild_links_for_pair_from(
+                redemption.site_id,
+                redemption.user_id,
+                boundary_date.isoformat(),
+                boundary_time,
+            )
     
     # ==========================================================================
     # Game Session Operations
@@ -617,18 +1096,85 @@ class AppFacade:
             notes=notes or "",
             calculate_pl=calculate_pl
         )
-        self.game_session_event_link_service.rebuild_links_for_pair(site_id, user_id)
+        boundary_date, boundary_time = self._containing_boundary(
+            site_id,
+            user_id,
+            session.session_date,
+            session.session_time,
+        )
+        self.game_session_event_link_service.rebuild_links_for_pair_from(
+            site_id,
+            user_id,
+            boundary_date.isoformat(),
+            boundary_time,
+        )
         return session
     
     def update_game_session(self, session_id: int, recalculate_pl: bool = True, 
                            **kwargs) -> GameSession:
         """Update game session with optional P/L recalculation."""
+        old_session = self.game_session_repo.get_by_id(session_id)
         updated = self.game_session_service.update_session(
             session_id, 
             recalculate_pl=recalculate_pl, 
             **kwargs
         )
-        self.game_session_event_link_service.rebuild_links_for_pair(updated.site_id, updated.user_id)
+        if old_session:
+            old_pair = (old_session.user_id, old_session.site_id)
+            new_pair = (updated.user_id, updated.site_id)
+            if old_pair == new_pair:
+                boundary_date, boundary_time = self._earliest_boundary_with_containing(
+                    old_pair[1],
+                    old_pair[0],
+                    old_session.session_date,
+                    old_session.session_time,
+                    updated.session_date,
+                    updated.session_time,
+                )
+                self.game_session_event_link_service.rebuild_links_for_pair_from(
+                    new_pair[1],
+                    new_pair[0],
+                    boundary_date.isoformat(),
+                    boundary_time,
+                )
+            else:
+                old_date, old_time = self._containing_boundary(
+                    old_pair[1],
+                    old_pair[0],
+                    old_session.session_date,
+                    old_session.session_time,
+                )
+                self.game_session_event_link_service.rebuild_links_for_pair_from(
+                    old_pair[1],
+                    old_pair[0],
+                    old_date.isoformat(),
+                    old_time,
+                )
+                new_date, new_time = self._containing_boundary(
+                    new_pair[1],
+                    new_pair[0],
+                    updated.session_date,
+                    updated.session_time,
+                )
+                self.game_session_event_link_service.rebuild_links_for_pair_from(
+                    new_pair[1],
+                    new_pair[0],
+                    new_date.isoformat(),
+                    new_time,
+                )
+        else:
+            boundary_date, boundary_time = self._containing_boundary(
+                updated.site_id,
+                updated.user_id,
+                updated.session_date,
+                updated.session_time,
+            )
+            self.game_session_event_link_service.rebuild_links_for_pair_from(
+                updated.site_id,
+                updated.user_id,
+                boundary_date.isoformat(),
+                boundary_time,
+            )
         return updated
     
     def delete_game_session(self, session_id: int) -> None:
@@ -636,7 +1182,22 @@ class AppFacade:
         session = self.game_session_repo.get_by_id(session_id)
         self.game_session_service.delete_session(session_id)
         if session:
-            self.game_session_event_link_service.rebuild_links_for_pair(session.site_id, session.user_id)
+            boundary_date, boundary_time = self._containing_boundary(
+                session.site_id,
+                session.user_id,
+                session.session_date,
+                session.session_time,
+            )
+            self.game_session_event_link_service.rebuild_links_for_pair_from(
+                session.site_id,
+                session.user_id,
+                boundary_date.isoformat(),
+                boundary_time,
+            )
+
+    def recalculate_game_rtp(self, game_id: int) -> None:
+        """Recalculate RTP aggregates for a game (full rebuild)."""
+        self.game_session_service.recalculate_game_rtp_full(game_id)
 
     def get_linked_sessions_for_purchase(self, purchase_id: int):
         sessions = self.game_session_event_link_service.get_sessions_for_purchase(purchase_id)
@@ -750,6 +1311,92 @@ class AppFacade:
     def get_unrealized_position(self, site_id: int, user_id: int) -> Optional[UnrealizedPosition]:
         """Get specific unrealized position for a site/user pair."""
         return self.unrealized_position_repo.get_position_by_site_user(site_id, user_id)
+
+    def update_unrealized_notes(self, site_id: int, user_id: int, notes: str) -> None:
+        self.unrealized_position_repo.update_notes(site_id, user_id, notes)
+
+    def get_unrealized_open_purchases(self, site_id: int, user_id: int) -> List[Dict[str, Any]]:
+        query = """
+            SELECT id, purchase_date, purchase_time, amount, sc_received, remaining_amount
+            FROM purchases
+            WHERE site_id = ? AND user_id = ? AND remaining_amount > 0.001
+            ORDER BY purchase_date ASC, COALESCE(purchase_time,'00:00:00') ASC, id ASC
+        """
+        return self.db.fetch_all(query, (site_id, user_id))
+
+    def get_unrealized_sessions(self, site_id: int, user_id: int) -> List[Dict[str, Any]]:
+        query = """
+            SELECT gs.id, gs.session_date, gs.session_time, gs.end_date, gs.end_time,
+                   gs.ending_balance, gs.ending_redeemable, gs.status,
+                   g.name as game_name
+            FROM game_sessions gs
+            LEFT JOIN games g ON gs.game_id = g.id
+            WHERE gs.site_id = ? AND gs.user_id = ?
+            ORDER BY gs.session_date DESC, gs.session_time DESC, gs.id DESC
+        """
+        return self.db.fetch_all(query, (site_id, user_id))
+
+    def close_unrealized_position(
+        self,
+        site_id: int,
+        user_id: int,
+        current_sc: Decimal,
+        current_value: Decimal,
+        total_basis: Decimal,
+    ) -> Dict[str, Decimal]:
+        active_session = self.game_session_repo.get_active_session(user_id, site_id)
+        if active_session:
+            raise ValueError("Cannot close balance while a session is active for this site/user.")
+
+        net_loss = total_basis - current_value
+        notes = (
+            f"Balance Closed - Net Loss: ${net_loss:.2f} "
+            f"(${current_sc:.2f} SC marked dormant)"
+        )
+
+        now = datetime.now()
+        redemption = self.redemption_service.create_redemption(
+            user_id=user_id,
+            site_id=site_id,
+            amount=Decimal("0.00"),
+            redemption_date=date.today(),
+            redemption_time=now.strftime("%H:%M:%S"),
+            processed=True,
+            notes=notes,
+            apply_fifo=False,
+        )
+
+        self.db.execute(
+            """
+            INSERT INTO realized_transactions
+            (redemption_date, site_id, redemption_id, cost_basis, payout, net_pl, user_id)
+            VALUES (?, ?, ?, ?, 0, ?, ?)
+            """,
+            (
+                date.today().isoformat(),
+                site_id,
+                redemption.id,
+                str(net_loss),
+                str(-net_loss),
+                user_id,
+            ),
+        )
+
+        self.db.execute(
+            """
+            UPDATE purchases
+            SET status = 'dormant', updated_at = CURRENT_TIMESTAMP
+            WHERE site_id = ? AND user_id = ? AND remaining_amount > 0
+              AND (status IS NULL OR status = 'active')
+            """,
+            (site_id, user_id),
+        )
+
+        return {
+            "net_loss": net_loss,
+            "current_sc": current_sc,
+            "current_value": current_value,
+        }
     
     # ==========================================================================
     # Realized Transactions (Completed Redemptions Cash Flow)
@@ -775,5 +1422,43 @@ class AppFacade:
     def get_realized_transaction_by_redemption(self, redemption_id: int) -> Optional[RealizedTransaction]:
         """Get realized transaction for a specific redemption."""
         return self.realized_transaction_repo.get_by_redemption(redemption_id)
+
+    def update_realized_notes(self, redemption_id: int, notes: str) -> None:
+        """Update notes for a realized transaction by redemption ID."""
+        self.realized_transaction_repo.update_notes(redemption_id, notes)
+
+    # ==========================================================================
+    # Expenses
+    # ==========================================================================
+
+    def get_expenses(self, start_date: Optional[date] = None, end_date: Optional[date] = None) -> List[Expense]:
+        return self.expense_service.list_expenses(start_date=start_date, end_date=end_date)
+
+    def get_expense(self, expense_id: int) -> Optional[Expense]:
+        return self.expense_service.get_expense(expense_id)
+
+    def create_expense(
+        self,
+        expense_date: date,
+        amount: Decimal,
+        vendor: str,
+        description: Optional[str] = None,
+        category: str = "Other Expenses",
+        user_id: Optional[int] = None,
+    ) -> Expense:
+        return self.expense_service.create_expense(
+            expense_date=expense_date,
+            amount=amount,
+            vendor=vendor,
+            description=description,
+            category=category,
+            user_id=user_id,
+        )
+
+    def update_expense(self, expense_id: int, **kwargs) -> Expense:
+        return self.expense_service.update_expense(expense_id, **kwargs)
+
+    def delete_expense(self, expense_id: int) -> None:
+        self.expense_service.delete_expense(expense_id)
         """Get counts of all records in system."""
         return self.validation_service.get_data_summary()

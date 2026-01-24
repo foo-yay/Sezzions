@@ -104,3 +104,10 @@ class RealizedTransactionRepository:
             if trans.redemption_id == redemption_id:
                 return trans
         return None
+
+    def update_notes(self, redemption_id: int, notes: str) -> None:
+        """Update notes for a realized transaction by redemption ID."""
+        self.db.execute(
+            "UPDATE realized_transactions SET notes = ? WHERE redemption_id = ?",
+            (notes, redemption_id),
+        )

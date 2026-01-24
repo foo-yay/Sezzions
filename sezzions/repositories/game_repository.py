@@ -85,13 +85,17 @@ class GameRepository:
     
     def _row_to_model(self, row: dict) -> Game:
         """Convert database row to Game model"""
+        def row_value(key, default=None):
+            return row[key] if key in row.keys() else default
+
         return Game(
             id=row['id'],
             name=row['name'],
             game_type_id=row['game_type_id'],
-            rtp=float(row['rtp']) if row.get('rtp') is not None else None,
+            rtp=float(row_value('rtp')) if row_value('rtp') is not None else None,
+            actual_rtp=float(row_value('actual_rtp')) if row_value('actual_rtp') is not None else None,
             is_active=bool(row['is_active']),
-            notes=row.get('notes'),
-            created_at=row.get('created_at'),
-            updated_at=row.get('updated_at')
+            notes=row_value('notes'),
+            created_at=row_value('created_at'),
+            updated_at=row_value('updated_at')
         )

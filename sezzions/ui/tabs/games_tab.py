@@ -1,9 +1,11 @@
 """
 Games tab - Manage individual games
 """
+from datetime import date
 from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
 from models.game import Game
+from ui.table_header_filters import TableHeaderFilter
 
 
 class GamesTab(QtWidgets.QWidget):
@@ -64,6 +66,10 @@ class GamesTab(QtWidgets.QWidget):
 
         toolbar.addStretch()
 
+        export_btn = QtWidgets.QPushButton("📤 Export CSV")
+        export_btn.clicked.connect(self._export_csv)
+        toolbar.addWidget(export_btn)
+
         refresh_btn = QtWidgets.QPushButton("🔄 Refresh")
         refresh_btn.clicked.connect(self.refresh_data)
         toolbar.addWidget(refresh_btn)
@@ -71,18 +77,19 @@ class GamesTab(QtWidgets.QWidget):
         layout.addLayout(toolbar)
 
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["Name", "Game Type", "RTP", "Status", "Notes"])
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(["Name", "Game Type", "Expected RTP", "Actual RTP", "Status", "Notes"])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
         self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectRows)
-        self.table.setSelectionMode(QtWidgets.QTableWidget.SingleSelection)
+        self.table.setSelectionMode(QtWidgets.QTableWidget.ExtendedSelection)
         self.table.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
-        self.table.itemDoubleClicked.connect(self._edit_game)
+        self.table.itemDoubleClicked.connect(self._view_game)
         layout.addWidget(self.table)
+        self.table_filter = TableHeaderFilter(self.table, refresh_callback=self.refresh_data)
 
         self.refresh_data()
 
@@ -98,7 +105,9 @@ class GamesTab(QtWidgets.QWidget):
             filtered = [g for g in self.games
                         if search_text in g.name.lower()
                         or (g.notes and search_text in g.notes.lower())
-                        or (game_types.get(g.game_type_id, "").lower().find(search_text) >= 0)]
+                        or (game_types.get(g.game_type_id, "").lower().find(search_text) >= 0)
+                        or (g.rtp is not None and search_text in f"{g.rtp:.2f}" )
+                        or (getattr(g, "actual_rtp", None) is not None and search_text in f"{float(getattr(g, 'actual_rtp')):.2f}")]
         else:
             filtered = self.games
 
@@ -116,14 +125,22 @@ class GamesTab(QtWidgets.QWidget):
             rtp_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
             self.table.setItem(row, 2, rtp_item)
 
+            actual_rtp = getattr(game, "actual_rtp", None)
+            actual_display = f"{float(actual_rtp):.2f}%" if actual_rtp is not None else "—"
+            actual_item = QtWidgets.QTableWidgetItem(actual_display)
+            actual_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            self.table.setItem(row, 3, actual_item)
+
             status = "Active" if game.is_active else "Inactive"
             status_item = QtWidgets.QTableWidgetItem(status)
             if not game.is_active:
                 status_item.setForeground(QtGui.QColor("#999"))
-            self.table.setItem(row, 3, status_item)
+            self.table.setItem(row, 4, status_item)
 
             notes = (game.notes or "")[:100]
-            self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(notes))
+            self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(notes))
+
+        self.table_filter.apply_filters()
 
         # Column sizing handled by header resize mode
 
@@ -132,23 +149,38 @@ class GamesTab(QtWidgets.QWidget):
 
     def _clear_search(self):
         self.search_edit.clear()
+        self.table.clearSelection()
+        self._on_selection_changed()
         self._populate_table()
 
     def _clear_all_filters(self):
-        self._clear_search()
+        self.search_edit.clear()
+        self.table.clearSelection()
+        self._on_selection_changed()
+        if hasattr(self, "table_filter"):
+            self.table_filter.clear_all_filters()
+        self._populate_table()
 
     def _on_selection_changed(self):
-        has_selection = len(self.table.selectedItems()) > 0
-        self.view_btn.setVisible(has_selection)
-        self.edit_btn.setVisible(has_selection)
+        selected_rows = self.table.selectionModel().selectedRows()
+        has_selection = bool(selected_rows)
+        self.view_btn.setVisible(len(selected_rows) == 1)
+        self.edit_btn.setVisible(len(selected_rows) == 1)
         self.delete_btn.setVisible(has_selection)
 
     def _get_selected_game_id(self):
-        selected = self.table.selectedItems()
-        if not selected:
-            return None
-        row = selected[0].row()
-        return self.table.item(row, 0).data(QtCore.Qt.UserRole)
+        ids = self._get_selected_game_ids()
+        return ids[0] if ids else None
+
+    def _get_selected_game_ids(self):
+        ids = []
+        for row in self.table.selectionModel().selectedRows():
+            item = self.table.item(row.row(), 0)
+            if item is not None:
+                value = item.data(QtCore.Qt.UserRole)
+                if value is not None:
+                    ids.append(value)
+        return ids
 
     def _add_game(self):
         dialog = GameDialog(self, self.facade)
@@ -199,31 +231,79 @@ class GamesTab(QtWidgets.QWidget):
                 )
 
     def _delete_game(self):
-        game_id = self._get_selected_game_id()
-        if not game_id:
+        game_ids = self._get_selected_game_ids()
+        if not game_ids:
             return
 
-        game = self.facade.get_game(game_id)
-        if not game:
+        games = []
+        for game_id in game_ids:
+            game = self.facade.get_game(game_id)
+            if game:
+                games.append(game)
+
+        if not games:
             return
+
+        if len(games) == 1:
+            prompt = f"Delete game '{games[0].name}'?\n\nThis cannot be undone."
+        else:
+            prompt = f"Delete {len(games)} games?\n\nThis cannot be undone."
 
         reply = QtWidgets.QMessageBox.question(
             self,
             "Confirm Delete",
-            f"Delete game '{game.name}'?\n\nThis cannot be undone.",
+            prompt,
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         )
 
         if reply == QtWidgets.QMessageBox.Yes:
             try:
-                self.facade.delete_game(game_id)
+                for game in games:
+                    self.facade.delete_game(game.id)
                 self.refresh_data()
                 QtWidgets.QMessageBox.information(
-                    self, "Success", f"Game '{game.name}' deleted"
+                    self, "Success", "Game(s) deleted"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
-                    self, "Error", f"Failed to delete game:\n{str(e)}"
+                    self, "Error", f"Failed to delete game(s):\n{str(e)}"
+                )
+
+    def _export_csv(self):
+        if self.table.rowCount() == 0:
+            QtWidgets.QMessageBox.information(self, "Export", "No data to export")
+            return
+
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Games",
+            f"games_{date.today().isoformat()}.csv",
+            "CSV Files (*.csv)"
+        )
+
+        if filename:
+            try:
+                import csv
+                with open(filename, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    headers = [self.table.horizontalHeaderItem(c).text() for c in range(self.table.columnCount())]
+                    writer.writerow(headers)
+                    for row in range(self.table.rowCount()):
+                        if self.table.isRowHidden(row):
+                            continue
+                        row_values = []
+                        for col in range(self.table.columnCount()):
+                            item = self.table.item(row, col)
+                            row_values.append(item.text() if item else "")
+                        writer.writerow(row_values)
+
+                QtWidgets.QMessageBox.information(
+                    self, "Export Complete",
+                    f"Exported games to:\n{filename}"
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self, "Export Error", f"Failed to export:\n{str(e)}"
                 )
 
     def _view_game(self):
@@ -305,6 +385,15 @@ class GameDialog(QtWidgets.QDialog):
         layout.addWidget(rtp_label, 2, 0)
         layout.addWidget(self.rtp_edit, 2, 1)
 
+        actual_rtp_label = QtWidgets.QLabel("Actual RTP (%):")
+        actual_rtp_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        actual_rtp_value = QtWidgets.QLabel(
+            f"{float(getattr(game, 'actual_rtp', 0) or 0):.2f}" if game and getattr(game, "actual_rtp", None) is not None else "—"
+        )
+        actual_rtp_value.setObjectName("HelperText")
+        layout.addWidget(actual_rtp_label, 2, 2)
+        layout.addWidget(actual_rtp_value, 2, 3)
+
         self.active_check = QtWidgets.QCheckBox()
         self.active_check.setChecked(game.is_active if game else True)
         active_label = QtWidgets.QLabel("Active")
@@ -318,31 +407,33 @@ class GameDialog(QtWidgets.QDialog):
         notes_label = QtWidgets.QLabel("Notes:")
         notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
         self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-        layout.addWidget(notes_label, 3, 0, QtCore.Qt.AlignTop)
+        layout.addWidget(notes_label, 3, 0)
         layout.addWidget(self.notes_edit, 3, 1, 1, 3)
 
         button_layout = QtWidgets.QHBoxLayout()
         if self.read_only:
+            button_layout.setSpacing(8)
             if self._on_delete:
-                delete_btn = QtWidgets.QPushButton("Delete")
+                delete_btn = QtWidgets.QPushButton("🗑️ Delete")
                 delete_btn.clicked.connect(self._on_delete)
                 button_layout.addWidget(delete_btn)
             button_layout.addStretch(1)
             if self._on_edit:
-                edit_btn = QtWidgets.QPushButton("Edit")
+                edit_btn = QtWidgets.QPushButton("✏️ Edit")
                 edit_btn.clicked.connect(self._on_edit)
                 button_layout.addWidget(edit_btn)
-            close_btn = QtWidgets.QPushButton("Close")
+            close_btn = QtWidgets.QPushButton("✖️ Close")
             close_btn.clicked.connect(self.accept)
             button_layout.addWidget(close_btn)
             layout.addLayout(button_layout, 4, 0, 1, 4)
         else:
-            save_btn = QtWidgets.QPushButton("Save")
-            cancel_btn = QtWidgets.QPushButton("Cancel")
-            save_btn.setObjectName("PrimaryButton")
-            save_btn.clicked.connect(self.accept)
-            cancel_btn.clicked.connect(self.reject)
             button_layout.addStretch(1)
+            button_layout.setSpacing(8)
+            cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
+            save_btn = QtWidgets.QPushButton("💾 Save")
+            save_btn.setObjectName("PrimaryButton")
+            cancel_btn.clicked.connect(self.reject)
+            save_btn.clicked.connect(self.accept)
             button_layout.addWidget(cancel_btn)
             button_layout.addWidget(save_btn)
             layout.addLayout(button_layout, 4, 0, 1, 4)
@@ -354,6 +445,9 @@ class GameDialog(QtWidgets.QDialog):
                 notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
                 self.notes_edit.setPlaceholderText("-")
                 self.notes_edit.setFixedHeight(self.notes_edit.fontMetrics().lineSpacing() + 12)
+            else:
+                notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+                self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
 
         self.name_edit.textChanged.connect(self._validate_inline)
         self.type_combo.currentTextChanged.connect(self._validate_inline)

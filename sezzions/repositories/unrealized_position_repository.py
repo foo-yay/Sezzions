@@ -3,7 +3,7 @@ Repository for querying unrealized positions (open positions with remaining basi
 """
 from typing import List, Optional
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime
 
 from models.unrealized_position import UnrealizedPosition
 
@@ -23,6 +23,8 @@ class UnrealizedPositionRepository:
             return []
         
         positions = []
+
+        notes_map = self._get_notes_map()
         
         # Get all site/user combinations with remaining basis
         query = """
@@ -35,6 +37,7 @@ class UnrealizedPositionRepository:
             JOIN sites s ON p.site_id = s.id
             JOIN users u ON p.user_id = u.id
             WHERE p.remaining_amount > 0.001
+              AND (p.status IS NULL OR p.status = 'active')
         """
         
         pairs = self.db.fetch_all(query)
@@ -50,6 +53,7 @@ class UnrealizedPositionRepository:
                     SUM(remaining_amount) as remaining_basis
                 FROM purchases
                 WHERE site_id = ? AND user_id = ?
+                  AND (status IS NULL OR status = 'active')
                   AND remaining_amount > 0.001
             """
             
@@ -66,7 +70,7 @@ class UnrealizedPositionRepository:
             
             # Get current SC balance from last game session
             session_query = """
-                SELECT ending_redeemable, ending_balance, session_date
+                SELECT ending_redeemable, ending_balance, session_date, session_time, end_date, end_time
                 FROM game_sessions
                 WHERE site_id = ? AND user_id = ?
                   AND ending_balance IS NOT NULL
@@ -79,17 +83,35 @@ class UnrealizedPositionRepository:
             if last_session:
                 # Use redeemable SC, fallback to total balance
                 current_sc = Decimal(str(last_session['ending_redeemable'] or last_session['ending_balance'] or 0))
-                last_activity = last_session['session_date']
+                last_activity = last_session['end_date'] or last_session['session_date']
+                last_activity_time = last_session['end_time'] or last_session['session_time']
+                last_activity_dt = self._to_dt(last_activity, last_activity_time)
             else:
                 # No sessions yet - check for purchases
-                purchase_query = """
-                    SELECT COALESCE(SUM(sc_received), 0) as total_sc, MAX(purchase_date) as last_date
+                purchase_sum_query = """
+                    SELECT COALESCE(SUM(sc_received), 0) as total_sc
                     FROM purchases
                     WHERE site_id = ? AND user_id = ?
+                      AND (status IS NULL OR status = 'active')
                 """
-                purchase_data = self.db.fetch_one(purchase_query, (site_id, user_id))
+                purchase_data = self.db.fetch_one(purchase_sum_query, (site_id, user_id))
                 current_sc = Decimal(str(purchase_data['total_sc'] or 0))
-                last_activity = purchase_data['last_date']
+                last_purchase_query = """
+                    SELECT purchase_date, COALESCE(purchase_time, '00:00:00') as purchase_time
+                    FROM purchases
+                    WHERE site_id = ? AND user_id = ?
+                      AND (status IS NULL OR status = 'active')
+                    ORDER BY purchase_date DESC, COALESCE(purchase_time,'00:00:00') DESC, id DESC
+                    LIMIT 1
+                """
+                last_purchase = self.db.fetch_one(last_purchase_query, (site_id, user_id))
+                last_activity = last_purchase['purchase_date'] if last_purchase else None
+                last_activity_time = last_purchase['purchase_time'] if last_purchase else None
+                last_activity_dt = self._to_dt(last_activity, last_activity_time) if last_activity else None
+
+            close_balance_dt = self._get_close_balance_dt(site_id, user_id)
+            if close_balance_dt and last_activity_dt and close_balance_dt >= last_activity_dt:
+                continue
             
             # Get SC rate (default 1:1)
             site_query = "SELECT sc_rate FROM sites WHERE id = ?"
@@ -111,7 +133,7 @@ class UnrealizedPositionRepository:
                 current_value=current_value,
                 unrealized_pl=unrealized_pl,
                 last_activity=last_activity,
-                notes=""
+                notes=notes_map.get((site_id, user_id), "")
             )
             
             positions.append(position)
@@ -123,6 +145,58 @@ class UnrealizedPositionRepository:
             positions = [p for p in positions if p.start_date <= end_date]
         
         return positions
+
+    def update_notes(self, site_id: int, user_id: int, notes: str) -> None:
+        existing = self.db.fetch_one(
+            "SELECT id FROM unrealized_positions WHERE site_id = ? AND user_id = ?",
+            (site_id, user_id),
+        )
+        if existing:
+            self.db.execute(
+                "UPDATE unrealized_positions SET notes = ?, updated_at = CURRENT_TIMESTAMP WHERE site_id = ? AND user_id = ?",
+                (notes, site_id, user_id),
+            )
+        else:
+            self.db.execute(
+                "INSERT INTO unrealized_positions (site_id, user_id, notes) VALUES (?, ?, ?)",
+                (site_id, user_id, notes),
+            )
+
+    def _get_notes_map(self):
+        rows = self.db.fetch_all(
+            "SELECT site_id, user_id, notes FROM unrealized_positions"
+        )
+        notes_map = {}
+        for row in rows:
+            notes_map[(row['site_id'], row['user_id'])] = row['notes'] or ""
+        return notes_map
+
+    def _to_dt(self, date_value, time_value):
+        if not date_value:
+            return None
+        date_str = date_value if isinstance(date_value, str) else str(date_value)
+        time_str = time_value if time_value else "00:00:00"
+        if len(time_str) == 5:
+            time_str = f"{time_str}:00"
+        try:
+            return datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return None
+
+    def _get_close_balance_dt(self, site_id: int, user_id: int):
+        query = """
+            SELECT redemption_date, COALESCE(redemption_time,'00:00:00') as redemption_time
+            FROM redemptions
+            WHERE site_id = ? AND user_id = ?
+              AND CAST(amount AS REAL) = 0
+              AND notes LIKE 'Balance Closed%'
+            ORDER BY redemption_date DESC, COALESCE(redemption_time,'00:00:00') DESC, id DESC
+            LIMIT 1
+        """
+        row = self.db.fetch_one(query, (site_id, user_id))
+        if not row:
+            return None
+        return self._to_dt(row['redemption_date'], row['redemption_time'])
     
     def get_position_by_site_user(self, site_id: int, user_id: int) -> Optional[UnrealizedPosition]:
         """Get specific position for a site/user pair"""

@@ -30,16 +30,21 @@ def test_create_session_with_auto_pl_calculation(game_session_service, sample_us
         game_id=sample_game.id,
         session_date=date(2026, 1, 15),
         starting_balance=Decimal("100.00"),
+        starting_redeemable=Decimal("0.00"),
         purchases_during=Decimal("50.00"),
         redemptions_during=Decimal("80.00"),
         ending_balance=Decimal("90.00"),
+        ending_redeemable=Decimal("20.00"),
         calculate_pl=True
     )
     
-    # Total in: 100 + 50 = 150
-    # Total out: 80 + 90 = 170
-    # P/L: 20
-    assert session.profit_loss == Decimal("20.00")
+    closed = game_session_service.update_session(
+        session.id,
+        status="Closed",
+        end_date=session.session_date,
+        end_time="23:59:59",
+    )
+    assert closed.net_taxable_pl == Decimal("20.00")
 
 
 def test_create_session_without_pl_calculation(game_session_service, sample_user, sample_site, sample_game):
@@ -53,7 +58,7 @@ def test_create_session_without_pl_calculation(game_session_service, sample_user
         calculate_pl=False
     )
     
-    assert session.profit_loss is None
+    assert session.net_taxable_pl is None
 
 
 def test_update_session(game_session_service, sample_game_session):
@@ -70,16 +75,23 @@ def test_update_session(game_session_service, sample_game_session):
 
 def test_update_session_recalculates_pl(game_session_service, sample_game_session):
     """Test that updating session recalculates P/L"""
-    original_pl = sample_game_session.profit_loss
+    closed = game_session_service.update_session(
+        sample_game_session.id,
+        status="Closed",
+        ending_redeemable=Decimal("20.00"),
+        end_date=sample_game_session.session_date,
+        end_time="23:59:59",
+    )
+    original_pl = closed.net_taxable_pl
     
     updated = game_session_service.update_session(
         sample_game_session.id,
-        ending_balance=Decimal("300.00"),
+        ending_redeemable=Decimal("30.00"),
         recalculate_pl=True
     )
     
     # P/L should change when ending_balance changes
-    assert updated.profit_loss != original_pl
+    assert updated.net_taxable_pl != original_pl
 
 
 def test_update_session_not_found(game_session_service):
@@ -156,7 +168,7 @@ def test_recalculate_all_sessions(
     )
     
     # Recalculate
-    count = game_session_service.recalculate_all_sessions(user_id=sample_user.id)
+    count = game_session_service.recalculate_all_sessions(user_id=sample_user.id, site_id=sample_site.id)
     
     # At least one session should be updated
     assert count >= 0
@@ -164,6 +176,13 @@ def test_recalculate_all_sessions(
 
 def test_update_session_without_recalculate(game_session_service, sample_game_session):
     """Test updating session without recalculating P/L"""
+    closed = game_session_service.update_session(
+        sample_game_session.id,
+        status="Closed",
+        ending_redeemable=Decimal("20.00"),
+        end_date=sample_game_session.session_date,
+        end_time="23:59:59",
+    )
     updated = game_session_service.update_session(
         sample_game_session.id,
         notes="Updated without recalc",
@@ -171,7 +190,7 @@ def test_update_session_without_recalculate(game_session_service, sample_game_se
     )
     
     assert updated.notes == "Updated without recalc"
-    assert updated.profit_loss == sample_game_session.profit_loss  # Should not change
+    assert updated.net_taxable_pl == closed.net_taxable_pl  # Should not change
 
 
 def test_recalculate_all_sessions_by_site(game_session_service, sample_user, sample_site, sample_game):
@@ -185,5 +204,5 @@ def test_recalculate_all_sessions_by_site(game_session_service, sample_user, sam
         ending_balance=Decimal("120.00")
     )
     
-    count = game_session_service.recalculate_all_sessions(site_id=sample_site.id)
+    count = game_session_service.recalculate_all_sessions(user_id=sample_user.id, site_id=sample_site.id)
     assert count >= 0

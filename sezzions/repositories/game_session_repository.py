@@ -36,6 +36,8 @@ class GameSessionRepository:
             ending_redeemable=Decimal(row_value("ending_redeemable", "0.00")),
             purchases_during=Decimal(row["purchases_during"]),
             redemptions_during=Decimal(row["redemptions_during"]),
+            wager_amount=Decimal(row_value("wager_amount", "0.00")),
+            rtp=row_value("rtp"),
             expected_start_total=safe_decimal(row_value("expected_start_total")),
             expected_start_redeemable=safe_decimal(row_value("expected_start_redeemable")),
             discoverable_sc=safe_decimal(row_value("discoverable_sc")),
@@ -126,12 +128,12 @@ class GameSessionRepository:
             INSERT INTO game_sessions (
                 user_id, site_id, game_id, session_date, session_time, end_date, end_time,
                 starting_balance, ending_balance, starting_redeemable, ending_redeemable,
-                purchases_during, redemptions_during,
+                purchases_during, redemptions_during, wager_amount, rtp,
                 expected_start_total, expected_start_redeemable,
                 discoverable_sc, delta_total, delta_redeem,
                 session_basis, basis_consumed, net_taxable_pl,
                 status, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         def str_or_none(val):
             return str(val) if val is not None else None
@@ -146,6 +148,7 @@ class GameSessionRepository:
                 str(session.starting_balance), str(session.ending_balance),
                 str(session.starting_redeemable), str(session.ending_redeemable),
                 str(session.purchases_during), str(session.redemptions_during),
+                str(session.wager_amount), session.rtp,
                 str_or_none(session.expected_start_total),
                 str_or_none(session.expected_start_redeemable),
                 str_or_none(session.discoverable_sc),
@@ -166,7 +169,7 @@ class GameSessionRepository:
             UPDATE game_sessions SET
                 user_id = ?, site_id = ?, game_id = ?, session_date = ?, session_time = ?, end_date = ?, end_time = ?,
                 starting_balance = ?, ending_balance = ?, starting_redeemable = ?, ending_redeemable = ?,
-                purchases_during = ?, redemptions_during = ?,
+                purchases_during = ?, redemptions_during = ?, wager_amount = ?, rtp = ?,
                 expected_start_total = ?, expected_start_redeemable = ?,
                 discoverable_sc = ?, delta_total = ?, delta_redeem = ?,
                 session_basis = ?, basis_consumed = ?, net_taxable_pl = ?,
@@ -186,6 +189,7 @@ class GameSessionRepository:
                 str(session.starting_balance), str(session.ending_balance),
                 str(session.starting_redeemable), str(session.ending_redeemable),
                 str(session.purchases_during), str(session.redemptions_during),
+                str(session.wager_amount), session.rtp,
                 str_or_none(session.expected_start_total),
                 str_or_none(session.expected_start_redeemable),
                 str_or_none(session.discoverable_sc),

@@ -3,8 +3,9 @@ Daily Sessions Tab - Aggregate game sessions by date
 Shows hierarchical view: Date → User → Individual Sessions
 """
 from PySide6 import QtWidgets, QtCore, QtGui
+import shiboken6
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime
 from app_facade import AppFacade
 from ui.date_filter_widget import DateFilterWidget
 from ui.daily_sessions_filters import (
@@ -34,7 +35,7 @@ class DailySessionsTab(QtWidgets.QWidget):
         self._last_sessions = []
         self._suppress_header_menu = False
         self.columns = [
-            "Date/User/Session",
+            "Date/User/Site",
             "Game",
             "Δ Redeem",
             "Δ Basis",
@@ -89,10 +90,10 @@ class DailySessionsTab(QtWidgets.QWidget):
         action_row = QtWidgets.QHBoxLayout()
         action_row.setSpacing(8)
 
-        self.user_filter_btn = QtWidgets.QPushButton("Filter Users...")
+        self.user_filter_btn = QtWidgets.QPushButton("👤 Filter Users...")
         self.user_filter_label = QtWidgets.QLabel("All")
         self._set_filter_label(self.user_filter_label, set())
-        self.site_filter_btn = QtWidgets.QPushButton("Filter Sites...")
+        self.site_filter_btn = QtWidgets.QPushButton("🌐 Filter Sites...")
         self.site_filter_label = QtWidgets.QLabel("All")
         self._set_filter_label(self.site_filter_label, set())
 
@@ -103,9 +104,9 @@ class DailySessionsTab(QtWidgets.QWidget):
         action_row.addWidget(self.site_filter_label)
         action_row.addStretch(1)
 
-        self.notes_btn = QtWidgets.QPushButton("Add Notes")
+        self.notes_btn = QtWidgets.QPushButton("➕ Add Notes")
         self.notes_btn.setObjectName("PrimaryButton")
-        self.view_btn = QtWidgets.QPushButton("View Session")
+        self.view_btn = QtWidgets.QPushButton("👁️ View Session")
         view_text_width = self.view_btn.fontMetrics().horizontalAdvance(self.view_btn.text()) + 24
         dynamic_width = max(
             self.notes_btn.sizeHint().width(),
@@ -131,10 +132,10 @@ class DailySessionsTab(QtWidgets.QWidget):
         self.primary_btn_stack.addWidget(self.view_btn)
         self.primary_btn_stack.setCurrentWidget(self.primary_btn_placeholder)
 
-        self.expand_btn = QtWidgets.QPushButton("Expand All")
-        self.collapse_btn = QtWidgets.QPushButton("Collapse All")
-        self.refresh_btn = QtWidgets.QPushButton("Refresh")
-        self.export_btn = QtWidgets.QPushButton("Export CSV")
+        self.expand_btn = QtWidgets.QPushButton("➕ Expand All")
+        self.collapse_btn = QtWidgets.QPushButton("➖ Collapse All")
+        self.export_btn = QtWidgets.QPushButton("📤 Export CSV")
+        self.refresh_btn = QtWidgets.QPushButton("🔄 Refresh")
 
         self.actions_container = QtWidgets.QWidget()
         actions_layout = QtWidgets.QHBoxLayout(self.actions_container)
@@ -143,8 +144,8 @@ class DailySessionsTab(QtWidgets.QWidget):
         actions_layout.addWidget(self.primary_btn_container)
         actions_layout.addWidget(self.expand_btn)
         actions_layout.addWidget(self.collapse_btn)
-        actions_layout.addWidget(self.refresh_btn)
         actions_layout.addWidget(self.export_btn)
+        actions_layout.addWidget(self.refresh_btn)
         action_row.addWidget(self.actions_container, 0, QtCore.Qt.AlignRight)
         layout.addLayout(action_row)
         
@@ -187,7 +188,11 @@ class DailySessionsTab(QtWidgets.QWidget):
 
     def eventFilter(self, obj, event):
         if getattr(self, "tree", None) is not None and obj is self.tree.header().viewport():
+            if not shiboken6.isValid(self.tree):
+                return False
             header = self.tree.header()
+            if not shiboken6.isValid(header):
+                return False
             if event.type() == QtCore.QEvent.MouseButtonDblClick and event.button() == QtCore.Qt.LeftButton:
                 pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
                 handle = header_resize_section_index(header, pos)
@@ -602,6 +607,42 @@ class DailySessionsTab(QtWidgets.QWidget):
         self.tree.setCurrentItem(session_item)
         self.tree.scrollToItem(session_item, QtWidgets.QAbstractItemView.PositionAtCenter)
         return True
+
+    def view_daily_by_date(self, session_date):
+        normalized = self._normalize_date_value(session_date)
+        if not normalized:
+            return
+        date_text = normalized.strftime("%m/%d/%y")
+        self.date_filter_widget.start_date.setText(date_text)
+        self.date_filter_widget.end_date.setText(date_text)
+        self.apply_date_filter()
+        self.find_and_select_date(normalized)
+
+    def find_and_select_date(self, session_date):
+        normalized = self._normalize_date_value(session_date)
+        if not normalized:
+            return False
+        target = normalized.isoformat()
+
+        for i in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(i)
+            meta = item.data(0, QtCore.Qt.UserRole) or {}
+            if meta.get("kind") == "date" and meta.get("date") == target:
+                item.setExpanded(True)
+                self.tree.setCurrentItem(item)
+                self.tree.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtCenter)
+                return True
+        return False
+
+    def _normalize_date_value(self, value):
+        if not value:
+            return None
+        if isinstance(value, date):
+            return value
+        try:
+            return datetime.strptime(str(value), "%Y-%m-%d").date()
+        except Exception:
+            return None
     
     def _export_csv(self):
         """Export to CSV"""
@@ -618,11 +659,22 @@ class DailySessionsTab(QtWidgets.QWidget):
         if filename:
             try:
                 import csv
+                def iter_items(parent=None):
+                    if parent is None:
+                        for i in range(self.tree.topLevelItemCount()):
+                            item = self.tree.topLevelItem(i)
+                            yield item
+                            yield from iter_items(item)
+                    else:
+                        for i in range(parent.childCount()):
+                            child = parent.child(i)
+                            yield child
+                            yield from iter_items(child)
+
                 with open(filename, 'w', newline='') as f:
                     writer = csv.writer(f)
                     writer.writerow(self.columns)
-                    for idx in range(self.tree.topLevelItemCount()):
-                        item = self.tree.topLevelItem(idx)
+                    for item in iter_items():
                         row_data = []
                         for col in range(len(self.columns)):
                             text = item.text(col)
@@ -662,8 +714,8 @@ class DailySessionNotesDialog(QtWidgets.QDialog):
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
-        cancel_btn = QtWidgets.QPushButton("Cancel")
-        save_btn = QtWidgets.QPushButton("Save")
+        cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
+        save_btn = QtWidgets.QPushButton("💾 Save")
         save_btn.setObjectName("PrimaryButton")
         btn_row.addWidget(cancel_btn)
         btn_row.addWidget(save_btn)

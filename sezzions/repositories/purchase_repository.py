@@ -86,6 +86,32 @@ class PurchaseRepository:
         """
         rows = self.db.fetch_all(query, (user_id, site_id))
         return [self._row_to_model(row) for row in rows]
+
+    def get_available_for_fifo_as_of(
+        self,
+        user_id: int,
+        site_id: int,
+        redemption_date: str,
+        redemption_time: Optional[str] = None,
+    ) -> List[Purchase]:
+        """Get purchases with remaining balance up to a redemption timestamp."""
+        if not redemption_time:
+            redemption_time = "23:59:59"
+
+        query = """
+            SELECT * FROM purchases
+            WHERE user_id = ? AND site_id = ? AND CAST(remaining_amount AS REAL) > 0
+              AND (
+                    purchase_date < ? OR
+                    (purchase_date = ? AND COALESCE(purchase_time, '00:00:00') <= ?)
+                  )
+            ORDER BY purchase_date ASC, COALESCE(purchase_time, '00:00:00') ASC, id ASC
+        """
+        rows = self.db.fetch_all(
+            query,
+            (user_id, site_id, redemption_date, redemption_date, redemption_time),
+        )
+        return [self._row_to_model(row) for row in rows]
     
     def create(self, purchase: Purchase) -> Purchase:
         """Create new purchase"""

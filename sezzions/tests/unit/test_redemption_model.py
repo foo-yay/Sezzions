@@ -65,7 +65,7 @@ def test_redemption_validation_site_id():
 
 def test_redemption_validation_negative_amount():
     """Test that negative amount raises error"""
-    with pytest.raises(ValueError, match="Redemption amount must be positive"):
+    with pytest.raises(ValueError, match="Redemption amount cannot be negative"):
         Redemption(user_id=1, site_id=1, amount=-100, redemption_date=date.today())
 
 

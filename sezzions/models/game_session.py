@@ -34,6 +34,10 @@ class GameSession:
     # Transaction amounts during session
     purchases_during: Decimal = Decimal("0.00")
     redemptions_during: Decimal = Decimal("0.00")
+
+    # RTP tracking
+    wager_amount: Decimal = Decimal("0.00")
+    rtp: Optional[float] = None
     
     # Calculated/derived fields (computed by service layer)
     expected_start_total: Optional[Decimal] = None
@@ -44,6 +48,7 @@ class GameSession:
     session_basis: Optional[Decimal] = None    # Basis added during session (purchases cash value)
     basis_consumed: Optional[Decimal] = None   # Basis consumed (when redeem increases)
     net_taxable_pl: Optional[Decimal] = None   # THE actual taxable P/L
+    profit_loss: Optional[Decimal] = None      # Back-compat alias for net_taxable_pl
     
     # Metadata
     session_time: str = "00:00:00"
@@ -70,12 +75,17 @@ class GameSession:
         
         # Convert amounts to Decimal
         for field_name in ['starting_balance', 'ending_balance', 'starting_redeemable', 'ending_redeemable',
-                           'purchases_during', 'redemptions_during', 'expected_start_total', 
+                           'purchases_during', 'redemptions_during', 'wager_amount', 'expected_start_total', 
                            'expected_start_redeemable', 'discoverable_sc', 'delta_total', 'delta_redeem',
-                           'session_basis', 'basis_consumed', 'net_taxable_pl']:
+                           'session_basis', 'basis_consumed', 'net_taxable_pl', 'profit_loss']:
             value = getattr(self, field_name)
             if value is not None and not isinstance(value, Decimal):
                 setattr(self, field_name, Decimal(str(value)))
+
+        if self.net_taxable_pl is None and self.profit_loss is not None:
+            self.net_taxable_pl = Decimal(str(self.profit_loss))
+        if self.profit_loss is None and self.net_taxable_pl is not None:
+            self.profit_loss = Decimal(str(self.net_taxable_pl))
         
         # Validate non-negative amounts
         if self.starting_balance < 0:
@@ -90,6 +100,8 @@ class GameSession:
             raise ValueError("Purchases during session cannot be negative")
         if self.redemptions_during < 0:
             raise ValueError("Redemptions during session cannot be negative")
+        if self.wager_amount < 0:
+            raise ValueError("Wager amount cannot be negative")
         
         # Validate redeemable cannot exceed total
         if self.starting_redeemable > self.starting_balance:
@@ -101,6 +113,21 @@ class GameSession:
     def datetime_str(self) -> str:
         """Combined date and time for sorting"""
         return f"{self.session_date} {self.session_time}"
+
+    @property
+    def total_in(self) -> Decimal:
+        """Total SC in during session (starting + purchases)."""
+        return self.starting_balance + self.purchases_during
+
+    @property
+    def total_out(self) -> Decimal:
+        """Total SC out during session (redemptions + ending)."""
+        return self.redemptions_during + self.ending_balance
+
+    @property
+    def calculated_pl(self) -> Decimal:
+        """Simple P/L (total_out - total_in)."""
+        return self.total_out - self.total_in
     
     @property
     def locked_start(self) -> Decimal:

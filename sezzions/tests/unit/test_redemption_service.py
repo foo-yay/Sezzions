@@ -127,7 +127,7 @@ def test_delete_redemption_without_fifo(redemption_service, sample_redemption):
 def test_delete_redemption_with_fifo_fails(
     redemption_service, purchase_repo, sample_user, sample_site
 ):
-    """Test that redemption with FIFO cannot be deleted (needs allocation table)"""
+    """Test that redemption with FIFO can be deleted and allocations reversed"""
     # Create purchase and redemption with FIFO
     purchase_repo.create(Purchase(
         user_id=sample_user.id,
@@ -144,9 +144,8 @@ def test_delete_redemption_with_fifo_fails(
         apply_fifo=True
     )
     
-    # Try to delete
-    with pytest.raises(ValueError, match="Cannot delete redemption with FIFO allocation"):
-        redemption_service.delete_redemption(redemption.id)
+    redemption_service.delete_redemption(redemption.id)
+    assert redemption_service.get_redemption(redemption.id) is None
 
 
 def test_list_user_redemptions(redemption_service, sample_user, sample_site):

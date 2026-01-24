@@ -5,6 +5,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
 from ui.tabs.purchases_tab import PurchasesTab
 from ui.tabs.redemptions_tab import RedemptionsTab
+from ui.tabs.expenses_tab import ExpensesTab
 from ui.tabs.game_sessions_tab import GameSessionsTab
 from ui.tabs.unrealized_tab import UnrealizedTab
 from ui.tabs.realized_tab import RealizedTab
@@ -90,51 +91,78 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def _create_tabs(self):
         """Create all application tabs"""
+        self._tab_index = {}
         # Primary tabs
         self.purchases_tab = PurchasesTab(self.facade, main_window=self)
         self.redemptions_tab = RedemptionsTab(self.facade, main_window=self)
+        self.expenses_tab = ExpensesTab(self.facade)
         self.game_sessions_tab = GameSessionsTab(self.facade, main_window=self)
-        self.unrealized_tab = UnrealizedTab(self.facade)
-        self.realized_tab = RealizedTab(self.facade)
+        self.unrealized_tab = UnrealizedTab(self.facade, main_window=self)
+        self.realized_tab = RealizedTab(self.facade, main_window=self)
         self.daily_sessions_tab = DailySessionsTab(self.facade, main_window=self)
         
         self.tab_bar.addTab("💰 Purchases")
         self.stack.addWidget(self.purchases_tab)
+        self._tab_index["purchases"] = self.tab_bar.count() - 1
         self.tab_bar.addTab("💵 Redemptions")
         self.stack.addWidget(self.redemptions_tab)
+        self._tab_index["redemptions"] = self.tab_bar.count() - 1
         self.tab_bar.addTab("🎮 Game Sessions")
         self.stack.addWidget(self.game_sessions_tab)
+        self._tab_index["game_sessions"] = self.tab_bar.count() - 1
         self.tab_bar.addTab("📅 Daily Sessions")
         self.stack.addWidget(self.daily_sessions_tab)
+        self._tab_index["daily_sessions"] = self.tab_bar.count() - 1
         self.tab_bar.addTab("📊 Unrealized")
         self.stack.addWidget(self.unrealized_tab)
+        self._tab_index["unrealized"] = self.tab_bar.count() - 1
         self.tab_bar.addTab("✅ Realized")
         self.stack.addWidget(self.realized_tab)
+        self._tab_index["realized"] = self.tab_bar.count() - 1
+
+        self.tab_bar.addTab("💸 Expenses")
+        self.stack.addWidget(self.expenses_tab)
+        self._tab_index["expenses"] = self.tab_bar.count() - 1
         
         # Setup tab (contains Users/Sites/Cards/etc.)
         self.setup_tab = SetupTab(self.facade)
         self.tab_bar.addTab("⚙️ Setup")
         self.stack.addWidget(self.setup_tab)
+        self._tab_index["setup"] = self.tab_bar.count() - 1
 
     def open_purchase(self, purchase_id: int):
-        self.tab_bar.setCurrentIndex(0)
+        self.tab_bar.setCurrentIndex(self._tab_index.get("purchases", 0))
         if hasattr(self.purchases_tab, "open_purchase_by_id"):
             QtCore.QTimer.singleShot(
                 0, lambda: self.purchases_tab.open_purchase_by_id(purchase_id)
             )
 
     def open_redemption(self, redemption_id: int):
-        self.tab_bar.setCurrentIndex(1)
+        self.tab_bar.setCurrentIndex(self._tab_index.get("redemptions", 1))
         if hasattr(self.redemptions_tab, "view_redemption_by_id"):
             QtCore.QTimer.singleShot(
                 0, lambda: self.redemptions_tab.view_redemption_by_id(redemption_id)
             )
 
     def open_session(self, session_id: int):
-        self.tab_bar.setCurrentIndex(2)
+        self.tab_bar.setCurrentIndex(self._tab_index.get("game_sessions", 2))
         if hasattr(self.game_sessions_tab, "open_session_by_id"):
             QtCore.QTimer.singleShot(
                 0, lambda: self.game_sessions_tab.open_session_by_id(session_id)
+            )
+
+    def open_realized_by_redemption(self, redemption_id: int):
+        self.tab_bar.setCurrentIndex(self._tab_index.get("realized", 5))
+        if hasattr(self.realized_tab, "view_realized_by_redemption_id"):
+            QtCore.QTimer.singleShot(
+                0, lambda: self.realized_tab.view_realized_by_redemption_id(redemption_id)
+            )
+
+    def open_daily_sessions_by_date(self, session_date):
+        self.tab_bar.setCurrentIndex(self._tab_index.get("daily_sessions", 3))
+        if hasattr(self.daily_sessions_tab, "view_daily_by_date"):
+            QtCore.QTimer.singleShot(
+                0, lambda: self.daily_sessions_tab.view_daily_by_date(session_date)
             )
     
     def _create_menu_bar(self):
@@ -209,6 +237,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for widget in (
             self.purchases_tab,
             self.redemptions_tab,
+            self.expenses_tab,
             self.game_sessions_tab,
             self.daily_sessions_tab,
             self.unrealized_tab,

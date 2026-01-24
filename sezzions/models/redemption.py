@@ -80,5 +80,9 @@ class Redemption:
 
     @property
     def has_fifo_allocation(self) -> bool:
-        """True if this redemption has FIFO allocation rows."""
-        return bool(getattr(self, "_has_fifo_allocation", False))
+        """True if this redemption has FIFO allocation rows or calculated FIFO fields."""
+        return bool(
+            getattr(self, "_has_fifo_allocation", False)
+            or self.cost_basis is not None
+            or self.taxable_profit is not None
+        )

@@ -8,6 +8,7 @@ from typing import Optional
 from app_facade import AppFacade
 from models.redemption import Redemption
 from ui.date_filter_widget import DateFilterWidget
+from ui.table_header_filters import TableHeaderFilter
 
 
 class RedemptionsTab(QtWidgets.QWidget):
@@ -109,6 +110,8 @@ class RedemptionsTab(QtWidgets.QWidget):
         layout.addWidget(self.table)
 
         self._header_initialized = False
+
+        self.table_filter = TableHeaderFilter(self.table, date_columns=[0], refresh_callback=self.refresh_data)
         
         # Load data
         self.refresh_data()
@@ -118,6 +121,7 @@ class RedemptionsTab(QtWidgets.QWidget):
         start_date, end_date = self.date_filter.get_date_range()
         self.redemptions = self.facade.get_all_redemptions(start_date=start_date, end_date=end_date)
         self._populate_table()
+        self.table_filter.apply_filters()
     
     def _populate_table(self):
         """Populate table with redemptions"""
@@ -194,17 +198,29 @@ class RedemptionsTab(QtWidgets.QWidget):
                         item.setForeground(QtGui.QBrush(color))
         
         self._apply_header_sizing()
+        self.table_filter.apply_filters()
 
     def _get_filtered_redemptions(self):
         search_text = self.search_edit.text().lower()
 
         if search_text:
-            filtered = [r for r in self.redemptions
-                        if search_text in str(r.redemption_date).lower()
-                        or (hasattr(r, 'user_name') and r.user_name and search_text in r.user_name.lower())
-                        or (hasattr(r, 'site_name') and r.site_name and search_text in r.site_name.lower())
-                        or (hasattr(r, 'method_name') and r.method_name and search_text in r.method_name.lower())
-                        or (r.notes and search_text in r.notes.lower())]
+            filtered = []
+            for r in self.redemptions:
+                receipt_status = "pending" if not r.receipt_date else "received"
+                processed_status = "processed" if r.processed else "unprocessed"
+                parts = [
+                    str(r.redemption_date),
+                    getattr(r, 'user_name', '') or '',
+                    getattr(r, 'site_name', '') or '',
+                    getattr(r, 'method_name', '') or '',
+                    str(r.amount),
+                    receipt_status,
+                    processed_status,
+                    r.notes or '',
+                ]
+                haystack = " ".join(parts).lower()
+                if search_text in haystack:
+                    filtered.append(r)
         else:
             filtered = self.redemptions
 
@@ -219,6 +235,7 @@ class RedemptionsTab(QtWidgets.QWidget):
         header = self.table.horizontalHeader()
         if header is None:
             return
+        self.table.resizeColumnToContents(0)
         fm = header.fontMetrics()
         for col in range(self.table.columnCount()):
             item = self.table.horizontalHeaderItem(col)
@@ -237,16 +254,23 @@ class RedemptionsTab(QtWidgets.QWidget):
         selected_rows = self.table.selectionModel().selectedRows()
         has_selection = bool(selected_rows)
         self.view_btn.setVisible(len(selected_rows) == 1)
-        self.edit_btn.setVisible(has_selection)
+        self.edit_btn.setVisible(len(selected_rows) == 1)
         self.delete_btn.setVisible(has_selection)
     
     def _get_selected_redemption_id(self):
         """Get ID of selected redemption"""
-        selected = self.table.selectedItems()
-        if not selected:
-            return None
-        row = selected[0].row()
-        return self.table.item(row, 0).data(QtCore.Qt.UserRole)
+        ids = self._get_selected_redemption_ids()
+        return ids[0] if ids else None
+
+    def _get_selected_redemption_ids(self):
+        ids = []
+        for row in self.table.selectionModel().selectedRows():
+            item = self.table.item(row.row(), 0)
+            if item is not None:
+                value = item.data(QtCore.Qt.UserRole)
+                if value is not None:
+                    ids.append(value)
+        return ids
     
     def _add_redemption(self):
         """Show dialog to add new redemption"""
@@ -291,6 +315,13 @@ class RedemptionsTab(QtWidgets.QWidget):
                         "2) Then try the redemption again.\n\n"
                         "If this was a bonus or freeplay not captured in sessions, record it in a Game Session first."
                     )
+                    return
+
+                if not self._confirm_partial_vs_balance(
+                    amount,
+                    expected_balance,
+                    dialog.is_partial_selected(),
+                ):
                     return
 
                 redemption = self.facade.create_redemption(
@@ -396,19 +427,51 @@ class RedemptionsTab(QtWidgets.QWidget):
         dialog = RedemptionDialog(self.facade, self, redemption)
         if dialog.exec():
             try:
-                self.facade.update_redemption(
+                if redemption.has_fifo_allocation:
+                    reply = QtWidgets.QMessageBox.question(
+                        self,
+                        "Reprocess Redemption?",
+                        "This redemption has existing FIFO allocations.\n\n"
+                        "Editing will reprocess this redemption and subsequent redemptions for the affected pairs.\n\n"
+                        "Continue?",
+                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                    )
+                    if reply != QtWidgets.QMessageBox.Yes:
+                        return
+
+                redemption_date = dialog.get_date()
+                redemption_time = dialog.get_time() or "00:00:00"
+                expected_total, expected_redeemable = self.facade.compute_expected_balances(
+                    dialog.user_id,
+                    dialog.site_id,
+                    redemption_date,
+                    redemption_time,
+                )
+                site = self.facade.get_site(dialog.site_id)
+                sc_rate = Decimal(str(site.sc_rate if site else 1.0))
+                expected_balance = (expected_redeemable or Decimal("0.00")) * sc_rate
+                amount = dialog.get_amount()
+
+                if not self._confirm_partial_vs_balance(
+                    amount,
+                    expected_balance,
+                    dialog.is_partial_selected(),
+                ):
+                    return
+
+                self.facade.update_redemption_reprocess(
                     redemption_id,
                     user_id=dialog.user_id,
                     site_id=dialog.site_id,
-                    amount=dialog.get_amount(),
+                    amount=amount,
                     fees=dialog.get_fees(),
-                    redemption_date=dialog.get_date(),
+                    redemption_date=redemption_date,
                     redemption_method_id=dialog.method_id,
-                    redemption_time=dialog.get_time(),
+                    redemption_time=redemption_time,
                     receipt_date=dialog.get_receipt_date(),
                     processed=dialog.processed_check.isChecked(),
                     more_remaining=dialog.is_partial_selected(),
-                    notes=dialog.notes_edit.toPlainText() or None
+                    notes=dialog.notes_edit.toPlainText() or None,
                 )
                 self.refresh_data()
                 QtWidgets.QMessageBox.information(
@@ -418,36 +481,87 @@ class RedemptionsTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.warning(
                     self, "Error", f"Failed to update redemption:\n{str(e)}"
                 )
+
+    def _confirm_partial_vs_balance(self, amount: Decimal, expected_balance: Decimal, is_partial: bool) -> bool:
+        if expected_balance is None:
+            return True
+
+        diff = expected_balance - amount
+        threshold = Decimal("0.50")
+
+        if not is_partial and diff > threshold:
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Balance Remaining",
+                "This redemption is below the expected balance for this site/user.\n\n"
+                f"Expected balance: {float(expected_balance):,.2f} SC\n"
+                f"Redemption amount: ${float(amount):,.2f}\n\n"
+                "It looks like a partial cashout (balance remains). Continue as Full?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            )
+            return reply == QtWidgets.QMessageBox.Yes
+
+        if is_partial and diff <= threshold:
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Likely Full Redemption",
+                "This redemption is at or above the expected balance.\n\n"
+                f"Expected balance: {float(expected_balance):,.2f} SC\n"
+                f"Redemption amount: ${float(amount):,.2f}\n\n"
+                "It looks like a full cashout. Continue as Partial?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            )
+            return reply == QtWidgets.QMessageBox.Yes
+
+        return True
     
     def _delete_redemption(self):
         """Delete selected redemption"""
-        redemption_id = self._get_selected_redemption_id()
-        if not redemption_id:
+        redemption_ids = self._get_selected_redemption_ids()
+        if not redemption_ids:
             return
-        
-        redemption = self.facade.get_redemption(redemption_id)
-        if not redemption:
+
+        redemptions = []
+        for redemption_id in redemption_ids:
+            redemption = self.facade.get_redemption(redemption_id)
+            if redemption:
+                redemptions.append(redemption)
+
+        if not redemptions:
             return
-        
-        msg = f"Delete redemption of ${float(redemption.amount):.2f} on {redemption.redemption_date}?\n\nThis cannot be undone."
-        
+
+        if len(redemptions) == 1:
+            redemption = redemptions[0]
+            msg = (
+                f"Delete redemption of ${float(redemption.amount):.2f} on {redemption.redemption_date}?\n\n"
+                "This cannot be undone."
+            )
+        else:
+            msg = (
+                f"Delete {len(redemptions)} redemptions?\n\n"
+                "This cannot be undone."
+            )
+
         reply = QtWidgets.QMessageBox.question(
             self,
             "Confirm Delete",
             msg,
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         )
-        
+
         if reply == QtWidgets.QMessageBox.Yes:
             try:
-                self.facade.delete_redemption(redemption_id)
+                for redemption in redemptions:
+                    self.facade.delete_redemption(redemption.id)
                 self.refresh_data()
+                if hasattr(self, "main_window") and self.main_window is not None:
+                    self.main_window.refresh_all_tabs()
                 QtWidgets.QMessageBox.information(
-                    self, "Success", "Redemption deleted"
+                    self, "Success", "Redemption(s) deleted"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
-                    self, "Error", f"Failed to delete redemption:\n{str(e)}"
+                    self, "Error", f"Failed to delete redemption(s):\n{str(e)}"
                 )
 
     def _clear_search(self):
@@ -461,12 +575,15 @@ class RedemptionsTab(QtWidgets.QWidget):
         """Clear search and reset date filter"""
         self.search_edit.clear()
         self.date_filter.set_all_time()
+        self.table.clearSelection()
+        self._on_selection_changed()
         self.refresh_data()
+        if hasattr(self, "table_filter"):
+            self.table_filter.clear_all_filters()
 
     def _export_csv(self):
         """Export redemptions to CSV"""
-        filtered = self._get_filtered_redemptions()
-        if not filtered:
+        if self.table.rowCount() == 0:
             QtWidgets.QMessageBox.information(self, "Export", "No data to export")
             return
 
@@ -482,26 +599,20 @@ class RedemptionsTab(QtWidgets.QWidget):
                 import csv
                 with open(filename, 'w', newline='') as f:
                     writer = csv.writer(f)
-                    writer.writerow([
-                        "Date", "Time", "User", "Site", "Amount",
-                        "Receipt Date", "Method", "Processed", "Notes"
-                    ])
-                    for redemption in filtered:
-                        writer.writerow([
-                            redemption.redemption_date,
-                            redemption.redemption_time or "",
-                            getattr(redemption, 'user_name', '') or "",
-                            getattr(redemption, 'site_name', '') or "",
-                            redemption.amount,
-                            redemption.receipt_date or "",
-                            getattr(redemption, 'method_name', '') or "",
-                            "Yes" if redemption.processed else "No",
-                            redemption.notes or ""
-                        ])
+                    headers = [self.table.horizontalHeaderItem(c).text() for c in range(self.table.columnCount())]
+                    writer.writerow(headers)
+                    for row in range(self.table.rowCount()):
+                        if self.table.isRowHidden(row):
+                            continue
+                        row_values = []
+                        for col in range(self.table.columnCount()):
+                            item = self.table.item(row, col)
+                            row_values.append(item.text() if item else "")
+                        writer.writerow(row_values)
 
                 QtWidgets.QMessageBox.information(
                     self, "Export Complete",
-                    f"Exported {len(filtered)} redemptions to:\n{filename}"
+                    f"Exported redemptions to:\n{filename}"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.critical(
@@ -521,7 +632,7 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.method_id = redemption.redemption_method_id if redemption else None
 
         self.setWindowTitle("Edit Redemption" if redemption else "Add Redemption")
-        self.resize(540, 520)
+        self.resize(700, 520)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -625,39 +736,51 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.notes_edit.setPlaceholderText("Notes...")
         self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
 
-        form.addWidget(QtWidgets.QLabel("Date"), 0, 0)
-        form.addLayout(date_row, 0, 1)
-        form.addWidget(QtWidgets.QLabel("Time"), 1, 0)
-        form.addLayout(time_row, 1, 1)
-        form.addWidget(QtWidgets.QLabel("User"), 2, 0)
-        form.addWidget(self.user_combo, 2, 1)
-        form.addWidget(QtWidgets.QLabel("Site"), 3, 0)
-        form.addWidget(self.site_combo, 3, 1)
-        form.addWidget(QtWidgets.QLabel("Method Type"), 4, 0)
-        form.addWidget(self.method_type_combo, 4, 1)
-        form.addWidget(QtWidgets.QLabel("Method"), 5, 0)
-        form.addWidget(self.method_combo, 5, 1)
-        form.addWidget(QtWidgets.QLabel("Amount"), 6, 0)
-        form.addLayout(amount_row, 6, 1)
-        form.addWidget(QtWidgets.QLabel("Receipt Date"), 7, 0)
-        form.addLayout(receipt_row, 7, 1)
-        form.addWidget(QtWidgets.QLabel("Redemption Type"), 8, 0)
-        form.addLayout(type_row, 8, 1)
-        form.addWidget(QtWidgets.QLabel("Flags"), 9, 0)
-        form.addLayout(checkbox_row, 9, 1)
+        date_time_row = QtWidgets.QHBoxLayout()
+        date_time_row.setSpacing(12)
+        date_time_row.addLayout(date_row, 1)
+        date_time_row.addWidget(QtWidgets.QLabel("Time:"))
+        date_time_row.addLayout(time_row, 1)
+
+        user_site_row = QtWidgets.QHBoxLayout()
+        user_site_row.setSpacing(12)
+        user_site_row.addWidget(self.user_combo, 1)
+        user_site_row.addWidget(QtWidgets.QLabel("Site:"))
+        user_site_row.addWidget(self.site_combo, 1)
+
+        method_row = QtWidgets.QHBoxLayout()
+        method_row.setSpacing(12)
+        method_row.addWidget(self.method_type_combo, 1)
+        method_row.addWidget(QtWidgets.QLabel("Method:"))
+        method_row.addWidget(self.method_combo, 1)
+
+        form.addWidget(QtWidgets.QLabel("Date:"), 0, 0)
+        form.addLayout(date_time_row, 0, 1)
+        form.addWidget(QtWidgets.QLabel("User:"), 1, 0)
+        form.addLayout(user_site_row, 1, 1)
+        form.addWidget(QtWidgets.QLabel("Method Type:"), 2, 0)
+        form.addLayout(method_row, 2, 1)
+        form.addWidget(QtWidgets.QLabel("Amount"), 3, 0)
+        form.addLayout(amount_row, 3, 1)
+        form.addWidget(QtWidgets.QLabel("Receipt Date"), 4, 0)
+        form.addLayout(receipt_row, 4, 1)
+        form.addWidget(QtWidgets.QLabel("Redemption Type"), 5, 0)
+        form.addLayout(type_row, 5, 1)
+        form.addWidget(QtWidgets.QLabel("Flags"), 6, 0)
+        form.addLayout(checkbox_row, 6, 1)
         notes_label = QtWidgets.QLabel("Notes")
         notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.addWidget(notes_label, 10, 0)
-        form.addWidget(self.notes_edit, 10, 1)
+        form.addWidget(notes_label, 7, 0)
+        form.addWidget(self.notes_edit, 7, 1)
 
         layout.addLayout(form)
         layout.addSpacing(8)
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
-        self.cancel_btn = QtWidgets.QPushButton("Cancel")
-        self.clear_btn = QtWidgets.QPushButton("Clear")
-        self.save_btn = QtWidgets.QPushButton("Save")
+        self.cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
+        self.clear_btn = QtWidgets.QPushButton("🧹 Clear")
+        self.save_btn = QtWidgets.QPushButton("💾 Save")
         self.save_btn.setObjectName("PrimaryButton")
         btn_row.addWidget(self.cancel_btn)
         btn_row.addWidget(self.clear_btn)
@@ -915,7 +1038,7 @@ class RedemptionDialog(QtWidgets.QDialog):
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
         ok_btn = QtWidgets.QPushButton("Select")
-        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
         btn_row.addWidget(cancel_btn)
         btn_row.addWidget(ok_btn)
         layout.addLayout(btn_row)
@@ -1099,7 +1222,7 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         self._on_delete = on_delete
 
         self.setWindowTitle("View Redemption")
-        self.resize(640, 520)
+        self.resize(700, 520)
 
         user_name = getattr(self.redemption, 'user_name', None)
         if not user_name:
@@ -1125,6 +1248,9 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
 
+        self._game_types = {t.id: t.name for t in self.facade.get_all_game_types()}
+        self._games = {g.id: g for g in self.facade.list_all_games()}
+
         tabs = QtWidgets.QTabWidget()
         tabs.setObjectName("SetupSubTabs")
         tabs.addTab(self._create_details_tab(user_name, site_name, method_name, method_type), "Details")
@@ -1133,18 +1259,24 @@ class RedemptionViewDialog(QtWidgets.QDialog):
 
         btn_row = QtWidgets.QHBoxLayout()
         if self._on_delete:
-            delete_btn = QtWidgets.QPushButton("Delete")
+            delete_btn = QtWidgets.QPushButton("🗑️ Delete")
             delete_btn.clicked.connect(self._on_delete)
             btn_row.addWidget(delete_btn)
 
         btn_row.addStretch(1)
 
         if self._on_edit:
-            edit_btn = QtWidgets.QPushButton("Edit")
+            edit_btn = QtWidgets.QPushButton("✏️ Edit")
             edit_btn.clicked.connect(self._on_edit)
             btn_row.addWidget(edit_btn)
 
-        close_btn = QtWidgets.QPushButton("Close")
+        view_realized_btn = None
+        if getattr(self.redemption, "id", None):
+            view_realized_btn = QtWidgets.QPushButton("👁️ View Realized Position")
+            view_realized_btn.clicked.connect(self._open_realized_position)
+            btn_row.addWidget(view_realized_btn)
+
+        close_btn = QtWidgets.QPushButton("✖️ Close")
         close_btn.clicked.connect(self.accept)
         btn_row.addWidget(close_btn)
 
@@ -1164,26 +1296,70 @@ class RedemptionViewDialog(QtWidgets.QDialog):
             return str(value)
 
         row = 0
+
+        def make_value_label(value):
+            value_label = QtWidgets.QLabel(value)
+            value_label.setObjectName("InfoField")
+            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            return value_label
+
         def add_row(label_text, value):
             nonlocal row
             label = QtWidgets.QLabel(label_text)
             label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label = QtWidgets.QLabel(value)
-            value_label.setObjectName("InfoField")
-            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            value_label = make_value_label(value)
             form.addWidget(label, row, 0)
             form.addWidget(value_label, row, 1, 1, 3)
             row += 1
 
-        add_row("Date:", fmt(self.redemption.redemption_date))
-        add_row("Time:", fmt(self.redemption.redemption_time))
-        add_row("User:", user_name or "—")
-        add_row("Site:", site_name or "—")
+        date_val = fmt(self.redemption.redemption_date)
+        time_val = fmt(self.redemption.redemption_time)
+        date_label = QtWidgets.QLabel("Date:")
+        date_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        date_value = make_value_label(date_val)
+        time_label = QtWidgets.QLabel("Time:")
+        time_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        time_value = make_value_label(time_val)
+        date_time_row = QtWidgets.QHBoxLayout()
+        date_time_row.setSpacing(12)
+        date_time_row.addWidget(date_value, 1)
+        date_time_row.addWidget(time_label)
+        date_time_row.addWidget(time_value, 1)
+        form.addWidget(date_label, row, 0)
+        form.addLayout(date_time_row, row, 1, 1, 3)
+        row += 1
+
+        user_label = QtWidgets.QLabel("User:")
+        user_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        user_value = make_value_label(user_name or "—")
+        site_label = QtWidgets.QLabel("Site:")
+        site_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        site_value = make_value_label(site_name or "—")
+        user_site_row = QtWidgets.QHBoxLayout()
+        user_site_row.setSpacing(12)
+        user_site_row.addWidget(user_value, 1)
+        user_site_row.addWidget(site_label)
+        user_site_row.addWidget(site_value, 1)
+        form.addWidget(user_label, row, 0)
+        form.addLayout(user_site_row, row, 1, 1, 3)
+        row += 1
         add_row("Amount:", f"${float(self.redemption.amount):.2f}")
         add_row("Fees:", f"${float(self.redemption.fees):.2f}")
         add_row("Receipt Date:", fmt(self.redemption.receipt_date))
-        add_row("Method Type:", method_type or "—")
-        add_row("Method:", method_name or "—")
+        method_type_label = QtWidgets.QLabel("Method Type:")
+        method_type_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        method_type_value = make_value_label(method_type or "—")
+        method_label = QtWidgets.QLabel("Method:")
+        method_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        method_value = make_value_label(method_name or "—")
+        method_row = QtWidgets.QHBoxLayout()
+        method_row.setSpacing(12)
+        method_row.addWidget(method_type_value, 1)
+        method_row.addWidget(method_label)
+        method_row.addWidget(method_value, 1)
+        form.addWidget(method_type_label, row, 0)
+        form.addLayout(method_row, row, 1, 1, 3)
+        row += 1
         add_row("Processed:", "Yes" if self.redemption.processed else "No")
         add_row("Type:", "Partial" if self.redemption.more_remaining else "Full")
 
@@ -1217,21 +1393,31 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         allocations = self._fetch_allocations()
         linked_sessions = self._get_linked_sessions()
 
-        try:
-            allocated_total = sum(Decimal(str(a.get("allocated_amount") or "0")) for a in allocations)
-        except Exception:
-            allocated_total = Decimal("0")
-        try:
-            redemption_amount = Decimal(str(getattr(self.redemption, "amount", "0") or "0"))
-        except Exception:
-            redemption_amount = Decimal("0")
-        unbased = redemption_amount - allocated_total
-        if unbased < Decimal("0"):
-            unbased = Decimal("0")
+        allocated_total = Decimal("0")
+        for alloc in allocations:
+            try:
+                allocated_total += Decimal(str(alloc.get("allocated_amount") or "0"))
+            except Exception:
+                continue
 
-        summary = QtWidgets.QLabel(
-            f"Allocated basis: ${allocated_total:.2f}    Unbased portion: ${unbased:.2f}"
-        )
+        redemption_amount = Decimal(str(getattr(self.redemption, "amount", "0") or "0"))
+        realized = self._fetch_realized_transaction()
+        realized_cost_basis = Decimal(str(realized.get("cost_basis", "0") or "0")) if realized else Decimal("0")
+
+        if getattr(self.redemption, "is_free_sc", False):
+            unbased = redemption_amount
+            summary_text = f"Cost basis: $0.00 (Free SC)    Unbased portion: ${unbased:.2f}"
+        else:
+            unbased = redemption_amount - allocated_total
+            if unbased < Decimal("0"):
+                unbased = Decimal("0")
+            summary_text = (
+                f"Allocated basis: ${allocated_total:.2f}    "
+                f"Cost basis: ${realized_cost_basis:.2f}    "
+                f"Unbased portion: ${unbased:.2f}"
+            )
+
+        summary = QtWidgets.QLabel(summary_text)
         summary.setStyleSheet("color: #444;")
         layout.addWidget(summary)
 
@@ -1249,7 +1435,7 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         else:
             table = QtWidgets.QTableWidget(0, 6)
             table.setHorizontalHeaderLabels(
-                ["Purchase Date", "Time", "Amount", "Allocated", "Remaining", "View Purchase"]
+                ["Purchase Date", "Time", "Amount", "SC Received", "Allocated", "View Purchase"]
             )
             table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
             table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -1272,13 +1458,13 @@ class RedemptionViewDialog(QtWidgets.QDialog):
                 tval = (a.get("purchase_time") or "00:00:00")[:5]
                 table.setItem(row_idx, 1, QtWidgets.QTableWidgetItem(tval))
                 table.setItem(row_idx, 2, QtWidgets.QTableWidgetItem(f"${float(a.get('amount') or 0):.2f}"))
-                table.setItem(row_idx, 3, QtWidgets.QTableWidgetItem(f"${float(a.get('allocated_amount') or 0):.2f}"))
-                table.setItem(row_idx, 4, QtWidgets.QTableWidgetItem(f"${float(a.get('remaining_amount') or 0):.2f}"))
+                table.setItem(row_idx, 3, QtWidgets.QTableWidgetItem(f"{float(a.get('sc_received') or 0):.2f}"))
+                table.setItem(row_idx, 4, QtWidgets.QTableWidgetItem(f"${float(a.get('allocated_amount') or 0):.2f}"))
 
-                view_btn = QtWidgets.QPushButton("View Purchase")
+                view_btn = QtWidgets.QPushButton("👁️ View Purchase")
                 view_btn.setObjectName("MiniButton")
                 view_btn.setFixedHeight(24)
-                view_btn.setFixedWidth(120)
+                view_btn.setFixedWidth(view_btn.sizeHint().width() + 12)
                 pid = a.get("purchase_id")
                 view_btn.clicked.connect(lambda _checked=False, pid=pid: self._open_purchase(pid))
                 view_container = QtWidgets.QWidget()
@@ -1306,8 +1492,10 @@ class RedemptionViewDialog(QtWidgets.QDialog):
             note.setWordWrap(True)
             sessions_layout.addWidget(note)
         else:
-            table = QtWidgets.QTableWidget(0, 5)
-            table.setHorizontalHeaderLabels(["Session Date", "Start Time", "End Date/Time", "Status", "View Session"])
+            table = QtWidgets.QTableWidget(0, 6)
+            table.setHorizontalHeaderLabels([
+                "Session Date", "Start Time", "End Date/Time", "Game Type", "Status", "View Session"
+            ])
             table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
             table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
             table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
@@ -1319,8 +1507,9 @@ class RedemptionViewDialog(QtWidgets.QDialog):
             table.setColumnWidth(0, 110)
             table.setColumnWidth(1, 80)
             table.setColumnWidth(2, 140)
-            table.setColumnWidth(3, 80)
-            table.setColumnWidth(4, 120)
+            table.setColumnWidth(3, 120)
+            table.setColumnWidth(4, 80)
+            table.setColumnWidth(5, 120)
 
             table.setRowCount(len(linked_sessions))
             for row_idx, session in enumerate(linked_sessions):
@@ -1331,12 +1520,14 @@ class RedemptionViewDialog(QtWidgets.QDialog):
                     end_time = (getattr(session, "end_time", None) or "00:00:00")
                     end_display = f"{session.end_date} {end_time[:5]}"
                 table.setItem(row_idx, 2, QtWidgets.QTableWidgetItem(end_display))
-                table.setItem(row_idx, 3, QtWidgets.QTableWidgetItem(session.status or "—"))
-
-                view_btn = QtWidgets.QPushButton("View Session")
+                game = self._games.get(session.game_id)
+                game_type = self._game_types.get(game.game_type_id, "—") if game else "—"
+                table.setItem(row_idx, 3, QtWidgets.QTableWidgetItem(game_type))
+                table.setItem(row_idx, 4, QtWidgets.QTableWidgetItem(session.status or "—"))
+                view_btn = QtWidgets.QPushButton("👁️ View Session")
                 view_btn.setObjectName("MiniButton")
                 view_btn.setFixedHeight(24)
-                view_btn.setFixedWidth(110)
+                view_btn.setFixedWidth(view_btn.sizeHint().width() + 12)
                 sid = session.id
                 view_btn.clicked.connect(lambda _checked=False, sid=sid: self._open_session(sid))
                 view_container = QtWidgets.QWidget()
@@ -1344,7 +1535,7 @@ class RedemptionViewDialog(QtWidgets.QDialog):
                 view_layout = QtWidgets.QGridLayout(view_container)
                 view_layout.setContentsMargins(6, 4, 6, 4)
                 view_layout.addWidget(view_btn, 0, 0, QtCore.Qt.AlignCenter)
-                table.setCellWidget(row_idx, 4, view_container)
+                table.setCellWidget(row_idx, 5, view_container)
                 table.setRowHeight(
                     row_idx,
                     max(table.rowHeight(row_idx), view_btn.sizeHint().height() + 16),
@@ -1356,6 +1547,14 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         layout.addStretch()
         return widget
 
+    def _fetch_realized_transaction(self):
+        if not getattr(self.redemption, "id", None):
+            return None
+        return self.facade.db.fetch_one(
+            "SELECT cost_basis, payout, net_pl FROM realized_transactions WHERE redemption_id = ?",
+            (self.redemption.id,),
+        )
+
     def _fetch_allocations(self):
         if not getattr(self.redemption, "id", None):
             return []
@@ -1364,6 +1563,7 @@ class RedemptionViewDialog(QtWidgets.QDialog):
                 ra.purchase_id,
                 ra.allocated_amount,
                 p.amount,
+                p.sc_received,
                 p.purchase_date,
                 p.purchase_time,
                 p.remaining_amount
@@ -1435,3 +1635,21 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         self.accept()
         dialog = ViewSessionDialog(self.facade, session=session, parent=self)
         dialog.exec()
+
+    def _open_realized_position(self):
+        redemption_id = getattr(self.redemption, "id", None)
+        if not redemption_id:
+            return
+
+        parent = self.parent()
+        main_window = None
+        while parent is not None:
+            if hasattr(parent, "main_window") and parent.main_window is not None:
+                main_window = parent.main_window
+                break
+            parent = parent.parent()
+
+        if main_window and hasattr(main_window, "open_realized_by_redemption"):
+            self.accept()
+            main_window.open_realized_by_redemption(redemption_id)
+            return

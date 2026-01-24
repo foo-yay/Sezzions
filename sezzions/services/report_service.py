@@ -88,9 +88,9 @@ class ReportService:
         session_query = f"""
             SELECT 
                 COUNT(*) as total_sessions,
-                COALESCE(SUM(CAST(profit_loss AS REAL)), 0) as total_profit_loss
+                COALESCE(SUM(CAST(net_taxable_pl AS REAL)), 0) as total_profit_loss
             FROM game_sessions 
-            WHERE {where_clause} AND profit_loss IS NOT NULL
+            WHERE {where_clause} AND net_taxable_pl IS NOT NULL
         """
         session_row = self.db.fetch_one(session_query, tuple(params))
         
@@ -141,9 +141,9 @@ class ReportService:
         session_query = f"""
             SELECT 
                 COUNT(*) as total_sessions,
-                COALESCE(SUM(CAST(profit_loss AS REAL)), 0) as total_profit_loss
+                COALESCE(SUM(CAST(net_taxable_pl AS REAL)), 0) as total_profit_loss
             FROM game_sessions 
-            WHERE {where_clause} AND profit_loss IS NOT NULL
+            WHERE {where_clause} AND net_taxable_pl IS NOT NULL
         """
         session_row = self.db.fetch_one(session_query, tuple(params))
         
@@ -201,29 +201,29 @@ class ReportService:
         - total_gain_loss: Net gain or loss
         """
         # Build WHERE clause
-        where_parts = ["user_id = ?", "cost_basis IS NOT NULL"]
+        where_parts = ["rt.user_id = ?"]
         params = [user_id]
         
         if site_id:
-            where_parts.append("site_id = ?")
+            where_parts.append("rt.site_id = ?")
             params.append(site_id)
         
         if start_date:
-            where_parts.append("redemption_date >= ?")
+            where_parts.append("rt.redemption_date >= ?")
             params.append(start_date.isoformat())
         
         if end_date:
-            where_parts.append("redemption_date <= ?")
+            where_parts.append("rt.redemption_date <= ?")
             params.append(end_date.isoformat())
         
         where_clause = " AND ".join(where_parts)
         
         query = f"""
             SELECT 
-                COALESCE(SUM(CAST(cost_basis AS REAL)), 0) as total_cost_basis,
-                COALESCE(SUM(CAST(amount AS REAL)), 0) as total_proceeds,
-                COALESCE(SUM(CAST(taxable_profit AS REAL)), 0) as total_gain_loss
-            FROM redemptions
+                COALESCE(SUM(CAST(rt.cost_basis AS REAL)), 0) as total_cost_basis,
+                COALESCE(SUM(CAST(rt.payout AS REAL)), 0) as total_proceeds,
+                COALESCE(SUM(CAST(rt.net_pl AS REAL)), 0) as total_gain_loss
+            FROM realized_transactions rt
             WHERE {where_clause}
         """
         
@@ -246,7 +246,7 @@ class ReportService:
         Generate session P/L report
         Returns dict with session statistics
         """
-        where_parts = ["profit_loss IS NOT NULL"]
+        where_parts = ["net_taxable_pl IS NOT NULL"]
         params = []
         
         if user_id:
@@ -270,12 +270,12 @@ class ReportService:
         query = f"""
             SELECT 
                 COUNT(*) as total_sessions,
-                COALESCE(SUM(CAST(profit_loss AS REAL)), 0) as total_pl,
-                COALESCE(AVG(CAST(profit_loss AS REAL)), 0) as avg_pl,
-                COUNT(CASE WHEN CAST(profit_loss AS REAL) > 0 THEN 1 END) as winning_sessions,
-                COUNT(CASE WHEN CAST(profit_loss AS REAL) < 0 THEN 1 END) as losing_sessions,
-                MAX(CAST(profit_loss AS REAL)) as best_session,
-                MIN(CAST(profit_loss AS REAL)) as worst_session
+                COALESCE(SUM(CAST(net_taxable_pl AS REAL)), 0) as total_pl,
+                COALESCE(AVG(CAST(net_taxable_pl AS REAL)), 0) as avg_pl,
+                COUNT(CASE WHEN CAST(net_taxable_pl AS REAL) > 0 THEN 1 END) as winning_sessions,
+                COUNT(CASE WHEN CAST(net_taxable_pl AS REAL) < 0 THEN 1 END) as losing_sessions,
+                MAX(CAST(net_taxable_pl AS REAL)) as best_session,
+                MIN(CAST(net_taxable_pl AS REAL)) as worst_session
             FROM game_sessions
             WHERE {where_clause}
         """

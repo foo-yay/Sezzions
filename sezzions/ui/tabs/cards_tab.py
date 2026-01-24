@@ -1,9 +1,11 @@
 """
 Cards tab - Manage payment cards
 """
+from datetime import date
 from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
 from models.card import Card
+from ui.table_header_filters import TableHeaderFilter
 
 
 class CardsTab(QtWidgets.QWidget):
@@ -66,6 +68,10 @@ class CardsTab(QtWidgets.QWidget):
         toolbar.addWidget(self.delete_btn)
         
         toolbar.addStretch()
+
+        export_btn = QtWidgets.QPushButton("📤 Export CSV")
+        export_btn.clicked.connect(self._export_csv)
+        toolbar.addWidget(export_btn)
         
         refresh_btn = QtWidgets.QPushButton("🔄 Refresh")
         refresh_btn.clicked.connect(self.refresh_data)
@@ -75,18 +81,19 @@ class CardsTab(QtWidgets.QWidget):
         
         # Table
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["Name", "User", "Last Four", "Status", "Notes"])
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(["Name", "User", "Last Four", "Cashback %", "Status", "Notes"])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
         self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectRows)
-        self.table.setSelectionMode(QtWidgets.QTableWidget.SingleSelection)
+        self.table.setSelectionMode(QtWidgets.QTableWidget.ExtendedSelection)
         self.table.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
-        self.table.itemDoubleClicked.connect(self._edit_card)
+        self.table.itemDoubleClicked.connect(self._view_card)
         layout.addWidget(self.table)
+        self.table_filter = TableHeaderFilter(self.table, refresh_callback=self.refresh_data)
         
         # Load data
         self.refresh_data()
@@ -106,7 +113,8 @@ class CardsTab(QtWidgets.QWidget):
                        if search_text in c.name.lower() 
                        or (hasattr(c, 'user_name') and c.user_name and search_text in c.user_name.lower())
                        or (c.last_four and search_text in c.last_four)
-                       or (c.notes and search_text in c.notes.lower())]
+                       or (c.notes and search_text in c.notes.lower())
+                       or (str(c.cashback_rate) and search_text in f"{float(c.cashback_rate):.2f}")]
         else:
             filtered = self.cards
         
@@ -125,19 +133,26 @@ class CardsTab(QtWidgets.QWidget):
             # Last Four
             last_four = card.last_four or "—"
             self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(last_four))
+
+            # Cashback %
+            cashback_str = f"{float(card.cashback_rate):.2f}%"
+            cashback_item = QtWidgets.QTableWidgetItem(cashback_str)
+            cashback_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            self.table.setItem(row, 3, cashback_item)
             
             # Status
             status = "Active" if card.is_active else "Inactive"
             status_item = QtWidgets.QTableWidgetItem(status)
             if not card.is_active:
                 status_item.setForeground(QtGui.QColor("#999"))
-            self.table.setItem(row, 3, status_item)
+            self.table.setItem(row, 4, status_item)
             
             # Notes
             notes = (card.notes or "")[:100]
-            self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(notes))
+            self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(notes))
         
         # Column sizing handled by header resize mode
+        self.table_filter.apply_filters()
     
     def _filter_cards(self):
         """Filter table based on search"""
@@ -145,25 +160,40 @@ class CardsTab(QtWidgets.QWidget):
 
     def _clear_search(self):
         self.search_edit.clear()
+        self.table.clearSelection()
+        self._on_selection_changed()
         self._populate_table()
 
     def _clear_all_filters(self):
-        self._clear_search()
+        self.search_edit.clear()
+        self.table.clearSelection()
+        self._on_selection_changed()
+        if hasattr(self, "table_filter"):
+            self.table_filter.clear_all_filters()
+        self._populate_table()
     
     def _on_selection_changed(self):
         """Enable/disable buttons based on selection"""
-        has_selection = len(self.table.selectedItems()) > 0
-        self.view_btn.setVisible(has_selection)
-        self.edit_btn.setVisible(has_selection)
+        selected_rows = self.table.selectionModel().selectedRows()
+        has_selection = bool(selected_rows)
+        self.view_btn.setVisible(len(selected_rows) == 1)
+        self.edit_btn.setVisible(len(selected_rows) == 1)
         self.delete_btn.setVisible(has_selection)
     
     def _get_selected_card_id(self):
         """Get ID of selected card"""
-        selected = self.table.selectedItems()
-        if not selected:
-            return None
-        row = selected[0].row()
-        return self.table.item(row, 0).data(QtCore.Qt.UserRole)
+        ids = self._get_selected_card_ids()
+        return ids[0] if ids else None
+
+    def _get_selected_card_ids(self):
+        ids = []
+        for row in self.table.selectionModel().selectedRows():
+            item = self.table.item(row.row(), 0)
+            if item is not None:
+                value = item.data(QtCore.Qt.UserRole)
+                if value is not None:
+                    ids.append(value)
+        return ids
     
     def _add_card(self):
         """Show dialog to add new card"""
@@ -174,6 +204,7 @@ class CardsTab(QtWidgets.QWidget):
                     user_id=dialog.user_id,
                     name=dialog.name_edit.text(),
                     last_four=dialog.last_four_edit.text() or None,
+                    cashback_rate=dialog.get_cashback_rate(),
                     notes=dialog.notes_edit.toPlainText() or None
                 )
                 self.refresh_data()
@@ -203,6 +234,7 @@ class CardsTab(QtWidgets.QWidget):
                     user_id=dialog.user_id,
                     name=dialog.name_edit.text(),
                     last_four=dialog.last_four_edit.text() or None,
+                    cashback_rate=dialog.get_cashback_rate(),
                     notes=dialog.notes_edit.toPlainText() or None,
                     is_active=dialog.active_check.isChecked()
                 )
@@ -217,31 +249,79 @@ class CardsTab(QtWidgets.QWidget):
     
     def _delete_card(self):
         """Delete selected card"""
-        card_id = self._get_selected_card_id()
-        if not card_id:
+        card_ids = self._get_selected_card_ids()
+        if not card_ids:
             return
-        
-        card = self.facade.get_card(card_id)
-        if not card:
+
+        cards = []
+        for card_id in card_ids:
+            card = self.facade.get_card(card_id)
+            if card:
+                cards.append(card)
+
+        if not cards:
             return
-        
+
+        if len(cards) == 1:
+            prompt = f"Delete card '{cards[0].name}'?\n\nThis cannot be undone."
+        else:
+            prompt = f"Delete {len(cards)} cards?\n\nThis cannot be undone."
+
         reply = QtWidgets.QMessageBox.question(
             self,
             "Confirm Delete",
-            f"Delete card '{card.name}'?\n\nThis cannot be undone.",
+            prompt,
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         )
-        
+
         if reply == QtWidgets.QMessageBox.Yes:
             try:
-                self.facade.delete_card(card_id)
+                for card in cards:
+                    self.facade.delete_card(card.id)
                 self.refresh_data()
                 QtWidgets.QMessageBox.information(
-                    self, "Success", f"Card '{card.name}' deleted"
+                    self, "Success", "Card(s) deleted"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
-                    self, "Error", f"Failed to delete card:\n{str(e)}"
+                    self, "Error", f"Failed to delete card(s):\n{str(e)}"
+                )
+
+    def _export_csv(self):
+        if self.table.rowCount() == 0:
+            QtWidgets.QMessageBox.information(self, "Export", "No data to export")
+            return
+
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Cards",
+            f"cards_{date.today().isoformat()}.csv",
+            "CSV Files (*.csv)"
+        )
+
+        if filename:
+            try:
+                import csv
+                with open(filename, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    headers = [self.table.horizontalHeaderItem(c).text() for c in range(self.table.columnCount())]
+                    writer.writerow(headers)
+                    for row in range(self.table.rowCount()):
+                        if self.table.isRowHidden(row):
+                            continue
+                        row_values = []
+                        for col in range(self.table.columnCount()):
+                            item = self.table.item(row, col)
+                            row_values.append(item.text() if item else "")
+                        writer.writerow(row_values)
+
+                QtWidgets.QMessageBox.information(
+                    self, "Export Complete",
+                    f"Exported cards to:\n{filename}"
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self, "Export Error", f"Failed to export:\n{str(e)}"
                 )
 
     def _view_card(self):
@@ -293,21 +373,44 @@ class CardDialog(QtWidgets.QDialog):
         layout.setHorizontalSpacing(10)
         layout.setVerticalSpacing(12)
         layout.setColumnStretch(1, 1)
-        
-        # User selector
-        user_layout = QtWidgets.QHBoxLayout()
+        layout.setColumnStretch(3, 1)
+        # Card Name + Active
+        self.name_edit = QtWidgets.QLineEdit()
+        if card:
+            self.name_edit.setText(card.name)
+        name_label = QtWidgets.QLabel("Card Name:")
+        name_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+
+        self.active_check = QtWidgets.QCheckBox()
+        self.active_check.setChecked(card.is_active if card else True)
+        active_label = QtWidgets.QLabel("Active")
+        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+
+        name_row = QtWidgets.QHBoxLayout()
+        name_row.setSpacing(12)
+        name_row.addWidget(self.name_edit, 1)
+        name_row.addWidget(active_label)
+        name_row.addWidget(self.active_check)
+
+        layout.addWidget(name_label, 0, 0)
+        layout.addLayout(name_row, 0, 1, 1, 3)
+
+        # User
         self.user_combo = QtWidgets.QComboBox()
         self.user_combo.setEditable(True)
         self.user_combo.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
-        self.user_combo.setMinimumWidth(180)
-        
+        user_label = QtWidgets.QLabel("User:")
+        user_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        layout.addWidget(user_label, 1, 0)
+        layout.addWidget(self.user_combo, 1, 1, 1, 3)
+
         # Load users
         users = facade.get_all_users(active_only=True)
         self.user_map = {}
         for user in users:
             self.user_combo.addItem(user.name, user.id)
             self.user_map[user.id] = user.name
-        
+
         # Set current user if editing
         if card:
             index = self.user_combo.findData(card.user_id)
@@ -318,43 +421,29 @@ class CardDialog(QtWidgets.QDialog):
             if self.user_combo.isEditable():
                 self.user_combo.setEditText("")
                 self.user_combo.lineEdit().setPlaceholderText("Select a user")
-        
+
         self.user_combo.currentIndexChanged.connect(self._on_user_changed)
-        user_layout.addWidget(self.user_combo)
-        user_layout.addStretch()
-        user_label = QtWidgets.QLabel("User:")
-        user_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        layout.addWidget(user_label, 1, 0)
-        layout.addLayout(user_layout, 1, 1, 1, 3)
-        
-        # Name
-        self.name_edit = QtWidgets.QLineEdit()
-        if card:
-            self.name_edit.setText(card.name)
-        name_label = QtWidgets.QLabel("Card Name:")
-        name_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        layout.addWidget(name_label, 0, 0)
-        layout.addWidget(self.name_edit, 0, 1)
-        
+
         # Last Four
         self.last_four_edit = QtWidgets.QLineEdit()
         self.last_four_edit.setMaxLength(4)
-        self.last_four_edit.setMaximumWidth(80)
         if card and card.last_four:
             self.last_four_edit.setText(card.last_four)
         last_four_label = QtWidgets.QLabel("Last Four:")
         last_four_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        layout.addWidget(last_four_label, 1, 2)
-        layout.addWidget(self.last_four_edit, 1, 3)
-        
-        # Active
-        self.active_check = QtWidgets.QCheckBox()
-        self.active_check.setChecked(card.is_active if card else True)
-        active_label = QtWidgets.QLabel("Active")
-        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        layout.addWidget(active_label, 0, 2)
-        layout.addWidget(self.active_check, 0, 3)
-        
+        layout.addWidget(last_four_label, 2, 0)
+        layout.addWidget(self.last_four_edit, 2, 1)
+
+        # Cashback Rate
+        self.cashback_rate_edit = QtWidgets.QLineEdit()
+        self.cashback_rate_edit.setPlaceholderText("0.00")
+        if card:
+            self.cashback_rate_edit.setText(f"{float(card.cashback_rate):.2f}")
+        cashback_label = QtWidgets.QLabel("Cashback %:")
+        cashback_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        layout.addWidget(cashback_label, 2, 2)
+        layout.addWidget(self.cashback_rate_edit, 2, 3)
+
         # Notes
         self.notes_edit = QtWidgets.QTextEdit()
         if card and card.notes:
@@ -362,46 +451,56 @@ class CardDialog(QtWidgets.QDialog):
         notes_label = QtWidgets.QLabel("Notes:")
         notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
         self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-        layout.addWidget(notes_label, 2, 0, QtCore.Qt.AlignTop)
-        layout.addWidget(self.notes_edit, 2, 1, 1, 3)
+        layout.addWidget(notes_label, 3, 0)
+        layout.addWidget(self.notes_edit, 3, 1, 1, 3)
         
         # Buttons
         if self.read_only:
             btn_row = QtWidgets.QHBoxLayout()
+            btn_row.setSpacing(8)
             if self._on_delete:
-                delete_btn = QtWidgets.QPushButton("Delete")
+                delete_btn = QtWidgets.QPushButton("🗑️ Delete")
                 delete_btn.clicked.connect(self._on_delete)
                 btn_row.addWidget(delete_btn)
             btn_row.addStretch(1)
             if self._on_edit:
-                edit_btn = QtWidgets.QPushButton("Edit")
+                edit_btn = QtWidgets.QPushButton("✏️ Edit")
                 edit_btn.clicked.connect(self._on_edit)
                 btn_row.addWidget(edit_btn)
-            close_btn = QtWidgets.QPushButton("Close")
+            close_btn = QtWidgets.QPushButton("✖️ Close")
             close_btn.clicked.connect(self.accept)
             btn_row.addWidget(close_btn)
-            layout.addLayout(btn_row, 3, 0, 1, 4)
+            layout.addLayout(btn_row, 4, 0, 1, 4)
         else:
-            button_box = QtWidgets.QDialogButtonBox(
-                QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel
-            )
-            button_box.accepted.connect(self._validate_and_accept)
-            button_box.rejected.connect(self.reject)
-            layout.addWidget(button_box, 3, 0, 1, 4)
+            btn_row = QtWidgets.QHBoxLayout()
+            btn_row.addStretch(1)
+            btn_row.setSpacing(8)
+            cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
+            save_btn = QtWidgets.QPushButton("💾 Save")
+            save_btn.setObjectName("PrimaryButton")
+            cancel_btn.clicked.connect(self.reject)
+            save_btn.clicked.connect(self._validate_and_accept)
+            btn_row.addWidget(cancel_btn)
+            btn_row.addWidget(save_btn)
+            layout.addLayout(btn_row, 4, 0, 1, 4)
         
         # Set initial user_id
         self._on_user_changed()
 
         if self.read_only:
-            for widget in (self.user_combo, self.name_edit, self.last_four_edit, self.active_check, self.notes_edit):
+            for widget in (self.user_combo, self.name_edit, self.last_four_edit, self.cashback_rate_edit, self.active_check, self.notes_edit):
                 widget.setEnabled(False)
             if not (card and card.notes):
                 notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
                 self.notes_edit.setPlaceholderText("-")
                 self.notes_edit.setFixedHeight(self.notes_edit.fontMetrics().lineSpacing() + 12)
+            else:
+                notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+                self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
 
         self.name_edit.textChanged.connect(self._validate_inline)
         self.last_four_edit.textChanged.connect(self._validate_inline)
+        self.cashback_rate_edit.textChanged.connect(self._validate_inline)
         self.user_combo.currentTextChanged.connect(self._validate_inline)
         self._validate_inline()
 
@@ -454,6 +553,17 @@ class CardDialog(QtWidgets.QDialog):
             self._set_invalid(self.last_four_edit, "Last four must be numeric")
         else:
             self._set_valid(self.last_four_edit)
+        rate_text = self.cashback_rate_edit.text().strip()
+        if rate_text:
+            try:
+                rate_val = float(rate_text)
+                if rate_val < 0 or rate_val > 100:
+                    raise ValueError("out of range")
+                self._set_valid(self.cashback_rate_edit)
+            except Exception:
+                self._set_invalid(self.cashback_rate_edit, "Cashback % must be 0-100")
+        else:
+            self._set_valid(self.cashback_rate_edit)
     
     def _validate_and_accept(self):
         """Validate input and accept dialog"""
@@ -476,5 +586,21 @@ class CardDialog(QtWidgets.QDialog):
                 self, "Validation Error", "Last four must be numeric"
             )
             return
+
+        rate_text = self.cashback_rate_edit.text().strip()
+        if rate_text:
+            try:
+                rate_val = float(rate_text)
+                if rate_val < 0 or rate_val > 100:
+                    raise ValueError("out of range")
+            except Exception:
+                QtWidgets.QMessageBox.warning(
+                    self, "Validation Error", "Cashback % must be between 0 and 100"
+                )
+                return
         
         self.accept()
+
+    def get_cashback_rate(self) -> float:
+        text = self.cashback_rate_edit.text().strip()
+        return float(text) if text else 0.0

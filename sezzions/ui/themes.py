@@ -235,12 +235,12 @@ class Theme:
                 background: {surface};
                 border: 1px solid {border};
                 border-radius: 12px;
-                padding: 8px 12px;
-                margin: 6px 6px 10px 6px;
+                padding: 6px 10px;
+                margin: 4px 4px 8px 4px;
                 color: {text_muted};
-                min-height: 26px;
-                min-width: 130px;
-                max-width: 160px;
+                min-height: 24px;
+                min-width: 110px;
+                max-width: 140px;
                 font-weight: 600;
             }}
             QTabBar#MainTabs::tab:selected {{

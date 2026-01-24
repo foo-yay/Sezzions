@@ -76,14 +76,22 @@ def test_validate_fifo_redemptions_without_allocation(test_db, sample_user, samp
 
 def test_validate_session_calculations_valid(test_db, sample_user, sample_site, sample_game, game_session_service):
     """Test validation passes for correct session P/L"""
-    game_session_service.create_session(
+    session = game_session_service.create_session(
         user_id=sample_user.id,
         site_id=sample_site.id,
         game_id=sample_game.id,
         session_date=date(2026, 1, 10),
         starting_balance=Decimal("100.00"),
+        starting_redeemable=Decimal("0.00"),
         ending_balance=Decimal("120.00"),
+        ending_redeemable=Decimal("20.00"),
         calculate_pl=True
+    )
+    game_session_service.update_session(
+        session.id,
+        status="Closed",
+        end_date=session.session_date,
+        end_time="23:59:59",
     )
     
     validation_service = ValidationService(test_db)
@@ -134,13 +142,21 @@ def test_validate_all(test_db, sample_user, sample_site, purchase_repo, redempti
         apply_fifo=True
     )
     
-    game_session_service.create_session(
+    session = game_session_service.create_session(
         user_id=sample_user.id,
         site_id=sample_site.id,
         game_id=sample_game.id,
         session_date=date(2026, 1, 10),
         starting_balance=Decimal("50.00"),
-        ending_balance=Decimal("60.00")
+        starting_redeemable=Decimal("0.00"),
+        ending_balance=Decimal("60.00"),
+        ending_redeemable=Decimal("10.00")
+    )
+    game_session_service.update_session(
+        session.id,
+        status="Closed",
+        end_date=session.session_date,
+        end_time="23:59:59",
     )
     
     validation_service = ValidationService(test_db)

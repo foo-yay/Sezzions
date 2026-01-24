@@ -40,6 +40,11 @@ Follow the Planner’s decisions and keep changes minimal.
 ### UI & Structure
 - [ ] Finalize UI redesign in `qt_app.py`
 - [ ] Safely deprecate `session2.py` (no breaking imports)
+- [ ] Multi-selection delete controls (hide View/Edit for multi-select; keep Delete)
+- [ ] Setup tab CSV export buttons
+- [ ] Setup Tools tab (import/export templates, backups, recalcs)
+- [ ] Fix Setup dialog button spacing
+- [ ] Realized tab parity updates
 
 ---
 
@@ -49,6 +54,13 @@ Follow the Planner’s decisions and keep changes minimal.
 - [ ] Add user-defined tax withholding rate (Settings)
 - [ ] Consolidated tax reporting based on session outcomes
 - [ ] Consolidated balance tracker per Site/User (cleaner Unrealized-style view)
+- [ ] Redemption methods: no default method type
+- [ ] Redemption methods: user required
+- [ ] Card cashback % field
+- [ ] Session+purchase timing conflict investigation
+- [ ] Warn on partial redemption vs balance (legacy parity)
+- [ ] Redemption delete/recalc parity (legacy parity)
+- [ ] Recover dormant SC on close-balance delete
 
 ---
 
