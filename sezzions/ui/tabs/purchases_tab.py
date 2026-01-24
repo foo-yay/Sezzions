@@ -683,18 +683,16 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.card_id = purchase.card_id if purchase else None
         
         self.setWindowTitle("Edit Purchase" if purchase else "Add Purchase")
-        self.resize(700, 520)
+        self.setMinimumWidth(700)
         
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
 
         form = QtWidgets.QGridLayout()
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(10)
-        form.setColumnStretch(1, 1)
-        form.setColumnMinimumWidth(0, 120)
-        form.setColumnMinimumWidth(1, 300)
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(12)
+        form.setContentsMargins(0, 0, 0, 0)
 
         self.date_edit = QtWidgets.QLineEdit()
         self.date_edit.setPlaceholderText("MM/DD/YY")
@@ -704,20 +702,10 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.today_btn.clicked.connect(self._set_today)
         self.calendar_btn.clicked.connect(self._pick_date)
 
-        date_row = QtWidgets.QHBoxLayout()
-        date_row.setSpacing(8)
-        date_row.addWidget(self.date_edit, 1)
-        date_row.addWidget(self.calendar_btn)
-        date_row.addWidget(self.today_btn)
-
         self.time_edit = QtWidgets.QLineEdit()
         self.time_edit.setPlaceholderText("HH:MM")
         self.now_btn = QtWidgets.QPushButton("Now")
         self.now_btn.clicked.connect(self._set_now)
-        time_row = QtWidgets.QHBoxLayout()
-        time_row.setSpacing(8)
-        time_row.addWidget(self.time_edit, 1)
-        time_row.addWidget(self.now_btn)
 
         self.user_combo = QtWidgets.QComboBox()
         self.user_combo.setEditable(True)
@@ -746,61 +734,66 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.cashback_rate_label.setObjectName("HelperText")
         self.cashback_edit = QtWidgets.QLineEdit()
         self.cashback_edit.setPlaceholderText("Auto-calculated")
+        self.cashback_edit.setVisible(False)
 
         self.notes_edit = QtWidgets.QPlainTextEdit()
         self.notes_edit.setPlaceholderText("Notes...")
-        self.notes_edit.setFixedHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+        self.notes_edit.setFixedHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 16)
 
-        date_time_row = QtWidgets.QHBoxLayout()
-        date_time_row.setSpacing(12)
-        date_time_row.addLayout(date_row, 1)
-        date_time_row.addWidget(QtWidgets.QLabel("Time:"))
-        date_time_row.addLayout(time_row, 1)
+        # Row 0: Date + buttons | Time + button
+        date_label = QtWidgets.QLabel("Date:")
+        form.addWidget(date_label, 0, 0)
+        form.addWidget(self.date_edit, 0, 1)
+        form.addWidget(self.calendar_btn, 0, 2)
+        form.addWidget(self.today_btn, 0, 3)
+        
+        time_label = QtWidgets.QLabel("Time:")
+        form.addWidget(time_label, 0, 4)
+        form.addWidget(self.time_edit, 0, 5)
+        form.addWidget(self.now_btn, 0, 6)
 
-        user_site_row = QtWidgets.QHBoxLayout()
-        user_site_row.setSpacing(12)
-        user_site_row.addWidget(self.user_combo, 1)
-        user_site_row.addWidget(QtWidgets.QLabel("Site:"))
-        user_site_row.addWidget(self.site_combo, 1)
+        # Row 1: User | Site
+        user_label = QtWidgets.QLabel("User:")
+        form.addWidget(user_label, 1, 0)
+        form.addWidget(self.user_combo, 1, 1, 1, 3)  # span to align with date field+buttons
+        
+        site_label = QtWidgets.QLabel("Site:")
+        form.addWidget(site_label, 1, 4)
+        form.addWidget(self.site_combo, 1, 5, 1, 2)  # span to align with time field+button
 
-        amount_container = QtWidgets.QVBoxLayout()
-        amount_container.setSpacing(4)
-        amount_container.addWidget(self.amount_edit)
-        amount_container.addWidget(self.cashback_rate_label)
+        # Row 2: Card | Amount + Cashback
+        card_label = QtWidgets.QLabel("Card:")
+        form.addWidget(card_label, 2, 0)
+        form.addWidget(self.card_combo, 2, 1, 1, 3)
+        
+        amount_label = QtWidgets.QLabel("Amount:")
+        form.addWidget(amount_label, 2, 4)
+        form.addWidget(self.amount_edit, 2, 5)
+        form.addWidget(self.cashback_rate_label, 2, 6)
 
-        card_amount_row = QtWidgets.QHBoxLayout()
-        card_amount_row.setSpacing(12)
-        card_amount_row.addWidget(self.card_combo, 1)
-        card_amount_row.addWidget(QtWidgets.QLabel("Amount:"))
-        card_amount_row.addLayout(amount_container, 1)
+        # Row 3: SC Received | Starting SC
+        sc_label = QtWidgets.QLabel("SC Received:")
+        form.addWidget(sc_label, 3, 0)
+        form.addWidget(self.sc_edit, 3, 1, 1, 3)
+        
+        starting_label = QtWidgets.QLabel("Starting SC:")
+        form.addWidget(starting_label, 3, 4)
+        form.addWidget(self.start_sc_edit, 3, 5, 1, 2)
 
-        start_sc_container = QtWidgets.QVBoxLayout()
-        start_sc_container.setSpacing(4)
-        start_sc_container.addWidget(self.start_sc_edit)
-        start_sc_container.addWidget(self.balance_check_label)
+        # Row 4: Balance check (aligned with input fields)
+        form.addWidget(self.balance_check_label, 4, 1, 1, 6)
 
-        sc_start_row = QtWidgets.QHBoxLayout()
-        sc_start_row.setSpacing(12)
-        sc_start_row.addWidget(self.sc_edit, 1)
-        sc_start_row.addWidget(QtWidgets.QLabel("Starting SC:"))
-        sc_start_row.addLayout(start_sc_container, 1)
-
-        form.addWidget(QtWidgets.QLabel("Date:"), 0, 0)
-        form.addLayout(date_time_row, 0, 1)
-        form.addWidget(QtWidgets.QLabel("User:"), 1, 0)
-        form.addLayout(user_site_row, 1, 1)
-        form.addWidget(QtWidgets.QLabel("Card:"), 2, 0)
-        form.addLayout(card_amount_row, 2, 1)
-        form.addWidget(QtWidgets.QLabel("SC Received:"), 3, 0)
-        form.addLayout(sc_start_row, 3, 1)
-
-        notes_label = QtWidgets.QLabel("Notes")
+        # Row 5: Notes label and field
+        notes_label = QtWidgets.QLabel("Notes:")
         notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.addWidget(notes_label, 4, 0)
-        form.addWidget(self.notes_edit, 4, 1)
+        form.addWidget(notes_label, 5, 0)
+        form.addWidget(self.notes_edit, 5, 1, 1, 6)
+
+        # Set column stretches for proper sizing
+        form.setColumnStretch(1, 2)  # Date/User/Card/SC field
+        form.setColumnStretch(5, 2)  # Time/Site/Amount/StartingSC field
 
         layout.addLayout(form)
-        layout.addSpacing(8)
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
@@ -1413,7 +1406,7 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         self._on_delete = on_delete
 
         self.setWindowTitle("View Purchase")
-        self.resize(700, 650)
+        self.setMinimumWidth(700)
 
         user_name = getattr(self.purchase, 'user_name', None)
         if not user_name:
@@ -1473,26 +1466,17 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         layout.setSpacing(12)
 
         form = QtWidgets.QGridLayout()
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(10)
-        form.setColumnStretch(1, 1)
-        form.setColumnMinimumWidth(0, 120)
-        form.setColumnMinimumWidth(1, 300)
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(12)
+        form.setContentsMargins(0, 0, 0, 0)
 
         def make_value_label(value, wrap=False):
             value_label = QtWidgets.QLabel(value)
             value_label.setObjectName("InfoField")
             value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
             value_label.setWordWrap(wrap)
+            value_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
             return value_label
-
-        def add_row(label_text, value, row, wrap=False):
-            label = QtWidgets.QLabel(label_text)
-            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label = make_value_label(value, wrap=wrap)
-            form.addWidget(label, row, 0)
-            form.addWidget(value_label, row, 1)
-            return row + 1
 
         def format_date(value):
             if not value:
@@ -1507,101 +1491,85 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         def format_time(value):
             return value[:5] if value else "—"
 
-        row = 0
+        # Row 0: Date | Time
         date_val = format_date(self.purchase.purchase_date)
         time_val = format_time(self.purchase.purchase_time)
-        date_row_label = QtWidgets.QLabel("Date:")
-        date_row_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        date_value = make_value_label(date_val)
+        date_label = QtWidgets.QLabel("Date:")
+        form.addWidget(date_label, 0, 0)
+        form.addWidget(make_value_label(date_val), 0, 1, 1, 3)
+        
         time_label = QtWidgets.QLabel("Time:")
-        time_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        time_value = make_value_label(time_val)
-        date_time_row = QtWidgets.QHBoxLayout()
-        date_time_row.setSpacing(12)
-        date_time_row.addWidget(date_value, 1)
-        date_time_row.addWidget(time_label)
-        date_time_row.addWidget(time_value, 1)
-        form.addWidget(date_row_label, row, 0)
-        form.addLayout(date_time_row, row, 1)
-        row += 1
+        form.addWidget(time_label, 0, 4)
+        form.addWidget(make_value_label(time_val), 0, 5, 1, 2)
 
+        # Row 1: User | Site
         user_label = QtWidgets.QLabel("User:")
-        user_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        user_value = make_value_label(user_name or "—")
+        form.addWidget(user_label, 1, 0)
+        form.addWidget(make_value_label(user_name or "—"), 1, 1, 1, 3)
+        
         site_label = QtWidgets.QLabel("Site:")
-        site_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        site_value = make_value_label(site_name or "—")
-        user_site_row = QtWidgets.QHBoxLayout()
-        user_site_row.setSpacing(12)
-        user_site_row.addWidget(user_value, 1)
-        user_site_row.addWidget(site_label)
-        user_site_row.addWidget(site_value, 1)
-        form.addWidget(user_label, row, 0)
-        form.addLayout(user_site_row, row, 1)
-        row += 1
+        form.addWidget(site_label, 1, 4)
+        form.addWidget(make_value_label(site_name or "—"), 1, 5, 1, 2)
 
+        # Row 2: Card | Amount + Cashback
         amount_val = f"${float(self.purchase.amount):.2f}"
         cashback_val = f"${float(self.purchase.cashback_earned):.2f}"
         card_label = QtWidgets.QLabel("Card:")
-        card_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        card_value = make_value_label(card_name or "—")
+        form.addWidget(card_label, 2, 0)
+        form.addWidget(make_value_label(card_name or "—"), 2, 1, 1, 3)
+        
         amount_label = QtWidgets.QLabel("Amount:")
-        amount_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        amount_value = make_value_label(f"{amount_val} (Cashback {cashback_val})")
-        card_amount_row = QtWidgets.QHBoxLayout()
-        card_amount_row.setSpacing(12)
-        card_amount_row.addWidget(card_value, 1)
-        card_amount_row.addWidget(amount_label)
-        card_amount_row.addWidget(amount_value, 1)
-        form.addWidget(card_label, row, 0)
-        form.addLayout(card_amount_row, row, 1)
-        row += 1
+        form.addWidget(amount_label, 2, 4)
+        form.addWidget(make_value_label(amount_val), 2, 5)
+        cashback_label = QtWidgets.QLabel(f"Cashback: {cashback_val}")
+        cashback_label.setObjectName("HelperText")
+        form.addWidget(cashback_label, 2, 6)
 
+        # Row 3: SC Received | Starting SC
         sc_received_val = f"{float(self.purchase.sc_received):.2f}"
         starting_sc_val = f"{float(self.purchase.starting_sc_balance):.2f}"
         sc_label = QtWidgets.QLabel("SC Received:")
-        sc_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        sc_value = make_value_label(sc_received_val)
+        form.addWidget(sc_label, 3, 0)
+        form.addWidget(make_value_label(sc_received_val), 3, 1, 1, 3)
+        
         starting_label = QtWidgets.QLabel("Starting SC:")
-        starting_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        starting_value = make_value_label(starting_sc_val)
-        sc_row = QtWidgets.QHBoxLayout()
-        sc_row.setSpacing(12)
-        sc_row.addWidget(sc_value, 1)
-        sc_row.addWidget(starting_label)
-        sc_row.addWidget(starting_value, 1)
-        form.addWidget(sc_label, row, 0)
-        form.addLayout(sc_row, row, 1)
-        row += 1
+        form.addWidget(starting_label, 3, 4)
+        form.addWidget(make_value_label(starting_sc_val), 3, 5, 1, 2)
 
-        row = add_row("Remaining", f"${float(self.purchase.remaining_amount):.2f}", row)
+        # Row 4: Remaining (full width)
+        remaining_label = QtWidgets.QLabel("Remaining:")
+        form.addWidget(remaining_label, 4, 0)
+        form.addWidget(make_value_label(f"${float(self.purchase.remaining_amount):.2f}"), 4, 1, 1, 6)
 
-        notes_label = QtWidgets.QLabel("Notes")
+        # Row 5: Notes label and field
         notes_value = self.purchase.notes or ""
-        notes_label.setAlignment(
-            QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_value else QtCore.Qt.AlignVCenter)
-        )
-        form.addWidget(notes_label, row, 0)
+        notes_label = QtWidgets.QLabel("Notes:")
+        notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        
         if notes_value:
+            # Multi-line notes
             notes_edit = QtWidgets.QPlainTextEdit()
-            notes_edit.setObjectName("NotesField")
+            notes_edit.setPlainText(notes_value)
+            notes_edit.setFixedHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 16)
             notes_edit.setReadOnly(True)
             notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
-            notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
-            notes_edit.setPlainText(notes_value)
-            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-            form.addWidget(notes_edit, row, 1)
+            form.addWidget(notes_label, 5, 0)
+            form.addWidget(notes_edit, 5, 1, 1, 6)
         else:
-            notes_field = QtWidgets.QLabel("—")
-            notes_field.setObjectName("InfoField")
-            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            notes_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-            fixed_height = max(notes_field.sizeHint().height(), 26)
-            notes_field.setFixedHeight(fixed_height)
-            form.addWidget(notes_field, row, 1, QtCore.Qt.AlignVCenter)
+            # Empty notes: single line field
+            notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            notes_field = QtWidgets.QLineEdit()
+            notes_field.setText("—")
+            notes_field.setReadOnly(True)
+            notes_field.setFocusPolicy(QtCore.Qt.NoFocus)
+            form.addWidget(notes_label, 5, 0)
+            form.addWidget(notes_field, 5, 1, 1, 6)
+
+        # Set column stretches for proper sizing
+        form.setColumnStretch(1, 2)  # Date/User/Card/SC field
+        form.setColumnStretch(5, 2)  # Time/Site/Amount/StartingSC field
 
         layout.addLayout(form)
-        layout.addStretch(1)
         return widget
 
     def _create_related_tab(self) -> QtWidgets.QWidget:
@@ -1651,6 +1619,11 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             table.setColumnWidth(1, 140)
             table.setColumnWidth(2, 110)
             table.setColumnWidth(3, 120)
+            
+            # Limit height to show ~3 rows
+            row_height = table.verticalHeader().defaultSectionSize()
+            header_height = table.horizontalHeader().height()
+            table.setMaximumHeight(header_height + (row_height * 3) + 10)
 
             table.setRowCount(len(allocations))
             for row, alloc in enumerate(allocations):
@@ -1705,6 +1678,11 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             table.setColumnWidth(2, 150)
             table.setColumnWidth(3, 90)
             table.setColumnWidth(4, 120)
+            
+            # Limit height to show ~3 rows
+            row_height = table.verticalHeader().defaultSectionSize()
+            header_height = table.horizontalHeader().height()
+            table.setMaximumHeight(header_height + (row_height * 3) + 10)
 
             table.setRowCount(len(self.linked_sessions))
             for row, session in enumerate(self.linked_sessions):
