@@ -621,7 +621,7 @@ class RedemptionsTab(QtWidgets.QWidget):
 
 
 class RedemptionDialog(QtWidgets.QDialog):
-    """Dialog for adding/editing redemptions"""
+    """Modern redemption dialog with streamlined sectioned layout"""
 
     def __init__(self, facade: AppFacade, parent=None, redemption: Redemption = None):
         super().__init__(parent)
@@ -632,16 +632,19 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.method_id = redemption.redemption_method_id if redemption else None
 
         self.setWindowTitle("Edit Redemption" if redemption else "Add Redemption")
-        self.resize(700, 520)
+        self.setMinimumWidth(700)
+        self.setMinimumHeight(850)  # Taller to accommodate all sections
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
 
         form = QtWidgets.QGridLayout()
-        form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(12)
+        form.setContentsMargins(10, 10, 10, 10)
 
+        # Initialize widgets
         self.date_edit = QtWidgets.QLineEdit()
         self.date_edit.setPlaceholderText("MM/DD/YY")
         self.today_btn = QtWidgets.QPushButton("Today")
@@ -650,42 +653,32 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.today_btn.clicked.connect(self._set_today)
         self.calendar_btn.clicked.connect(lambda: self._pick_date(self.date_edit))
 
-        date_row = QtWidgets.QHBoxLayout()
-        date_row.setSpacing(8)
-        date_row.addWidget(self.date_edit, 1)
-        date_row.addWidget(self.calendar_btn)
-        date_row.addWidget(self.today_btn)
-
         self.time_edit = QtWidgets.QLineEdit()
         self.time_edit.setPlaceholderText("HH:MM")
         self.now_btn = QtWidgets.QPushButton("Now")
         self.now_btn.clicked.connect(self._set_now)
-        time_row = QtWidgets.QHBoxLayout()
-        time_row.setSpacing(8)
-        time_row.addWidget(self.time_edit, 1)
-        time_row.addWidget(self.now_btn)
 
         self.user_combo = QtWidgets.QComboBox()
         self.user_combo.setEditable(True)
+        self.user_combo.lineEdit().setPlaceholderText("Choose...")
         users = facade.get_all_users(active_only=True)
-        user_names = [u.name for u in users]
-        self.user_combo.addItems(user_names)
         self._user_lookup = {u.name.lower(): u.id for u in users}
+        self.user_combo.addItems([u.name for u in users])
 
         self.site_combo = QtWidgets.QComboBox()
         self.site_combo.setEditable(True)
+        self.site_combo.lineEdit().setPlaceholderText("Choose...")
         sites = facade.get_all_sites(active_only=True)
-        site_names = [s.name for s in sites]
-        self.site_combo.addItems(site_names)
         self._site_lookup = {s.name.lower(): s.id for s in sites}
+        self.site_combo.addItems([s.name for s in sites])
 
         self.method_type_combo = QtWidgets.QComboBox()
         self.method_type_combo.setEditable(True)
-        self.method_type_combo.lineEdit().setPlaceholderText("Select a user first")
+        self.method_type_combo.lineEdit().setPlaceholderText("Select user first...")
 
         self.method_combo = QtWidgets.QComboBox()
         self.method_combo.setEditable(True)
-        self.method_combo.lineEdit().setPlaceholderText("Select a method type first")
+        self.method_combo.lineEdit().setPlaceholderText("Select method type first...")
 
         self._methods = facade.get_all_redemption_methods(active_only=True)
         self._method_lookup = {m.name.lower(): m.id for m in self._methods}
@@ -694,24 +687,15 @@ class RedemptionDialog(QtWidgets.QDialog):
 
         self.amount_edit = QtWidgets.QLineEdit()
         self.amount_edit.setPlaceholderText("0.00")
+        
         self.fees_edit = QtWidgets.QLineEdit()
-        self.fees_edit.setPlaceholderText("Optional fees")
-
-        amount_row = QtWidgets.QHBoxLayout()
-        amount_row.setSpacing(8)
-        amount_row.addWidget(self.amount_edit, 2)
-        amount_row.addWidget(QtWidgets.QLabel("Fees:"))
-        amount_row.addWidget(self.fees_edit, 1)
+        self.fees_edit.setPlaceholderText("0.00")
 
         self.receipt_edit = QtWidgets.QLineEdit()
         self.receipt_edit.setPlaceholderText("MM/DD/YY")
         self.receipt_btn = QtWidgets.QPushButton("📅")
         self.receipt_btn.setFixedWidth(44)
         self.receipt_btn.clicked.connect(lambda: self._pick_date(self.receipt_edit))
-        receipt_row = QtWidgets.QHBoxLayout()
-        receipt_row.setSpacing(8)
-        receipt_row.addWidget(self.receipt_edit, 1)
-        receipt_row.addWidget(self.receipt_btn)
 
         self.partial_radio = QtWidgets.QRadioButton("Partial (balance remains)")
         self.final_radio = QtWidgets.QRadioButton("Full (close basis)")
@@ -719,63 +703,196 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.redemption_group.addButton(self.partial_radio)
         self.redemption_group.addButton(self.final_radio)
 
-        type_row = QtWidgets.QHBoxLayout()
-        type_row.setSpacing(12)
-        type_row.addWidget(self.partial_radio)
-        type_row.addWidget(self.final_radio)
-        type_row.addStretch(1)
-
         self.processed_check = QtWidgets.QCheckBox("Processed")
-        checkbox_row = QtWidgets.QHBoxLayout()
-        checkbox_row.setSpacing(12)
-        checkbox_row.addWidget(self.processed_check)
-        checkbox_row.addStretch(1)
 
         self.notes_edit = QtWidgets.QPlainTextEdit()
-        self.notes_edit.setObjectName("NotesField")
-        self.notes_edit.setPlaceholderText("Notes...")
-        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
+        self.notes_edit.setPlaceholderText("Optional...")
+        self.notes_edit.setFixedHeight(80)
+        self.notes_edit.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
-        date_time_row = QtWidgets.QHBoxLayout()
-        date_time_row.setSpacing(12)
-        date_time_row.addLayout(date_row, 1)
-        date_time_row.addWidget(QtWidgets.QLabel("Time:"))
-        date_time_row.addLayout(time_row, 1)
+        # Section 1: When (Date/Time)
+        section1_header = self._create_section_header("📅  When")
+        form.addWidget(section1_header, 0, 0, 1, 7)
+        
+        when_section = QtWidgets.QWidget()
+        when_section.setObjectName("SectionBackground")
+        when_layout = QtWidgets.QGridLayout(when_section)
+        when_layout.setContentsMargins(12, 12, 12, 12)
+        when_layout.setHorizontalSpacing(12)
+        when_layout.setVerticalSpacing(8)
+        
+        # Row 0: Date label | Time label
+        date_label = QtWidgets.QLabel("Date:")
+        date_label.setObjectName("FieldLabel")
+        when_layout.addWidget(date_label, 0, 0, 1, 4)
+        
+        time_label = QtWidgets.QLabel("Time:")
+        time_label.setObjectName("FieldLabel")
+        when_layout.addWidget(time_label, 0, 4, 1, 3)
+        
+        # Row 1: Date + buttons | Time + button
+        when_layout.addWidget(self.date_edit, 1, 0, 1, 2)
+        when_layout.addWidget(self.calendar_btn, 1, 2)
+        when_layout.addWidget(self.today_btn, 1, 3)
+        when_layout.addWidget(self.time_edit, 1, 4, 1, 2)
+        when_layout.addWidget(self.now_btn, 1, 6)
+        
+        when_layout.setColumnStretch(0, 1)
+        when_layout.setColumnStretch(1, 1)
+        when_layout.setColumnStretch(4, 1)
+        when_layout.setColumnStretch(5, 1)
+        
+        form.addWidget(when_section, 1, 0, 1, 7)
 
-        user_site_row = QtWidgets.QHBoxLayout()
-        user_site_row.setSpacing(12)
-        user_site_row.addWidget(self.user_combo, 1)
-        user_site_row.addWidget(QtWidgets.QLabel("Site:"))
-        user_site_row.addWidget(self.site_combo, 1)
+        # Section 2: Transaction Details
+        section2_header = self._create_section_header("🏪  Transaction")
+        form.addWidget(section2_header, 2, 0, 1, 7)
+        
+        trans_section = QtWidgets.QWidget()
+        trans_section.setObjectName("SectionBackground")
+        trans_layout = QtWidgets.QGridLayout(trans_section)
+        trans_layout.setContentsMargins(12, 12, 12, 12)
+        trans_layout.setHorizontalSpacing(12)
+        trans_layout.setVerticalSpacing(8)
+        
+        # Row 0: User label | Site label (50/50 in 6-column grid)
+        user_label = QtWidgets.QLabel("User:")
+        user_label.setObjectName("FieldLabel")
+        trans_layout.addWidget(user_label, 0, 0, 1, 3)
+        
+        site_label = QtWidgets.QLabel("Site:")
+        site_label.setObjectName("FieldLabel")
+        trans_layout.addWidget(site_label, 0, 3, 1, 3)
+        
+        # Row 1: User | Site (50/50)
+        trans_layout.addWidget(self.user_combo, 1, 0, 1, 3)
+        trans_layout.addWidget(self.site_combo, 1, 3, 1, 3)
+        
+        # Add vertical spacer
+        spacer1 = QtWidgets.QSpacerItem(1, 15, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
+        trans_layout.addItem(spacer1, 2, 0)
 
-        method_row = QtWidgets.QHBoxLayout()
-        method_row.setSpacing(12)
-        method_row.addWidget(self.method_type_combo, 1)
-        method_row.addWidget(QtWidgets.QLabel("Method:"))
-        method_row.addWidget(self.method_combo, 1)
+        # Row 3: Method Type label | Method label (50/50)
+        method_type_label = QtWidgets.QLabel("Method Type:")
+        method_type_label.setObjectName("FieldLabel")
+        trans_layout.addWidget(method_type_label, 3, 0, 1, 3)
+        
+        method_label = QtWidgets.QLabel("Method:")
+        method_label.setObjectName("FieldLabel")
+        trans_layout.addWidget(method_label, 3, 3, 1, 3)
+        
+        # Row 4: Method Type | Method (50/50)
+        trans_layout.addWidget(self.method_type_combo, 4, 0, 1, 3)
+        trans_layout.addWidget(self.method_combo, 4, 3, 1, 3)
+        
+        trans_layout.setColumnStretch(0, 1)
+        trans_layout.setColumnStretch(1, 1)
+        trans_layout.setColumnStretch(2, 1)
+        trans_layout.setColumnStretch(3, 1)
+        trans_layout.setColumnStretch(4, 1)
+        trans_layout.setColumnStretch(5, 1)
+        
+        form.addWidget(trans_section, 3, 0, 1, 7)
 
-        form.addWidget(QtWidgets.QLabel("Date:"), 0, 0)
-        form.addLayout(date_time_row, 0, 1)
-        form.addWidget(QtWidgets.QLabel("User:"), 1, 0)
-        form.addLayout(user_site_row, 1, 1)
-        form.addWidget(QtWidgets.QLabel("Method Type:"), 2, 0)
-        form.addLayout(method_row, 2, 1)
-        form.addWidget(QtWidgets.QLabel("Amount"), 3, 0)
-        form.addLayout(amount_row, 3, 1)
-        form.addWidget(QtWidgets.QLabel("Receipt Date"), 4, 0)
-        form.addLayout(receipt_row, 4, 1)
-        form.addWidget(QtWidgets.QLabel("Redemption Type"), 5, 0)
-        form.addLayout(type_row, 5, 1)
-        form.addWidget(QtWidgets.QLabel("Flags"), 6, 0)
-        form.addLayout(checkbox_row, 6, 1)
-        notes_label = QtWidgets.QLabel("Notes")
-        notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.addWidget(notes_label, 7, 0)
-        form.addWidget(self.notes_edit, 7, 1)
+        # Section 3: Amount Details
+        section3_header = self._create_section_header("💰  Amount Details")
+        form.addWidget(section3_header, 4, 0, 1, 7)
+        
+        amount_section = QtWidgets.QWidget()
+        amount_section.setObjectName("SectionBackground")
+        amount_layout = QtWidgets.QVBoxLayout(amount_section)
+        amount_layout.setContentsMargins(12, 12, 12, 12)
+        amount_layout.setSpacing(8)
+        
+        # Row 0: Labels for Amount | Fees | Redemption Type
+        labels_row = QtWidgets.QHBoxLayout()
+        labels_row.setSpacing(12)
+        
+        amount_label = QtWidgets.QLabel("Amount ($):")
+        amount_label.setObjectName("FieldLabel")
+        labels_row.addWidget(amount_label, 1)
+        
+        fees_label = QtWidgets.QLabel("Fees ($):")
+        fees_label.setObjectName("FieldLabel")
+        labels_row.addWidget(fees_label, 1)
+        
+        type_label = QtWidgets.QLabel("Redemption Type:")
+        type_label.setObjectName("FieldLabel")
+        labels_row.addWidget(type_label, 2)
+        
+        amount_layout.addLayout(labels_row)
+        
+        # Row 1: Amount field | Fees field | Radio buttons
+        fields_row = QtWidgets.QHBoxLayout()
+        fields_row.setSpacing(12)
+        
+        fields_row.addWidget(self.amount_edit, 1)
+        fields_row.addWidget(self.fees_edit, 1)
+        
+        type_group = QtWidgets.QHBoxLayout()
+        type_group.setSpacing(12)
+        type_group.addWidget(self.partial_radio)
+        type_group.addWidget(self.final_radio)
+        fields_row.addLayout(type_group, 2)
+        
+        amount_layout.addLayout(fields_row)
+        
+        # Add vertical spacer
+        amount_layout.addSpacing(15)
+
+        # Row 2: Receipt Date label | Processed checkbox label
+        receipt_labels_row = QtWidgets.QHBoxLayout()
+        receipt_labels_row.setSpacing(12)
+        
+        receipt_label = QtWidgets.QLabel("Receipt Date:")
+        receipt_label.setObjectName("FieldLabel")
+        receipt_labels_row.addWidget(receipt_label, 1)
+        
+        processed_label = QtWidgets.QLabel("Processed:")
+        processed_label.setObjectName("FieldLabel")
+        receipt_labels_row.addWidget(processed_label, 1)
+        
+        amount_layout.addLayout(receipt_labels_row)
+        
+        # Row 3: Receipt Date field + button | Processed checkbox
+        receipt_fields_row = QtWidgets.QHBoxLayout()
+        receipt_fields_row.setSpacing(12)
+        
+        receipt_input_row = QtWidgets.QHBoxLayout()
+        receipt_input_row.setSpacing(4)
+        receipt_input_row.addWidget(self.receipt_edit)
+        receipt_input_row.addWidget(self.receipt_btn)
+        receipt_fields_row.addLayout(receipt_input_row, 1)
+        
+        receipt_fields_row.addWidget(self.processed_check, 1)
+        
+        amount_layout.addLayout(receipt_fields_row)
+        
+        form.addWidget(amount_section, 5, 0, 1, 7)
+
+        # Section 4: Notes
+        section4_header = self._create_section_header("📝  Notes")
+        form.addWidget(section4_header, 6, 0, 1, 7)
+        
+        notes_section = QtWidgets.QWidget()
+        notes_section.setObjectName("SectionBackground")
+        notes_layout = QtWidgets.QVBoxLayout(notes_section)
+        notes_layout.setContentsMargins(12, 12, 12, 12)
+        notes_layout.setSpacing(5)
+        
+        notes_layout.addWidget(self.notes_edit)
+        
+        form.addWidget(notes_section, 7, 0, 1, 7)
+
+        form.setColumnStretch(0, 1)
+        form.setColumnStretch(1, 1)
+        form.setColumnStretch(4, 1)
+        form.setColumnStretch(5, 1)
 
         layout.addLayout(form)
-        layout.addSpacing(8)
+        layout.addStretch(1)
 
+        # Action buttons
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
         self.cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
@@ -815,6 +932,12 @@ class RedemptionDialog(QtWidgets.QDialog):
             self._clear_form()
 
         self._validate_inline()
+    
+    def _create_section_header(self, text: str) -> QtWidgets.QLabel:
+        """Create a section header"""
+        label = QtWidgets.QLabel(text)
+        label.setObjectName("SectionHeader")
+        return label
 
     def _set_invalid(self, widget, message: str):
         widget.setProperty("invalid", True)
@@ -1212,7 +1335,7 @@ class RedemptionDialog(QtWidgets.QDialog):
 
 
 class RedemptionViewDialog(QtWidgets.QDialog):
-    """Dialog for viewing redemption details (read-only)"""
+    """Modern redemption view dialog with streamlined sectioned layout"""
 
     def __init__(self, redemption: Redemption, facade: AppFacade, parent=None, on_edit=None, on_delete=None):
         super().__init__(parent)
@@ -1222,7 +1345,8 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         self._on_delete = on_delete
 
         self.setWindowTitle("View Redemption")
-        self.resize(700, 520)
+        self.setMinimumWidth(700)
+        self.setMinimumHeight(850)
 
         user_name = getattr(self.redemption, 'user_name', None)
         if not user_name:
@@ -1283,19 +1407,21 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         layout.addLayout(btn_row)
 
     def _create_details_tab(self, user_name: str, site_name: str, method_name: str, method_type: Optional[str]) -> QtWidgets.QWidget:
+        """Create modern sectioned details tab"""
         widget = QtWidgets.QWidget()
-        form = QtWidgets.QGridLayout(widget)
-        form.setContentsMargins(10, 10, 10, 10)
-        form.setHorizontalSpacing(10)
+        layout = QtWidgets.QVBoxLayout(widget)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(16)
+
+        form = QtWidgets.QGridLayout()
+        form.setHorizontalSpacing(12)
         form.setVerticalSpacing(12)
-        form.setColumnStretch(1, 1)
+        form.setContentsMargins(10, 10, 10, 10)
 
         def fmt(value):
             if value is None or value == "":
                 return "—"
             return str(value)
-
-        row = 0
 
         def make_value_label(value):
             value_label = QtWidgets.QLabel(value)
@@ -1303,86 +1429,203 @@ class RedemptionViewDialog(QtWidgets.QDialog):
             value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
             return value_label
 
-        def add_row(label_text, value):
-            nonlocal row
-            label = QtWidgets.QLabel(label_text)
-            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label = make_value_label(value)
-            form.addWidget(label, row, 0)
-            form.addWidget(value_label, row, 1, 1, 3)
-            row += 1
-
+        # Section 1: When (Date/Time)
+        section1_header = self._create_section_header("📅  When")
+        form.addWidget(section1_header, 0, 0, 1, 7)
+        
+        when_section = QtWidgets.QWidget()
+        when_section.setObjectName("SectionBackground")
+        when_layout = QtWidgets.QGridLayout(when_section)
+        when_layout.setContentsMargins(12, 12, 12, 12)
+        when_layout.setHorizontalSpacing(12)
+        when_layout.setVerticalSpacing(8)
+        
+        # Row 0: Date label | Time label
+        date_label = QtWidgets.QLabel("Date:")
+        date_label.setObjectName("FieldLabel")
+        when_layout.addWidget(date_label, 0, 0, 1, 4)
+        
+        time_label = QtWidgets.QLabel("Time:")
+        time_label.setObjectName("FieldLabel")
+        when_layout.addWidget(time_label, 0, 4, 1, 3)
+        
+        # Row 1: Date value | Time value
         date_val = fmt(self.redemption.redemption_date)
         time_val = fmt(self.redemption.redemption_time)
-        date_label = QtWidgets.QLabel("Date:")
-        date_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         date_value = make_value_label(date_val)
-        time_label = QtWidgets.QLabel("Time:")
-        time_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         time_value = make_value_label(time_val)
-        date_time_row = QtWidgets.QHBoxLayout()
-        date_time_row.setSpacing(12)
-        date_time_row.addWidget(date_value, 1)
-        date_time_row.addWidget(time_label)
-        date_time_row.addWidget(time_value, 1)
-        form.addWidget(date_label, row, 0)
-        form.addLayout(date_time_row, row, 1, 1, 3)
-        row += 1
+        when_layout.addWidget(date_value, 1, 0, 1, 4)
+        when_layout.addWidget(time_value, 1, 4, 1, 3)
+        
+        when_layout.setColumnStretch(0, 1)
+        when_layout.setColumnStretch(1, 1)
+        when_layout.setColumnStretch(4, 1)
+        when_layout.setColumnStretch(5, 1)
+        
+        form.addWidget(when_section, 1, 0, 1, 7)
 
-        user_label = QtWidgets.QLabel("User:")
-        user_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        # Section 2: Transaction Details
+        section2_header = self._create_section_header("🏪  Transaction")
+        form.addWidget(section2_header, 2, 0, 1, 7)
+        
+        trans_section = QtWidgets.QWidget()
+        trans_section.setObjectName("SectionBackground")
+        trans_layout = QtWidgets.QGridLayout(trans_section)
+        trans_layout.setContentsMargins(12, 12, 12, 12)
+        trans_layout.setHorizontalSpacing(12)
+        trans_layout.setVerticalSpacing(8)
+        
+        # Row 0: User label | Site label (50/50 in 6-column grid)
+        user_label_hdr = QtWidgets.QLabel("User:")
+        user_label_hdr.setObjectName("FieldLabel")
+        trans_layout.addWidget(user_label_hdr, 0, 0, 1, 3)
+        
+        site_label_hdr = QtWidgets.QLabel("Site:")
+        site_label_hdr.setObjectName("FieldLabel")
+        trans_layout.addWidget(site_label_hdr, 0, 3, 1, 3)
+        
+        # Row 1: User value | Site value (50/50)
         user_value = make_value_label(user_name or "—")
-        site_label = QtWidgets.QLabel("Site:")
-        site_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         site_value = make_value_label(site_name or "—")
-        user_site_row = QtWidgets.QHBoxLayout()
-        user_site_row.setSpacing(12)
-        user_site_row.addWidget(user_value, 1)
-        user_site_row.addWidget(site_label)
-        user_site_row.addWidget(site_value, 1)
-        form.addWidget(user_label, row, 0)
-        form.addLayout(user_site_row, row, 1, 1, 3)
-        row += 1
-        add_row("Amount:", f"${float(self.redemption.amount):.2f}")
-        add_row("Fees:", f"${float(self.redemption.fees):.2f}")
-        add_row("Receipt Date:", fmt(self.redemption.receipt_date))
-        method_type_label = QtWidgets.QLabel("Method Type:")
-        method_type_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        method_type_value = make_value_label(method_type or "—")
-        method_label = QtWidgets.QLabel("Method:")
-        method_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        method_value = make_value_label(method_name or "—")
-        method_row = QtWidgets.QHBoxLayout()
-        method_row.setSpacing(12)
-        method_row.addWidget(method_type_value, 1)
-        method_row.addWidget(method_label)
-        method_row.addWidget(method_value, 1)
-        form.addWidget(method_type_label, row, 0)
-        form.addLayout(method_row, row, 1, 1, 3)
-        row += 1
-        add_row("Processed:", "Yes" if self.redemption.processed else "No")
-        add_row("Type:", "Partial" if self.redemption.more_remaining else "Full")
+        trans_layout.addWidget(user_value, 1, 0, 1, 3)
+        trans_layout.addWidget(site_value, 1, 3, 1, 3)
+        
+        # Add vertical spacer
+        spacer1 = QtWidgets.QSpacerItem(1, 15, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
+        trans_layout.addItem(spacer1, 2, 0)
 
+        # Row 3: Method Type label | Method label (50/50)
+        method_type_label = QtWidgets.QLabel("Method Type:")
+        method_type_label.setObjectName("FieldLabel")
+        trans_layout.addWidget(method_type_label, 3, 0, 1, 3)
+        
+        method_label = QtWidgets.QLabel("Method:")
+        method_label.setObjectName("FieldLabel")
+        trans_layout.addWidget(method_label, 3, 3, 1, 3)
+        
+        # Row 4: Method Type value | Method value (50/50)
+        method_type_value = make_value_label(method_type or "—")
+        method_value = make_value_label(method_name or "—")
+        trans_layout.addWidget(method_type_value, 4, 0, 1, 3)
+        trans_layout.addWidget(method_value, 4, 3, 1, 3)
+        
+        trans_layout.setColumnStretch(0, 1)
+        trans_layout.setColumnStretch(1, 1)
+        trans_layout.setColumnStretch(2, 1)
+        trans_layout.setColumnStretch(3, 1)
+        trans_layout.setColumnStretch(4, 1)
+        trans_layout.setColumnStretch(5, 1)
+        
+        form.addWidget(trans_section, 3, 0, 1, 7)
+
+        # Section 3: Amount Details
+        section3_header = self._create_section_header("💰  Amount Details")
+        form.addWidget(section3_header, 4, 0, 1, 7)
+        
+        amount_section = QtWidgets.QWidget()
+        amount_section.setObjectName("SectionBackground")
+        amount_layout = QtWidgets.QVBoxLayout(amount_section)
+        amount_layout.setContentsMargins(12, 12, 12, 12)
+        amount_layout.setSpacing(8)
+        
+        # Row 0: Labels for Amount | Fees | Redemption Type
+        labels_row = QtWidgets.QHBoxLayout()
+        labels_row.setSpacing(12)
+        
+        amount_label = QtWidgets.QLabel("Amount ($):")
+        amount_label.setObjectName("FieldLabel")
+        labels_row.addWidget(amount_label, 1)
+        
+        fees_label = QtWidgets.QLabel("Fees ($):")
+        fees_label.setObjectName("FieldLabel")
+        labels_row.addWidget(fees_label, 1)
+        
+        type_label = QtWidgets.QLabel("Redemption Type:")
+        type_label.setObjectName("FieldLabel")
+        labels_row.addWidget(type_label, 2)
+        
+        amount_layout.addLayout(labels_row)
+        
+        # Row 1: Amount value | Fees value | Type value
+        values_row = QtWidgets.QHBoxLayout()
+        values_row.setSpacing(12)
+        
+        amount_value = make_value_label(f"${float(self.redemption.amount):.2f}")
+        fees_value = make_value_label(f"${float(self.redemption.fees):.2f}")
+        type_value = make_value_label("Partial (balance remains)" if self.redemption.more_remaining else "Full (close basis)")
+        
+        values_row.addWidget(amount_value, 1)
+        values_row.addWidget(fees_value, 1)
+        values_row.addWidget(type_value, 2)
+        
+        amount_layout.addLayout(values_row)
+        
+        # Add vertical spacer
+        amount_layout.addSpacing(15)
+
+        # Row 2: Receipt Date label | Processed label
+        receipt_labels_row = QtWidgets.QHBoxLayout()
+        receipt_labels_row.setSpacing(12)
+        
+        receipt_label = QtWidgets.QLabel("Receipt Date:")
+        receipt_label.setObjectName("FieldLabel")
+        receipt_labels_row.addWidget(receipt_label, 1)
+        
+        processed_label = QtWidgets.QLabel("Processed:")
+        processed_label.setObjectName("FieldLabel")
+        receipt_labels_row.addWidget(processed_label, 1)
+        
+        amount_layout.addLayout(receipt_labels_row)
+        
+        # Row 3: Receipt Date value | Processed value
+        receipt_values_row = QtWidgets.QHBoxLayout()
+        receipt_values_row.setSpacing(12)
+        
+        receipt_value = make_value_label(fmt(self.redemption.receipt_date))
+        processed_value = make_value_label("Yes" if self.redemption.processed else "No")
+        
+        receipt_values_row.addWidget(receipt_value, 1)
+        receipt_values_row.addWidget(processed_value, 1)
+        
+        amount_layout.addLayout(receipt_values_row)
+        
+        form.addWidget(amount_section, 5, 0, 1, 7)
+
+        # Section 4: Notes
+        section4_header = self._create_section_header("📝  Notes")
+        form.addWidget(section4_header, 6, 0, 1, 7)
+        
+        notes_section = QtWidgets.QWidget()
+        notes_section.setObjectName("SectionBackground")
+        notes_layout = QtWidgets.QVBoxLayout(notes_section)
+        notes_layout.setContentsMargins(12, 12, 12, 12)
+        notes_layout.setSpacing(5)
+        
         notes_text = self.redemption.notes or ""
-        notes_label = QtWidgets.QLabel("Notes:")
-        notes_label.setAlignment(
-            QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_text else QtCore.Qt.AlignVCenter)
-        )
         notes_value = QtWidgets.QLabel(notes_text or "—")
         notes_value.setObjectName("InfoField")
         notes_value.setWordWrap(True)
-        notes_value.setAlignment(
-            QtCore.Qt.AlignLeft | (QtCore.Qt.AlignTop if notes_text else QtCore.Qt.AlignVCenter)
-        )
-        form.addWidget(
-            notes_label,
-            row,
-            0,
-            QtCore.Qt.AlignTop if notes_text else QtCore.Qt.AlignVCenter,
-        )
-        form.addWidget(notes_value, row, 1, 1, 3)
+        notes_value.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        notes_value.setMinimumHeight(80)
+        notes_layout.addWidget(notes_value)
+        
+        form.addWidget(notes_section, 7, 0, 1, 7)
+
+        form.setColumnStretch(0, 1)
+        form.setColumnStretch(1, 1)
+        form.setColumnStretch(4, 1)
+        form.setColumnStretch(5, 1)
+
+        layout.addLayout(form)
+        layout.addStretch(1)
 
         return widget
+    
+    def _create_section_header(self, text: str) -> QtWidgets.QLabel:
+        """Create a section header"""
+        label = QtWidgets.QLabel(text)
+        label.setObjectName("SectionHeader")
+        return label
 
     def _create_related_tab(self) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
