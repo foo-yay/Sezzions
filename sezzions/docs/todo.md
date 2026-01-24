@@ -21,3 +21,8 @@
 - [X] Ensure redemption delete parity (FIFO + realized unwind)
 - [X] Normalize time handling on edits (legacy parity)
 - [X] Full Realized tab parity port
+
+##
+
+- [ ] Need to account for multi-day closed sessions on the day they close, not the day they start.
+- [ ] 

@@ -314,6 +314,42 @@ class Theme:
             QLabel {{
                 color: {text};
             }}
+            
+            /* Dialog Section Styles */
+            QWidget#SectionBackground {{
+                background: {surface2};
+                border: 1px solid rgba(0, 0, 0, 0.12);
+                border-radius: 8px;
+                padding: 12px;
+            }}
+            QWidget#BalanceCheck {{
+                background: {surface};
+                border: 1px solid {border};
+                border-radius: 6px;
+                padding: 8px;
+            }}
+            QWidget#RemainingBasis {{
+                background: {surface};
+                border: 1px solid {border};
+                border-radius: 6px;
+                padding: 8px;
+            }}
+            QLabel#SectionHeader {{
+                font-size: 13px;
+                font-weight: 600;
+                color: {text};
+                padding-top: 4px;
+                padding-bottom: 2px;
+            }}
+            QLabel#FieldLabel {{
+                font-weight: 600;
+                color: {text};
+            }}
+            QLabel#CashbackLabel {{
+                color: {accent};
+                font-size: 11px;
+                font-weight: 500;
+            }}
         """
 
 

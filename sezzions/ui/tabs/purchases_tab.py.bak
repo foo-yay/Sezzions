@@ -714,7 +714,7 @@ class PurchaseDialog(QtWidgets.QDialog):
         
         self.setWindowTitle("Edit Purchase" if purchase else "Add Purchase")
         self.setMinimumWidth(650)
-        self.setMinimumHeight(800)  # Ensure dialog is tall enough for all sections
+        self.setMinimumHeight(700)  # Ensure dialog is tall enough for all sections
         
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -826,45 +826,43 @@ class PurchaseDialog(QtWidgets.QDialog):
         trans_layout.setHorizontalSpacing(12)
         trans_layout.setVerticalSpacing(8)
         
-        # Row 0: User label | Site label (50/50 split in 6-column grid)
+        # Row 0: User label | Site label (50/50 split)
         user_label = QtWidgets.QLabel("User:")
         user_label.setObjectName("FieldLabel")
-        trans_layout.addWidget(user_label, 0, 0, 1, 3)
+        trans_layout.addWidget(user_label, 0, 0, 1, 4)
         
         site_label = QtWidgets.QLabel("Site:")
         site_label.setObjectName("FieldLabel")
-        trans_layout.addWidget(site_label, 0, 3, 1, 3)
+        trans_layout.addWidget(site_label, 0, 4, 1, 3)
         
         # Row 1: User | Site (50/50 split)
-        trans_layout.addWidget(self.user_combo, 1, 0, 1, 3)
-        trans_layout.addWidget(self.site_combo, 1, 3, 1, 3)
+        trans_layout.addWidget(self.user_combo, 1, 0, 1, 4)
+        trans_layout.addWidget(self.site_combo, 1, 4, 1, 3)
         
         # Add vertical spacer between field groups
-        spacer1 = QtWidgets.QSpacerItem(1, 15, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
+        spacer1 = QtWidgets.QSpacerItem(1, 10, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
         trans_layout.addItem(spacer1, 2, 0)
 
-        # Row 3: Card label | Amount label | Cashback label (swapped order)
+        # Row 3: Card label | Amount label | Cashback label
         card_label = QtWidgets.QLabel("Payment Card:")
         card_label.setObjectName("FieldLabel")
         trans_layout.addWidget(card_label, 3, 0, 1, 2)
         
-        amount_label = QtWidgets.QLabel("Amount ($):")
-        amount_label.setObjectName("FieldLabel")
-        trans_layout.addWidget(amount_label, 3, 2, 1, 2)
-        
         cashback_label = QtWidgets.QLabel("Cashback ($):")
         cashback_label.setObjectName("FieldLabel")
-        trans_layout.addWidget(cashback_label, 3, 4, 1, 2)
+        trans_layout.addWidget(cashback_label, 3, 2, 1, 2)
         
-        # Row 4: Card | Amount | Cashback (swapped order)
+        amount_label = QtWidgets.QLabel("Amount ($):")
+        amount_label.setObjectName("FieldLabel")
+        trans_layout.addWidget(amount_label, 3, 4, 1, 3)
+        
+        # Row 4: Card | Cashback | Amount
         trans_layout.addWidget(self.card_combo, 4, 0, 1, 2)
-        trans_layout.addWidget(self.amount_edit, 4, 2, 1, 2)
-        trans_layout.addWidget(self.cashback_edit, 4, 4, 1, 2)
+        trans_layout.addWidget(self.cashback_edit, 4, 2, 1, 2)
+        trans_layout.addWidget(self.amount_edit, 4, 4, 1, 3)
         
         trans_layout.setColumnStretch(0, 1)
         trans_layout.setColumnStretch(1, 1)
-        trans_layout.setColumnStretch(2, 1)
-        trans_layout.setColumnStretch(3, 1)
         trans_layout.setColumnStretch(4, 1)
         trans_layout.setColumnStretch(5, 1)
         
@@ -895,7 +893,7 @@ class PurchaseDialog(QtWidgets.QDialog):
         sc_layout.addWidget(self.start_sc_edit, 1, 4, 1, 3)
         
         # Add vertical spacer between field groups
-        spacer2 = QtWidgets.QSpacerItem(1, 15, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
+        spacer2 = QtWidgets.QSpacerItem(1, 10, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
         sc_layout.addItem(spacer2, 2, 0)
 
         # Row 3: Balance check (full width with styled background)
@@ -1507,6 +1505,7 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.card_combo.setCurrentIndex(-1)
         self.card_combo.setEditText("")
         self.card_combo.lineEdit().setPlaceholderText("Select user first...")
+        self.cashback_rate_label.setText("Cashback: —")
         self.cashback_edit.clear()
         self.amount_edit.clear()
         self.sc_edit.clear()
@@ -1684,47 +1683,45 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         trans_layout.setHorizontalSpacing(12)
         trans_layout.setVerticalSpacing(8)
         
-        # Row 0: User label | Site label (50/50 split in 6-column grid)
+        # Row 0: User label | Site label
         user_label = QtWidgets.QLabel("User:")
         user_label.setObjectName("FieldLabel")
         trans_layout.addWidget(user_label, 0, 0, 1, 3)
         
         site_label = QtWidgets.QLabel("Site:")
         site_label.setObjectName("FieldLabel")
-        trans_layout.addWidget(site_label, 0, 3, 1, 3)
+        trans_layout.addWidget(site_label, 0, 4, 1, 3)
         
-        # Row 1: User value | Site value (50/50 split)
+        # Row 1: User value | Site value
         trans_layout.addWidget(make_value_label(user_name or "—"), 1, 0, 1, 3)
-        trans_layout.addWidget(make_value_label(site_name or "—"), 1, 3, 1, 3)
+        trans_layout.addWidget(make_value_label(site_name or "—"), 1, 4, 1, 3)
         
         # Add vertical spacer
-        spacer1 = QtWidgets.QSpacerItem(1, 15, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
+        spacer1 = QtWidgets.QSpacerItem(1, 10, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
         trans_layout.addItem(spacer1, 2, 0)
 
-        # Row 3: Card label | Amount label | Cashback label (swapped order)
+        # Row 3: Card label | Amount label
         card_label = QtWidgets.QLabel("Payment Card:")
         card_label.setObjectName("FieldLabel")
         trans_layout.addWidget(card_label, 3, 0, 1, 2)
         
         amount_label = QtWidgets.QLabel("Amount ($):")
         amount_label.setObjectName("FieldLabel")
-        trans_layout.addWidget(amount_label, 3, 2, 1, 2)
+        trans_layout.addWidget(amount_label, 3, 4, 1, 3)
         
-        cashback_label = QtWidgets.QLabel("Cashback ($):")
-        cashback_label.setObjectName("FieldLabel")
-        trans_layout.addWidget(cashback_label, 3, 4, 1, 2)
-        
-        # Row 4: Card value | Amount value | Cashback value (swapped order)
-        cashback_val = f"${float(self.purchase.cashback_earned):.2f}"
+        # Row 4: Card value | Amount value + Cashback
         amount_val = f"${float(self.purchase.amount):.2f}"
+        cashback_val = f"${float(self.purchase.cashback_earned):.2f}"
         trans_layout.addWidget(make_value_label(card_name or "—"), 4, 0, 1, 2)
-        trans_layout.addWidget(make_value_label(amount_val), 4, 2, 1, 2)
-        trans_layout.addWidget(make_value_label(cashback_val), 4, 4, 1, 2)
+        trans_layout.addWidget(make_value_label(amount_val), 4, 4, 1, 3)
+        
+        # Cashback display
+        cashback_label = QtWidgets.QLabel(f"Cashback: {cashback_val}")
+        cashback_label.setObjectName("CashbackLabel")
+        trans_layout.addWidget(cashback_label, 4, 2, 1, 2)
         
         trans_layout.setColumnStretch(0, 1)
         trans_layout.setColumnStretch(1, 1)
-        trans_layout.setColumnStretch(2, 1)
-        trans_layout.setColumnStretch(3, 1)
         trans_layout.setColumnStretch(4, 1)
         trans_layout.setColumnStretch(5, 1)
         
@@ -1757,7 +1754,7 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         sc_layout.addWidget(make_value_label(starting_sc_val), 1, 4, 1, 3)
         
         # Add vertical spacer
-        spacer2 = QtWidgets.QSpacerItem(1, 15, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
+        spacer2 = QtWidgets.QSpacerItem(1, 10, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
         sc_layout.addItem(spacer2, 2, 0)
 
         # Row 3: Remaining (full width with styled background)
