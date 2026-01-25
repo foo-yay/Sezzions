@@ -38,7 +38,7 @@ class Theme:
             QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
                 background: {input_bg};
                 border: 1px solid {border};
-                border-radius: 8px;
+                border-radius: 6px;
                 padding: 6px 10px;
                 min-height: 26px;
             }}
