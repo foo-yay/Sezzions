@@ -25,4 +25,4 @@
 ##
 
 - [ ] Need to account for multi-day closed sessions on the day they close, not the day they start.
-- [ ] 
+- [ ] Scenario:  1 SC starting redeemable on Stake.  Buy in 2500 for 2506.25.  Gamble and end with 2500.89.  It's showing -0.11 loss because it's counting the 1 SC as part of the loss, but since I never session'd that 1 SC to begin with, it shouldn't be counted.

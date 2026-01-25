@@ -1595,7 +1595,7 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         
         self.setWindowTitle(f"Purchase Details (ID: {purchase.id})")
         self.setMinimumWidth(700)
-        self.setMinimumHeight(750)
+        self.setMinimumHeight(550)
         
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -1634,22 +1634,10 @@ class PurchaseViewDialog(QtWidgets.QDialog):
     def _create_details_tab(self, user_name: str, site_name: str, card_name: str) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(16)
+        layout.setContentsMargins(16, 12, 16, 16)
+        layout.setSpacing(10)
 
-        form = QtWidgets.QGridLayout()
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(8)
-        form.setContentsMargins(0, 0, 0, 0)
-
-        def make_value_label(value, wrap=False):
-            value_label = QtWidgets.QLabel(value)
-            value_label.setObjectName("InfoField")
-            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label.setWordWrap(wrap)
-            value_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-            return value_label
-
+        # Format helpers
         def format_date(value):
             if not value:
                 return "—"
@@ -1662,181 +1650,163 @@ class PurchaseViewDialog(QtWidgets.QDialog):
 
         def format_time(value):
             return value[:5] if value else "—"
+        
+        def make_selectable_label(text, bold=False, align_right=False):
+            """Create a selectable QLabel"""
+            label = QtWidgets.QLabel(text)
+            if bold:
+                font = label.font()
+                font.setBold(True)
+                label.setFont(font)
+            label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard)
+            label.setCursor(QtCore.Qt.IBeamCursor)
+            if align_right:
+                label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            return label
+        
+        def create_section(title_text):
+            """Create a section container with header"""
+            section_widget = QtWidgets.QWidget()
+            section_widget.setObjectName("SectionBackground")
+            section_layout = QtWidgets.QVBoxLayout(section_widget)
+            section_layout.setContentsMargins(10, 8, 10, 8)
+            section_layout.setSpacing(6)
+            
+            # Section header
+            section_header = QtWidgets.QLabel(title_text)
+            section_header.setObjectName("SectionHeader")
+            section_layout.addWidget(section_header)
+            
+            return section_widget, section_layout
 
-        # Section 1: When (Date/Time)
-        section1_header = self._create_section_header("📅  When")
-        form.addWidget(section1_header, 0, 0, 1, 7)
+        # ========== TWO-COLUMN LAYOUT ==========
+        columns_widget = QtWidgets.QWidget()
+        columns_layout = QtWidgets.QHBoxLayout(columns_widget)
+        columns_layout.setContentsMargins(0, 0, 0, 0)
+        columns_layout.setSpacing(12)
         
-        when_section = QtWidgets.QWidget()
-        when_section.setObjectName("SectionBackground")
-        when_layout = QtWidgets.QGridLayout(when_section)
-        when_layout.setContentsMargins(12, 12, 12, 12)
-        when_layout.setHorizontalSpacing(12)
-        when_layout.setVerticalSpacing(8)
+        # ========== LEFT COLUMN ==========
+        left_column = QtWidgets.QVBoxLayout()
+        left_column.setSpacing(10)
         
-        # Row 0: Date label | Time label
+        # When Section
+        when_section, when_layout = create_section("📅 When")
+        when_grid = QtWidgets.QGridLayout()
+        when_grid.setContentsMargins(0, 4, 0, 0)
+        when_grid.setHorizontalSpacing(12)
+        when_grid.setVerticalSpacing(6)
+        
         date_label = QtWidgets.QLabel("Date:")
-        date_label.setObjectName("FieldLabel")
-        when_layout.addWidget(date_label, 0, 0, 1, 3)
+        date_label.setStyleSheet("color: palette(mid);")
+        when_grid.addWidget(date_label, 0, 0)
+        when_grid.addWidget(make_selectable_label(format_date(self.purchase.purchase_date)), 0, 1)
         
         time_label = QtWidgets.QLabel("Time:")
-        time_label.setObjectName("FieldLabel")
-        when_layout.addWidget(time_label, 0, 4, 1, 3)
+        time_label.setStyleSheet("color: palette(mid);")
+        when_grid.addWidget(time_label, 1, 0)
+        when_grid.addWidget(make_selectable_label(format_time(self.purchase.purchase_time)), 1, 1)
         
-        # Row 1: Date value | Time value
-        date_val = format_date(self.purchase.purchase_date)
-        time_val = format_time(self.purchase.purchase_time)
-        date_value = make_value_label(date_val)
-        when_layout.addWidget(date_value, 1, 0, 1, 3)
-        time_value = make_value_label(time_val)
-        when_layout.addWidget(time_value, 1, 4, 1, 3)
+        when_grid.setColumnStretch(1, 1)
+        when_layout.addLayout(when_grid)
+        left_column.addWidget(when_section)
         
-        when_layout.setColumnStretch(0, 1)
-        when_layout.setColumnStretch(1, 1)
-        when_layout.setColumnStretch(4, 1)
-        when_layout.setColumnStretch(5, 1)
+        # Details Section
+        details_section, details_layout = create_section("🏪 Details")
+        details_grid = QtWidgets.QGridLayout()
+        details_grid.setContentsMargins(0, 4, 0, 0)
+        details_grid.setHorizontalSpacing(12)
+        details_grid.setVerticalSpacing(6)
         
-        form.addWidget(when_section, 1, 0, 1, 7)
-
-        # Section 2: Transaction Details
-        section2_header = self._create_section_header("🏪  Transaction")
-        form.addWidget(section2_header, 2, 0, 1, 7)
-        
-        trans_section = QtWidgets.QWidget()
-        trans_section.setObjectName("SectionBackground")
-        trans_layout = QtWidgets.QGridLayout(trans_section)
-        trans_layout.setContentsMargins(12, 12, 12, 12)
-        trans_layout.setHorizontalSpacing(12)
-        trans_layout.setVerticalSpacing(8)
-        
-        # Row 0: User label | Site label (50/50 split in 6-column grid)
         user_label = QtWidgets.QLabel("User:")
-        user_label.setObjectName("FieldLabel")
-        trans_layout.addWidget(user_label, 0, 0, 1, 3)
+        user_label.setStyleSheet("color: palette(mid);")
+        details_grid.addWidget(user_label, 0, 0)
+        details_grid.addWidget(make_selectable_label(user_name or "—"), 0, 1)
         
         site_label = QtWidgets.QLabel("Site:")
-        site_label.setObjectName("FieldLabel")
-        trans_layout.addWidget(site_label, 0, 3, 1, 3)
+        site_label.setStyleSheet("color: palette(mid);")
+        details_grid.addWidget(site_label, 1, 0)
+        details_grid.addWidget(make_selectable_label(site_name or "—"), 1, 1)
         
-        # Row 1: User value | Site value (50/50 split)
-        trans_layout.addWidget(make_value_label(user_name or "—"), 1, 0, 1, 3)
-        trans_layout.addWidget(make_value_label(site_name or "—"), 1, 3, 1, 3)
+        card_label = QtWidgets.QLabel("Card:")
+        card_label.setStyleSheet("color: palette(mid);")
+        details_grid.addWidget(card_label, 2, 0)
+        details_grid.addWidget(make_selectable_label(card_name or "—"), 2, 1)
         
-        # Add vertical spacer
-        spacer1 = QtWidgets.QSpacerItem(1, 15, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
-        trans_layout.addItem(spacer1, 2, 0)
-
-        # Row 3: Card label | Amount label | Cashback label (swapped order)
-        card_label = QtWidgets.QLabel("Payment Card:")
-        card_label.setObjectName("FieldLabel")
-        trans_layout.addWidget(card_label, 3, 0, 1, 2)
+        details_grid.setColumnStretch(1, 1)
+        details_layout.addLayout(details_grid)
+        left_column.addWidget(details_section)
+        left_column.addStretch(1)
         
-        amount_label = QtWidgets.QLabel("Amount ($):")
-        amount_label.setObjectName("FieldLabel")
-        trans_layout.addWidget(amount_label, 3, 2, 1, 2)
+        columns_layout.addLayout(left_column, 1)
         
-        cashback_label = QtWidgets.QLabel("Cashback ($):")
-        cashback_label.setObjectName("FieldLabel")
-        trans_layout.addWidget(cashback_label, 3, 4, 1, 2)
+        # ========== RIGHT COLUMN ==========
+        right_column = QtWidgets.QVBoxLayout()
+        right_column.setSpacing(10)
         
-        # Row 4: Card value | Amount value | Cashback value (swapped order)
-        cashback_val = f"${float(self.purchase.cashback_earned):.2f}"
+        # Balances Section
+        balances_section, balances_layout = create_section("💰 Balances")
+        balances_grid = QtWidgets.QGridLayout()
+        balances_grid.setContentsMargins(0, 4, 0, 0)
+        balances_grid.setHorizontalSpacing(12)
+        balances_grid.setVerticalSpacing(6)
+        
         amount_val = f"${float(self.purchase.amount):.2f}"
-        trans_layout.addWidget(make_value_label(card_name or "—"), 4, 0, 1, 2)
-        trans_layout.addWidget(make_value_label(amount_val), 4, 2, 1, 2)
-        trans_layout.addWidget(make_value_label(cashback_val), 4, 4, 1, 2)
+        cashback_val = f"${float(self.purchase.cashback_earned):.2f}"
+        start_sc_val = f"{float(self.purchase.starting_sc_balance):.2f}"
+        sc_val = f"{float(self.purchase.sc_received):.2f}"
+        basis_val = f"${float(self.purchase.remaining_amount):.2f}"
         
-        trans_layout.setColumnStretch(0, 1)
-        trans_layout.setColumnStretch(1, 1)
-        trans_layout.setColumnStretch(2, 1)
-        trans_layout.setColumnStretch(3, 1)
-        trans_layout.setColumnStretch(4, 1)
-        trans_layout.setColumnStretch(5, 1)
+        amount_label = QtWidgets.QLabel("Amount:")
+        amount_label.setStyleSheet("color: palette(mid);")
+        balances_grid.addWidget(amount_label, 0, 0)
+        balances_grid.addWidget(make_selectable_label(amount_val, align_right=True), 0, 1)
         
-        form.addWidget(trans_section, 3, 0, 1, 7)
-
-        # Section 3: Sweep Coins
-        section3_header = self._create_section_header("🪙  Sweep Coins")
-        form.addWidget(section3_header, 4, 0, 1, 7)
+        cashback_label = QtWidgets.QLabel("Cashback:")
+        cashback_label.setStyleSheet("color: palette(mid);")
+        balances_grid.addWidget(cashback_label, 1, 0)
+        balances_grid.addWidget(make_selectable_label(cashback_val, align_right=True), 1, 1)
         
-        sc_section = QtWidgets.QWidget()
-        sc_section.setObjectName("SectionBackground")
-        sc_layout = QtWidgets.QGridLayout(sc_section)
-        sc_layout.setContentsMargins(12, 12, 12, 12)
-        sc_layout.setHorizontalSpacing(12)
-        sc_layout.setVerticalSpacing(8)
+        start_sc_label = QtWidgets.QLabel("Starting SC:")
+        start_sc_label.setStyleSheet("color: palette(mid);")
+        balances_grid.addWidget(start_sc_label, 2, 0)
+        balances_grid.addWidget(make_selectable_label(start_sc_val, align_right=True), 2, 1)
         
-        # Row 0: SC Received label | Starting SC label
         sc_label = QtWidgets.QLabel("SC Received:")
-        sc_label.setObjectName("FieldLabel")
-        sc_layout.addWidget(sc_label, 0, 0, 1, 3)
+        sc_label.setStyleSheet("color: palette(mid);")
+        balances_grid.addWidget(sc_label, 3, 0)
+        balances_grid.addWidget(make_selectable_label(sc_val, align_right=True), 3, 1)
         
-        start_sc_label = QtWidgets.QLabel("Starting SC Balance:")
-        start_sc_label.setObjectName("FieldLabel")
-        sc_layout.addWidget(start_sc_label, 0, 4, 1, 3)
+        basis_label = QtWidgets.QLabel("Remaining Basis:")
+        basis_label.setStyleSheet("color: palette(mid);")
+        balances_grid.addWidget(basis_label, 4, 0)
+        balances_grid.addWidget(make_selectable_label(basis_val, align_right=True), 4, 1)
         
-        # Row 1: SC values
-        sc_received_val = f"{float(self.purchase.sc_received):.2f}"
-        starting_sc_val = f"{float(self.purchase.starting_sc_balance):.2f}"
-        sc_layout.addWidget(make_value_label(sc_received_val), 1, 0, 1, 3)
-        sc_layout.addWidget(make_value_label(starting_sc_val), 1, 4, 1, 3)
+        balances_grid.setColumnStretch(1, 1)
+        balances_layout.addLayout(balances_grid)
+        right_column.addWidget(balances_section)
+        right_column.addStretch(1)
         
-        # Add vertical spacer
-        spacer2 = QtWidgets.QSpacerItem(1, 15, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
-        sc_layout.addItem(spacer2, 2, 0)
+        columns_layout.addLayout(right_column, 1)
+        
+        layout.addWidget(columns_widget)
 
-        # Row 3: Remaining (full width with styled background)
-        remaining_container = QtWidgets.QWidget()
-        remaining_container.setObjectName("RemainingBasis")
-        remaining_layout = QtWidgets.QHBoxLayout(remaining_container)
-        remaining_layout.setContentsMargins(8, 8, 8, 8)
-        remaining_label = QtWidgets.QLabel("Remaining Basis:")
-        remaining_label.setObjectName("FieldLabel")
-        remaining_value = QtWidgets.QLabel(f"${float(self.purchase.remaining_amount):.2f}")
-        remaining_layout.addWidget(remaining_label)
-        remaining_layout.addWidget(remaining_value)
-        remaining_layout.addStretch(1)
-        sc_layout.addWidget(remaining_container, 3, 0, 1, 7)
-        
-        sc_layout.setColumnStretch(0, 1)
-        sc_layout.setColumnStretch(1, 1)
-        sc_layout.setColumnStretch(4, 1)
-        sc_layout.setColumnStretch(5, 1)
-        
-        form.addWidget(sc_section, 5, 0, 1, 7)
-
-        # Section 4: Notes (always shown)
-        section4_header = self._create_section_header("📝  Notes")
-        form.addWidget(section4_header, 6, 0, 1, 7)
-        
-        notes_section = QtWidgets.QWidget()
-        notes_section.setObjectName("SectionBackground")
-        notes_layout = QtWidgets.QVBoxLayout(notes_section)
-        notes_layout.setContentsMargins(12, 12, 12, 12)
-        notes_layout.setSpacing(5)
-        
+        # ========== NOTES SECTION (Full Width Below) ==========
+        notes_section, notes_layout = create_section("📝 Notes")
         notes_value = self.purchase.notes or ""
+        
         if notes_value:
-            notes_edit = QtWidgets.QPlainTextEdit()
-            notes_edit.setPlainText(notes_value)
-            notes_edit.setFixedHeight(80)
-            notes_edit.setReadOnly(True)
-            notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
-            notes_layout.addWidget(notes_edit)
+            notes_display = QtWidgets.QTextEdit()
+            notes_display.setReadOnly(True)
+            notes_display.setPlainText(notes_value)
+            notes_display.setMaximumHeight(80)
+            notes_display.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            notes_layout.addWidget(notes_display)
         else:
             notes_empty = QtWidgets.QLabel("—")
-            notes_empty.setObjectName("InfoField")
+            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
             notes_layout.addWidget(notes_empty)
         
-        form.addWidget(notes_section, 7, 0, 1, 7)
-
-        # Set column stretches
-        form.setColumnStretch(0, 1)
-        form.setColumnStretch(1, 1)
-        form.setColumnStretch(4, 1)
-        form.setColumnStretch(5, 1)
-
-        layout.addLayout(form)
+        layout.addWidget(notes_section)
         layout.addStretch(1)
         return widget
 
