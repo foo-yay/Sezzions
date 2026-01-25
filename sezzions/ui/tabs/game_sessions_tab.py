@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QMessageBox, QDialog, QLineEdit, QComboBox,
     QLabel, QHeaderView, QCalendarWidget, QFileDialog, QGroupBox,
     QPlainTextEdit, QTabWidget, QListView, QCompleter, QSizePolicy,
-    QGridLayout, QApplication, QCheckBox
+    QGridLayout, QApplication, QCheckBox, QSpacerItem
 )
 from PySide6.QtCore import Qt, QTime, QDate, QTimer
 from PySide6.QtGui import QColor
@@ -456,7 +456,7 @@ class GameSessionsTab(QWidget):
             self.main_window.tab_bar.setCurrentIndex(index)
             daily_tab = self.main_window.daily_sessions_tab
             if hasattr(daily_tab, "find_and_select_session"):
-                QtCore.QTimer.singleShot(0, lambda: daily_tab.find_and_select_session(session_id))
+                QTimer.singleShot(0, lambda: daily_tab.find_and_select_session(session_id))
 
         dialog = ViewSessionDialog(
             self.facade,
@@ -511,7 +511,7 @@ class GameSessionsTab(QWidget):
             QMessageBox.warning(self, "Warning", "Session not found")
             return
 
-        dialog = EndSessionDialog(session, parent=self)
+        dialog = EndSessionDialog(self.facade, session, parent=self)
 
         def handle_save():
             data, error = dialog.collect_data()
@@ -692,8 +692,9 @@ class StartSessionDialog(QDialog):
         game_types = [t.name for t in types]
 
         self.setWindowTitle("Edit Session" if session else "Start Session")
-        self.setMinimumWidth(700)
-        self.setMinimumHeight(750)
+        self.setMinimumWidth(750)
+        self.setMinimumHeight(580)
+        self.resize(750, 580)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -737,10 +738,11 @@ class StartSessionDialog(QDialog):
         self.game_name_combo.setEditable(True)
         self.game_name_combo.lineEdit().setPlaceholderText("Select a game type first")
 
-        self.rtp_tooltip = QLabel("")
-        self.rtp_tooltip.setObjectName("HelperText")
-        self.rtp_tooltip.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.rtp_tooltip.setWordWrap(True)
+        # RTP Display (value label, not input)
+        self.rtp_display = QLabel("—")
+        self.rtp_display.setObjectName("ValueChip")
+        self.rtp_display.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.rtp_display.setFixedHeight(28)
 
         self.start_total_edit = QLineEdit()
         self.start_total_edit.setPlaceholderText("0.00")
@@ -748,187 +750,185 @@ class StartSessionDialog(QDialog):
         self.start_redeem_edit = QLineEdit()
         self.start_redeem_edit.setPlaceholderText("0.00")
 
+        # Balance Check Display (value label, not input)
         balance_tooltip = (
             "Compares your starting total SC to the expected balance from prior sessions, purchases, "
             "and redemptions. This helps flag missing entries or unexpected bonuses. It does not "
             "change tax results until the session is closed."
         )
-        self.balance_label = QLabel("Balance Check")
-        self.balance_label.setObjectName("FieldLabel")
-        self.balance_label.setToolTip(balance_tooltip)
-        self.balance_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
-        self.freebie_label = QLabel("")
-        self.freebie_label.setWordWrap(True)
-        self.freebie_label.setObjectName("InfoField")
-        self.freebie_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.freebie_label.setProperty("status", "neutral")
-        self.freebie_label.setToolTip(balance_tooltip)
+        self.balance_check_display = QLabel("—")
+        self.balance_check_display.setObjectName("ValueChip")
+        self.balance_check_display.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.balance_check_display.setFixedHeight(28)
+        self.balance_check_display.setWordWrap(True)
+        self.balance_check_display.setProperty("status", "neutral")
+        self.balance_check_display.setToolTip(balance_tooltip)
 
         self.notes_edit = QPlainTextEdit()
         self.notes_edit.setPlaceholderText("Optional...")
         self.notes_edit.setFixedHeight(80)
         self.notes_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        # Section 1: Session (Date/Time, User/Site, Game Type/Name/RTP)
-        section1_header = self._create_section_header("🎮  Session")
-        form.addWidget(section1_header, 0, 0, 1, 7)
-        
-        session_section = QWidget()
-        session_section.setObjectName("SectionBackground")
-        session_layout = QVBoxLayout(session_section)
-        session_layout.setContentsMargins(12, 12, 12, 12)
-        session_layout.setSpacing(8)
-        
-        # Date/Time row labels
-        datetime_labels_row = QHBoxLayout()
-        datetime_labels_row.setSpacing(12)
+        # Date/Time section (no header, compact like Add Purchase)
+        datetime_section = QWidget()
+        datetime_section.setObjectName("SectionBackground")
+        datetime_layout = QHBoxLayout(datetime_section)
+        datetime_layout.setContentsMargins(12, 10, 12, 10)
+        datetime_layout.setSpacing(12)
         
         date_label = QLabel("Date:")
         date_label.setObjectName("FieldLabel")
-        datetime_labels_row.addWidget(date_label, 1)
+        datetime_layout.addWidget(date_label)
+        
+        # Date field with embedded calendar button
+        date_container = QWidget()
+        date_layout = QHBoxLayout(date_container)
+        date_layout.setContentsMargins(0, 0, 0, 0)
+        date_layout.setSpacing(4)
+        self.date_edit.setFixedWidth(110)
+        date_layout.addWidget(self.date_edit)
+        date_layout.addWidget(self.calendar_btn)
+        datetime_layout.addWidget(date_container)
+        
+        datetime_layout.addWidget(self.today_btn)
+        datetime_layout.addSpacing(30)
         
         time_label = QLabel("Time:")
         time_label.setObjectName("FieldLabel")
-        datetime_labels_row.addWidget(time_label, 1)
+        datetime_layout.addWidget(time_label)
         
-        session_layout.addLayout(datetime_labels_row)
+        self.time_edit.setFixedWidth(90)
+        datetime_layout.addWidget(self.time_edit)
+        datetime_layout.addWidget(self.now_btn)
+        datetime_layout.addStretch(1)
         
-        # Date/Time fields row
-        datetime_fields_row = QHBoxLayout()
-        datetime_fields_row.setSpacing(12)
+        form.addWidget(datetime_section, 0, 0, 1, 7)
+
+        # Section 1: Session Details (2-column grid)
+        section1_header = self._create_section_header("🎮  Session Details")
+        form.addWidget(section1_header, 1, 0, 1, 7)
         
-        # Date section with buttons
-        date_section = QHBoxLayout()
-        date_section.setSpacing(8)
-        date_section.addWidget(self.date_edit, 2)
-        date_section.addWidget(self.calendar_btn, 0)
-        date_section.addWidget(self.today_btn, 0)
-        datetime_fields_row.addLayout(date_section, 1)
+        session_section = QWidget()
+        session_section.setObjectName("SectionBackground")
+        session_grid = QGridLayout(session_section)
+        session_grid.setContentsMargins(10, 10, 10, 10)
+        session_grid.setHorizontalSpacing(30)
+        session_grid.setVerticalSpacing(8)
         
-        # Time section with button
-        time_section = QHBoxLayout()
-        time_section.setSpacing(8)
-        time_section.addWidget(self.time_edit, 2)
-        time_section.addWidget(self.now_btn, 0)
-        datetime_fields_row.addLayout(time_section, 1)
+        row = 0
         
-        session_layout.addLayout(datetime_fields_row)
-        
-        # Add vertical spacer
-        session_layout.addSpacing(15)
-        
-        # User/Site labels row
-        user_site_labels_row = QHBoxLayout()
-        user_site_labels_row.setSpacing(12)
-        
+        # Left Column - User
         user_label = QLabel("User:")
         user_label.setObjectName("FieldLabel")
-        user_site_labels_row.addWidget(user_label, 1)
+        user_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        session_grid.addWidget(user_label, row, 0)
+        self.user_combo.setMinimumWidth(180)
+        session_grid.addWidget(self.user_combo, row, 1)
         
+        # Right Column - Site
         site_label = QLabel("Site:")
         site_label.setObjectName("FieldLabel")
-        user_site_labels_row.addWidget(site_label, 1)
+        site_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        session_grid.addWidget(site_label, row, 2)
+        self.site_combo.setMinimumWidth(180)
+        session_grid.addWidget(self.site_combo, row, 3)
         
-        session_layout.addLayout(user_site_labels_row)
+        row += 1
         
-        # User/Site fields row (50/50)
-        user_site_fields_row = QHBoxLayout()
-        user_site_fields_row.setSpacing(12)
-        user_site_fields_row.addWidget(self.user_combo, 1)
-        user_site_fields_row.addWidget(self.site_combo, 1)
-        session_layout.addLayout(user_site_fields_row)
-        
-        # Add vertical spacer
-        session_layout.addSpacing(15)
-        
-        # Game labels row
-        game_labels_row = QHBoxLayout()
-        game_labels_row.setSpacing(12)
-        
+        # Left Column - Game Type
         game_type_label = QLabel("Game Type:")
         game_type_label.setObjectName("FieldLabel")
-        game_labels_row.addWidget(game_type_label, 1)
+        game_type_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        session_grid.addWidget(game_type_label, row, 0)
+        self.game_type_combo.setMinimumWidth(180)
+        session_grid.addWidget(self.game_type_combo, row, 1)
         
-        game_name_label = QLabel("Game Name:")
+        # Right Column - Game
+        game_name_label = QLabel("Game:")
         game_name_label.setObjectName("FieldLabel")
-        game_labels_row.addWidget(game_name_label, 1)
+        game_name_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        session_grid.addWidget(game_name_label, row, 2)
+        self.game_name_combo.setMinimumWidth(180)
+        session_grid.addWidget(self.game_name_combo, row, 3)
         
+        row += 1
+        
+        # RTP Display (right column only, below Game)
         rtp_label = QLabel("RTP:")
         rtp_label.setObjectName("FieldLabel")
-        game_labels_row.addWidget(rtp_label, 1)
+        rtp_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        session_grid.addWidget(rtp_label, row, 2)
+        session_grid.addWidget(self.rtp_display, row, 3)
         
-        session_layout.addLayout(game_labels_row)
+        session_grid.setColumnStretch(1, 1)
+        session_grid.setColumnStretch(3, 1)
         
-        # Game fields row
-        game_fields_row = QHBoxLayout()
-        game_fields_row.setSpacing(12)
-        
-        game_fields_row.addWidget(self.game_type_combo, 1)
-        game_fields_row.addWidget(self.game_name_combo, 1)
-        game_fields_row.addWidget(self.rtp_tooltip, 1)
-        
-        session_layout.addLayout(game_fields_row)
-        
-        form.addWidget(session_section, 1, 0, 1, 7)
+        form.addWidget(session_section, 2, 0, 1, 7)
 
-        # Section 2: Starting Balances
-        section2_header = self._create_section_header("💰  Starting Balances")
-        form.addWidget(section2_header, 2, 0, 1, 7)
+        # Section 2: Balance Details (2-column grid)
+        section2_header = self._create_section_header("💰  Balance Details")
+        form.addWidget(section2_header, 3, 0, 1, 7)
         
         balance_section = QWidget()
         balance_section.setObjectName("SectionBackground")
-        balance_layout = QVBoxLayout(balance_section)
-        balance_layout.setContentsMargins(12, 12, 12, 12)
-        balance_layout.setSpacing(8)
+        balance_grid = QGridLayout(balance_section)
+        balance_grid.setContentsMargins(10, 10, 10, 10)
+        balance_grid.setHorizontalSpacing(30)
+        balance_grid.setVerticalSpacing(8)
         
-        # Row 0: Labels for Starting Total SC | Starting Redeemable
-        balance_labels_row = QHBoxLayout()
-        balance_labels_row.setSpacing(12)
+        row = 0
         
+        # Left Column - Starting Total SC
         start_total_label = QLabel("Starting Total SC:")
         start_total_label.setObjectName("FieldLabel")
-        balance_labels_row.addWidget(start_total_label, 1)
+        start_total_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balance_grid.addWidget(start_total_label, row, 0)
+        self.start_total_edit.setFixedWidth(140)
+        balance_grid.addWidget(self.start_total_edit, row, 1)
         
+        # Right Column - Starting Redeemable
         start_redeem_label = QLabel("Starting Redeemable:")
         start_redeem_label.setObjectName("FieldLabel")
-        balance_labels_row.addWidget(start_redeem_label, 1)
+        start_redeem_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balance_grid.addWidget(start_redeem_label, row, 2)
+        self.start_redeem_edit.setFixedWidth(140)
+        balance_grid.addWidget(self.start_redeem_edit, row, 3)
         
-        balance_layout.addLayout(balance_labels_row)
+        row += 1
         
-        # Row 1: Fields
-        balance_fields_row = QHBoxLayout()
-        balance_fields_row.setSpacing(12)
+        # Balance Check Display (label in col 0, display spans cols 1-3)
+        balance_check_label = QLabel("Balance Check:")
+        balance_check_label.setObjectName("FieldLabel")
+        balance_check_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balance_check_label.setToolTip(
+            "Compares your starting total SC to the expected balance from prior sessions, purchases, "
+            "and redemptions. This helps flag missing entries or unexpected bonuses. It does not "
+            "change tax results until the session is closed."
+        )
+        balance_grid.addWidget(balance_check_label, row, 0)
+        balance_grid.addWidget(self.balance_check_display, row, 1, 1, 3)
         
-        balance_fields_row.addWidget(self.start_total_edit, 1)
-        balance_fields_row.addWidget(self.start_redeem_edit, 1)
+        balance_grid.setColumnStretch(1, 1)
+        balance_grid.setColumnStretch(3, 1)
         
-        balance_layout.addLayout(balance_fields_row)
-        
-        # Add vertical spacer
-        balance_layout.addSpacing(15)
-        
-        # Row 2: Balance Check label
-        balance_layout.addWidget(self.balance_label)
-        
-        # Row 3: Balance Check value
-        balance_layout.addWidget(self.freebie_label)
-        
-        form.addWidget(balance_section, 3, 0, 1, 7)
+        form.addWidget(balance_section, 4, 0, 1, 7)
 
-        # Section 3: Notes
-        section3_header = self._create_section_header("📝  Notes")
-        form.addWidget(section3_header, 4, 0, 1, 7)
+        # Collapsible Notes Section (like Add Purchase)
+        self.notes_collapsed = True
+        self.notes_toggle = QPushButton("📝 Add Notes...")
+        self.notes_toggle.setObjectName("SectionHeader")
+        self.notes_toggle.setCursor(Qt.PointingHandCursor)
+        self.notes_toggle.setFlat(True)
+        self.notes_toggle.clicked.connect(self._toggle_notes)
+        form.addWidget(self.notes_toggle, 5, 0, 1, 7)
         
-        notes_section = QWidget()
-        notes_section.setObjectName("SectionBackground")
-        notes_layout = QVBoxLayout(notes_section)
+        self.notes_section = QWidget()
+        self.notes_section.setObjectName("SectionBackground")
+        self.notes_section.setVisible(False)
+        notes_layout = QVBoxLayout(self.notes_section)
         notes_layout.setContentsMargins(12, 12, 12, 12)
-        notes_layout.setSpacing(5)
-        
         notes_layout.addWidget(self.notes_edit)
-        
-        form.addWidget(notes_section, 5, 0, 1, 7)
+        form.addWidget(self.notes_section, 6, 0, 1, 7)
 
         form.setColumnStretch(0, 1)
         form.setColumnStretch(1, 1)
@@ -955,12 +955,12 @@ class StartSessionDialog(QDialog):
         self.game_type_combo.currentTextChanged.connect(self._update_game_names)
         self.game_type_combo.currentTextChanged.connect(self._validate_inline)
         self.game_name_combo.currentTextChanged.connect(self._validate_inline)
-        self.game_name_combo.currentTextChanged.connect(self._update_rtp_tooltip)
-        self.site_combo.currentTextChanged.connect(self._update_freebie_label)
-        self.user_combo.currentTextChanged.connect(self._update_freebie_label)
-        self.start_total_edit.textChanged.connect(self._update_freebie_label)
-        self.date_edit.textChanged.connect(self._update_freebie_label)
-        self.time_edit.textChanged.connect(self._update_freebie_label)
+        self.game_name_combo.currentTextChanged.connect(self._update_rtp_display)
+        self.site_combo.currentTextChanged.connect(self._update_balance_check)
+        self.user_combo.currentTextChanged.connect(self._update_balance_check)
+        self.start_total_edit.textChanged.connect(self._update_balance_check)
+        self.date_edit.textChanged.connect(self._update_balance_check)
+        self.time_edit.textChanged.connect(self._update_balance_check)
         self.time_edit.textEdited.connect(self._mark_time_edited)
         self.date_edit.textChanged.connect(self._validate_inline)
         self.time_edit.textChanged.connect(self._validate_inline)
@@ -968,6 +968,19 @@ class StartSessionDialog(QDialog):
         self.site_combo.currentTextChanged.connect(self._validate_inline)
         self.start_total_edit.textChanged.connect(self._validate_inline)
         self.start_redeem_edit.textChanged.connect(self._validate_inline)
+        
+        # Set tab order: Date -> Time -> User -> Site -> Game Type -> Game -> Starting SC -> Starting Redeemable -> Notes -> Save
+        self.setTabOrder(self.date_edit, self.time_edit)
+        self.setTabOrder(self.time_edit, self.user_combo)
+        self.setTabOrder(self.user_combo, self.site_combo)
+        self.setTabOrder(self.site_combo, self.game_type_combo)
+        self.setTabOrder(self.game_type_combo, self.game_name_combo)
+        self.setTabOrder(self.game_name_combo, self.start_total_edit)
+        self.setTabOrder(self.start_total_edit, self.start_redeem_edit)
+        self.setTabOrder(self.start_redeem_edit, self.notes_edit)
+        self.setTabOrder(self.notes_edit, self.save_btn)
+        self.setTabOrder(self.save_btn, self.cancel_btn)
+        self.setTabOrder(self.cancel_btn, self.clear_btn)
 
         if session:
             self._load_session()
@@ -1187,29 +1200,30 @@ class StartSessionDialog(QDialog):
         user = self._user_lookup.get(user_name.lower())
         return (site.id if site else None, user.id if user else None)
 
-    def _update_freebie_label(self):
+    def _update_balance_check(self):
+        """Update balance check display with styled value chip"""
         site_name = self.site_combo.currentText().strip()
         user_name = self.user_combo.currentText().strip()
         start_total_text = self.start_total_edit.text().strip()
         if not site_name or not user_name or not start_total_text:
-            self.freebie_label.setText("—")
-            self.freebie_label.setProperty("status", "neutral")
-            self.freebie_label.style().unpolish(self.freebie_label)
-            self.freebie_label.style().polish(self.freebie_label)
+            self.balance_check_display.setText("—")
+            self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.style().unpolish(self.balance_check_display)
+            self.balance_check_display.style().polish(self.balance_check_display)
             return
         valid, result = validate_currency(start_total_text)
         if not valid:
-            self.freebie_label.setText("—")
-            self.freebie_label.setProperty("status", "neutral")
-            self.freebie_label.style().unpolish(self.freebie_label)
-            self.freebie_label.style().polish(self.freebie_label)
+            self.balance_check_display.setText("—")
+            self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.style().unpolish(self.balance_check_display)
+            self.balance_check_display.style().polish(self.balance_check_display)
             return
         site_id, user_id = self._lookup_ids(site_name, user_name)
         if not site_id or not user_id:
-            self.freebie_label.setText("—")
-            self.freebie_label.setProperty("status", "neutral")
-            self.freebie_label.style().unpolish(self.freebie_label)
-            self.freebie_label.style().polish(self.freebie_label)
+            self.balance_check_display.setText("—")
+            self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.style().unpolish(self.balance_check_display)
+            self.balance_check_display.style().polish(self.balance_check_display)
             return
         session_date = self.date_edit.text().strip() or None
         session_time = self.time_edit.text().strip() or None
@@ -1217,10 +1231,10 @@ class StartSessionDialog(QDialog):
             parsed_date = parse_date_input(session_date) if session_date else None
             parsed_time = parse_time_input(session_time) if session_time else None
         except ValueError:
-            self.freebie_label.setText("—")
-            self.freebie_label.setProperty("status", "neutral")
-            self.freebie_label.style().unpolish(self.freebie_label)
-            self.freebie_label.style().polish(self.freebie_label)
+            self.balance_check_display.setText("—")
+            self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.style().unpolish(self.balance_check_display)
+            self.balance_check_display.style().polish(self.balance_check_display)
             return
 
         if not self._time_edited and parsed_date == date.today():
@@ -1241,34 +1255,38 @@ class StartSessionDialog(QDialog):
         missing_sc = max(0.0, float(expected_total) - float(result))
         freebies_dollar = float(Decimal(str(freebies_sc)) * sc_rate)
         if freebies_sc > 0:
-            self.freebie_label.setProperty("status", "positive")
-            self.freebie_label.setText(
-                f"+ Detected {freebies_sc:.2f} SC in extra balance (${freebies_dollar:.2f})"
+            self.balance_check_display.setProperty("status", "positive")
+            self.balance_check_display.setText(
+                f"+ {freebies_sc:.2f} SC extra (${freebies_dollar:.2f})"
             )
         elif missing_sc > 0:
-            self.freebie_label.setProperty("status", "negative")
-            self.freebie_label.setText(
-                f"- WARNING: Starting balance is {missing_sc:.2f} SC less than expected ({float(expected_total):.2f})"
+            self.balance_check_display.setProperty("status", "negative")
+            self.balance_check_display.setText(
+                f"- {missing_sc:.2f} SC less than expected"
             )
         else:
-            self.freebie_label.setProperty("status", "neutral")
-            self.freebie_label.setText(f"Matches expected balance ({float(expected_total):.2f} SC)")
-        self.freebie_label.style().unpolish(self.freebie_label)
-        self.freebie_label.style().polish(self.freebie_label)
+            self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.setText(f"Matches expected ({float(expected_total):.2f} SC)")
+        self.balance_check_display.style().unpolish(self.balance_check_display)
+        self.balance_check_display.style().polish(self.balance_check_display)
 
-    def _update_rtp_tooltip(self):
+    def _update_rtp_display(self):
+        """Update RTP display with compact styled chip"""
         game_name = self.game_name_combo.currentText().strip()
         game_type = self.game_type_combo.currentText().strip()
         if not game_name or not game_type:
-            self.rtp_tooltip.setText("")
+            self.rtp_display.setText("—")
             return
         game = self._game_lookup.get((game_type.lower(), game_name.lower()))
         if game and game.rtp is not None:
             exp_str = f"{float(game.rtp):.2f}%"
-            act_str = f"{float(game.actual_rtp):.2f}%" if getattr(game, "actual_rtp", None) is not None else "—"
-            self.rtp_tooltip.setText(f"Exp RTP: {exp_str} / Act RTP: {act_str}")
+            if getattr(game, "actual_rtp", None) is not None:
+                act_str = f"{float(game.actual_rtp):.2f}%"
+                self.rtp_display.setText(f"Exp: {exp_str} / Act: {act_str}")
+            else:
+                self.rtp_display.setText(f"Exp: {exp_str}")
         else:
-            self.rtp_tooltip.setText("")
+            self.rtp_display.setText("—")
 
     def _load_session(self):
         self.date_edit.setText(self._format_date_for_input(self.session.session_date))
@@ -1324,8 +1342,17 @@ class StartSessionDialog(QDialog):
         start_redeem = self.session.starting_redeemable
         self.start_redeem_edit.setText(str(start_redeem))
         self.notes_edit.setPlainText(self.session.notes or "")
-        self._update_freebie_label()
-        self._update_rtp_tooltip()
+        
+        # Expand notes section if there are notes
+        if self.session.notes:
+            self.notes_collapsed = False
+            self.notes_section.setVisible(True)
+            self.notes_toggle.setText("📝 Notes")
+            self.setMinimumHeight(710)
+            self.resize(self.width(), 710)
+        
+        self._update_balance_check()
+        self._update_rtp_display()
 
     def _clear_form(self):
         self.date_edit.clear()
@@ -1342,12 +1369,36 @@ class StartSessionDialog(QDialog):
         self._set_today()
         self._set_now()
         self._time_edited = False
-        self.freebie_label.setText("—")
-        self.freebie_label.setProperty("status", "neutral")
-        self.freebie_label.style().unpolish(self.freebie_label)
-        self.freebie_label.style().polish(self.freebie_label)
-        self.rtp_tooltip.setText("")
+        self.balance_check_display.setText("—")
+        self.balance_check_display.setProperty("status", "neutral")
+        self.balance_check_display.style().unpolish(self.balance_check_display)
+        self.balance_check_display.style().polish(self.balance_check_display)
+        self.rtp_display.setText("—")
+        
+        # Collapse notes section
+        self.notes_collapsed = True
+        self.notes_section.setVisible(False)
+        self.notes_toggle.setText("📝 Add Notes...")
+        self.setMinimumHeight(580)
+        self.resize(self.width(), 580)
+        
         self._validate_inline()
+    
+    def _toggle_notes(self):
+        """Toggle notes section visibility"""
+        self.notes_collapsed = not self.notes_collapsed
+        self.notes_section.setVisible(not self.notes_collapsed)
+        if self.notes_collapsed:
+            self.notes_toggle.setText("📝 Add Notes...")
+            # Shrink dialog back to original height
+            self.setMinimumHeight(580)
+            self.resize(self.width(), 580)
+        else:
+            self.notes_toggle.setText("📝 Notes")
+            # Expand dialog to accommodate notes
+            self.setMinimumHeight(710)
+            self.resize(self.width(), 710)
+            self.notes_edit.setFocus()
 
     def _mark_time_edited(self, _text):
         self._time_edited = True
@@ -1463,28 +1514,44 @@ class EditClosedSessionDialog(QDialog):
         game_types = [t.name for t in types]
 
         self.setWindowTitle("Edit Closed Session")
-        self.setMinimumWidth(700)
-        self.setMinimumHeight(900)
+        self.setMinimumWidth(750)
+        self.setMinimumHeight(620)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(16)
+        layout.setSpacing(12)
 
         form = QGridLayout()
         form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(12)
+        form.setVerticalSpacing(8)
         form.setContentsMargins(10, 10, 10, 10)
 
         # Initialize widgets
         self.date_edit = QLineEdit()
         self.date_edit.setPlaceholderText("MM/DD/YY")
+        self.start_calendar_btn = QPushButton("📅")
+        self.start_calendar_btn.setFixedWidth(44)
+        self.start_today_btn = QPushButton("Today")
+        self.start_calendar_btn.clicked.connect(self._pick_start_date)
+        self.start_today_btn.clicked.connect(self._set_start_today)
+        
         self.time_edit = QLineEdit()
         self.time_edit.setPlaceholderText("HH:MM")
+        self.start_now_btn = QPushButton("Now")
+        self.start_now_btn.clicked.connect(self._set_start_now)
 
         self.end_date_edit = QLineEdit()
         self.end_date_edit.setPlaceholderText("MM/DD/YY")
+        self.end_calendar_btn = QPushButton("📅")
+        self.end_calendar_btn.setFixedWidth(44)
+        self.end_today_btn = QPushButton("Today")
+        self.end_calendar_btn.clicked.connect(self._pick_end_date)
+        self.end_today_btn.clicked.connect(self._set_end_today)
+        
         self.end_time_edit = QLineEdit()
         self.end_time_edit.setPlaceholderText("HH:MM")
+        self.end_now_btn = QPushButton("Now")
+        self.end_now_btn.clicked.connect(self._set_end_now)
 
         self.user_combo = QComboBox()
         self.user_combo.setEditable(True)
@@ -1508,32 +1575,60 @@ class EditClosedSessionDialog(QDialog):
         self.wager_edit = QLineEdit()
         self.wager_edit.setPlaceholderText("Optional")
 
-        self.rtp_tooltip = QLabel("")
-        self.rtp_tooltip.setObjectName("HelperText")
-        self.rtp_tooltip.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.rtp_tooltip.setWordWrap(True)
+        # RTP Display (value label, not input)
+        self.rtp_display = QLabel("—")
+        self.rtp_display.setObjectName("ValueChip")
+        self.rtp_display.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.rtp_display.setFixedHeight(28)
+        
+        # RTP Help button
+        self.rtp_help_btn = QPushButton("?")
+        self.rtp_help_btn.setFixedSize(22, 22)
+        self.rtp_help_btn.setToolTip("Click for RTP explanation")
+        self.rtp_help_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.rtp_help_btn.setCursor(Qt.PointingHandCursor)
+        self.rtp_help_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0066cc;
+                color: white;
+                border: 1px solid #0052a3;
+                border-radius: 11px;
+                font-weight: bold;
+                font-size: 11px;
+                padding: 0px;
+                margin: 0px;
+                min-width: 22px;
+                max-width: 22px;
+                min-height: 22px;
+                max-height: 22px;
+            }
+            QPushButton:hover {
+                background-color: #0052a3;
+            }
+            QPushButton:pressed {
+                background-color: #003d7a;
+            }
+        """)
+        self.rtp_help_btn.clicked.connect(self._show_rtp_help)
 
         self.start_total_edit = QLineEdit()
         self.start_total_edit.setPlaceholderText("0.00")
         self.start_redeem_edit = QLineEdit()
         self.start_redeem_edit.setPlaceholderText("0.00")
 
+        # Balance Check Display (value label, not input)
         balance_tooltip = (
             "Compares your starting total SC to the expected balance from prior sessions, purchases, "
             "and redemptions. This helps flag missing entries or unexpected bonuses. It does not "
             "change tax results until the session is closed."
         )
-        self.balance_label = QLabel("Balance Check")
-        self.balance_label.setObjectName("FieldLabel")
-        self.balance_label.setToolTip(balance_tooltip)
-        self.balance_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-
-        self.freebie_label = QLabel("")
-        self.freebie_label.setWordWrap(True)
-        self.freebie_label.setObjectName("InfoField")
-        self.freebie_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.freebie_label.setProperty("status", "neutral")
-        self.freebie_label.setToolTip(balance_tooltip)
+        self.balance_check_display = QLabel("—")
+        self.balance_check_display.setObjectName("ValueChip")
+        self.balance_check_display.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.balance_check_display.setFixedHeight(28)
+        self.balance_check_display.setWordWrap(True)
+        self.balance_check_display.setProperty("status", "neutral")
+        self.balance_check_display.setToolTip(balance_tooltip)
 
         self.end_total_edit = QLineEdit()
         self.end_total_edit.setPlaceholderText("0.00")
@@ -1545,230 +1640,243 @@ class EditClosedSessionDialog(QDialog):
         self.notes_edit.setFixedHeight(80)
         self.notes_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
-        # Section 1: Session - Closed
-        section1_header = self._create_section_header("📅  Session - Closed")
-        form.addWidget(section1_header, 0, 0, 1, 7)
+        # Date/Time Section (combined start and end in one section)
+        datetime_section = QWidget()
+        datetime_section.setObjectName("SectionBackground")
+        datetime_layout = QVBoxLayout(datetime_section)
+        datetime_layout.setContentsMargins(12, 10, 12, 10)
+        datetime_layout.setSpacing(8)
         
-        session_section = QWidget()
-        session_section.setObjectName("SectionBackground")
-        session_layout = QVBoxLayout(session_section)
-        session_layout.setContentsMargins(12, 12, 12, 12)
-        session_layout.setSpacing(8)
-        
-        # Row 0: Start Date label | Start Time label
-        start_labels_row = QHBoxLayout()
-        start_labels_row.setSpacing(12)
+        # Row 1: Start Date/Time
+        start_row = QHBoxLayout()
+        start_row.setSpacing(12)
         
         start_date_label = QLabel("Start Date:")
         start_date_label.setObjectName("FieldLabel")
-        start_labels_row.addWidget(start_date_label, 1)
+        start_date_label.setFixedWidth(70)
+        start_row.addWidget(start_date_label)
+        
+        # Start date field with embedded calendar button
+        start_date_container = QWidget()
+        start_date_layout = QHBoxLayout(start_date_container)
+        start_date_layout.setContentsMargins(0, 0, 0, 0)
+        start_date_layout.setSpacing(4)
+        self.date_edit.setFixedWidth(110)
+        start_date_layout.addWidget(self.date_edit)
+        start_date_layout.addWidget(self.start_calendar_btn)
+        start_row.addWidget(start_date_container)
+        
+        start_row.addWidget(self.start_today_btn)
+        start_row.addSpacing(30)
         
         start_time_label = QLabel("Start Time:")
         start_time_label.setObjectName("FieldLabel")
-        start_labels_row.addWidget(start_time_label, 1)
+        start_time_label.setFixedWidth(70)
+        start_row.addWidget(start_time_label)
         
-        session_layout.addLayout(start_labels_row)
+        self.time_edit.setFixedWidth(90)
+        start_row.addWidget(self.time_edit)
+        start_row.addWidget(self.start_now_btn)
+        start_row.addStretch(1)
         
-        # Row 1: Start Date field | Start Time field
-        start_fields_row = QHBoxLayout()
-        start_fields_row.setSpacing(12)
-        start_fields_row.addWidget(self.date_edit, 1)
-        start_fields_row.addWidget(self.time_edit, 1)
-        session_layout.addLayout(start_fields_row)
+        datetime_layout.addLayout(start_row)
         
-        # Add vertical spacer
-        session_layout.addSpacing(15)
-        
-        # Row 2: End Date label | End Time label
-        end_labels_row = QHBoxLayout()
-        end_labels_row.setSpacing(12)
+        # Row 2: End Date/Time
+        end_row = QHBoxLayout()
+        end_row.setSpacing(12)
         
         end_date_label = QLabel("End Date:")
         end_date_label.setObjectName("FieldLabel")
-        end_labels_row.addWidget(end_date_label, 1)
+        end_date_label.setFixedWidth(70)
+        end_row.addWidget(end_date_label)
+        
+        # End date field with embedded calendar button
+        end_date_container = QWidget()
+        end_date_layout = QHBoxLayout(end_date_container)
+        end_date_layout.setContentsMargins(0, 0, 0, 0)
+        end_date_layout.setSpacing(4)
+        self.end_date_edit.setFixedWidth(110)
+        end_date_layout.addWidget(self.end_date_edit)
+        end_date_layout.addWidget(self.end_calendar_btn)
+        end_row.addWidget(end_date_container)
+        
+        end_row.addWidget(self.end_today_btn)
+        end_row.addSpacing(30)
         
         end_time_label = QLabel("End Time:")
         end_time_label.setObjectName("FieldLabel")
-        end_labels_row.addWidget(end_time_label, 1)
+        end_time_label.setFixedWidth(70)
+        end_row.addWidget(end_time_label)
         
-        session_layout.addLayout(end_labels_row)
+        self.end_time_edit.setFixedWidth(90)
+        end_row.addWidget(self.end_time_edit)
+        end_row.addWidget(self.end_now_btn)
+        end_row.addStretch(1)
         
-        # Row 3: End Date field | End Time field
-        end_fields_row = QHBoxLayout()
-        end_fields_row.setSpacing(12)
-        end_fields_row.addWidget(self.end_date_edit, 1)
-        end_fields_row.addWidget(self.end_time_edit, 1)
-        session_layout.addLayout(end_fields_row)
+        datetime_layout.addLayout(end_row)
         
-        # Add vertical spacer
-        session_layout.addSpacing(15)
+        form.addWidget(datetime_section, 0, 0, 1, 7)
+
+        # Section 1: Session Details (2-column grid)
+        section1_header = self._create_section_header("🎮  Session Details")
+        form.addWidget(section1_header, 1, 0, 1, 7)
         
-        # Row 4: User label | Site label
-        user_site_labels_row = QHBoxLayout()
-        user_site_labels_row.setSpacing(12)
+        session_section = QWidget()
+        session_section.setObjectName("SectionBackground")
+        session_grid = QGridLayout(session_section)
+        session_grid.setContentsMargins(10, 10, 10, 10)
+        session_grid.setHorizontalSpacing(30)
+        session_grid.setVerticalSpacing(8)
         
+        row = 0
+        
+        # Left Column - User
         user_label = QLabel("User:")
         user_label.setObjectName("FieldLabel")
-        user_site_labels_row.addWidget(user_label, 1)
+        user_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        session_grid.addWidget(user_label, row, 0)
+        self.user_combo.setMinimumWidth(180)
+        session_grid.addWidget(self.user_combo, row, 1)
         
+        # Right Column - Site
         site_label = QLabel("Site:")
         site_label.setObjectName("FieldLabel")
-        user_site_labels_row.addWidget(site_label, 1)
+        site_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        session_grid.addWidget(site_label, row, 2)
+        self.site_combo.setMinimumWidth(180)
+        session_grid.addWidget(self.site_combo, row, 3)
         
-        session_layout.addLayout(user_site_labels_row)
+        row += 1
         
-        # Row 5: User field | Site field
-        user_site_fields_row = QHBoxLayout()
-        user_site_fields_row.setSpacing(12)
-        user_site_fields_row.addWidget(self.user_combo, 1)
-        user_site_fields_row.addWidget(self.site_combo, 1)
-        session_layout.addLayout(user_site_fields_row)
-        
-        form.addWidget(session_section, 1, 0, 1, 7)
-
-        # Section 2: Game Details
-        section2_header = self._create_section_header("🎮  Game Details")
-        form.addWidget(section2_header, 2, 0, 1, 7)
-        
-        game_section = QWidget()
-        game_section.setObjectName("SectionBackground")
-        game_layout = QVBoxLayout(game_section)
-        game_layout.setContentsMargins(12, 12, 12, 12)
-        game_layout.setSpacing(8)
-        
-        # Row 0: Game Type label | Game Name label
-        game_labels_row = QHBoxLayout()
-        game_labels_row.setSpacing(12)
-        
+        # Left Column - Game Type
         game_type_label = QLabel("Game Type:")
         game_type_label.setObjectName("FieldLabel")
-        game_labels_row.addWidget(game_type_label, 1)
+        game_type_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        session_grid.addWidget(game_type_label, row, 0)
+        self.game_type_combo.setMinimumWidth(180)
+        session_grid.addWidget(self.game_type_combo, row, 1)
         
-        game_name_label = QLabel("Game Name:")
+        # Right Column - Game
+        game_name_label = QLabel("Game:")
         game_name_label.setObjectName("FieldLabel")
-        game_labels_row.addWidget(game_name_label, 1)
+        game_name_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        session_grid.addWidget(game_name_label, row, 2)
+        self.game_name_combo.setMinimumWidth(180)
+        session_grid.addWidget(self.game_name_combo, row, 3)
         
-        game_layout.addLayout(game_labels_row)
+        row += 1
         
-        # Row 1: Game Type field | Game Name field
-        game_fields_row = QHBoxLayout()
-        game_fields_row.setSpacing(12)
-        game_fields_row.addWidget(self.game_type_combo, 1)
-        game_fields_row.addWidget(self.game_name_combo, 1)
-        game_layout.addLayout(game_fields_row)
-        
-        # Add vertical spacer
-        game_layout.addSpacing(15)
-        
-        # Row 2: Wager Amount label | RTP label
-        wager_rtp_labels_row = QHBoxLayout()
-        wager_rtp_labels_row.setSpacing(12)
-        
-        wager_label = QLabel("Wager Amount:")
+        # Left Column - Wager
+        wager_label = QLabel("Wager:")
         wager_label.setObjectName("FieldLabel")
-        wager_rtp_labels_row.addWidget(wager_label, 1)
+        wager_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        session_grid.addWidget(wager_label, row, 0)
+        self.wager_edit.setFixedWidth(140)
+        session_grid.addWidget(self.wager_edit, row, 1)
         
+        # Right Column - RTP Display with help button
         rtp_label = QLabel("RTP:")
         rtp_label.setObjectName("FieldLabel")
-        wager_rtp_labels_row.addWidget(rtp_label, 1)
+        rtp_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        session_grid.addWidget(rtp_label, row, 2)
         
-        game_layout.addLayout(wager_rtp_labels_row)
+        # RTP container with display and help button
+        rtp_container = QWidget()
+        rtp_layout = QHBoxLayout(rtp_container)
+        rtp_layout.setContentsMargins(0, 0, 0, 0)
+        rtp_layout.setSpacing(6)
+        rtp_layout.addWidget(self.rtp_display)
+        rtp_layout.addWidget(self.rtp_help_btn, 0, Qt.AlignVCenter)
+        rtp_layout.addStretch(1)
+        session_grid.addWidget(rtp_container, row, 3)
         
-        # Row 3: Wager Amount field | RTP tooltip
-        wager_rtp_fields_row = QHBoxLayout()
-        wager_rtp_fields_row.setSpacing(12)
-        wager_rtp_fields_row.addWidget(self.wager_edit, 1)
-        wager_rtp_fields_row.addWidget(self.rtp_tooltip, 1)
-        game_layout.addLayout(wager_rtp_fields_row)
+        session_grid.setColumnStretch(1, 1)
+        session_grid.setColumnStretch(3, 1)
         
-        form.addWidget(game_section, 3, 0, 1, 7)
+        form.addWidget(session_section, 2, 0, 1, 7)
 
-        # Section 3: Starting Balances
-        section3_header = self._create_section_header("💰  Starting Balances")
-        form.addWidget(section3_header, 4, 0, 1, 7)
+        # Section 2: Balance Details (2-column grid with all balance fields)
+        section2_header = self._create_section_header("💰  Balance Details")
+        form.addWidget(section2_header, 3, 0, 1, 7)
         
-        start_balance_section = QWidget()
-        start_balance_section.setObjectName("SectionBackground")
-        start_balance_layout = QVBoxLayout(start_balance_section)
-        start_balance_layout.setContentsMargins(12, 12, 12, 12)
-        start_balance_layout.setSpacing(8)
+        balance_section = QWidget()
+        balance_section.setObjectName("SectionBackground")
+        balance_grid = QGridLayout(balance_section)
+        balance_grid.setContentsMargins(10, 10, 10, 10)
+        balance_grid.setHorizontalSpacing(30)
+        balance_grid.setVerticalSpacing(8)
         
-        # Row 0: Labels
-        start_balance_labels_row = QHBoxLayout()
-        start_balance_labels_row.setSpacing(12)
+        row = 0
         
+        # Left Column - Starting Total SC
         start_total_label = QLabel("Starting Total SC:")
         start_total_label.setObjectName("FieldLabel")
-        start_balance_labels_row.addWidget(start_total_label, 1)
+        start_total_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balance_grid.addWidget(start_total_label, row, 0)
+        self.start_total_edit.setFixedWidth(140)
+        balance_grid.addWidget(self.start_total_edit, row, 1)
         
+        # Right Column - Starting Redeemable
         start_redeem_label = QLabel("Starting Redeemable:")
         start_redeem_label.setObjectName("FieldLabel")
-        start_balance_labels_row.addWidget(start_redeem_label, 1)
+        start_redeem_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balance_grid.addWidget(start_redeem_label, row, 2)
+        self.start_redeem_edit.setFixedWidth(140)
+        balance_grid.addWidget(self.start_redeem_edit, row, 3)
         
-        start_balance_layout.addLayout(start_balance_labels_row)
+        row += 1
         
-        # Row 1: Fields
-        start_balance_fields_row = QHBoxLayout()
-        start_balance_fields_row.setSpacing(12)
-        start_balance_fields_row.addWidget(self.start_total_edit, 1)
-        start_balance_fields_row.addWidget(self.start_redeem_edit, 1)
-        start_balance_layout.addLayout(start_balance_fields_row)
-        
-        # Add vertical spacer
-        start_balance_layout.addSpacing(15)
-        
-        # Row 2: Balance Check label
-        start_balance_layout.addWidget(self.balance_label)
-        
-        # Row 3: Balance Check value
-        start_balance_layout.addWidget(self.freebie_label)
-        
-        form.addWidget(start_balance_section, 5, 0, 1, 7)
-
-        # Section 4: Ending Balances
-        section4_header = self._create_section_header("💵  Ending Balances")
-        form.addWidget(section4_header, 6, 0, 1, 7)
-        
-        end_balance_section = QWidget()
-        end_balance_section.setObjectName("SectionBackground")
-        end_balance_layout = QVBoxLayout(end_balance_section)
-        end_balance_layout.setContentsMargins(12, 12, 12, 12)
-        end_balance_layout.setSpacing(8)
-        
-        # Row 0: Labels
-        end_balance_labels_row = QHBoxLayout()
-        end_balance_labels_row.setSpacing(12)
-        
+        # Left Column - Ending Total SC
         end_total_label = QLabel("Ending Total SC:")
         end_total_label.setObjectName("FieldLabel")
-        end_balance_labels_row.addWidget(end_total_label, 1)
+        end_total_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balance_grid.addWidget(end_total_label, row, 0)
+        self.end_total_edit.setFixedWidth(140)
+        balance_grid.addWidget(self.end_total_edit, row, 1)
         
+        # Right Column - Ending Redeemable
         end_redeem_label = QLabel("Ending Redeemable:")
         end_redeem_label.setObjectName("FieldLabel")
-        end_balance_labels_row.addWidget(end_redeem_label, 1)
+        end_redeem_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balance_grid.addWidget(end_redeem_label, row, 2)
+        self.end_redeem_edit.setFixedWidth(140)
+        balance_grid.addWidget(self.end_redeem_edit, row, 3)
         
-        end_balance_layout.addLayout(end_balance_labels_row)
+        row += 1
         
-        # Row 1: Fields
-        end_balance_fields_row = QHBoxLayout()
-        end_balance_fields_row.setSpacing(12)
-        end_balance_fields_row.addWidget(self.end_total_edit, 1)
-        end_balance_fields_row.addWidget(self.end_redeem_edit, 1)
-        end_balance_layout.addLayout(end_balance_fields_row)
+        # Balance Check Display (label in col 0, display spans cols 1-3)
+        balance_check_label = QLabel("Balance Check:")
+        balance_check_label.setObjectName("FieldLabel")
+        balance_check_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balance_check_label.setToolTip(
+            "Compares your starting total SC to the expected balance from prior sessions, purchases, "
+            "and redemptions. This helps flag missing entries or unexpected bonuses. It does not "
+            "change tax results until the session is closed."
+        )
+        balance_grid.addWidget(balance_check_label, row, 0)
+        balance_grid.addWidget(self.balance_check_display, row, 1, 1, 3)
         
-        form.addWidget(end_balance_section, 7, 0, 1, 7)
+        balance_grid.setColumnStretch(1, 1)
+        balance_grid.setColumnStretch(3, 1)
+        
+        form.addWidget(balance_section, 4, 0, 1, 7)
 
-        # Section 5: Notes
-        section5_header = self._create_section_header("📝  Notes")
-        form.addWidget(section5_header, 8, 0, 1, 7)
+        # Collapsible Notes Section (like Add Session)
+        self.notes_collapsed = True
+        self.notes_toggle = QPushButton("📝 Add Notes...")
+        self.notes_toggle.setObjectName("SectionHeader")
+        self.notes_toggle.setCursor(Qt.PointingHandCursor)
+        self.notes_toggle.setFlat(True)
+        self.notes_toggle.clicked.connect(self._toggle_notes)
+        form.addWidget(self.notes_toggle, 5, 0, 1, 7)
         
-        notes_section = QWidget()
-        notes_section.setObjectName("SectionBackground")
-        notes_layout = QVBoxLayout(notes_section)
+        self.notes_section = QWidget()
+        self.notes_section.setObjectName("SectionBackground")
+        self.notes_section.setVisible(False)
+        notes_layout = QVBoxLayout(self.notes_section)
         notes_layout.setContentsMargins(12, 12, 12, 12)
-        notes_layout.setSpacing(5)
         notes_layout.addWidget(self.notes_edit)
-        form.addWidget(notes_section, 9, 0, 1, 7)
+        form.addWidget(self.notes_section, 6, 0, 1, 7)
 
         form.setColumnStretch(0, 1)
         form.setColumnStretch(1, 1)
@@ -1792,12 +1900,12 @@ class EditClosedSessionDialog(QDialog):
         self.game_type_combo.currentTextChanged.connect(self._update_game_names)
         self.game_type_combo.currentTextChanged.connect(self._validate_inline)
         self.game_name_combo.currentTextChanged.connect(self._validate_inline)
-        self.game_name_combo.currentTextChanged.connect(self._update_rtp_tooltip)
-        self.site_combo.currentTextChanged.connect(self._update_freebie_label)
-        self.user_combo.currentTextChanged.connect(self._update_freebie_label)
-        self.start_total_edit.textChanged.connect(self._update_freebie_label)
-        self.date_edit.textChanged.connect(self._update_freebie_label)
-        self.time_edit.textChanged.connect(self._update_freebie_label)
+        self.game_name_combo.currentTextChanged.connect(self._update_rtp_display)
+        self.site_combo.currentTextChanged.connect(self._update_balance_check)
+        self.user_combo.currentTextChanged.connect(self._update_balance_check)
+        self.start_total_edit.textChanged.connect(self._update_balance_check)
+        self.date_edit.textChanged.connect(self._update_balance_check)
+        self.time_edit.textChanged.connect(self._update_balance_check)
         self.date_edit.textChanged.connect(self._validate_inline)
         self.time_edit.textChanged.connect(self._validate_inline)
         self.user_combo.currentTextChanged.connect(self._validate_inline)
@@ -1809,6 +1917,30 @@ class EditClosedSessionDialog(QDialog):
         self.end_total_edit.textChanged.connect(self._validate_inline)
         self.end_redeem_edit.textChanged.connect(self._validate_inline)
         self.wager_edit.textChanged.connect(self._validate_inline)
+        
+        # Connect fields that affect RTP calculation
+        self.wager_edit.textChanged.connect(self._update_rtp_display)
+        self.start_total_edit.textChanged.connect(self._update_rtp_display)
+        self.end_total_edit.textChanged.connect(self._update_rtp_display)
+        self.game_name_combo.currentTextChanged.connect(self._update_rtp_display)
+        
+        # Set tab order: Start date -> Start time -> End Date -> End Time -> User -> Site -> 
+        # Game Type -> Game Name -> Wager -> Start Total -> Start Redeem -> End total -> End redeem -> Notes -> Save
+        self.setTabOrder(self.date_edit, self.time_edit)
+        self.setTabOrder(self.time_edit, self.end_date_edit)
+        self.setTabOrder(self.end_date_edit, self.end_time_edit)
+        self.setTabOrder(self.end_time_edit, self.user_combo)
+        self.setTabOrder(self.user_combo, self.site_combo)
+        self.setTabOrder(self.site_combo, self.game_type_combo)
+        self.setTabOrder(self.game_type_combo, self.game_name_combo)
+        self.setTabOrder(self.game_name_combo, self.wager_edit)
+        self.setTabOrder(self.wager_edit, self.start_total_edit)
+        self.setTabOrder(self.start_total_edit, self.start_redeem_edit)
+        self.setTabOrder(self.start_redeem_edit, self.end_total_edit)
+        self.setTabOrder(self.end_total_edit, self.end_redeem_edit)
+        self.setTabOrder(self.end_redeem_edit, self.notes_edit)
+        self.setTabOrder(self.notes_edit, self.save_btn)
+        self.setTabOrder(self.save_btn, self.cancel_btn)
 
         self._load_session()
         self._validate_inline()
@@ -1861,26 +1993,240 @@ class EditClosedSessionDialog(QDialog):
         self.game_name_combo.blockSignals(False)
         self._validate_inline()
     
-    def _update_rtp_tooltip(self):
-        """Update RTP tooltip based on selected game"""
+    def _update_rtp_display(self):
+        """Update RTP display: Exp (static) / Act (aggregate) / Session (this session only, real-time)"""
         game_type_text = self.game_type_combo.currentText().strip()
         game_name_text = self.game_name_combo.currentText().strip()
         
         if not game_type_text or not game_name_text:
-            self.rtp_tooltip.setText("")
+            self.rtp_display.setText("—")
             return
         
         key = (game_type_text.lower(), game_name_text.lower())
         game = self._game_lookup.get(key)
         
-        if game and game.rtp is not None:
-            self.rtp_tooltip.setText(f"{float(game.rtp):.2f}%")
-        else:
-            self.rtp_tooltip.setText("—")
+        if not game or game.rtp is None:
+            self.rtp_display.setText("—")
+            return
+        
+        # Part 1: Expected RTP (static from game setup)
+        exp_str = f"{float(game.rtp):.2f}%"
+        
+        # Part 2: Actual RTP (current aggregate, excluding this session)
+        act_str = "N/A"
+        try:
+            # Use facade's database connection
+            conn = self.facade.game_session_service.session_repo.db._connection
+            c = conn.cursor()
+            
+            # Get current aggregates
+            c.execute('''
+                SELECT total_wager, total_delta, session_count 
+                FROM game_rtp_aggregates 
+                WHERE game_id = ?
+            ''', (game.id,))
+            agg_row = c.fetchone()
+            
+            if agg_row:
+                current_total_wager = float(agg_row['total_wager'])
+                current_total_delta = float(agg_row['total_delta'])
+                
+                # Subtract THIS session's current contribution (since we're editing it)
+                old_wager = float(self.session.wager_amount or 0)
+                old_delta = float(self.session.delta_total or 0) if hasattr(self.session, 'delta_total') and self.session.delta_total is not None else (float(self.session.ending_balance or 0) - float(self.session.starting_balance or 0))
+                
+                # Act = aggregate without this session
+                act_total_wager = current_total_wager - old_wager
+                act_total_delta = current_total_delta - old_delta
+                
+                if act_total_wager > 0:
+                    actual_rtp = ((act_total_wager + act_total_delta) / act_total_wager) * 100.0
+                    act_str = f"{actual_rtp:.2f}%"
+                else:
+                    act_str = "N/A"
+        except Exception as e:
+            # Fallback to game's stored actual_rtp
+            if getattr(game, "actual_rtp", None) is not None:
+                act_str = f"{float(game.actual_rtp):.2f}%"
+        
+        # Part 3: Session RTP (this session only, real-time calculation)
+        session_str = "N/A"
+        wager_text = self.wager_edit.text().strip()
+        start_total_text = self.start_total_edit.text().strip()
+        end_total_text = self.end_total_edit.text().strip()
+        
+        # Validate wager
+        if wager_text:
+            valid, result = validate_currency(wager_text)
+            if valid:
+                wager_amount = float(result)
+                
+                # Calculate delta_total from balances
+                if start_total_text and end_total_text:
+                    valid_start, result_start = validate_currency(start_total_text)
+                    valid_end, result_end = validate_currency(end_total_text)
+                    if valid_start and valid_end and wager_amount > 0:
+                        delta_total = float(result_end) - float(result_start)
+                        
+                        # Session RTP formula: ((wager + delta_total) / wager) * 100
+                        session_rtp = ((wager_amount + delta_total) / wager_amount) * 100.0
+                        session_str = f"{session_rtp:.2f}%"
+        
+        # Build final display string
+        self.rtp_display.setText(f"Exp: {exp_str} / Act: {act_str} / Session: {session_str}")
     
-    def _update_freebie_label(self):
-        """Update balance check label (stub for now)"""
-        self.freebie_label.setText("Balance check available")
+    def _update_balance_check(self):
+        """Update balance check display with proper calculation"""
+        site_name = self.site_combo.currentText().strip()
+        user_name = self.user_combo.currentText().strip()
+        start_total_text = self.start_total_edit.text().strip()
+        
+        if not site_name or not user_name or not start_total_text:
+            self.balance_check_display.setText("—")
+            self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.style().unpolish(self.balance_check_display)
+            self.balance_check_display.style().polish(self.balance_check_display)
+            return
+        
+        valid, result = validate_currency(start_total_text)
+        if not valid:
+            self.balance_check_display.setText("—")
+            self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.style().unpolish(self.balance_check_display)
+            self.balance_check_display.style().polish(self.balance_check_display)
+            return
+        
+        site_id, user_id = self._lookup_ids(site_name, user_name)
+        if not site_id or not user_id:
+            self.balance_check_display.setText("—")
+            self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.style().unpolish(self.balance_check_display)
+            self.balance_check_display.style().polish(self.balance_check_display)
+            return
+        
+        session_date = self.date_edit.text().strip() or None
+        session_time = self.time_edit.text().strip() or None
+        try:
+            parsed_date = parse_date_input(session_date) if session_date else None
+            parsed_time = parse_time_input(session_time) if session_time else None
+        except ValueError:
+            self.balance_check_display.setText("—")
+            self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.style().unpolish(self.balance_check_display)
+            self.balance_check_display.style().polish(self.balance_check_display)
+            return
+        
+        try:
+            expected_total, _expected_redeem = self.facade.compute_expected_balances(
+                user_id=user_id,
+                site_id=site_id,
+                session_date=parsed_date or date.today(),
+                session_time=parsed_time or datetime.now().strftime("%H:%M:%S"),
+            )
+            site = self.facade.get_site(site_id)
+            sc_rate = Decimal(str(site.sc_rate if site else 1.0))
+            freebies_sc = max(0.0, float(result) - float(expected_total))
+            missing_sc = max(0.0, float(expected_total) - float(result))
+            freebies_dollar = float(Decimal(str(freebies_sc)) * sc_rate)
+            
+            if freebies_sc > 0:
+                self.balance_check_display.setProperty("status", "positive")
+                self.balance_check_display.setText(
+                    f"+ {freebies_sc:.2f} SC extra (${freebies_dollar:.2f})"
+                )
+            elif missing_sc > 0:
+                self.balance_check_display.setProperty("status", "negative")
+                self.balance_check_display.setText(
+                    f"- {missing_sc:.2f} SC less than expected"
+                )
+            else:
+                self.balance_check_display.setProperty("status", "neutral")
+                self.balance_check_display.setText(f"Matches expected ({float(expected_total):.2f} SC)")
+            
+            self.balance_check_display.style().unpolish(self.balance_check_display)
+            self.balance_check_display.style().polish(self.balance_check_display)
+        except Exception:
+            # If any error occurs, just show neutral
+            self.balance_check_display.setText("Balance check available")
+            self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.style().unpolish(self.balance_check_display)
+            self.balance_check_display.style().polish(self.balance_check_display)
+    
+    def _lookup_ids(self, site_name, user_name):
+        """Lookup site and user IDs by name"""
+        site = self._site_lookup.get(site_name.lower())
+        user = self._user_lookup.get(user_name.lower())
+        return (site.id if site else None, user.id if user else None)
+    
+    def _set_start_today(self):
+        """Set start date to today"""
+        self.date_edit.setText(date.today().strftime("%m/%d/%y"))
+    
+    def _set_start_now(self):
+        """Set start time to now"""
+        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+    
+    def _set_end_today(self):
+        """Set end date to today"""
+        self.end_date_edit.setText(date.today().strftime("%m/%d/%y"))
+    
+    def _set_end_now(self):
+        """Set end time to now"""
+        self.end_time_edit.setText(datetime.now().strftime("%H:%M"))
+    
+    def _pick_start_date(self):
+        """Pick start date from calendar"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select Start Date")
+        layout = QVBoxLayout(dialog)
+        calendar = QCalendarWidget()
+        calendar.setSelectedDate(QDate.currentDate())
+        layout.addWidget(calendar)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        ok_btn = QPushButton("Select")
+        cancel_btn = QPushButton("✖️ Cancel")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+        cancel_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+        if dialog.exec() == QDialog.Accepted:
+            self.date_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+    
+    def _pick_end_date(self):
+        """Pick end date from calendar"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select End Date")
+        layout = QVBoxLayout(dialog)
+        calendar = QCalendarWidget()
+        calendar.setSelectedDate(QDate.currentDate())
+        layout.addWidget(calendar)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        ok_btn = QPushButton("Select")
+        cancel_btn = QPushButton("✖️ Cancel")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+        cancel_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+        if dialog.exec() == QDialog.Accepted:
+            self.end_date_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+    
+    def _toggle_notes(self):
+        """Toggle notes section visibility"""
+        self.notes_collapsed = not self.notes_collapsed
+        self.notes_section.setVisible(not self.notes_collapsed)
+        if self.notes_collapsed:
+            self.notes_toggle.setText("📝 Add Notes...")
+            self.setMinimumHeight(620)
+            self.resize(self.width(), 620)
+        else:
+            self.notes_toggle.setText("📝 Notes")
+            self.setMinimumHeight(750)
+            self.resize(self.width(), 750)
+            self.notes_edit.setFocus()
     
     def _set_invalid(self, widget, message):
         widget.setProperty("invalid", True)
@@ -1893,6 +2239,151 @@ class EditClosedSessionDialog(QDialog):
         widget.setToolTip("")
         widget.style().unpolish(widget)
         widget.style().polish(widget)
+    
+    def _show_rtp_help(self):
+        """Show help dialog explaining RTP components"""
+        QMessageBox.information(
+            self,
+            "RTP (Return to Player) Explanation",
+            "<b>Exp (Expected):</b> The game's advertised/theoretical RTP percentage from the setup tab. "
+            "This is the static baseline provided by the casino.<br><br>"
+            "<b>Act (Actual):</b> The cumulative RTP across ALL other closed sessions for this game "
+            "(excluding this session). Calculated as ((total_wager + total_delta) / total_wager) × 100.<br><br>"
+            "<b>Session:</b> The RTP for THIS specific session only, calculated in real-time as you type. "
+            "Formula: ((wager + delta_total) / wager) × 100, where delta_total = ending_balance - starting_balance.<br><br>"
+            "<i>When you save, the Actual RTP will be updated to include this session's contribution.</i>"
+        )
+    
+    def collect_data(self):
+        """Collect and validate all form data for closed session"""
+        # Validate and collect user/site
+        user_name = self.user_combo.currentText().strip()
+        site_name = self.site_combo.currentText().strip()
+        if not user_name or not site_name:
+            return None, "Please select User and Site."
+        
+        user = self._user_lookup.get(user_name.lower())
+        site = self._site_lookup.get(site_name.lower())
+        if not user or not site:
+            return None, "Please select a valid User and Site."
+        
+        # Validate start date
+        start_date_str = self.date_edit.text().strip()
+        if not start_date_str:
+            return None, "Please enter a start date."
+        try:
+            start_date = parse_date_input(start_date_str)
+        except ValueError:
+            return None, "Please enter a valid start date."
+        
+        # Validate start time
+        start_time_str = self.time_edit.text().strip()
+        if start_time_str and not is_valid_time_24h(start_time_str, allow_blank=False):
+            return None, "Please enter a valid start time (HH:MM or HH:MM:SS, 24-hour)."
+        try:
+            start_time = parse_time_input(start_time_str)
+        except ValueError:
+            return None, "Please enter a valid start time (HH:MM or HH:MM:SS)."
+        
+        # Validate end date
+        end_date_str = self.end_date_edit.text().strip()
+        if not end_date_str:
+            return None, "Please enter an end date."
+        try:
+            end_date = parse_date_input(end_date_str)
+        except ValueError:
+            return None, "Please enter a valid end date."
+        
+        # Validate end time
+        end_time_str = self.end_time_edit.text().strip()
+        if end_time_str and not is_valid_time_24h(end_time_str, allow_blank=False):
+            return None, "Please enter a valid end time (HH:MM or HH:MM:SS, 24-hour)."
+        try:
+            end_time = parse_time_input(end_time_str)
+        except ValueError:
+            return None, "Please enter a valid end time (HH:MM or HH:MM:SS)."
+        
+        # Validate game type and game name
+        game_type = self.game_type_combo.currentText().strip()
+        game_name = self.game_name_combo.currentText().strip()
+        
+        game = None
+        game_id = None
+        if game_name:
+            if not game_type:
+                return None, "Please select a Game Type when entering a Game Name."
+            game = self._game_lookup.get((game_type.lower(), game_name.lower()))
+            if not game:
+                return None, "Please select a valid Game Name for the chosen type."
+            game_id = game.id
+        
+        # Validate wager amount
+        wager_str = self.wager_edit.text().strip()
+        wager_amount = None
+        if wager_str:
+            valid, result = validate_currency(wager_str)
+            if not valid:
+                return None, result
+            wager_amount = result
+        
+        # Validate starting balances
+        start_total_str = self.start_total_edit.text().strip()
+        if not start_total_str:
+            return None, "Please enter Starting Total SC."
+        valid, result = validate_currency(start_total_str)
+        if not valid:
+            return None, result
+        start_total = result
+        
+        start_redeem_str = self.start_redeem_edit.text().strip()
+        if not start_redeem_str:
+            return None, "Please enter Starting Redeemable SC."
+        valid, result = validate_currency(start_redeem_str)
+        if not valid:
+            return None, result
+        start_redeem = result
+        
+        if start_redeem > start_total:
+            return None, "Starting Redeemable SC cannot exceed Starting Total SC."
+        
+        # Validate ending balances
+        end_total_str = self.end_total_edit.text().strip()
+        if not end_total_str:
+            return None, "Please enter Ending Total SC."
+        valid, result = validate_currency(end_total_str)
+        if not valid:
+            return None, result
+        end_total = result
+        
+        end_redeem_str = self.end_redeem_edit.text().strip()
+        if not end_redeem_str:
+            return None, "Please enter Ending Redeemable SC."
+        valid, result = validate_currency(end_redeem_str)
+        if not valid:
+            return None, result
+        end_redeem = result
+        
+        if end_redeem > end_total:
+            return None, "Ending Redeemable SC cannot exceed Ending Total SC."
+        
+        notes = self.notes_edit.toPlainText().strip()
+        
+        return {
+            "session_date": start_date,
+            "start_time": start_time,
+            "end_date": end_date,
+            "end_time": end_time,
+            "user_id": user.id,
+            "site_id": site.id,
+            "game_id": game_id,
+            "game_name": game_name,
+            "starting_total_sc": Decimal(str(start_total)),
+            "starting_redeemable_sc": Decimal(str(start_redeem)),
+            "ending_total_sc": Decimal(str(end_total)),
+            "ending_redeemable_sc": Decimal(str(end_redeem)),
+            "wager_amount": wager_amount,
+            "notes": notes,
+        }, None
     
     def _validate_inline(self):
         """Validate all fields"""
@@ -2078,8 +2569,16 @@ class EditClosedSessionDialog(QDialog):
             self.wager_edit.setText(str(self.session.wager_amount or ""))
         self.notes_edit.setPlainText(self.session.notes or "")
         
-        self._update_freebie_label()
-        self._update_rtp_tooltip()
+        # Expand notes section if there are notes
+        if self.session.notes:
+            self.notes_collapsed = False
+            self.notes_section.setVisible(True)
+            self.notes_toggle.setText("📝 Notes")
+            self.setMinimumHeight(830)
+            self.resize(self.width(), 830)
+        
+        self._update_balance_check()
+        self._update_rtp_display()
 
 
 class ViewSessionDialog(QDialog):
@@ -2107,7 +2606,7 @@ class ViewSessionDialog(QDialog):
         self._on_view_in_daily = on_view_in_daily
         self._on_end = on_end
         self.setWindowTitle("View Game Session")
-        self.resize(750, 650)
+        self.resize(750, 600)
 
         self.linked_purchases = self._get_linked_purchases()
         self.linked_redemptions = self._get_linked_redemptions()
@@ -2205,151 +2704,410 @@ class ViewSessionDialog(QDialog):
             return str(value)
 
     def _create_details_tab(self):
+        """Create details tab with modern sectioned layout"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
+        # Get lookups
         users = {u.id: u.name for u in self.facade.get_all_users()}
         sites = {s.id: s.name for s in self.facade.get_all_sites()}
-        game_types = {t.id: t.name for t in self.facade.get_all_game_types()}
         games = {g.id: g for g in self.facade.list_all_games()}
+        game_types_list = self.facade.get_all_game_types()
 
-        def build_group(title):
-            group = QGroupBox(title)
-            group_layout = QGridLayout(group)
-            group_layout.setHorizontalSpacing(10)
-            group_layout.setVerticalSpacing(8)
-            group_layout.setColumnStretch(1, 1)
-            group_layout.setColumnStretch(3, 1)
-            return group, group_layout
-
-        def add_pair(grid, row, col, label_text, value):
-            label = QLabel(label_text)
-            label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            value_label = QLabel(value)
-            value_label.setObjectName("InfoField")
-            value_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            grid.addWidget(label, row, col * 2)
-            grid.addWidget(value_label, row, col * 2 + 1)
-
-        def format_time(value):
-            return value[:5] if value else "—"
-
-        def format_dt(date_value, time_value):
-            if not date_value and not time_value:
-                return "—"
-            date_part = self._format_date(date_value)
-            time_part = format_time(time_value)
-            if date_part == "—":
-                return time_part
-            if time_part == "—":
-                return date_part
-            return f"{date_part} {time_part}"
-
-        def format_sc(value):
-            return f"{float(value):.2f}" if value is not None else "—"
-
-        def format_delta(value):
-            if value is None:
-                return "—"
-            return f"{float(value):+.2f}"
-
-        game = games.get(self.session.game_id)
+        game = games.get(self.session.game_id) if self.session.game_id else None
         game_name = game.name if game else "—"
-        game_type = game_types.get(game.game_type_id, "—") if game else "—"
-        exp_rtp = float(game.rtp) if game and game.rtp is not None else None
-        act_rtp = float(game.actual_rtp) if game and getattr(game, "actual_rtp", None) is not None else None
-        rtp_display = f"Exp {exp_rtp:.2f}% / Act {act_rtp:.2f}%" if exp_rtp is not None and act_rtp is not None else (
-            f"{exp_rtp:.2f}%" if exp_rtp is not None else "—"
-        )
+        game_type_name = "—"
+        if game and game.game_type_id:
+            for gt in game_types_list:
+                if gt.id == game.game_type_id:
+                    game_type_name = gt.name
+                    break
 
         is_active = not self.session.status or self.session.status == "Active"
-        start_total = self.session.starting_balance
-        end_total = None if is_active else self.session.ending_balance
-        start_redeem = self.session.starting_redeemable
-        end_redeem = None if is_active else self.session.ending_redeemable
-        delta_total = None if is_active else self.session.delta_total
-        if not is_active and delta_total is None and start_total is not None and end_total is not None:
-            delta_total = float(end_total or 0) - float(start_total or 0)
-        delta_redeem = None if is_active else self.session.delta_redeem
-        if not is_active and delta_redeem is None and start_redeem is not None and end_redeem is not None:
-            delta_redeem = float(end_redeem or 0) - float(start_redeem or 0)
-        basis_val = None if is_active else (
-            self.session.basis_consumed if self.session.basis_consumed is not None else self.session.session_basis
-        )
+        status_text = self.session.status or "Active"
+
+        # ─────── Section 1: Session Details ───────
+        details_header = self._create_section_header(f"📋  Session Details - {status_text}")
+        layout.addWidget(details_header)
+
+        details_section = QWidget()
+        details_section.setObjectName("SectionBackground")
+        details_grid = QGridLayout(details_section)
+        details_grid.setContentsMargins(12, 12, 12, 12)
+        details_grid.setHorizontalSpacing(20)
+        details_grid.setVerticalSpacing(8)
+
+        # Row 0: Start Date/Time (left), End Date/Time (right)
+        start_dt_label = QLabel("Start Date / Time:")
+        start_dt_label.setStyleSheet("color: palette(mid);")
+        details_grid.addWidget(start_dt_label, 0, 0)
+
+        start_dt_value = self._format_datetime(self.session.session_date, self.session.session_time)
+        start_dt_display = QLabel(start_dt_value)
+        start_dt_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        start_dt_display.setCursor(Qt.IBeamCursor)
+        details_grid.addWidget(start_dt_display, 0, 1)
+
+        end_dt_label = QLabel("End Date / Time:")
+        end_dt_label.setStyleSheet("color: palette(mid);")
+        details_grid.addWidget(end_dt_label, 0, 2)
+
+        end_dt_value = self._format_datetime(self.session.end_date, self.session.end_time) if self.session.end_date else "—"
+        end_dt_display = QLabel(end_dt_value)
+        end_dt_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        end_dt_display.setCursor(Qt.IBeamCursor)
+        details_grid.addWidget(end_dt_display, 0, 3)
+
+        # Row 1: User (left), Site (right)
+        user_label = QLabel("User:")
+        user_label.setStyleSheet("color: palette(mid);")
+        details_grid.addWidget(user_label, 1, 0)
+
+        user_name = users.get(self.session.user_id, "—")
+        user_display = QLabel(user_name)
+        user_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        user_display.setCursor(Qt.IBeamCursor)
+        details_grid.addWidget(user_display, 1, 1)
+
+        site_label = QLabel("Site:")
+        site_label.setStyleSheet("color: palette(mid);")
+        details_grid.addWidget(site_label, 1, 2)
+
+        site_name = sites.get(self.session.site_id, "—")
+        site_display = QLabel(site_name)
+        site_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        site_display.setCursor(Qt.IBeamCursor)
+        details_grid.addWidget(site_display, 1, 3)
+
+        details_grid.setColumnStretch(1, 1)
+        details_grid.setColumnStretch(3, 1)
+        layout.addWidget(details_section)
+
+        # ========== TWO-COLUMN LAYOUT: Game Stats | Balances/Outcomes ==========
+        columns_widget = QWidget()
+        columns_layout = QHBoxLayout(columns_widget)
+        columns_layout.setContentsMargins(0, 0, 0, 0)
+        columns_layout.setSpacing(12)
+
+        # ========== LEFT: Game Stats ==========
+        game_stats_section = QWidget()
+        game_stats_section.setObjectName("SectionBackground")
+        game_stats_layout = QVBoxLayout(game_stats_section)
+        game_stats_layout.setContentsMargins(10, 8, 10, 8)
+        game_stats_layout.setSpacing(6)
+
+        # Subsection header
+        game_stats_label = QLabel("🎮 Game Stats")
+        game_stats_label.setObjectName("SectionHeader")
+        game_stats_layout.addWidget(game_stats_label)
+
+        game_stats_grid = QGridLayout()
+        game_stats_grid.setContentsMargins(0, 4, 0, 0)
+        game_stats_grid.setHorizontalSpacing(12)
+        game_stats_grid.setVerticalSpacing(6)
+
+        row = 0
+        game_type_label = QLabel("Game Type:")
+        game_type_label.setStyleSheet("color: palette(mid);")
+        game_stats_grid.addWidget(game_type_label, row, 0)
+        game_type_value = QLabel(game_type_name)
+        game_type_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        game_type_value.setCursor(Qt.IBeamCursor)
+        game_stats_grid.addWidget(game_type_value, row, 1)
+
+        row += 1
+        game_name_label = QLabel("Game Name:")
+        game_name_label.setStyleSheet("color: palette(mid);")
+        game_stats_grid.addWidget(game_name_label, row, 0)
+        game_name_value = QLabel(game_name)
+        game_name_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        game_name_value.setCursor(Qt.IBeamCursor)
+        game_stats_grid.addWidget(game_name_value, row, 1)
+
+        row += 1
+        wager_label = QLabel("Wager:")
+        wager_label.setStyleSheet("color: palette(mid);")
+        game_stats_grid.addWidget(wager_label, row, 0)
+        wager_value = self.session.wager_amount if self.session.wager_amount is not None else None
+        wager_display = format_currency(wager_value) if wager_value not in (None, "") else "—"
+        wager_value_label = QLabel(wager_display)
+        wager_value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        wager_value_label.setCursor(Qt.IBeamCursor)
+        game_stats_grid.addWidget(wager_value_label, row, 1)
+
+        row += 1
+        rtp_label = QLabel("RTP:")
+        rtp_label.setStyleSheet("color: palette(mid);")
+        game_stats_grid.addWidget(rtp_label, row, 0)
+        rtp_display = self._calculate_rtp_display(game)
+        rtp_value_label = QLabel(rtp_display)
+        rtp_value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        rtp_value_label.setCursor(Qt.IBeamCursor)
+        game_stats_grid.addWidget(rtp_value_label, row, 1)
+
+        game_stats_grid.setColumnStretch(1, 1)
+        game_stats_layout.addLayout(game_stats_grid)
+        game_stats_layout.addStretch(1)
+
+        columns_layout.addWidget(game_stats_section, 1)
+
+        # ========== RIGHT: Balances/Outcomes ==========
+        balances_section = QWidget()
+        balances_section.setObjectName("SectionBackground")
+        balances_layout = QVBoxLayout(balances_section)
+        balances_layout.setContentsMargins(10, 8, 10, 8)
+        balances_layout.setSpacing(6)
+
+        # Subsection header
+        balances_label = QLabel("💰 Balances/Outcomes")
+        balances_label.setObjectName("SectionHeader")
+        balances_layout.addWidget(balances_label)
+
+        # Table container with subtle border and background
+        table_container = QWidget()
+        table_container.setStyleSheet("""
+            QWidget {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+        balances_grid = QGridLayout(table_container)
+        balances_grid.setContentsMargins(0, 0, 0, 0)
+        balances_grid.setHorizontalSpacing(0)
+        balances_grid.setVerticalSpacing(0)
+
+        # Column headers (no empty cell, start at column 1)
+        row = 0
+        
+        start_header = QLabel("Start")
+        start_header.setAlignment(Qt.AlignCenter)
+        start_header.setStyleSheet("font-weight: bold; padding: 6px;")
+        balances_grid.addWidget(start_header, row, 1)
+
+        end_header = QLabel("End")
+        end_header.setAlignment(Qt.AlignCenter)
+        end_header.setStyleSheet("font-weight: bold; padding: 6px;")
+        balances_grid.addWidget(end_header, row, 2)
+
+        delta_header = QLabel("Delta")
+        delta_header.setAlignment(Qt.AlignCenter)
+        delta_header.setStyleSheet("font-weight: bold; padding: 6px;")
+        balances_grid.addWidget(delta_header, row, 3)
+
+        # Row: Total SC
+        row += 1
+        total_label = QLabel("Total SC:")
+        total_label.setStyleSheet("font-weight: bold; padding: 6px;")
+        balances_grid.addWidget(total_label, row, 0)
+
+        start_sc = f"{float(self.session.starting_balance or 0):.2f}"
+        start_sc_label = QLabel(start_sc)
+        start_sc_label.setAlignment(Qt.AlignCenter)
+        start_sc_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        start_sc_label.setCursor(Qt.IBeamCursor)
+        start_sc_label.setStyleSheet("color: black; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2);")
+        balances_grid.addWidget(start_sc_label, row, 1)
+
+        end_sc = f"{float(self.session.ending_balance or 0):.2f}" if not is_active and self.session.ending_balance is not None else "—"
+        end_sc_label = QLabel(end_sc)
+        end_sc_label.setAlignment(Qt.AlignCenter)
+        end_sc_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        end_sc_label.setCursor(Qt.IBeamCursor)
+        end_sc_label.setStyleSheet("color: black; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-left: none;")
+        balances_grid.addWidget(end_sc_label, row, 2)
+
+        delta_total = self.session.delta_total if not is_active else None
+        if not is_active and delta_total is None and self.session.starting_balance is not None and self.session.ending_balance is not None:
+            delta_total = float(self.session.ending_balance) - float(self.session.starting_balance)
+        delta_total_str = f"{float(delta_total):+.2f}" if delta_total is not None else "—"
+        delta_color = "#2e7d32" if delta_total is not None and delta_total >= 0 else ("#c62828" if delta_total is not None else "black")
+        delta_total_label = QLabel(delta_total_str)
+        delta_total_label.setAlignment(Qt.AlignCenter)
+        delta_total_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        delta_total_label.setCursor(Qt.IBeamCursor)
+        delta_total_label.setStyleSheet(f"color: {delta_color}; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-left: none;")
+        balances_grid.addWidget(delta_total_label, row, 3)
+
+        # Row: Redeemable
+        row += 1
+        redeem_label = QLabel("Redeemable:")
+        redeem_label.setStyleSheet("font-weight: bold; padding: 6px;")
+        balances_grid.addWidget(redeem_label, row, 0)
+
+        start_redeem = f"{float(self.session.starting_redeemable or 0):.2f}"
+        start_redeem_label = QLabel(start_redeem)
+        start_redeem_label.setAlignment(Qt.AlignCenter)
+        start_redeem_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        start_redeem_label.setCursor(Qt.IBeamCursor)
+        start_redeem_label.setStyleSheet("color: black; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-top: none;")
+        balances_grid.addWidget(start_redeem_label, row, 1)
+
+        end_redeem = f"{float(self.session.ending_redeemable or 0):.2f}" if not is_active and self.session.ending_redeemable is not None else "—"
+        end_redeem_label = QLabel(end_redeem)
+        end_redeem_label.setAlignment(Qt.AlignCenter)
+        end_redeem_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        end_redeem_label.setCursor(Qt.IBeamCursor)
+        end_redeem_label.setStyleSheet("color: black; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-left: none; border-top: none;")
+        balances_grid.addWidget(end_redeem_label, row, 2)
+
+        delta_redeem = self.session.delta_redeem if not is_active else None
+        if not is_active and delta_redeem is None and self.session.starting_redeemable is not None and self.session.ending_redeemable is not None:
+            delta_redeem = float(self.session.ending_redeemable) - float(self.session.starting_redeemable)
+        delta_redeem_str = f"{float(delta_redeem):+.2f}" if delta_redeem is not None else "—"
+        delta_redeem_color = "#2e7d32" if delta_redeem is not None and delta_redeem >= 0 else ("#c62828" if delta_redeem is not None else "black")
+        delta_redeem_label = QLabel(delta_redeem_str)
+        delta_redeem_label.setAlignment(Qt.AlignCenter)
+        delta_redeem_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        delta_redeem_label.setCursor(Qt.IBeamCursor)
+        delta_redeem_label.setStyleSheet(f"color: {delta_redeem_color}; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-left: none; border-top: none;")
+        balances_grid.addWidget(delta_redeem_label, row, 3)
+
+        # Row: Basis
+        row += 1
+        basis_label = QLabel("Basis:")
+        basis_label.setStyleSheet("font-weight: bold; padding: 6px;")
+        balances_grid.addWidget(basis_label, row, 0)
+
+        start_basis_label = QLabel("0.00")
+        start_basis_label.setAlignment(Qt.AlignCenter)
+        start_basis_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        start_basis_label.setCursor(Qt.IBeamCursor)
+        start_basis_label.setStyleSheet("color: black; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-top: none;")
+        balances_grid.addWidget(start_basis_label, row, 1)
+
+        basis_val = None if is_active else (self.session.basis_consumed if self.session.basis_consumed is not None else self.session.session_basis)
+        end_basis_str = format_currency(basis_val) if basis_val is not None else "—"
+        end_basis_label = QLabel(end_basis_str)
+        end_basis_label.setAlignment(Qt.AlignCenter)
+        end_basis_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        end_basis_label.setCursor(Qt.IBeamCursor)
+        end_basis_label.setStyleSheet("color: black; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-left: none; border-top: none;")
+        balances_grid.addWidget(end_basis_label, row, 2)
+
+        delta_basis_label = QLabel(end_basis_str)
+        delta_basis_label.setAlignment(Qt.AlignCenter)
+        delta_basis_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        delta_basis_label.setCursor(Qt.IBeamCursor)
+        delta_basis_label.setStyleSheet("color: black; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-left: none; border-top: none;")
+        balances_grid.addWidget(delta_basis_label, row, 3)
+
+        # Spacer row
+        row += 1
+        spacer = QWidget()
+        spacer.setFixedHeight(12)
+        balances_grid.addWidget(spacer, row, 0, 1, 4)
+        
+        # Row: Net P/L
+        row += 1
+        net_pl_label = QLabel("Net P/L:")
+        net_pl_label.setStyleSheet("font-weight: bold; padding: 6px;")
+        balances_grid.addWidget(net_pl_label, row, 0)
+
         net_val = None if is_active else self.session.net_taxable_pl
         if net_val is None and not is_active:
             net_val = 0.0
-        net_display = f"+${float(net_val):.2f}" if net_val is not None and float(net_val) >= 0 else (
-            f"${float(net_val):.2f}" if net_val is not None else "—"
-        )
+        net_display = f"+${float(net_val):.2f}" if net_val is not None and float(net_val) >= 0 else (f"${float(net_val):.2f}" if net_val is not None else "—")
+        net_color = "#2e7d32" if net_val is not None and net_val >= 0 else ("#c62828" if net_val is not None else "black")
+        net_pl_value = QLabel(net_display)
+        net_pl_value.setAlignment(Qt.AlignCenter)
+        net_pl_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        net_pl_value.setCursor(Qt.IBeamCursor)
+        net_pl_value.setStyleSheet(f"color: {net_color}; padding: 6px;")
+        balances_grid.addWidget(net_pl_value, row, 1, 1, 3)
 
-        session_group, session_grid = build_group(f"Session - {self.session.status or 'Active'}")
-        add_pair(
-            session_grid,
-            0,
-            0,
-            "Start",
-            format_dt(self.session.session_date, self.session.session_time),
-        )
-        end_value = format_dt(self.session.end_date, self.session.end_time) if self.session.end_date else "—"
-        add_pair(session_grid, 0, 1, "End", end_value)
-        add_pair(session_grid, 1, 0, "User", users.get(self.session.user_id, "—"))
-        add_pair(session_grid, 1, 1, "Site", sites.get(self.session.site_id, "—"))
-        layout.addWidget(session_group)
+        balances_grid.setColumnStretch(1, 1)
+        balances_grid.setColumnStretch(2, 1)
+        balances_grid.setColumnStretch(3, 1)
 
-        game_group, game_grid = build_group("Game")
-        add_pair(game_grid, 0, 0, "Game Type", game_type or "—")
-        add_pair(game_grid, 0, 1, "Game Name", game_name or "—")
-        wager_value = self.session.wager_amount if self.session.wager_amount is not None else None
-        wager_display = format_currency(wager_value) if wager_value not in (None, "") else "—"
-        session_rtp = self.session.rtp
-        rtp_value = f"{float(session_rtp):.2f}%" if session_rtp is not None else rtp_display
-        add_pair(game_grid, 1, 0, "Wager Amount", wager_display)
-        add_pair(game_grid, 1, 1, "RTP", rtp_value)
-        layout.addWidget(game_group)
+        balances_layout.addWidget(table_container)
+        balances_layout.addStretch(1)
 
-        balance_group, balance_grid = build_group("Balances")
-        add_pair(balance_grid, 0, 0, "Start SC", format_sc(start_total))
-        add_pair(balance_grid, 0, 1, "End SC", format_sc(end_total))
-        add_pair(balance_grid, 1, 0, "Start Redeem", format_sc(start_redeem))
-        add_pair(balance_grid, 1, 1, "End Redeem", format_sc(end_redeem))
-        add_pair(balance_grid, 2, 0, "Δ Total", format_delta(delta_total))
-        add_pair(balance_grid, 2, 1, "Δ Redeem", format_delta(delta_redeem))
-        add_pair(
-            balance_grid,
-            3,
-            0,
-            "Δ Basis",
-            format_currency(basis_val) if basis_val is not None else "—",
-        )
-        add_pair(balance_grid, 3, 1, "Net P/L", net_display)
-        layout.addWidget(balance_group)
+        columns_layout.addWidget(balances_section, 1)
+        
+        layout.addWidget(columns_widget)
 
-        notes_group = QGroupBox("Notes")
-        notes_layout = QVBoxLayout(notes_group)
+        # ─────── Notes (as subsection like Game Stats/Balances) ───────
+        notes_section = QWidget()
+        notes_section.setObjectName("SectionBackground")
+        notes_layout = QVBoxLayout(notes_section)
+        notes_layout.setContentsMargins(10, 8, 10, 8)
+        notes_layout.setSpacing(6)
+
+        # Subsection header
+        notes_label = QLabel("📝 Notes")
+        notes_label.setObjectName("SectionHeader")
+        notes_layout.addWidget(notes_label)
+
         notes_value = self.session.notes or ""
         if notes_value:
-            notes_edit = QPlainTextEdit()
-            notes_edit.setObjectName("NotesField")
-            notes_edit.setReadOnly(True)
-            notes_edit.setFocusPolicy(Qt.NoFocus)
-            notes_edit.setTextInteractionFlags(Qt.NoTextInteraction)
-            notes_edit.setPlainText(notes_value)
-            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 4 + 16)
-            notes_layout.addWidget(notes_edit)
+            notes_display = QPlainTextEdit()
+            notes_display.setReadOnly(True)
+            notes_display.setPlainText(notes_value)
+            notes_display.setMaximumHeight(80)
+            notes_display.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            notes_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            notes_layout.addWidget(notes_display)
         else:
-            notes_field = QLabel("—")
-            notes_field.setObjectName("InfoField")
-            notes_field.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            notes_field.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            fixed_height = max(notes_field.sizeHint().height(), 26)
-            notes_field.setFixedHeight(fixed_height)
-            notes_layout.addWidget(notes_field)
-        layout.addWidget(notes_group)
+            notes_empty = QLabel("—")
+            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_layout.addWidget(notes_empty)
+
+        layout.addWidget(notes_section)
+
         layout.addStretch(1)
         return widget
+
+    def _create_section_header(self, text: str) -> QLabel:
+        """Create a section header"""
+        label = QLabel(text)
+        label.setObjectName("SectionHeader")
+        return label
+
+    def _create_value_chip(self, text, status="neutral"):
+        """Create a ValueChip label"""
+        chip = QLabel(text)
+        chip.setObjectName("ValueChip")
+        chip.setProperty("status", status)
+        chip.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        chip.setAlignment(Qt.AlignCenter)
+        return chip
+
+    def _add_stat_row(self, grid, row, col, label_text, value_text, status="neutral"):
+        """Add a label/value pair to the stats grid"""
+        label = QLabel(label_text)
+        label.setObjectName("FieldLabel")
+        label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(label, row, col)
+
+        value = self._create_value_chip(value_text, status)
+        grid.addWidget(value, row, col + 1)
+
+    def _format_datetime(self, date_val, time_val):
+        """Format date and time for display"""
+        if not date_val:
+            return "—"
+        date_str = self._format_date(date_val)
+        time_str = time_val[:5] if time_val else "00:00"
+        return f"{date_str} {time_str}"
+
+    def _calculate_rtp_display(self, game):
+        """Calculate and format RTP display"""
+        if not game or not game.rtp:
+            return "—"
+        
+        exp_rtp = float(game.rtp)
+        act_rtp = float(game.actual_rtp) if getattr(game, "actual_rtp", None) is not None else None
+        session_rtp = float(self.session.rtp) if self.session.rtp is not None else None
+
+        parts = [f"Exp: {exp_rtp:.2f}%"]
+        if act_rtp is not None:
+            parts.append(f"Act: {act_rtp:.2f}%")
+        if session_rtp is not None:
+            parts.append(f"Session: {session_rtp:.2f}%")
+        
+        return " / ".join(parts)
 
     def _create_related_tab(self):
         widget = QWidget()
@@ -2534,199 +3292,365 @@ class ViewSessionDialog(QDialog):
 
 
 class EndSessionDialog(QDialog):
-    """Modern end session dialog with streamlined sectioned layout"""
+    """Modern end session dialog - modeled after Edit/Add Purchase and Redemption dialogs"""
     
-    def __init__(self, session, parent=None):
+    def __init__(self, facade, session, parent=None):
         super().__init__(parent)
+        self.facade = facade
         self.session = session
         self.setWindowTitle("End Game Session")
         self.setMinimumWidth(700)
-        self.setMinimumHeight(650)
+        self.setMinimumHeight(680)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(16)
-
-        start_total = float(session.starting_balance or 0.0)
-        start_redeem = float(session.starting_redeemable or 0.0)
 
         form = QGridLayout()
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(12)
         form.setContentsMargins(10, 10, 10, 10)
 
-        # Initialize widgets
+        # ─────── Header Section: Start (read-only) + End (input) - 2 column layout ───────
+        datetime_section = QWidget()
+        datetime_section.setObjectName("SectionBackground")
+        datetime_layout = QGridLayout(datetime_section)
+        datetime_layout.setContentsMargins(12, 12, 12, 12)
+        datetime_layout.setHorizontalSpacing(20)
+        datetime_layout.setVerticalSpacing(8)
+
+        # Left Column: Start Date + End Date with buttons
+        # Row 0: Start Date
+        start_date_label = QLabel("Start Date:")
+        start_date_label.setObjectName("FieldLabel")
+        start_date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        datetime_layout.addWidget(start_date_label, 0, 0)
+
+        self.start_date_display = QLabel(self._format_date(self.session.session_date))
+        self.start_date_display.setObjectName("ValueChip")
+        self.start_date_display.setProperty("status", "neutral")
+        self.start_date_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        datetime_layout.addWidget(self.start_date_display, 0, 1)
+
+        # Row 1: End Date with buttons
+        end_date_label = QLabel("End Date:")
+        end_date_label.setObjectName("FieldLabel")
+        end_date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        datetime_layout.addWidget(end_date_label, 1, 0)
+
+        end_date_container = QWidget()
+        end_date_layout = QHBoxLayout(end_date_container)
+        end_date_layout.setContentsMargins(0, 0, 0, 0)
+        end_date_layout.setSpacing(8)
+        
         self.date_edit = QLineEdit()
         self.date_edit.setPlaceholderText("MM/DD/YY")
-        self.today_btn = QPushButton("Today")
+        self.date_edit.setFixedWidth(110)
+        end_date_layout.addWidget(self.date_edit)
+        
         self.calendar_btn = QPushButton("📅")
         self.calendar_btn.setFixedWidth(44)
-        self.today_btn.clicked.connect(self._set_today)
-        self.calendar_btn.clicked.connect(self._pick_date)
+        end_date_layout.addWidget(self.calendar_btn)
+        
+        self.today_btn = QPushButton("Today")
+        end_date_layout.addWidget(self.today_btn)
+        end_date_layout.addStretch(1)
+        
+        datetime_layout.addWidget(end_date_container, 1, 1)
 
+        # Right Column: Start Time + End Time with button
+        # Row 0: Start Time
+        start_time_label = QLabel("Start Time:")
+        start_time_label.setObjectName("FieldLabel")
+        start_time_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        datetime_layout.addWidget(start_time_label, 0, 2)
+
+        self.start_time_display = QLabel(self._format_time(self.session.session_time))
+        self.start_time_display.setObjectName("ValueChip")
+        self.start_time_display.setProperty("status", "neutral")
+        self.start_time_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        datetime_layout.addWidget(self.start_time_display, 0, 3)
+
+        # Row 1: End Time with button
+        end_time_label = QLabel("End Time:")
+        end_time_label.setObjectName("FieldLabel")
+        end_time_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        datetime_layout.addWidget(end_time_label, 1, 2)
+
+        end_time_container = QWidget()
+        end_time_layout = QHBoxLayout(end_time_container)
+        end_time_layout.setContentsMargins(0, 0, 0, 0)
+        end_time_layout.setSpacing(8)
+        
         self.time_edit = QLineEdit()
         self.time_edit.setPlaceholderText("HH:MM")
+        self.time_edit.setFixedWidth(90)
+        end_time_layout.addWidget(self.time_edit)
+        
         self.now_btn = QPushButton("Now")
-        self.now_btn.clicked.connect(self._set_now)
+        end_time_layout.addWidget(self.now_btn)
+        end_time_layout.addStretch(1)
+        
+        datetime_layout.addWidget(end_time_container, 1, 3)
 
+        form.addWidget(datetime_section, 0, 0, 1, 7)
+
+        # ─────── Section 1: Balances (Inputs) ───────
+        section1_header = self._create_section_header("💰  Balances")
+        form.addWidget(section1_header, 1, 0, 1, 7)
+
+        balances_section = QWidget()
+        balances_section.setObjectName("SectionBackground")
+        balances_layout = QGridLayout(balances_section)
+        balances_layout.setContentsMargins(12, 12, 12, 12)
+        balances_layout.setHorizontalSpacing(20)
+        balances_layout.setVerticalSpacing(8)
+
+        # Left Column: End Total SC, Wager Amount
+        # Right Column: End Redeemable SC
+        row = 0
+        
+        # Left: End Total SC
+        end_total_label = QLabel("End Total SC:")
+        end_total_label.setObjectName("FieldLabel")
+        end_total_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balances_layout.addWidget(end_total_label, row, 0)
+        
         self.end_total_edit = QLineEdit()
         self.end_total_edit.setPlaceholderText("0.00")
+        self.end_total_edit.setFixedWidth(140)
+        balances_layout.addWidget(self.end_total_edit, row, 1)
+
+        # Right: End Redeemable SC
+        end_redeem_label = QLabel("End Redeemable SC:")
+        end_redeem_label.setObjectName("FieldLabel")
+        end_redeem_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balances_layout.addWidget(end_redeem_label, row, 2)
         
         self.end_redeem_edit = QLineEdit()
         self.end_redeem_edit.setPlaceholderText("0.00")
-        
-        self.wager_edit = QLineEdit()
-        self.wager_edit.setPlaceholderText("Optional")
+        self.end_redeem_edit.setFixedWidth(140)
+        balances_layout.addWidget(self.end_redeem_edit, row, 3)
 
-        self.locked_label = QLabel("—")
-        self.locked_label.setObjectName("InfoField")
-        self.locked_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.locked_label.setProperty("status", "neutral")
-        
-        self.pnl_label = QLabel("—")
-        self.pnl_label.setObjectName("InfoField")
-        self.pnl_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.pnl_label.setProperty("status", "neutral")
-
-        self.notes_edit = QPlainTextEdit()
-        self.notes_edit.setPlaceholderText("Optional...")
-        self.notes_edit.setFixedHeight(80)
-        self.notes_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
-        # Section 1: When (Date/Time)
-        section1_header = self._create_section_header("📅  When Ended")
-        form.addWidget(section1_header, 0, 0, 1, 7)
-        
-        when_section = QWidget()
-        when_section.setObjectName("SectionBackground")
-        when_layout = QGridLayout(when_section)
-        when_layout.setContentsMargins(12, 12, 12, 12)
-        when_layout.setHorizontalSpacing(12)
-        when_layout.setVerticalSpacing(8)
-        
-        # Row 0: Date label | Time label
-        date_label = QLabel("End Date:")
-        date_label.setObjectName("FieldLabel")
-        when_layout.addWidget(date_label, 0, 0, 1, 4)
-        
-        time_label = QLabel("End Time:")
-        time_label.setObjectName("FieldLabel")
-        when_layout.addWidget(time_label, 0, 4, 1, 3)
-        
-        # Row 1: Date + buttons | Time + button
-        when_layout.addWidget(self.date_edit, 1, 0, 1, 2)
-        when_layout.addWidget(self.calendar_btn, 1, 2)
-        when_layout.addWidget(self.today_btn, 1, 3)
-        when_layout.addWidget(self.time_edit, 1, 4, 1, 2)
-        when_layout.addWidget(self.now_btn, 1, 6)
-        
-        when_layout.setColumnStretch(0, 1)
-        when_layout.setColumnStretch(1, 1)
-        when_layout.setColumnStretch(4, 1)
-        when_layout.setColumnStretch(5, 1)
-        
-        form.addWidget(when_section, 1, 0, 1, 7)
-
-        # Section 2: Balances
-        section2_header = self._create_section_header("💰  Balances")
-        form.addWidget(section2_header, 2, 0, 1, 7)
-        
-        balance_section = QWidget()
-        balance_section.setObjectName("SectionBackground")
-        balance_layout = QVBoxLayout(balance_section)
-        balance_layout.setContentsMargins(12, 12, 12, 12)
-        balance_layout.setSpacing(8)
-        
-        # Row 0: Labels for Ending Total SC | Ending Redeemable
-        balance_labels_row = QHBoxLayout()
-        balance_labels_row.setSpacing(12)
-        
-        end_total_label = QLabel("Ending Total SC:")
-        end_total_label.setObjectName("FieldLabel")
-        balance_labels_row.addWidget(end_total_label, 1)
-        
-        end_redeem_label = QLabel("Ending Redeemable:")
-        end_redeem_label.setObjectName("FieldLabel")
-        balance_labels_row.addWidget(end_redeem_label, 1)
-        
-        balance_layout.addLayout(balance_labels_row)
-        
-        # Row 1: Fields
-        balance_fields_row = QHBoxLayout()
-        balance_fields_row.setSpacing(12)
-        
-        balance_fields_row.addWidget(self.end_total_edit, 1)
-        balance_fields_row.addWidget(self.end_redeem_edit, 1)
-        
-        balance_layout.addLayout(balance_fields_row)
-        
-        # Add vertical spacer
-        balance_layout.addSpacing(15)
-        
-        # Row 2: Wager label
+        # Left: Wager Amount
+        row += 1
         wager_label = QLabel("Wager Amount:")
         wager_label.setObjectName("FieldLabel")
-        balance_layout.addWidget(wager_label)
+        wager_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balances_layout.addWidget(wager_label, row, 0)
         
-        # Row 3: Wager field
-        balance_layout.addWidget(self.wager_edit)
-        
-        form.addWidget(balance_section, 3, 0, 1, 7)
+        self.wager_edit = QLineEdit()
+        self.wager_edit.setPlaceholderText("0.00")
+        self.wager_edit.setFixedWidth(140)
+        balances_layout.addWidget(self.wager_edit, row, 1)
 
-        # Section 3: Calculated Values
-        section3_header = self._create_section_header("📊  Calculated Values")
-        form.addWidget(section3_header, 4, 0, 1, 7)
-        
-        calc_section = QWidget()
-        calc_section.setObjectName("SectionBackground")
-        calc_layout = QVBoxLayout(calc_section)
-        calc_layout.setContentsMargins(12, 12, 12, 12)
-        calc_layout.setSpacing(8)
-        
-        # Row 0: Labels
-        calc_labels_row = QHBoxLayout()
-        calc_labels_row.setSpacing(12)
-        
-        locked_title = QLabel("Locked SC:")
-        locked_title.setObjectName("FieldLabel")
-        locked_title.setToolTip("Total SC minus Redeemable SC")
-        calc_labels_row.addWidget(locked_title, 1)
-        
-        pnl_title = QLabel("Redeemable Change:")
-        pnl_title.setObjectName("FieldLabel")
-        calc_labels_row.addWidget(pnl_title, 1)
-        
-        calc_layout.addLayout(calc_labels_row)
-        
-        # Row 1: Values
-        calc_values_row = QHBoxLayout()
-        calc_values_row.setSpacing(12)
-        
-        calc_values_row.addWidget(self.locked_label, 1)
-        calc_values_row.addWidget(self.pnl_label, 1)
-        
-        calc_layout.addLayout(calc_values_row)
-        
-        form.addWidget(calc_section, 5, 0, 1, 7)
+        balances_layout.setColumnStretch(1, 1)
+        balances_layout.setColumnStretch(3, 1)
+        form.addWidget(balances_section, 2, 0, 1, 7)
 
-        # Section 4: Notes
-        section4_header = self._create_section_header("📝  Notes")
-        form.addWidget(section3_header, 4, 0, 1, 7)
+        # ─────── Section 2: Session Details (Read-only calculated) ───────
+        section2_header = self._create_section_header("📊  Session Details")
+        form.addWidget(section2_header, 3, 0, 1, 7)
+
+        details_section = QWidget()
+        details_section.setObjectName("SectionBackground")
+        details_layout = QGridLayout(details_section)
+        details_layout.setContentsMargins(12, 12, 12, 12)
+        details_layout.setHorizontalSpacing(20)
+        details_layout.setVerticalSpacing(8)
+
+        # Left Column: Start SC, Δ Total, Δ Redeemable, RTP
+        # Right Column: Start Redeemable, Δ Basis, Net P/L
+        row = 0
         
-        notes_section = QWidget()
-        notes_section.setObjectName("SectionBackground")
-        notes_layout = QVBoxLayout(notes_section)
-        notes_layout.setContentsMargins(12, 12, 12, 12)
-        notes_layout.setSpacing(5)
+        # Left: Start SC
+        start_sc_label = QLabel("Start SC:")
+        start_sc_label.setObjectName("FieldLabel")
+        start_sc_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        details_layout.addWidget(start_sc_label, row, 0)
         
-        notes_layout.addWidget(self.notes_edit)
+        self.start_sc_display = QLabel(f"{float(self.session.starting_balance or 0):.2f}")
+        self.start_sc_display.setObjectName("ValueChip")
+        self.start_sc_display.setProperty("status", "neutral")
+        self.start_sc_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        details_layout.addWidget(self.start_sc_display, row, 1)
+
+        # Right: Start Redeemable
+        start_redeem_label = QLabel("Start Redeemable:")
+        start_redeem_label.setObjectName("FieldLabel")
+        start_redeem_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        details_layout.addWidget(start_redeem_label, row, 2)
         
-        form.addWidget(notes_section, 5, 0, 1, 7)
+        self.start_redeem_display = QLabel(f"{float(self.session.starting_redeemable or 0):.2f}")
+        self.start_redeem_display.setObjectName("ValueChip")
+        self.start_redeem_display.setProperty("status", "neutral")
+        self.start_redeem_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        details_layout.addWidget(self.start_redeem_display, row, 3)
+
+        # Left: Δ Total
+        row += 1
+        delta_total_label = QLabel("Δ Total:")
+        delta_total_label.setObjectName("FieldLabel")
+        delta_total_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        details_layout.addWidget(delta_total_label, row, 0)
+        
+        self.delta_total_display = QLabel("—")
+        self.delta_total_display.setObjectName("ValueChip")
+        self.delta_total_display.setProperty("status", "neutral")
+        self.delta_total_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        details_layout.addWidget(self.delta_total_display, row, 1)
+
+        # Right: Δ Basis
+        delta_basis_label = QLabel("Δ Basis:")
+        delta_basis_label.setObjectName("FieldLabel")
+        delta_basis_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        details_layout.addWidget(delta_basis_label, row, 2)
+        
+        self.delta_basis_display = QLabel("—")
+        self.delta_basis_display.setObjectName("ValueChip")
+        self.delta_basis_display.setProperty("status", "neutral")
+        self.delta_basis_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        details_layout.addWidget(self.delta_basis_display, row, 3)
+
+        # Left: Δ Redeemable
+        row += 1
+        delta_redeem_label = QLabel("Δ Redeemable:")
+        delta_redeem_label.setObjectName("FieldLabel")
+        delta_redeem_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        details_layout.addWidget(delta_redeem_label, row, 0)
+        
+        self.delta_redeem_display = QLabel("—")
+        self.delta_redeem_display.setObjectName("ValueChip")
+        self.delta_redeem_display.setProperty("status", "neutral")
+        self.delta_redeem_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        details_layout.addWidget(self.delta_redeem_display, row, 1)
+
+        # Right: Net P/L
+        net_pl_label = QLabel("Net P/L:")
+        net_pl_label.setObjectName("FieldLabel")
+        net_pl_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        details_layout.addWidget(net_pl_label, row, 2)
+        
+        self.net_pl_display = QLabel("—")
+        self.net_pl_display.setObjectName("ValueChip")
+        self.net_pl_display.setProperty("status", "neutral")
+        self.net_pl_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        details_layout.addWidget(self.net_pl_display, row, 3)
+
+        # Left: Game Type
+        row += 1
+        game_type_label = QLabel("Game Type:")
+        game_type_label.setObjectName("FieldLabel")
+        game_type_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        details_layout.addWidget(game_type_label, row, 0)
+        
+        self.game_type_display = QLabel(self._get_game_type())
+        self.game_type_display.setObjectName("ValueChip")
+        self.game_type_display.setProperty("status", "neutral")
+        self.game_type_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        details_layout.addWidget(self.game_type_display, row, 1)
+
+        # Right: Game
+        game_label = QLabel("Game:")
+        game_label.setObjectName("FieldLabel")
+        game_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        details_layout.addWidget(game_label, row, 2)
+        
+        self.game_display = QLabel(self._get_game_name())
+        self.game_display.setObjectName("ValueChip")
+        self.game_display.setProperty("status", "neutral")
+        self.game_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        details_layout.addWidget(self.game_display, row, 3)
+
+        # Left: RTP (spans both columns)
+        row += 1
+        rtp_label = QLabel("RTP:")
+        rtp_label.setObjectName("FieldLabel")
+        rtp_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        details_layout.addWidget(rtp_label, row, 0)
+        
+        rtp_container = QWidget()
+        rtp_layout = QHBoxLayout(rtp_container)
+        rtp_layout.setContentsMargins(0, 0, 0, 0)
+        rtp_layout.setSpacing(6)
+        
+        self.rtp_display = QLabel("—")
+        self.rtp_display.setObjectName("ValueChip")
+        self.rtp_display.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.rtp_display.setFixedHeight(28)
+        self.rtp_display.setProperty("status", "neutral")
+        self.rtp_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        rtp_layout.addWidget(self.rtp_display)
+        
+        self.rtp_help_btn = QPushButton("?")
+        self.rtp_help_btn.setFixedSize(22, 22)
+        self.rtp_help_btn.setToolTip("Click for RTP explanation")
+        self.rtp_help_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.rtp_help_btn.setCursor(Qt.PointingHandCursor)
+        self.rtp_help_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0066cc;
+                color: white;
+                border: 1px solid #0052a3;
+                border-radius: 11px;
+                font-weight: bold;
+                font-size: 11px;
+                padding: 0px;
+                margin: 0px;
+                min-width: 22px;
+                max-width: 22px;
+                min-height: 22px;
+                max-height: 22px;
+            }
+            QPushButton:hover {
+                background-color: #0052a3;
+            }
+            QPushButton:pressed {
+                background-color: #003d7a;
+            }
+        """)
+        self.rtp_help_btn.clicked.connect(self._show_rtp_help)
+        rtp_layout.addWidget(self.rtp_help_btn)
+        rtp_layout.addStretch(1)
+        details_layout.addWidget(rtp_container, row, 1, 1, 3)
+
+        details_layout.setColumnStretch(1, 1)
+        details_layout.setColumnStretch(3, 1)
+        form.addWidget(details_section, 4, 0, 1, 7)
+
+        # ─────── Section 3: Notes (Collapsible) ───────
+        self.notes_collapsed = True
+        self.notes_toggle = QPushButton("📝 Add Notes...")
+        self.notes_toggle.setObjectName("SectionHeader")
+        self.notes_toggle.setCursor(Qt.PointingHandCursor)
+        self.notes_toggle.setFlat(True)
+        self.notes_toggle.clicked.connect(self._toggle_notes)
+        form.addWidget(self.notes_toggle, 5, 0, 1, 7)
+
+        self.notes_section = QWidget()
+        self.notes_section.setObjectName("SectionBackground")
+        self.notes_section.setVisible(False)
+        notes_section_layout = QVBoxLayout(self.notes_section)
+        notes_section_layout.setContentsMargins(12, 12, 12, 12)
+        
+        self.notes_edit = QPlainTextEdit()
+        self.notes_edit.setPlaceholderText("Optional...")
+        self.notes_edit.setFixedHeight(90)
+        self.notes_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        notes_section_layout.addWidget(self.notes_edit)
+        
+        form.addWidget(self.notes_section, 6, 0, 1, 7)
+
+        # Auto-populate notes if they exist
+        existing_notes = self.session.notes or ""
+        if existing_notes:
+            self.notes_edit.setPlainText(existing_notes)
+            self.notes_toggle.setText("📝 Notes")
+            self.notes_section.setVisible(True)
+            self.notes_collapsed = False
 
         form.setColumnStretch(0, 1)
-        form.setColumnStretch(1, 1)
         form.setColumnStretch(4, 1)
-        form.setColumnStretch(5, 1)
 
         layout.addLayout(form)
         layout.addStretch(1)
@@ -2735,32 +3659,108 @@ class EndSessionDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
         self.cancel_btn = QPushButton("✖️ Cancel")
-        self.save_btn = QPushButton("End Session")
+        self.save_btn = QPushButton("💾 End Session")
         self.save_btn.setObjectName("PrimaryButton")
         btn_row.addWidget(self.cancel_btn)
         btn_row.addWidget(self.save_btn)
         layout.addLayout(btn_row)
 
+        # Connect signals
         self.cancel_btn.clicked.connect(self.reject)
-        self.end_total_edit.textChanged.connect(lambda: self._update_locked(start_redeem))
-        self.end_redeem_edit.textChanged.connect(lambda: self._update_locked(start_redeem))
-        self.end_redeem_edit.textChanged.connect(lambda: self._update_pnl(start_redeem))
+        self.today_btn.clicked.connect(self._set_today)
+        self.now_btn.clicked.connect(self._set_now)
+        self.calendar_btn.clicked.connect(self._pick_date)
+        self.end_total_edit.textChanged.connect(self._update_session_details)
+        self.end_redeem_edit.textChanged.connect(self._update_session_details)
+        self.wager_edit.textChanged.connect(self._update_session_details)
         self.date_edit.textChanged.connect(self._validate_inline)
         self.time_edit.textChanged.connect(self._validate_inline)
         self.end_total_edit.textChanged.connect(self._validate_inline)
         self.end_redeem_edit.textChanged.connect(self._validate_inline)
         self.wager_edit.textChanged.connect(self._validate_inline)
 
+        # Set tab order
+        self.setTabOrder(self.date_edit, self.time_edit)
+        self.setTabOrder(self.time_edit, self.end_total_edit)
+        self.setTabOrder(self.end_total_edit, self.end_redeem_edit)
+        self.setTabOrder(self.end_redeem_edit, self.wager_edit)
+        self.setTabOrder(self.wager_edit, self.notes_edit)
+        self.setTabOrder(self.notes_edit, self.save_btn)
+
+        # Initialize
         self._set_today()
         self._set_now()
         self._validate_inline()
+        self._update_session_details()
+    
+    def _get_game_type(self) -> str:
+        """Get game type name for this session"""
+        if not self.session.game_id:
+            return "—"
+        try:
+            game = self.facade.game_repo.get_by_id(self.session.game_id)
+            if game and game.game_type_id:
+                game_types = self.facade.game_type_repo.list_all()
+                for gt in game_types:
+                    if gt.id == game.game_type_id:
+                        return gt.name
+        except:
+            pass
+        return "—"
+    
+    def _get_game_name(self) -> str:
+        """Get game name for this session"""
+        if not self.session.game_id:
+            return "—"
+        try:
+            game = self.facade.game_repo.get_by_id(self.session.game_id)
+            if game:
+                return game.name
+        except:
+            pass
+        return "—"
     
     def _create_section_header(self, text: str) -> QLabel:
         """Create a section header"""
         label = QLabel(text)
         label.setObjectName("SectionHeader")
         return label
-
+    
+    def _format_date(self, date_val):
+        """Format date for display"""
+        if not date_val:
+            return "—"
+        if isinstance(date_val, str):
+            try:
+                dt = datetime.strptime(date_val, "%Y-%m-%d")
+                return dt.strftime("%m/%d/%Y")
+            except:
+                return str(date_val)
+        return date_val.strftime("%m/%d/%Y") if hasattr(date_val, 'strftime') else str(date_val)
+    
+    def _format_time(self, time_val):
+        """Format time for display"""
+        if not time_val:
+            return "—"
+        if isinstance(time_val, str):
+            # Already formatted as HH:MM:SS or HH:MM
+            return time_val[:5] if len(time_val) >= 5 else time_val
+        return time_val.strftime("%H:%M") if hasattr(time_val, 'strftime') else str(time_val)
+    
+    def _toggle_notes(self):
+        """Toggle notes section visibility"""
+        self.notes_collapsed = not self.notes_collapsed
+        self.notes_section.setVisible(not self.notes_collapsed)
+        if self.notes_collapsed:
+            self.notes_toggle.setText("📝 Add Notes...")
+            self.setMinimumHeight(680)
+            self.resize(self.width(), 680)
+        else:
+            self.notes_toggle.setText("📝 Notes")
+            self.setMinimumHeight(800)
+            self.resize(self.width(), 800)
+            self.notes_edit.setFocus()
+    
     def _set_today(self):
         self.date_edit.setText(date.today().strftime("%m/%d/%y"))
 
@@ -2785,48 +3785,187 @@ class EndSessionDialog(QDialog):
         ok_btn.clicked.connect(dialog.accept)
         if dialog.exec() == QDialog.Accepted:
             self.date_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+    
+    def _show_rtp_help(self):
+        """Show help dialog explaining RTP components"""
+        QMessageBox.information(
+            self,
+            "RTP (Return to Player) Explanation",
+            "<b>Exp (Expected):</b> The game's advertised/theoretical RTP percentage from the setup tab. "
+            "This is the static baseline provided by the casino.<br><br>"
+            "<b>Act (Actual):</b> The cumulative RTP across ALL other closed sessions for this game "
+            "(excluding this session). Calculated as ((total_wager + total_delta) / total_wager) × 100.<br><br>"
+            "<b>Session:</b> The RTP for THIS specific session only, calculated in real-time as you type. "
+            "Formula: ((wager + delta_total) / wager) × 100, where delta_total = ending_balance - starting_balance.<br><br>"
+            "<i>When you save, the Actual RTP will be updated to include this session's contribution.</i>"
+        )
 
-    def _update_locked(self, start_redeem):
-        try:
-            end_total = float(self.end_total_edit.text().strip() or 0.0)
-            end_redeem = float(self.end_redeem_edit.text().strip() or 0.0)
-        except ValueError:
-            self.locked_label.setText("—")
-            self.locked_label.setProperty("status", "neutral")
-            self.locked_label.style().unpolish(self.locked_label)
-            self.locked_label.style().polish(self.locked_label)
-            return
-        locked = end_total - end_redeem
-        if locked >= 0:
-            self.locked_label.setText(f"{locked:.2f} SC")
-            self.locked_label.setProperty("status", "neutral")
-        else:
-            self.locked_label.setText("— (redeemable > total)")
-            self.locked_label.setProperty("status", "negative")
-        self.locked_label.style().unpolish(self.locked_label)
-        self.locked_label.style().polish(self.locked_label)
+    def _update_rtp_display(self, delta_total, wager):
+        """Update RTP display: Exp / Act / Session (real-time) - reuses logic from Edit Closed Session
+        
+        Shows all three metrics if game_id exists, otherwise shows only Session RTP
+        """
+        exp_str = "—"
+        act_str = "—"
+        session_str = "N/A"
+        
+        # Part 1 & 2: Expected and Actual RTP (only if we have a game_id)
+        if self.session.game_id:
+            # Get game data using facade
+            try:
+                game = self.facade.game_repo.get_by_id(self.session.game_id) if self.facade.game_repo else None
+                if game and game.rtp is not None:
+                    exp_str = f"{float(game.rtp):.2f}%"
+                    
+                    # Actual RTP from aggregates
+                    try:
+                        conn = self.facade.game_session_service.session_repo.db._connection
+                        c = conn.cursor()
+                        c.execute(
+                            """
+                            SELECT total_wager, total_delta, session_count
+                            FROM game_rtp_aggregates
+                            WHERE game_id = ?
+                            """,
+                            (game.id,),
+                        )
+                        agg_row = c.fetchone()
+                        if agg_row:
+                            total_wager = float(agg_row["total_wager"] or 0)
+                            total_delta = float(agg_row["total_delta"] or 0)
+                            if total_wager > 0:
+                                actual_rtp = ((total_wager + total_delta) / total_wager) * 100.0
+                                act_str = f"{actual_rtp:.2f}%"
+                    except Exception:
+                        if getattr(game, "actual_rtp", None) is not None:
+                            act_str = f"{float(game.actual_rtp):.2f}%"
+            except:
+                pass
+        
+        # Part 3: Session RTP (real-time calculation - always attempt if wager provided)
+        if wager is not None and delta_total is not None:
+            try:
+                wager_float = float(wager)
+                delta_total_float = float(delta_total)
+                if wager_float > 0:
+                    session_rtp = ((wager_float + delta_total_float) / wager_float) * 100.0
+                    session_str = f"{session_rtp:.2f}%"
+            except (ValueError, TypeError, ZeroDivisionError):
+                session_str = "N/A"
 
-    def _update_pnl(self, start_redeem):
-        try:
-            end_redeem = float(self.end_redeem_edit.text().strip() or 0.0)
-        except ValueError:
-            self.pnl_label.setText("—")
-            self.pnl_label.setProperty("status", "neutral")
-            self.pnl_label.style().unpolish(self.pnl_label)
-            self.pnl_label.style().polish(self.pnl_label)
-            return
-        change = end_redeem - float(start_redeem or 0.0)
-        if change > 0:
-            self.pnl_label.setText(f"+{change:.2f} SC")
-            self.pnl_label.setProperty("status", "positive")
-        elif change < 0:
-            self.pnl_label.setText(f"{change:.2f} SC")
-            self.pnl_label.setProperty("status", "negative")
+        self.rtp_display.setText(f"Exp: {exp_str} / Act: {act_str} / Session: {session_str}")
+        self.rtp_display.setProperty("status", "neutral")
+        self.rtp_display.style().unpolish(self.rtp_display)
+        self.rtp_display.style().polish(self.rtp_display)
+    
+    def _update_session_details(self):
+        """Update all calculated fields in real-time - reuses P/L calculation logic"""
+        start_total = Decimal(str(self.session.starting_balance or 0))
+        start_redeem = Decimal(str(self.session.starting_redeemable or 0))
+
+        # Parse user inputs
+        end_total_text = self.end_total_edit.text().strip()
+        end_redeem_text = self.end_redeem_edit.text().strip()
+        wager_text = self.wager_edit.text().strip()
+
+        end_total = None
+        end_redeem = None
+        wager = None
+
+        if end_total_text:
+            valid, result = validate_currency(end_total_text)
+            if valid:
+                end_total = Decimal(str(result))
+
+        if end_redeem_text:
+            valid, result = validate_currency(end_redeem_text)
+            if valid:
+                end_redeem = Decimal(str(result))
+
+        if wager_text:
+            valid, result = validate_currency(wager_text)
+            if valid:
+                wager = Decimal(str(result))
+
+        # Calculate and display Δ Total
+        delta_total = None
+        if end_total is not None:
+            delta_total = end_total - start_total
+            self._update_value_chip(
+                self.delta_total_display,
+                f"{float(delta_total):+.2f}",
+                "positive" if delta_total > 0 else ("negative" if delta_total < 0 else "neutral")
+            )
         else:
-            self.pnl_label.setText("0.00 SC")
-            self.pnl_label.setProperty("status", "neutral")
-        self.pnl_label.style().unpolish(self.pnl_label)
-        self.pnl_label.style().polish(self.pnl_label)
+            self._update_value_chip(self.delta_total_display, "—", "neutral")
+
+        # Calculate and display Δ Redeemable
+        delta_redeem = None
+        if end_redeem is not None:
+            delta_redeem = end_redeem - start_redeem
+            self._update_value_chip(
+                self.delta_redeem_display,
+                f"{float(delta_redeem):+.2f}",
+                "positive" if delta_redeem > 0 else ("negative" if delta_redeem < 0 else "neutral")
+            )
+        else:
+            self._update_value_chip(self.delta_redeem_display, "—", "neutral")
+
+        # Calculate Δ Basis and Net P/L (if we have both ending values)
+        if end_total is not None and end_redeem is not None:
+            # Get site SC rate
+            site = self.facade.site_repo.get_by_id(self.session.site_id) if self.facade.site_repo else None
+            sc_rate = Decimal(str(getattr(site, "sc_rate", "1.0"))) if site else Decimal("1.0")
+
+            # Retrieve session basis and expected start redeemable
+            expected_start_redeem = Decimal(str(self.session.expected_start_redeemable or start_redeem))
+            session_basis = Decimal(
+                str(
+                    self.session.session_basis
+                    if self.session.session_basis is not None
+                    else (self.session.purchases_during or 0)
+                )
+            )
+
+            # Calculate discoverable SC (freeplay/bonus)
+            discoverable_sc = max(Decimal("0.00"), start_redeem - expected_start_redeem)
+
+            # Calculate locked SC processing (basis consumption logic)
+            locked_start = max(Decimal("0.00"), start_total - start_redeem)
+            locked_end = max(Decimal("0.00"), end_total - end_redeem)
+            locked_processed = max(Decimal("0.00"), locked_start - locked_end)
+            basis_consumed = min(session_basis, locked_processed * sc_rate)
+
+            # Calculate Net P/L
+            net_pl = ((discoverable_sc + delta_redeem) * sc_rate) - basis_consumed
+
+            # Display Δ Basis
+            self._update_value_chip(
+                self.delta_basis_display,
+                f"${float(basis_consumed):,.2f}",
+                "negative" if basis_consumed > 0 else "neutral"
+            )
+
+            # Display Net P/L
+            if net_pl > 0:
+                self._update_value_chip(self.net_pl_display, f"+${float(net_pl):,.2f}", "positive")
+            elif net_pl < 0:
+                self._update_value_chip(self.net_pl_display, f"${float(net_pl):,.2f}", "negative")
+            else:
+                self._update_value_chip(self.net_pl_display, "$0.00", "neutral")
+        else:
+            self._update_value_chip(self.delta_basis_display, "—", "neutral")
+            self._update_value_chip(self.net_pl_display, "—", "neutral")
+
+        # Update RTP display
+        self._update_rtp_display(delta_total, wager)
+
+    def _update_value_chip(self, label, text, status):
+        """Helper to update a ValueChip label with text and status"""
+        label.setText(text)
+        label.setProperty("status", status)
+        label.style().unpolish(label)
+        label.style().polish(label)
 
     def _set_invalid(self, widget, message):
         widget.setProperty("invalid", True)

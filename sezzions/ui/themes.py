@@ -345,6 +345,17 @@ class Theme:
                 font-weight: 600;
                 color: {text};
             }}
+            QLabel#ValueChip {{
+                background: {surface};
+                border: 1px solid {border};
+                border-radius: 6px;
+                padding: 6px 12px;
+                color: {text};
+                font-size: 12px;
+            }}
+            QLabel#ValueChip[status="positive"] {{ color: #2e7d32; }}
+            QLabel#ValueChip[status="negative"] {{ color: #c0392b; }}
+            QLabel#ValueChip[status="neutral"] {{ color: {text_muted}; }}
             QLabel#CashbackLabel {{
                 color: {accent};
                 font-size: 11px;

@@ -1,5 +1,8 @@
 # Sezzions TODO
 
+## CRITICAL Architecture Items
+- [ ] **Implement ViewModels/DTOs for UI display data** - Currently UI layer has direct access to repositories (e.g., `facade.game_repo`) and performs data fetching. This violates separation of concerns and prevents proper multi-platform architecture. Service layer should return enriched ViewModels with all display data (game_name, game_type_name, etc.) so UI only displays, never fetches. This is essential for web/mobile portability.
+
 ## Active Items
 - [X] Multi-selection delete controls
 - [X] Recover dormant SC on close-balance delete
@@ -24,8 +27,11 @@
 
 ##
 
-- [ ] Update the "View Redemption" dialog with our new style next.
-
+- [X] Update the "View Redemption" dialog with our new style next.
+- [ ] View Position in Unrealized tab is next to update styles for.
+- [ ] View Position in the Realized tab should be a mirror of the View Redemption dialog.
+- [ ] Update the Add/Edit Expenses dialog
+- [ ] Cascading updates to Users/Sites/Cards/Method Types/Methods/Game Types/Games Add/Edit/View dialogs.  Will need to formalize the style we want and have Claude take license to do them all in teh same fashion.
 
 - [ ] Need to account for multi-day closed sessions on the day they close, not the day they start.
 - [ ] Scenario:  1 SC starting redeemable on Stake.  Buy in 2500 for 2506.25.  Gamble and end with 2500.89.  It's showing -0.11 loss because it's counting the 1 SC as part of the loss, but since I never session'd that 1 SC to begin with, it shouldn't be counted.
