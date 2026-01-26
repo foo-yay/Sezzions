@@ -13,27 +13,7 @@ from ui.daily_sessions_filters import (
     header_resize_section_index,
     header_menu_position,
 )
-
-
-def parse_date_input(value):
-    value = value.strip()
-    if not value:
-        return None
-    if "/" in value:
-        parts = value.split("/")
-        if len(parts) == 2:
-            value = f"{parts[0]}/{parts[1]}/{date.today().year}"
-    if "-" in value:
-        parts = value.split("-")
-        if len(parts) == 2:
-            value = f"{date.today().year}-{parts[0]}-{parts[1]}"
-    formats = ["%Y-%m-%d", "%m/%d/%Y", "%m-%d-%Y", "%m/%d/%y", "%m-%d-%y", "%Y/%m/%d"]
-    for fmt in formats:
-        try:
-            return datetime.strptime(value, fmt).date()
-        except ValueError:
-            continue
-    raise ValueError(f"Invalid date: {value}")
+from ui.input_parsers import parse_date_input
 
 
 def format_currency(value):
@@ -75,7 +55,7 @@ class RealizedDateNotesDialog(QtWidgets.QDialog):
 
 
 class RealizedPositionDialog(QtWidgets.QDialog):
-    """View dialog for Realized Position - shows details for a redemption cashflow."""
+    """Modern realized position view dialog with streamlined sectioned layout"""
 
     def __init__(
         self,
@@ -96,8 +76,10 @@ class RealizedPositionDialog(QtWidgets.QDialog):
         self.on_open_redemption = on_open_redemption
         self.on_open_daily_sessions = on_open_daily_sessions
         self.on_open_session = on_open_session
+        
         self.setWindowTitle("View Position")
-        self.resize(700, 650)
+        self.setMinimumWidth(700)
+        self.setMinimumHeight(550)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -111,91 +93,216 @@ class RealizedPositionDialog(QtWidgets.QDialog):
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
+        
         if self.on_open_redemption:
             open_btn = QtWidgets.QPushButton("👁️ View in Redemptions")
-            btn_row.addWidget(open_btn)
-        close_btn = QtWidgets.QPushButton("✖️ Close")
-        btn_row.addWidget(close_btn)
-        layout.addLayout(btn_row)
-        if self.on_open_redemption:
             open_btn.clicked.connect(self._handle_open_redemption)
+            btn_row.addWidget(open_btn)
+        
+        close_btn = QtWidgets.QPushButton("✖️ Close")
         close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        
+        layout.addLayout(btn_row)
 
     def _create_details_tab(self):
+        """Create modern sectioned details tab"""
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(16, 12, 16, 16)
+        layout.setSpacing(10)
 
-        form = QtWidgets.QGridLayout()
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(10)
-        form.setColumnStretch(1, 1)
-        form.setColumnMinimumWidth(0, 120)
-        form.setColumnMinimumWidth(1, 300)
+        # Format helpers
+        def format_date(value):
+            if not value:
+                return "—"
+            if isinstance(value, date):
+                return value.strftime("%m/%d/%y")
+            try:
+                return datetime.strptime(str(value), "%Y-%m-%d").strftime("%m/%d/%y")
+            except ValueError:
+                return str(value)
 
-        def add_row(label_text, value, row, wrap=False):
-            label = QtWidgets.QLabel(label_text)
-            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label = QtWidgets.QLabel(value)
-            value_label.setObjectName("InfoField")
-            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label.setWordWrap(wrap)
-            form.addWidget(label, row, 0)
-            form.addWidget(value_label, row, 1)
-            return row + 1
+        def format_time(value):
+            return value[:5] if value else "—"
 
-        row = 0
-        row = add_row("Date:", self._format_date(self.position["session_date"]), row)
-        user_name = self.position.get("user_name") or "—"
-        site_name = self.position.get("site_name") or "—"
+        def make_selectable_label(text, bold=False, align_right=False, color=None):
+            """Create a selectable QLabel"""
+            label = QtWidgets.QLabel(text)
+            if bold:
+                font = label.font()
+                font.setBold(True)
+                label.setFont(font)
+            label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard)
+            label.setCursor(QtCore.Qt.IBeamCursor)
+            if align_right:
+                label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            if color:
+                label.setStyleSheet(f"color: {color};")
+            return label
+        
+        def create_section(title_text):
+            """Create a section container with header"""
+            section_widget = QtWidgets.QWidget()
+            section_widget.setObjectName("SectionBackground")
+            section_layout = QtWidgets.QVBoxLayout(section_widget)
+            section_layout.setContentsMargins(10, 6, 10, 8)
+            section_layout.setSpacing(4)
+            
+            # Section header
+            section_header = QtWidgets.QLabel(title_text)
+            section_header.setObjectName("SectionHeader")
+            section_layout.addWidget(section_header)
+            
+            return section_widget, section_layout
+
+        # ========== POSITION DETAILS (Full Width, 2 Columns) ==========
+        position_section, position_layout = create_section("📋 Position Details")
+        position_grid = QtWidgets.QGridLayout()
+        position_grid.setContentsMargins(0, 4, 0, 0)
+        position_grid.setHorizontalSpacing(20)
+        position_grid.setVerticalSpacing(6)
+        
+        # Left column
+        date_label = QtWidgets.QLabel("Redemption Date:")
+        date_label.setStyleSheet("color: palette(mid);")
+        position_grid.addWidget(date_label, 0, 0)
+        position_grid.addWidget(make_selectable_label(format_date(self.position.get("redemption_date"))), 0, 1)
+        
         user_label = QtWidgets.QLabel("User:")
-        user_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        user_value = QtWidgets.QLabel(user_name)
-        user_value.setObjectName("InfoField")
-        user_value.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        user_label.setStyleSheet("color: palette(mid);")
+        position_grid.addWidget(user_label, 1, 0)
+        position_grid.addWidget(make_selectable_label(self.position.get("user_name") or "—"), 1, 1)
+        
+        # Right column
+        time_label = QtWidgets.QLabel("Redemption Time:")
+        time_label.setStyleSheet("color: palette(mid);")
+        position_grid.addWidget(time_label, 0, 2)
+        position_grid.addWidget(make_selectable_label(format_time(self.position.get("redemption_time"))), 0, 3)
+        
         site_label = QtWidgets.QLabel("Site:")
-        site_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        site_value = QtWidgets.QLabel(site_name)
-        site_value.setObjectName("InfoField")
-        site_value.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        user_site_row = QtWidgets.QHBoxLayout()
-        user_site_row.setSpacing(12)
-        user_site_row.addWidget(user_value, 1)
-        user_site_row.addWidget(site_label)
-        user_site_row.addWidget(site_value, 1)
-        form.addWidget(user_label, row, 0)
-        form.addLayout(user_site_row, row, 1)
-        row += 1
-        form.addItem(QtWidgets.QSpacerItem(1, 16), row, 0)
-        row += 1
-        row = add_row("Redemption Amount:", format_currency(self.position.get("redemption_amount")), row)
-        row = add_row("Cost Basis:", format_currency(self.position.get("cost_basis")), row)
-        row = add_row("Realized P/L:", self._format_signed_currency(self.position.get("net_pl")), row)
-        layout.addLayout(form)
+        site_label.setStyleSheet("color: palette(mid);")
+        position_grid.addWidget(site_label, 1, 2)
+        position_grid.addWidget(make_selectable_label(self.position.get("site_name") or "—"), 1, 3)
+        
+        position_grid.setColumnStretch(1, 1)
+        position_grid.setColumnStretch(3, 1)
+        position_layout.addLayout(position_grid)
+        layout.addWidget(position_section)
 
-        notes_group = QtWidgets.QGroupBox("Notes")
-        notes_layout = QtWidgets.QVBoxLayout(notes_group)
+        # ========== TWO SUB-SECTION COLUMNS ==========
+        subsections_widget = QtWidgets.QWidget()
+        subsections_layout = QtWidgets.QHBoxLayout(subsections_widget)
+        subsections_layout.setContentsMargins(0, 0, 0, 0)
+        subsections_layout.setSpacing(12)
+        subsections_layout.setAlignment(QtCore.Qt.AlignTop)
+        
+        # ========== LEFT SUB-SECTION: Financial Summary ==========
+        financial_section, financial_layout = create_section("💰 Financial Summary")
+        financial_grid = QtWidgets.QGridLayout()
+        financial_grid.setContentsMargins(0, 4, 0, 0)
+        financial_grid.setHorizontalSpacing(12)
+        financial_grid.setVerticalSpacing(6)
+        
+        redemption_label = QtWidgets.QLabel("Redemption Amount:")
+        redemption_label.setStyleSheet("color: palette(mid);")
+        financial_grid.addWidget(redemption_label, 0, 0)
+        financial_grid.addWidget(make_selectable_label(format_currency(self.position.get("redemption_amount"))), 0, 1)
+        
+        basis_label = QtWidgets.QLabel("Cost Basis:")
+        basis_label.setStyleSheet("color: palette(mid);")
+        financial_grid.addWidget(basis_label, 1, 0)
+        financial_grid.addWidget(make_selectable_label(format_currency(self.position.get("cost_basis"))), 1, 1)
+        
+        fees_label = QtWidgets.QLabel("Fees:")
+        fees_label.setStyleSheet("color: palette(mid);")
+        financial_grid.addWidget(fees_label, 2, 0)
+        financial_grid.addWidget(make_selectable_label(format_currency(self.position.get("fees"))), 2, 1)
+        
+        pl_label = QtWidgets.QLabel("Realized P/L:")
+        pl_label.setStyleSheet("color: palette(mid);")
+        financial_grid.addWidget(pl_label, 3, 0)
+        
+        # Color code P/L
+        net_pl = self.position.get("net_pl")
+        pl_text = self._format_signed_currency(net_pl)
+        pl_color = None
+        if net_pl:
+            try:
+                pl_val = Decimal(str(net_pl))
+                if pl_val > 0:
+                    pl_color = "green"
+                elif pl_val < 0:
+                    pl_color = "red"
+            except:
+                pass
+        
+        financial_grid.addWidget(make_selectable_label(pl_text, color=pl_color), 3, 1)
+        
+        financial_grid.setColumnStretch(1, 1)
+        financial_layout.addLayout(financial_grid)
+        financial_layout.addStretch(1)
+        subsections_layout.addWidget(financial_section, 1)
+        
+        # ========== RIGHT SUB-SECTION: Processing Details ==========
+        processing_section, processing_layout = create_section("⚙️ Processing Details")
+        processing_grid = QtWidgets.QGridLayout()
+        processing_grid.setContentsMargins(0, 4, 0, 0)
+        processing_grid.setHorizontalSpacing(12)
+        processing_grid.setVerticalSpacing(6)
+        
+        method_type_label = QtWidgets.QLabel("Redemption Method Type:")
+        method_type_label.setStyleSheet("color: palette(mid);")
+        processing_grid.addWidget(method_type_label, 0, 0)
+        processing_grid.addWidget(make_selectable_label(self.position.get("method_type") or "—"), 0, 1)
+        
+        method_label = QtWidgets.QLabel("Redemption Method:")
+        method_label.setStyleSheet("color: palette(mid);")
+        processing_grid.addWidget(method_label, 1, 0)
+        processing_grid.addWidget(make_selectable_label(self.position.get("method_name") or "—"), 1, 1)
+        
+        type_label = QtWidgets.QLabel("Redemption Type:")
+        type_label.setStyleSheet("color: palette(mid);")
+        processing_grid.addWidget(type_label, 2, 0)
+        type_text = "Partial" if self.position.get("more_remaining") else "Full"
+        processing_grid.addWidget(make_selectable_label(type_text), 2, 1)
+        
+        receipt_label = QtWidgets.QLabel("Receipt Date:")
+        receipt_label.setStyleSheet("color: palette(mid);")
+        processing_grid.addWidget(receipt_label, 3, 0)
+        receipt_text = format_date(self.position.get("receipt_date")) if self.position.get("receipt_date") else "—"
+        processing_grid.addWidget(make_selectable_label(receipt_text), 3, 1)
+        
+        processed_label = QtWidgets.QLabel("Processed:")
+        processed_label.setStyleSheet("color: palette(mid);")
+        processing_grid.addWidget(processed_label, 4, 0)
+        processed_text = "Yes" if self.position.get("processed") else "No"
+        processing_grid.addWidget(make_selectable_label(processed_text), 4, 1)
+        
+        processing_grid.setColumnStretch(1, 1)
+        processing_layout.addLayout(processing_grid)
+        processing_layout.addStretch(1)
+        subsections_layout.addWidget(processing_section, 1)
+        
+        layout.addWidget(subsections_widget)
+
+        # ========== NOTES SECTION (Full Width Below) ==========
+        notes_section, notes_layout = create_section("📝 Notes")
         notes_value = self.position.get("redemption_notes") or ""
+        
         if notes_value:
-            notes_edit = QtWidgets.QPlainTextEdit()
-            notes_edit.setObjectName("NotesField")
-            notes_edit.setReadOnly(True)
-            notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
-            notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
-            notes_edit.setPlainText(notes_value)
-            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-            notes_layout.addWidget(notes_edit)
+            notes_display = QtWidgets.QTextEdit()
+            notes_display.setReadOnly(True)
+            notes_display.setPlainText(notes_value)
+            notes_display.setMaximumHeight(80)
+            notes_display.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            notes_layout.addWidget(notes_display)
         else:
-            notes_field = QtWidgets.QLabel("—")
-            notes_field.setObjectName("InfoField")
-            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            notes_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-            fixed_height = max(notes_field.sizeHint().height(), 26)
-            notes_field.setFixedHeight(fixed_height)
-            notes_layout.addWidget(notes_field)
-        layout.addWidget(notes_group)
-
+            notes_empty = QtWidgets.QLabel("—")
+            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_layout.addWidget(notes_empty)
+        
+        layout.addWidget(notes_section)
         layout.addStretch(1)
         return widget
 
@@ -1205,13 +1312,22 @@ class RealizedTab(QtWidgets.QWidget):
                 rt.net_pl,
                 rt.redemption_id,
                 r.amount as redemption_amount,
+                r.redemption_date,
+                r.redemption_time,
+                r.fees,
+                r.more_remaining,
+                r.receipt_date,
+                r.processed,
                 r.notes as redemption_notes,
                 s.name as site_name,
-                u.name as user_name
+                u.name as user_name,
+                rm.name as method_name,
+                rm.method_type
             FROM realized_transactions rt
             JOIN redemptions r ON rt.redemption_id = r.id
             JOIN sites s ON rt.site_id = s.id
             JOIN users u ON rt.user_id = u.id
+            LEFT JOIN redemption_methods rm ON r.redemption_method_id = rm.id
             WHERE rt.id = ?
             """,
             (tax_session_id,),
@@ -1275,7 +1391,9 @@ class RealizedTab(QtWidgets.QWidget):
             return
         self.clear_date_filter()
         self.refresh_view()
-        self.find_and_select_redemption(redemption_id)
+        if self.find_and_select_redemption(redemption_id):
+            # After selecting, open the View Position dialog
+            QtCore.QTimer.singleShot(100, self._view_position)
 
     def export_csv(self):
         import csv

@@ -9,6 +9,7 @@ from app_facade import AppFacade
 from models.redemption import Redemption
 from ui.date_filter_widget import DateFilterWidget
 from ui.table_header_filters import TableHeaderFilter
+from ui.input_parsers import parse_date_input
 
 
 class RedemptionsTab(QtWidgets.QWidget):
@@ -1332,7 +1333,7 @@ class RedemptionDialog(QtWidgets.QDialog):
         receipt_text = self.receipt_edit.text().strip()
         if receipt_text:
             try:
-                receipt_date = self._parse_date(receipt_text)
+                receipt_date = parse_date_input(receipt_text)
                 if redemption_date and receipt_date < redemption_date:
                     self._set_invalid(self.receipt_edit, "Receipt date cannot be before redemption date.")
                     valid = False
@@ -1456,17 +1457,10 @@ class RedemptionDialog(QtWidgets.QDialog):
     def _set_now(self):
         self.time_edit.setText(datetime.now().strftime("%H:%M"))
 
-    def _parse_date(self, date_str: str) -> date:
-        for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d"):
-            try:
-                return datetime.strptime(date_str, fmt).date()
-            except ValueError:
-                continue
-        raise ValueError("Invalid date")
-
     def get_date(self) -> date:
         date_str = self.date_edit.text().strip()
-        return self._parse_date(date_str) if date_str else date.today()
+        parsed = parse_date_input(date_str) if date_str else None
+        return parsed if parsed else date.today()
 
     def get_time(self) -> Optional[str]:
         time_str = self.time_edit.text().strip()
@@ -1480,7 +1474,7 @@ class RedemptionDialog(QtWidgets.QDialog):
         receipt_str = self.receipt_edit.text().strip()
         if not receipt_str:
             return None
-        return self._parse_date(receipt_str)
+        return parse_date_input(receipt_str)
 
     def get_amount(self) -> Decimal:
         return Decimal(self.amount_edit.text().strip())

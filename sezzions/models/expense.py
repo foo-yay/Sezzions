@@ -14,9 +14,10 @@ class Expense:
     amount: Decimal
     vendor: str
     description: Optional[str] = None
-    category: str = "Other Expenses"
+    category: Optional[str] = None
     user_id: Optional[int] = None
     user_name: Optional[str] = None
+    expense_time: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -30,5 +31,3 @@ class Expense:
             self.amount = Decimal(str(self.amount))
         if self.amount < 0:
             raise ValueError("Amount cannot be negative")
-        if not self.category:
-            self.category = "Other Expenses"

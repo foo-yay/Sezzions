@@ -24,8 +24,9 @@ class ExpenseService:
         amount: Decimal,
         vendor: str,
         description: Optional[str] = None,
-        category: str = "Other Expenses",
+        category: Optional[str] = None,
         user_id: Optional[int] = None,
+        expense_time: Optional[str] = None,
     ) -> Expense:
         expense = Expense(
             id=None,
@@ -35,6 +36,7 @@ class ExpenseService:
             description=description,
             category=category,
             user_id=user_id,
+            expense_time=expense_time,
         )
         return self.expense_repo.create(expense)
 
@@ -43,7 +45,7 @@ class ExpenseService:
         if not expense:
             raise ValueError(f"Expense {expense_id} not found")
         for key, value in kwargs.items():
-            if hasattr(expense, key) and value is not None:
+            if hasattr(expense, key):
                 setattr(expense, key, value)
         expense.__post_init__()
         return self.expense_repo.update(expense)

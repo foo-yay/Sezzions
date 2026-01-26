@@ -422,90 +422,188 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         self.on_open_session = on_open_session
         self.on_close_position = on_close_position
         self.setWindowTitle("Unrealized Position")
-        self.resize(720, 680)
+        self.setMinimumWidth(700)
+        self.setMinimumHeight(550)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
 
         tabs = QtWidgets.QTabWidget()
+        tabs.setObjectName("SetupSubTabs")
         tabs.addTab(self._create_details_tab(), "Details")
         tabs.addTab(self._create_related_tab(), "Related")
         layout.addWidget(tabs, 1)
 
         btn_row = QtWidgets.QHBoxLayout()
-        btn_row.addStretch(1)
         if self.on_close_position:
             close_position_btn = QtWidgets.QPushButton("🔒 Close Position")
-            close_position_btn.setObjectName("PrimaryButton")
-            btn_row.addWidget(close_position_btn)
-        close_btn = QtWidgets.QPushButton("✖️ Close")
-        btn_row.addWidget(close_btn)
-        layout.addLayout(btn_row)
-        if self.on_close_position:
             close_position_btn.clicked.connect(self._handle_close_position)
+            btn_row.addWidget(close_position_btn)
+        
+        btn_row.addStretch(1)
+        
+        close_btn = QtWidgets.QPushButton("✖️ Close")
         close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        
+        layout.addLayout(btn_row)
 
     def _create_details_tab(self):
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(16, 12, 16, 16)
         layout.setSpacing(10)
 
-        def build_group(title):
-            group = QtWidgets.QGroupBox(title)
-            group_layout = QtWidgets.QGridLayout(group)
-            group_layout.setHorizontalSpacing(10)
-            group_layout.setVerticalSpacing(6)
-            group_layout.setColumnStretch(1, 1)
-            group_layout.setColumnStretch(3, 1)
-            return group, group_layout
+        def make_selectable_label(text, bold=False, align_right=False, color=None):
+            """Create a selectable QLabel"""
+            label = QtWidgets.QLabel(text)
+            if bold:
+                font = label.font()
+                font.setBold(True)
+                label.setFont(font)
+            label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard)
+            label.setCursor(QtCore.Qt.IBeamCursor)
+            if align_right:
+                label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            if color:
+                label.setStyleSheet(f"color: {color};")
+            return label
+        
+        def create_section(title_text):
+            """Create a section container with header"""
+            section_widget = QtWidgets.QWidget()
+            section_widget.setObjectName("SectionBackground")
+            section_layout = QtWidgets.QVBoxLayout(section_widget)
+            section_layout.setContentsMargins(10, 8, 10, 8)
+            section_layout.setSpacing(6)
+            
+            # Section header
+            section_header = QtWidgets.QLabel(title_text)
+            section_header.setObjectName("SectionHeader")
+            section_layout.addWidget(section_header)
+            
+            return section_widget, section_layout
 
-        def add_pair(grid, row, col, label_text, value):
-            label = QtWidgets.QLabel(label_text)
-            label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            value_label = QtWidgets.QLabel(value)
-            value_label.setObjectName("InfoField")
-            value_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            grid.addWidget(label, row, col * 2)
-            grid.addWidget(value_label, row, col * 2 + 1)
+        # ========== TOP HEADER (Full Width) ==========
+        header_section, header_layout = create_section("📊 Position Details")
+        header_grid = QtWidgets.QGridLayout()
+        header_grid.setContentsMargins(0, 4, 0, 0)
+        header_grid.setHorizontalSpacing(12)
+        header_grid.setVerticalSpacing(6)
+        header_grid.setColumnStretch(1, 1)
+        header_grid.setColumnStretch(3, 1)
+        
+        # Left column
+        site_label = QtWidgets.QLabel("Site:")
+        site_label.setStyleSheet("color: palette(mid);")
+        header_grid.addWidget(site_label, 0, 0)
+        header_grid.addWidget(make_selectable_label(self.position.site_name), 0, 1)
+        
+        start_date_label = QtWidgets.QLabel("Start Date:")
+        start_date_label.setStyleSheet("color: palette(mid);")
+        header_grid.addWidget(start_date_label, 1, 0)
+        header_grid.addWidget(make_selectable_label(self._format_date(self.position.start_date)), 1, 1)
+        
+        # Right column
+        user_label = QtWidgets.QLabel("User:")
+        user_label.setStyleSheet("color: palette(mid);")
+        header_grid.addWidget(user_label, 0, 2)
+        header_grid.addWidget(make_selectable_label(self.position.user_name), 0, 3)
+        
+        last_activity_label = QtWidgets.QLabel("Last Activity:")
+        last_activity_label.setStyleSheet("color: palette(mid);")
+        header_grid.addWidget(last_activity_label, 1, 2)
+        header_grid.addWidget(make_selectable_label(self._format_date(self.position.last_activity)), 1, 3)
+        
+        header_layout.addLayout(header_grid)
+        layout.addWidget(header_section)
 
-        position_group, position_grid = build_group("Position")
-        add_pair(position_grid, 0, 0, "Site", self.position.site_name)
-        add_pair(position_grid, 0, 1, "User", self.position.user_name)
-        add_pair(position_grid, 1, 0, "Start Date", self._format_date(self.position.start_date))
-        add_pair(position_grid, 1, 1, "Last Activity", self._format_date(self.position.last_activity))
-        layout.addWidget(position_group)
+        # ========== TWO-COLUMN LAYOUT ==========
+        columns_widget = QtWidgets.QWidget()
+        columns_layout = QtWidgets.QHBoxLayout(columns_widget)
+        columns_layout.setContentsMargins(0, 0, 0, 0)
+        columns_layout.setSpacing(12)
+        
+        # ========== LEFT COLUMN ==========
+        left_column = QtWidgets.QVBoxLayout()
+        left_column.setSpacing(10)
+        
+        # Key Metrics Section
+        metrics_section, metrics_layout = create_section("💰 Key Metrics")
+        metrics_grid = QtWidgets.QGridLayout()
+        metrics_grid.setContentsMargins(0, 4, 0, 0)
+        metrics_grid.setHorizontalSpacing(12)
+        metrics_grid.setVerticalSpacing(6)
+        
+        basis_label = QtWidgets.QLabel("Remaining Basis:")
+        basis_label.setStyleSheet("color: palette(mid);")
+        metrics_grid.addWidget(basis_label, 0, 0)
+        metrics_grid.addWidget(make_selectable_label(self._format_currency(self.position.purchase_basis), align_right=True), 0, 1)
+        
+        # Unrealized P/L with color
+        unrealized_pl = float(self.position.unrealized_pl or 0)
+        pl_color = "green" if unrealized_pl >= 0 else "red"
+        unrealized_label = QtWidgets.QLabel("Unrealized P/L:")
+        unrealized_label.setStyleSheet("color: palette(mid);")
+        metrics_grid.addWidget(unrealized_label, 1, 0)
+        metrics_grid.addWidget(make_selectable_label(self._format_signed_currency(self.position.unrealized_pl), align_right=True, color=pl_color), 1, 1)
+        
+        metrics_grid.setColumnStretch(1, 1)
+        metrics_layout.addLayout(metrics_grid)
+        left_column.addWidget(metrics_section)
+        left_column.addStretch(1)
+        
+        columns_layout.addLayout(left_column, 1)
+        
+        # ========== RIGHT COLUMN ==========
+        right_column = QtWidgets.QVBoxLayout()
+        right_column.setSpacing(10)
+        
+        # Current Values Section
+        values_section, values_layout = create_section("📈 Current Values")
+        values_grid = QtWidgets.QGridLayout()
+        values_grid.setContentsMargins(0, 4, 0, 0)
+        values_grid.setHorizontalSpacing(12)
+        values_grid.setVerticalSpacing(6)
+        
+        current_sc_label = QtWidgets.QLabel("Current SC:")
+        current_sc_label.setStyleSheet("color: palette(mid);")
+        values_grid.addWidget(current_sc_label, 0, 0)
+        values_grid.addWidget(make_selectable_label(f"{float(self.position.current_sc):.2f}", align_right=True), 0, 1)
+        
+        current_value_label = QtWidgets.QLabel("Current Value:")
+        current_value_label.setStyleSheet("color: palette(mid);")
+        values_grid.addWidget(current_value_label, 1, 0)
+        values_grid.addWidget(make_selectable_label(self._format_currency(self.position.current_value), align_right=True), 1, 1)
+        
+        values_grid.setColumnStretch(1, 1)
+        values_layout.addLayout(values_grid)
+        right_column.addWidget(values_section)
+        right_column.addStretch(1)
+        
+        columns_layout.addLayout(right_column, 1)
+        
+        layout.addWidget(columns_widget)
 
-        balance_group, balance_grid = build_group("Balances")
-        add_pair(balance_grid, 0, 0, "Remaining Basis", self._format_currency(self.position.purchase_basis))
-        add_pair(balance_grid, 0, 1, "Current SC", f"{self.position.current_sc:.2f}")
-        add_pair(balance_grid, 1, 0, "Current Value", self._format_currency(self.position.current_value))
-        add_pair(balance_grid, 1, 1, "Unrealized P/L", self._format_signed_currency(self.position.unrealized_pl))
-        layout.addWidget(balance_group)
-
-        notes_group = QtWidgets.QGroupBox("Notes")
-        notes_layout = QtWidgets.QVBoxLayout(notes_group)
-        if self.position.notes:
-            notes_edit = QtWidgets.QPlainTextEdit()
-            notes_edit.setObjectName("NotesField")
-            notes_edit.setReadOnly(True)
-            notes_edit.setFocusPolicy(QtCore.Qt.NoFocus)
-            notes_edit.setTextInteractionFlags(QtCore.Qt.NoTextInteraction)
-            notes_edit.setPlainText(self.position.notes)
-            notes_edit.setMinimumHeight(notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-            notes_layout.addWidget(notes_edit)
+        # ========== NOTES SECTION (Full Width Below) ==========
+        notes_section, notes_layout = create_section("📝 Notes")
+        notes_value = self.position.notes or ""
+        
+        if notes_value:
+            notes_display = QtWidgets.QTextEdit()
+            notes_display.setReadOnly(True)
+            notes_display.setPlainText(notes_value)
+            notes_display.setMaximumHeight(80)
+            notes_display.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            notes_layout.addWidget(notes_display)
         else:
-            notes_field = QtWidgets.QLabel("—")
-            notes_field.setObjectName("InfoField")
-            notes_field.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            notes_field.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-            fixed_height = max(notes_field.sizeHint().height(), 26)
-            notes_field.setFixedHeight(fixed_height)
-            notes_layout.addWidget(notes_field)
-        layout.addWidget(notes_group)
+            notes_empty = QtWidgets.QLabel("—")
+            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_layout.addWidget(notes_empty)
+        
+        layout.addWidget(notes_section)
         layout.addStretch(1)
-
         return widget
 
     def _create_related_tab(self):

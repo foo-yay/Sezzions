@@ -8,6 +8,7 @@ from app_facade import AppFacade
 from models.expense import Expense
 from ui.date_filter_widget import DateFilterWidget
 from ui.table_header_filters import TableHeaderFilter
+from ui.input_parsers import parse_date_input, parse_time_input
 
 
 EXPENSE_CATEGORIES = [
@@ -126,7 +127,7 @@ class ExpensesTab(QtWidgets.QWidget):
 
         layout.addLayout(toolbar)
 
-        self.columns = ["Date", "Category", "Vendor", "User", "Amount", "Description"]
+        self.columns = ["Date", "Category", "Vendor", "User", "Amount", "Notes"]
         self.table = QtWidgets.QTableWidget(0, len(self.columns))
         self.table.setHorizontalHeaderLabels(self.columns)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -175,7 +176,7 @@ class ExpensesTab(QtWidgets.QWidget):
             date_item = QtWidgets.QTableWidgetItem(str(expense.expense_date))
             date_item.setData(QtCore.Qt.UserRole, expense.id)
             self.table.setItem(row, 0, date_item)
-            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(expense.category or "Other Expenses"))
+            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(expense.category or ""))
             self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(expense.vendor or ""))
             self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(expense.user_name or ""))
             amount_item = QtWidgets.QTableWidgetItem(f"${expense.amount:,.2f}")
@@ -322,101 +323,173 @@ class ExpensesTab(QtWidgets.QWidget):
 
 
 class ExpenseDialog(QtWidgets.QDialog):
+    """Modern expense dialog with streamlined layout"""
+    
     def __init__(self, users, expense: Expense = None, parent=None):
         super().__init__(parent)
         self.users = users
         self.expense = expense
         self.setWindowTitle("Edit Expense" if expense else "Add Expense")
-        self.resize(620, 420)
+        self.setMinimumWidth(700)
+        self.setMinimumHeight(420)
+        self.resize(700, 420)
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
 
-        form = QtWidgets.QGridLayout()
-        form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(12)
-        form.setColumnStretch(1, 1)
-
-        self.date_edit = QtWidgets.QDateEdit()
-        self.date_edit.setCalendarPopup(True)
-        self.date_edit.setDate(QtCore.QDate.currentDate())
-        if expense:
-            self.date_edit.setDate(QtCore.QDate.fromString(str(expense.expense_date), "yyyy-MM-dd"))
+        # Initialize widgets
+        self.date_edit = QtWidgets.QLineEdit()
+        self.date_edit.setPlaceholderText("MM/DD/YY")
         self.today_btn = QtWidgets.QPushButton("Today")
-        self.today_btn.setObjectName("MiniButton")
+        self.calendar_btn = QtWidgets.QPushButton("📅")
+        self.calendar_btn.setFixedWidth(44)
         self.today_btn.clicked.connect(self._set_today)
+        self.calendar_btn.clicked.connect(self._pick_date)
 
         self.time_edit = QtWidgets.QLineEdit()
         self.time_edit.setPlaceholderText("HH:MM")
         self.now_btn = QtWidgets.QPushButton("Now")
-        self.now_btn.setObjectName("MiniButton")
         self.now_btn.clicked.connect(self._set_now)
 
-        date_row = QtWidgets.QHBoxLayout()
-        date_row.setSpacing(8)
-        date_row.addWidget(self.date_edit, 1)
-        date_row.addWidget(self.today_btn)
-        date_row.addWidget(QtWidgets.QLabel("Time:"))
-        date_row.addWidget(self.time_edit, 1)
-        date_row.addWidget(self.now_btn)
-
         self.amount_edit = QtWidgets.QLineEdit()
-        if expense:
-            self.amount_edit.setText(str(expense.amount))
+        self.amount_edit.setPlaceholderText("0.00")
 
         self.vendor_edit = QtWidgets.QLineEdit()
-        if expense:
-            self.vendor_edit.setText(expense.vendor or "")
-
-        self.user_combo = QtWidgets.QComboBox()
-        self.user_combo.setEditable(True)
-        self.user_combo.addItem("")
-        for user in users:
-            self.user_combo.addItem(user.name, user.id)
-        if expense and expense.user_id:
-            idx = self.user_combo.findData(expense.user_id)
-            if idx >= 0:
-                self.user_combo.setCurrentIndex(idx)
+        self.vendor_edit.setPlaceholderText("Vendor name...")
 
         self.category_combo = QtWidgets.QComboBox()
         self.category_combo.setEditable(True)
+        self.category_combo.lineEdit().setPlaceholderText("Choose...")
         self.category_combo.addItems(EXPENSE_CATEGORIES)
-        if expense:
-            idx = self.category_combo.findText(expense.category or "Other Expenses")
-            if idx >= 0:
-                self.category_combo.setCurrentIndex(idx)
-            else:
-                self.category_combo.setEditText(expense.category or "Other Expenses")
-        else:
-            self.category_combo.setCurrentIndex(-1)
-            self.category_combo.setEditText("")
+        self.category_combo.setCurrentIndex(-1)  # Start with no selection
+
+        self.user_combo = QtWidgets.QComboBox()
+        self.user_combo.setEditable(True)
+        self.user_combo.lineEdit().setPlaceholderText("Choose...")
+        self.user_combo.addItem("")
+        for user in users:
+            self.user_combo.addItem(user.name, user.id)
 
         self.description_edit = QtWidgets.QPlainTextEdit()
-        self.description_edit.setObjectName("NotesField")
-        self.description_edit.setPlaceholderText("Description...")
-        if expense and expense.description:
-            self.description_edit.setPlainText(expense.description)
-        self.description_edit.setMinimumHeight(self.description_edit.fontMetrics().lineSpacing() * 3 + 12)
+        self.description_edit.setPlaceholderText("Optional...")
+        self.description_edit.setFixedHeight(80)
+        self.description_edit.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
-        form.addWidget(QtWidgets.QLabel("Date:"), 0, 0)
-        form.addLayout(date_row, 0, 1)
-        form.addWidget(QtWidgets.QLabel("Amount"), 1, 0)
-        form.addWidget(self.amount_edit, 1, 1)
-        form.addWidget(QtWidgets.QLabel("Vendor"), 2, 0)
-        form.addWidget(self.vendor_edit, 2, 1)
-        form.addWidget(QtWidgets.QLabel("User (optional)"), 3, 0)
-        form.addWidget(self.user_combo, 3, 1)
-        form.addWidget(QtWidgets.QLabel("Category"), 4, 0)
-        form.addWidget(self.category_combo, 4, 1)
-        desc_label = QtWidgets.QLabel("Description")
-        desc_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        form.addWidget(desc_label, 5, 0)
-        form.addWidget(self.description_edit, 5, 1)
+        # Build form
+        form = QtWidgets.QVBoxLayout()
+        form.setSpacing(12)
+
+        # Date/Time section
+        datetime_section = QtWidgets.QWidget()
+        datetime_section.setObjectName("SectionBackground")
+        datetime_layout = QtWidgets.QHBoxLayout(datetime_section)
+        datetime_layout.setContentsMargins(12, 10, 12, 10)
+        datetime_layout.setSpacing(12)
+        
+        date_label = QtWidgets.QLabel("Date:")
+        date_label.setObjectName("FieldLabel")
+        datetime_layout.addWidget(date_label)
+        
+        date_container = QtWidgets.QWidget()
+        date_layout = QtWidgets.QHBoxLayout(date_container)
+        date_layout.setContentsMargins(0, 0, 0, 0)
+        date_layout.setSpacing(4)
+        self.date_edit.setFixedWidth(110)
+        date_layout.addWidget(self.date_edit)
+        date_layout.addWidget(self.calendar_btn)
+        datetime_layout.addWidget(date_container)
+        
+        datetime_layout.addWidget(self.today_btn)
+        datetime_layout.addSpacing(30)
+        
+        time_label = QtWidgets.QLabel("Time:")
+        time_label.setObjectName("FieldLabel")
+        datetime_layout.addWidget(time_label)
+        
+        self.time_edit.setFixedWidth(90)
+        datetime_layout.addWidget(self.time_edit)
+        datetime_layout.addWidget(self.now_btn)
+        datetime_layout.addStretch(1)
+        
+        form.addWidget(datetime_section)
+
+        # Expense Details section with 2-column grid
+        main_header = self._create_section_header("💵  Expense Details")
+        form.addWidget(main_header)
+        
+        main_section = QtWidgets.QWidget()
+        main_section.setObjectName("SectionBackground")
+        main_grid = QtWidgets.QGridLayout(main_section)
+        main_grid.setContentsMargins(12, 12, 12, 12)
+        main_grid.setHorizontalSpacing(30)
+        main_grid.setVerticalSpacing(10)
+        
+        # Left Column
+        row = 0
+        
+        # Amount
+        amount_label = QtWidgets.QLabel("Amount ($):")
+        amount_label.setObjectName("FieldLabel")
+        amount_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        main_grid.addWidget(amount_label, row, 0)
+        self.amount_edit.setFixedWidth(140)
+        main_grid.addWidget(self.amount_edit, row, 1)
+        
+        # Category (right column)
+        category_label = QtWidgets.QLabel("Category:")
+        category_label.setObjectName("FieldLabel")
+        category_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        main_grid.addWidget(category_label, row, 2)
+        self.category_combo.setMinimumWidth(180)
+        main_grid.addWidget(self.category_combo, row, 3)
+        
+        row += 1
+        
+        # Vendor
+        vendor_label = QtWidgets.QLabel("Vendor:")
+        vendor_label.setObjectName("FieldLabel")
+        vendor_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        main_grid.addWidget(vendor_label, row, 0)
+        self.vendor_edit.setMinimumWidth(180)
+        main_grid.addWidget(self.vendor_edit, row, 1)
+        
+        # User (right column)
+        user_label = QtWidgets.QLabel("User:")
+        user_label.setObjectName("FieldLabel")
+        user_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        main_grid.addWidget(user_label, row, 2)
+        self.user_combo.setMinimumWidth(180)
+        main_grid.addWidget(self.user_combo, row, 3)
+        
+        main_grid.setColumnStretch(1, 1)
+        main_grid.setColumnStretch(3, 1)
+        
+        form.addWidget(main_section)
+
+        # Collapsible Notes
+        self.notes_collapsed = True
+        self.notes_toggle = QtWidgets.QPushButton("📝 Add Notes...")
+        self.notes_toggle.setObjectName("SectionHeader")
+        self.notes_toggle.setCursor(QtCore.Qt.PointingHandCursor)
+        self.notes_toggle.setFlat(True)
+        self.notes_toggle.clicked.connect(self._toggle_notes)
+        form.addWidget(self.notes_toggle)
+        
+        self.notes_section = QtWidgets.QWidget()
+        self.notes_section.setObjectName("SectionBackground")
+        self.notes_section.setVisible(False)
+        notes_layout = QtWidgets.QVBoxLayout(self.notes_section)
+        notes_layout.setContentsMargins(12, 12, 12, 12)
+        notes_layout.addWidget(self.description_edit)
+        form.addWidget(self.notes_section)
 
         layout.addLayout(form)
-        layout.addSpacing(8)
+        
+        # Add stretch to push buttons to bottom when dialog is resized
+        layout.addStretch(1)
 
+        # Action buttons (don't adjust per user request)
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
         self.cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
@@ -434,20 +507,160 @@ class ExpenseDialog(QtWidgets.QDialog):
 
         self.amount_edit.textChanged.connect(self._validate_inline)
         self.vendor_edit.textChanged.connect(self._validate_inline)
+        self.date_edit.textChanged.connect(self._validate_inline)
+        self.user_combo.currentTextChanged.connect(self._validate_inline)
+
+        # Set tab order: Date -> Time -> Amount -> Vendor -> Category -> User -> Notes -> Save
+        self.setTabOrder(self.date_edit, self.time_edit)
+        self.setTabOrder(self.time_edit, self.amount_edit)
+        self.setTabOrder(self.amount_edit, self.vendor_edit)
+        self.setTabOrder(self.vendor_edit, self.category_combo)
+        self.setTabOrder(self.category_combo, self.user_combo)
+        self.setTabOrder(self.user_combo, self.description_edit)
+        self.setTabOrder(self.description_edit, self.save_btn)
+
+        # Load data if editing
+        if expense:
+            self._load_expense()
+        else:
+            self._set_today()
+            self._set_now()
 
         self._validate_inline()
+
+    def _create_section_header(self, text: str) -> QtWidgets.QLabel:
+        """Create a section header label"""
+        label = QtWidgets.QLabel(text)
+        label.setObjectName("SectionHeader")
+        return label
+
+    def _toggle_notes(self):
+        """Toggle notes section visibility"""
+        self.notes_collapsed = not self.notes_collapsed
+        self.notes_section.setVisible(not self.notes_collapsed)
+        if self.notes_collapsed:
+            self.notes_toggle.setText("📝 Add Notes...")
+            self.setMinimumHeight(420)
+            self.setMaximumHeight(420)
+            self.resize(self.width(), 420)
+        else:
+            self.notes_toggle.setText("📝 Hide Notes")
+            self.setMinimumHeight(500)
+            self.setMaximumHeight(16777215)  # Qt max
+            self.resize(self.width(), 500)
+
+    def _pick_date(self):
+        """Show calendar picker for date selection"""
+        from PySide6.QtWidgets import QCalendarWidget
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Select Date")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        calendar = QCalendarWidget()
+        
+        # Parse current date if any
+        current_text = self.date_edit.text().strip()
+        if current_text:
+            parsed = parse_date_input(current_text)
+            if parsed:
+                calendar.setSelectedDate(QtCore.QDate(parsed.year, parsed.month, parsed.day))
+        else:
+            calendar.setSelectedDate(QtCore.QDate.currentDate())
+        
+        layout.addWidget(calendar)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch()
+        ok_btn = QtWidgets.QPushButton("OK")
+        ok_btn.clicked.connect(dialog.accept)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_row.addWidget(ok_btn)
+        btn_row.addWidget(cancel_btn)
+        layout.addLayout(btn_row)
+        
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            selected = calendar.selectedDate()
+            self.date_edit.setText(selected.toString("MM/dd/yy"))
+
+    def _load_expense(self):
+        """Load expense data into form"""
+        if not self.expense:
+            return
+        
+        # Date
+        if self.expense.expense_date:
+            try:
+                d = datetime.strptime(str(self.expense.expense_date), "%Y-%m-%d")
+                self.date_edit.setText(d.strftime("%m/%d/%y"))
+            except:
+                pass
+        
+        # Time
+        if self.expense.expense_time:
+            self.time_edit.setText(self.expense.expense_time[:5] if len(self.expense.expense_time) >= 5 else self.expense.expense_time)
+        
+        # Amount
+        if self.expense.amount:
+            self.amount_edit.setText(str(self.expense.amount))
+        
+        # Vendor
+        if self.expense.vendor:
+            self.vendor_edit.setText(self.expense.vendor)
+        
+        # Category
+        if self.expense.category:
+            idx = self.category_combo.findText(self.expense.category)
+            if idx >= 0:
+                self.category_combo.setCurrentIndex(idx)
+            else:
+                self.category_combo.setEditText(self.expense.category)
+        
+        # User
+        if self.expense.user_id:
+            idx = self.user_combo.findData(self.expense.user_id)
+            if idx >= 0:
+                self.user_combo.setCurrentIndex(idx)
+        
+        # Notes
+        if self.expense.description:
+            self.description_edit.setPlainText(self.expense.description)
+            # Expand notes if there's content - use toggle to ensure proper sizing
+            self._toggle_notes()
 
     def collect_data(self):
         vendor = self.vendor_edit.text().strip()
         if not vendor:
             return None, "Vendor is required"
+        
+        # Parse date
+        date_text = self.date_edit.text().strip()
+        parsed_date = parse_date_input(date_text)
+        if not parsed_date:
+            return None, "Invalid date format"
+        
+        # Parse time
+        time_text = self.time_edit.text().strip()
+        expense_time = parse_time_input(time_text) if time_text else None
+        
         ok, amount = validate_currency(self.amount_edit.text(), allow_zero=False)
         if not ok:
             return None, amount
-        user_id = self.user_combo.currentData() if self.user_combo.currentData() else None
-        category = self.category_combo.currentText().strip() or "Other Expenses"
+        
+        # Get user_id by matching text (not currentData which can be stale)
+        user_text = self.user_combo.currentText().strip()
+        user_id = None
+        if user_text:
+            # Find the matching user in the combo
+            for i in range(self.user_combo.count()):
+                if self.user_combo.itemText(i) == user_text:
+                    user_id = self.user_combo.itemData(i)
+                    break
+        
+        category_text = self.category_combo.currentText().strip()
+        category = category_text if category_text else None
+        
         return {
-            "expense_date": self.date_edit.date().toPython(),
+            "expense_date": parsed_date,
+            "expense_time": expense_time,
             "amount": Decimal(str(amount)),
             "vendor": vendor,
             "description": self.description_edit.toPlainText().strip() or None,
@@ -456,17 +669,20 @@ class ExpenseDialog(QtWidgets.QDialog):
         }, None
 
     def _set_today(self):
-        self.date_edit.setDate(QtCore.QDate.currentDate())
+        self.date_edit.setText(datetime.now().strftime("%m/%d/%y"))
 
     def _clear_form(self):
-        self.date_edit.setDate(QtCore.QDate.currentDate())
-        self.time_edit.clear()
+        self._set_today()
+        self._set_now()
         self.amount_edit.clear()
         self.vendor_edit.clear()
         self.user_combo.setCurrentIndex(0)
         self.category_combo.setCurrentIndex(-1)
         self.category_combo.setEditText("")
         self.description_edit.clear()
+        self.notes_collapsed = True
+        self.notes_section.setVisible(False)
+        self.notes_toggle.setText("📝 Add Notes...")
         self._validate_inline()
 
     def _set_now(self):
@@ -484,52 +700,164 @@ class ExpenseDialog(QtWidgets.QDialog):
         widget.style().unpolish(widget)
         widget.style().polish(widget)
 
-    def _validate_inline(self):
+    def _validate_inline(self) -> bool:
+        """Validate all fields and return True if all valid"""
+        valid = True
+        
+        # Validate date
+        date_text = self.date_edit.text().strip()
+        if not date_text:
+            self._set_invalid(self.date_edit, "Date is required.")
+            valid = False
+        else:
+            parsed = parse_date_input(date_text)
+            if not parsed:
+                self._set_invalid(self.date_edit, "Invalid date format (use MM/DD/YY).")
+                valid = False
+            else:
+                self._set_valid(self.date_edit)
+        
+        # Validate amount
         amount_text = self.amount_edit.text().strip()
         if not amount_text:
             self._set_invalid(self.amount_edit, "Amount is required.")
+            valid = False
         else:
-            valid, _result = validate_currency(amount_text, allow_zero=False)
-            if not valid:
+            valid_amt, _result = validate_currency(amount_text, allow_zero=False)
+            if not valid_amt:
                 self._set_invalid(self.amount_edit, "Enter a valid amount (max 2 decimals).")
+                valid = False
             else:
                 self._set_valid(self.amount_edit)
 
+        # Validate vendor
         vendor_text = self.vendor_edit.text().strip()
         if not vendor_text:
             self._set_invalid(self.vendor_edit, "Vendor is required.")
+            valid = False
         else:
             self._set_valid(self.vendor_edit)
+        
+        # Validate user (optional, but must be valid if entered)
+        user_text = self.user_combo.currentText().strip()
+        if user_text:  # Only validate if text is entered
+            # Check if it's a valid user
+            valid_user = False
+            for i in range(self.user_combo.count()):
+                if self.user_combo.itemText(i) == user_text:
+                    valid_user = True
+                    break
+            if not valid_user:
+                self._set_invalid(self.user_combo, "User not found. Choose from list or leave blank.")
+                valid = False
+            else:
+                self._set_valid(self.user_combo)
+        else:
+            self._set_valid(self.user_combo)
+        
+        # Enable/disable save button based on validation
+        self.save_btn.setEnabled(valid)
+        return valid
 
 
 class ExpenseViewDialog(QtWidgets.QDialog):
+    """Modern view-only expense dialog with sectioned layout"""
     def __init__(self, expense: Expense, parent=None, on_edit=None, on_delete=None):
         super().__init__(parent)
         self.expense = expense
         self._on_edit = on_edit
         self._on_delete = on_delete
         self.setWindowTitle("View Expense")
-        self.resize(520, 320)
+        self.setMinimumWidth(700)
+        self.setMinimumHeight(350)
 
-        layout = QtWidgets.QGridLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setHorizontalSpacing(10)
-        layout.setVerticalSpacing(12)
-        layout.setColumnStretch(1, 1)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
 
-        def add_row(label, value, row):
-            layout.addWidget(QtWidgets.QLabel(label), row, 0)
-            val = QtWidgets.QLabel(value)
-            val.setWordWrap(True)
-            layout.addWidget(val, row, 1, 1, 3)
+        # ========== EXPENSE DETAILS SECTION ==========
+        details_section, details_layout = self._create_section("💳 Expense Details")
+        
+        # Two-column grid layout
+        columns_widget = QtWidgets.QWidget()
+        columns_layout = QtWidgets.QHBoxLayout(columns_widget)
+        columns_layout.setContentsMargins(0, 4, 0, 0)
+        columns_layout.setSpacing(12)
+        
+        # Left column
+        left_grid = QtWidgets.QGridLayout()
+        left_grid.setHorizontalSpacing(12)
+        left_grid.setVerticalSpacing(6)
+        
+        # Date & Time
+        date_label = QtWidgets.QLabel("Date:")
+        date_label.setStyleSheet("color: palette(mid);")
+        left_grid.addWidget(date_label, 0, 0)
+        date_time_str = self._format_date(expense.expense_date)
+        if expense.expense_time:
+            time_display = expense.expense_time[:5] if len(expense.expense_time) >= 5 else expense.expense_time
+            date_time_str += f" {time_display}"
+        left_grid.addWidget(self._make_selectable_label(date_time_str), 0, 1)
+        
+        # Vendor
+        vendor_label = QtWidgets.QLabel("Vendor:")
+        vendor_label.setStyleSheet("color: palette(mid);")
+        left_grid.addWidget(vendor_label, 1, 0)
+        left_grid.addWidget(self._make_selectable_label(expense.vendor or "—"), 1, 1)
+        
+        # Amount
+        amount_label = QtWidgets.QLabel("Amount:")
+        amount_label.setStyleSheet("color: palette(mid);")
+        left_grid.addWidget(amount_label, 2, 0)
+        left_grid.addWidget(self._make_selectable_label(f"${expense.amount:,.2f}"), 2, 1)
+        
+        left_grid.setColumnStretch(1, 1)
+        
+        # Right column
+        right_grid = QtWidgets.QGridLayout()
+        right_grid.setHorizontalSpacing(12)
+        right_grid.setVerticalSpacing(6)
+        
+        # User
+        user_label = QtWidgets.QLabel("User:")
+        user_label.setStyleSheet("color: palette(mid);")
+        right_grid.addWidget(user_label, 0, 0)
+        right_grid.addWidget(self._make_selectable_label(expense.user_name or "—"), 0, 1)
+        
+        # Category
+        category_label = QtWidgets.QLabel("Category:")
+        category_label.setStyleSheet("color: palette(mid);")
+        right_grid.addWidget(category_label, 1, 0)
+        right_grid.addWidget(self._make_selectable_label(expense.category or "—"), 1, 1)
+        
+        right_grid.setColumnStretch(1, 1)
+        
+        columns_layout.addLayout(left_grid, 1)
+        columns_layout.addLayout(right_grid, 1)
+        
+        details_layout.addWidget(columns_widget)
+        layout.addWidget(details_section)
 
-        add_row("Date:", str(expense.expense_date), 0)
-        add_row("Category:", expense.category or "Other Expenses", 1)
-        add_row("Vendor:", expense.vendor or "", 2)
-        add_row("User:", expense.user_name or "", 3)
-        add_row("Amount:", f"${expense.amount:,.2f}", 4)
-        add_row("Description:", expense.description or "", 5)
+        # ========== NOTES SECTION ==========
+        notes_section, notes_layout = self._create_section("📝 Notes")
+        notes_value = expense.description or ""
+        
+        if notes_value:
+            notes_display = QtWidgets.QTextEdit()
+            notes_display.setReadOnly(True)
+            notes_display.setPlainText(notes_value)
+            notes_display.setMaximumHeight(80)
+            notes_display.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            notes_layout.addWidget(notes_display)
+        else:
+            notes_empty = QtWidgets.QLabel("—")
+            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_layout.addWidget(notes_empty)
+        
+        layout.addWidget(notes_section)
+        layout.addStretch(1)
 
+        # ========== BUTTONS ==========
         button_layout = QtWidgets.QHBoxLayout()
         if self._on_delete:
             delete_btn = QtWidgets.QPushButton("🗑️ Delete")
@@ -538,9 +866,48 @@ class ExpenseViewDialog(QtWidgets.QDialog):
         button_layout.addStretch(1)
         if self._on_edit:
             edit_btn = QtWidgets.QPushButton("✏️ Edit")
-            edit_btn.clicked.connect(self._on_edit)
+            edit_btn.clicked.connect(self._handle_edit)
             button_layout.addWidget(edit_btn)
         close_btn = QtWidgets.QPushButton("✖️ Close")
         close_btn.clicked.connect(self.accept)
         button_layout.addWidget(close_btn)
-        layout.addLayout(button_layout, 6, 0, 1, 4)
+        layout.addLayout(button_layout)
+
+    def _create_section(self, title_text):
+        """Create a section container with header"""
+        section_widget = QtWidgets.QWidget()
+        section_widget.setObjectName("SectionBackground")
+        section_layout = QtWidgets.QVBoxLayout(section_widget)
+        section_layout.setContentsMargins(10, 8, 10, 8)
+        section_layout.setSpacing(6)
+        
+        # Section header
+        section_header = QtWidgets.QLabel(title_text)
+        section_header.setObjectName("SectionHeader")
+        section_layout.addWidget(section_header)
+        
+        return section_widget, section_layout
+
+    def _make_selectable_label(self, text):
+        """Create a selectable QLabel"""
+        label = QtWidgets.QLabel(text)
+        label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard)
+        label.setCursor(QtCore.Qt.IBeamCursor)
+        return label
+
+    def _format_date(self, value):
+        """Format date to MM/DD/YY"""
+        if not value:
+            return "—"
+        if isinstance(value, date):
+            return value.strftime("%m/%d/%y")
+        try:
+            return datetime.strptime(str(value), "%Y-%m-%d").strftime("%m/%d/%y")
+        except ValueError:
+            return str(value)
+
+    def _handle_edit(self):
+        """Close dialog before triggering edit callback"""
+        self.accept()
+        if self._on_edit:
+            self._on_edit()

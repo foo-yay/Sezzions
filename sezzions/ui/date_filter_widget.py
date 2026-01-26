@@ -3,6 +3,7 @@ Reusable date filter widget for Qt tabs
 """
 from PySide6 import QtWidgets, QtCore
 from datetime import date, timedelta, datetime
+from ui.input_parsers import parse_date_input
 
 
 class DateFilterWidget(QtWidgets.QGroupBox):
@@ -88,8 +89,8 @@ class DateFilterWidget(QtWidgets.QGroupBox):
     def get_date_range(self):
         """Get the selected date range as Python dates"""
         return (
-            self._parse_date_input(self.start_date.text()),
-            self._parse_date_input(self.end_date.text()),
+            parse_date_input(self.start_date.text()),
+            parse_date_input(self.end_date.text()),
         )
     
     def _clear_filter(self):
@@ -158,23 +159,3 @@ class DateFilterWidget(QtWidgets.QGroupBox):
         ok_btn.clicked.connect(dialog.accept)
         if dialog.exec() == QtWidgets.QDialog.Accepted:
             target_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
-
-    def _parse_date_input(self, value: str):
-        value = value.strip()
-        if not value:
-            return None
-        if "/" in value:
-            parts = value.split("/")
-            if len(parts) == 2:
-                value = f"{parts[0]}/{parts[1]}/{date.today().year}"
-        if "-" in value:
-            parts = value.split("-")
-            if len(parts) == 2:
-                value = f"{date.today().year}-{parts[0]}-{parts[1]}"
-        formats = ["%Y-%m-%d", "%m/%d/%Y", "%m-%d-%Y", "%m/%d/%y", "%m-%d-%y", "%Y/%m/%d"]
-        for fmt in formats:
-            try:
-                return datetime.strptime(value, fmt).date()
-            except ValueError:
-                continue
-        return None

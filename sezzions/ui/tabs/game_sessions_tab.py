@@ -17,44 +17,10 @@ from ui.date_filter_widget import DateFilterWidget
 from ui.tabs.purchases_tab import PurchaseViewDialog
 from ui.tabs.redemptions_tab import RedemptionViewDialog
 from ui.table_header_filters import TableHeaderFilter
+from ui.input_parsers import parse_date_input, parse_time_input
 
 
 TIME_24H_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d(?:\:[0-5]\d)?$")
-
-
-def parse_date_input(value: str) -> date:
-    value = value.strip()
-    if not value:
-        return date.today()
-    if "/" in value:
-        parts = value.split("/")
-        if len(parts) == 2:
-            value = f"{parts[0]}/{parts[1]}/{date.today().year}"
-    if "-" in value:
-        parts = value.split("-")
-        if len(parts) == 2:
-            value = f"{date.today().year}-{parts[0]}-{parts[1]}"
-    formats = ["%Y-%m-%d", "%m/%d/%Y", "%m-%d-%Y", "%m/%d/%y", "%m-%d-%y", "%Y/%m/%d"]
-    for fmt in formats:
-        try:
-            return datetime.strptime(value, fmt).date()
-        except ValueError:
-            continue
-    raise ValueError(f"Invalid date: {value}")
-
-
-def parse_time_input(value: str) -> str:
-    value = value.strip()
-    if not value:
-        return datetime.now().strftime("%H:%M:%S")
-    formats = ["%H:%M:%S", "%H:%M", "%I:%M%p", "%I:%M %p"]
-    for fmt in formats:
-        try:
-            parsed = datetime.strptime(value, fmt).time()
-            return parsed.strftime("%H:%M:%S")
-        except ValueError:
-            continue
-    raise ValueError(f"Invalid time: {value}")
 
 
 def is_valid_time_24h(value: str, allow_blank: bool = True) -> bool:

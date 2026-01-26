@@ -1443,8 +1443,9 @@ class AppFacade:
         amount: Decimal,
         vendor: str,
         description: Optional[str] = None,
-        category: str = "Other Expenses",
+        category: Optional[str] = None,
         user_id: Optional[int] = None,
+        expense_time: Optional[str] = None,
     ) -> Expense:
         return self.expense_service.create_expense(
             expense_date=expense_date,
@@ -1453,6 +1454,7 @@ class AppFacade:
             description=description,
             category=category,
             user_id=user_id,
+            expense_time=expense_time,
         )
 
     def update_expense(self, expense_id: int, **kwargs) -> Expense:

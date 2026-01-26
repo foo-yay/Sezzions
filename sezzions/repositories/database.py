@@ -348,10 +348,11 @@ class DatabaseManager:
             CREATE TABLE IF NOT EXISTS expenses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 expense_date TEXT NOT NULL,
+                expense_time TEXT,
                 amount TEXT NOT NULL,
                 vendor TEXT NOT NULL,
                 description TEXT,
-                category TEXT DEFAULT 'Other Expenses',
+                category TEXT,
                 user_id INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP,
@@ -625,14 +626,15 @@ class DatabaseManager:
                     pass
 
     def _migrate_expenses_table(self):
-        """Add new columns to expenses if they don't exist"""
+        """Add new columns to expenses if they don't exist, and remove DEFAULT constraint from category"""
         cursor = self._connection.cursor()
         cursor.execute("PRAGMA table_info(expenses)")
         existing_columns = {row[1] for row in cursor.fetchall()}
         migrations = [
             ("description", "TEXT"),
-            ("category", "TEXT DEFAULT 'Other Expenses'"),
+            ("category", "TEXT"),
             ("user_id", "INTEGER"),
+            ("expense_time", "TEXT"),
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
             ("updated_at", "TIMESTAMP"),
         ]
@@ -642,6 +644,41 @@ class DatabaseManager:
                     cursor.execute(f"ALTER TABLE expenses ADD COLUMN {column_name} {column_def}")
                 except Exception:
                     pass
+        
+        # Remove DEFAULT constraint from category column by recreating table
+        # Check if category has DEFAULT constraint
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='expenses'")
+        result = cursor.fetchone()
+        if result and "category TEXT DEFAULT 'Other Expenses'" in result[0]:
+            # Recreate table without DEFAULT constraint
+            cursor.execute('''
+                CREATE TABLE expenses_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    expense_date TEXT NOT NULL,
+                    expense_time TEXT,
+                    amount TEXT NOT NULL,
+                    vendor TEXT NOT NULL,
+                    description TEXT,
+                    category TEXT,
+                    user_id INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+                )
+            ''')
+            
+            # Copy data
+            cursor.execute('''
+                INSERT INTO expenses_new 
+                SELECT id, expense_date, expense_time, amount, vendor, description, 
+                       category, user_id, created_at, updated_at
+                FROM expenses
+            ''')
+            
+            # Drop old table and rename new one
+            cursor.execute('DROP TABLE expenses')
+            cursor.execute('ALTER TABLE expenses_new RENAME TO expenses')
+            self._connection.commit()
 
     def _migrate_purchases_table(self):
         """Add new columns to purchases if they don't exist"""
