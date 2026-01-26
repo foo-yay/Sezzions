@@ -892,5 +892,15 @@ class Database:
         if 'fees' not in columns:
             c.execute("ALTER TABLE redemptions ADD COLUMN fees REAL DEFAULT 0")
         
+        # Migration: Add reconciliation override columns to game_sessions
+        c.execute("PRAGMA table_info(game_sessions)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'session_basis_override' not in columns:
+            c.execute("ALTER TABLE game_sessions ADD COLUMN session_basis_override REAL")
+        if 'basis_consumed_override' not in columns:
+            c.execute("ALTER TABLE game_sessions ADD COLUMN basis_consumed_override REAL")
+        if 'is_reconciliation' not in columns:
+            c.execute("ALTER TABLE game_sessions ADD COLUMN is_reconciliation INTEGER DEFAULT 0")
+        
         conn.commit()
         conn.close()

@@ -3033,6 +3033,15 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         self.freebie_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
         self.freebie_label.setProperty("status", "neutral")
         self.freebie_label.setToolTip(balance_tooltip)
+        
+        self.redeem_check_label = QtWidgets.QLabel("Redeemable Check")
+        self.redeem_check_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        
+        self.redeem_check_value = QtWidgets.QLabel("—")
+        self.redeem_check_value.setWordWrap(True)
+        self.redeem_check_value.setObjectName("InfoField")
+        self.redeem_check_value.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+        self.redeem_check_value.setProperty("status", "neutral")
 
         balance_grid.addWidget(QtWidgets.QLabel("Starting Total SC"), 0, 0)
         balance_grid.addWidget(self.start_total_edit, 0, 1)
@@ -3040,7 +3049,28 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         balance_grid.addWidget(self.start_redeem_edit, 0, 3)
         balance_grid.addWidget(self.balance_label, 1, 0)
         balance_grid.addWidget(self.freebie_label, 1, 1, 1, 3)
+        
+        # Add redeemable check row
+        balance_grid.addWidget(self.redeem_check_label, 2, 0)
+        balance_grid.addWidget(self.redeem_check_value, 2, 1, 1, 2)
+        
+        # Add reconciliation buttons (initially hidden) - on same row as redeemable check
+        self.reconcile_btn = QtWidgets.QPushButton("Reconcile with Full Basis")
+        self.reconcile_btn.setObjectName("WarningButton")
+        self.reconcile_btn.clicked.connect(self._show_reconciliation_dialog)
+        self.reconcile_btn.setVisible(False)
+        balance_grid.addWidget(self.reconcile_btn, 2, 3)
+        
+        self.clear_reconcile_btn = QtWidgets.QPushButton("Clear Reconciliation")
+        self.clear_reconcile_btn.setObjectName("DangerButton")
+        self.clear_reconcile_btn.clicked.connect(self._clear_reconciliation)
+        self.clear_reconcile_btn.setVisible(False)
+        balance_grid.addWidget(self.clear_reconcile_btn, 2, 3)
+        
         layout.addWidget(balance_group)
+        
+        # Store reconciliation override values
+        self.reconciliation_override = None  # Will be dict with session_basis and basis_consumed
 
         # Notes section
         notes_group = QtWidgets.QGroupBox("Notes")
@@ -3073,6 +3103,7 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         self.site_combo.currentTextChanged.connect(self._update_freebie_label)
         self.user_combo.currentTextChanged.connect(self._update_freebie_label)
         self.start_total_edit.textChanged.connect(self._update_freebie_label)
+        self.start_redeem_edit.textChanged.connect(self._update_freebie_label)
         self.date_edit.textChanged.connect(self._update_freebie_label)
         self.time_edit.textChanged.connect(self._update_freebie_label)
         self.date_edit.textChanged.connect(self._validate_inline)
@@ -3310,6 +3341,10 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         site_name = self.site_combo.currentText().strip()
         user_name = self.user_combo.currentText().strip()
         start_total_text = self.start_total_edit.text().strip()
+        
+        # Hide reconcile button by default (show only when conditions met)
+        self.reconcile_btn.setVisible(False)
+        
         if not site_name or not user_name or not start_total_text:
             self.freebie_label.setText("—")
             self.freebie_label.setProperty("status", "neutral")
@@ -3346,9 +3381,56 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         )
         delta_total = float(info.get("delta_total_sc", 0.0))
         expected_total = float(info.get("expected_total_sc", 0.0))
+        expected_redeem = float(info.get("expected_redeemable_sc", 0.0))
         freebies_sc = float(info.get("freebies_sc", 0.0))
         freebies_dollar = float(info.get("freebies_dollar", 0.0))
         missing_sc = float(info.get("missing_sc", 0.0))
+        
+        # Get starting redeemable to check for reconciliation need
+        start_redeem_text = self.start_redeem_edit.text().strip()
+        if start_redeem_text:
+            valid_redeem, start_redeem = validate_currency(start_redeem_text)
+            if valid_redeem:
+                # Check for redeemable discrepancy
+                delta_redeem = start_redeem - expected_redeem
+                
+                # If reconciliation already applied, show that instead of warning
+                if self.reconciliation_override:
+                    self.redeem_check_value.setProperty("status", "neutral")
+                    self.redeem_check_value.setText("✓ Reconciliation applied")
+                    self.reconcile_btn.setVisible(False)
+                elif delta_redeem > 0.5:  # Threshold to avoid noise
+                    self.redeem_check_value.setProperty("status", "warning")
+                    self.redeem_check_value.setText(
+                        f"+{delta_redeem:.2f} SC (expected {expected_redeem:.2f})"
+                    )
+                    self.reconcile_btn.setVisible(True)
+                elif abs(delta_redeem) < 0.5:
+                    self.redeem_check_value.setProperty("status", "neutral")
+                    self.redeem_check_value.setText(f"OK ({expected_redeem:.2f} SC)")
+                    self.reconcile_btn.setVisible(False)
+                else:
+                    self.redeem_check_value.setProperty("status", "negative")
+                    self.redeem_check_value.setText(
+                        f"-{abs(delta_redeem):.2f} SC (expected {expected_redeem:.2f})"
+                    )
+                    self.reconcile_btn.setVisible(False)
+                
+                self.redeem_check_value.style().unpolish(self.redeem_check_value)
+                self.redeem_check_value.style().polish(self.redeem_check_value)
+            else:
+                self.redeem_check_value.setText("—")
+                self.redeem_check_value.setProperty("status", "neutral")
+                self.redeem_check_value.style().unpolish(self.redeem_check_value)
+                self.redeem_check_value.style().polish(self.redeem_check_value)
+                self.reconcile_btn.setVisible(False)
+        else:
+            self.redeem_check_value.setText("—")
+            self.redeem_check_value.setProperty("status", "neutral")
+            self.redeem_check_value.style().unpolish(self.redeem_check_value)
+            self.redeem_check_value.style().polish(self.redeem_check_value)
+            self.reconcile_btn.setVisible(False)
+        
         if freebies_sc > 0:
             self.freebie_label.setProperty("status", "positive")
             self.freebie_label.setText(
@@ -3364,6 +3446,136 @@ class GameSessionStartDialog(QtWidgets.QDialog):
             self.freebie_label.setText(f"Matches expected balance ({expected_total:.2f} SC)")
         self.freebie_label.style().unpolish(self.freebie_label)
         self.freebie_label.style().polish(self.freebie_label)
+
+    def _show_reconciliation_dialog(self):
+        """Show dialog to reconcile basis when balance discrepancy is detected"""
+        site_name = self.site_combo.currentText().strip()
+        user_name = self.user_combo.currentText().strip()
+        
+        if not site_name or not user_name:
+            return
+        
+        site_id, user_id = self._lookup_ids(site_name, user_name)
+        if not site_id or not user_id:
+            return
+        
+        # Get total available basis
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("""
+            SELECT COALESCE(SUM(amount), 0) as total_basis
+            FROM purchases
+            WHERE site_id = ? AND user_id = ?
+        """, (site_id, user_id))
+        total_basis = float(c.fetchone()["total_basis"] or 0.0)
+        
+        # Get current redeemable balance
+        start_redeem_text = self.start_redeem_edit.text().strip()
+        if not start_redeem_text:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Information",
+                "Please enter the starting redeemable balance first."
+            )
+            return
+        
+        valid, start_redeem = validate_currency(start_redeem_text)
+        if not valid:
+            return
+        
+        conn.close()
+        
+        # Create dialog - normalized style matching Edit Session
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Apply Reconciliation")
+        dialog.setMinimumWidth(500)
+        
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
+        
+        # Header
+        header = QtWidgets.QLabel("Reconcile Session with Full Basis")
+        header.setObjectName("SectionTitle")
+        layout.addWidget(header)
+        
+        # Explanation
+        explanation = QtWidgets.QLabel(
+            "This session shows more redeemable SC than expected from recorded purchases and prior play. "
+            "This typically indicates unrecorded gameplay from previous sessions.\n\n"
+            "Reconciliation will consume all available cost basis in this session to minimize taxable income."
+        )
+        explanation.setWordWrap(True)
+        explanation.setObjectName("HelperText")
+        layout.addWidget(explanation)
+        
+        # Summary box
+        summary_group = QtWidgets.QGroupBox("Basis Summary")
+        summary_layout = QtWidgets.QGridLayout(summary_group)
+        summary_layout.addWidget(QtWidgets.QLabel("Available Basis:"), 0, 0)
+        summary_layout.addWidget(QtWidgets.QLabel(f"${total_basis:.2f}"), 0, 1)
+        summary_layout.setColumnStretch(0, 1)
+        layout.addWidget(summary_group)
+        
+        # Warning
+        warning_label = QtWidgets.QLabel(
+            "Applying reconciliation will:\n"
+            "• Consume all $" + f"{total_basis:.2f}" + " of available basis in this session\n"
+            "• Flag this session as 'Reconciliation' for audit purposes\n"
+            "• Report the full net P/L in this session's tax year\n\n"
+            "The total lifetime P/L will be correct, even if some gains occurred in prior years."
+        )
+        warning_label.setWordWrap(True)
+        warning_label.setObjectName("HelperText")
+        layout.addWidget(warning_label)
+        
+        # Buttons
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        apply_btn = QtWidgets.QPushButton("Apply Reconciliation")
+        apply_btn.setObjectName("PrimaryButton")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(apply_btn)
+        layout.addLayout(btn_row)
+        
+        cancel_btn.clicked.connect(dialog.reject)
+        apply_btn.clicked.connect(dialog.accept)
+        
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            # Store override values
+            self.reconciliation_override = {
+                'session_basis': total_basis,
+                'basis_consumed': total_basis,
+                'is_reconciliation': 1
+            }
+            
+            # Add note to session
+            current_notes = self.notes_edit.toPlainText().strip()
+            reconcile_note = f"Reconciliation applied: ${total_basis:.2f} basis consumed."
+            if current_notes:
+                self.notes_edit.setPlainText(f"{current_notes}\n\n{reconcile_note}")
+            else:
+                self.notes_edit.setPlainText(reconcile_note)
+            
+            # Hide reconcile button, show clear button
+            self.reconcile_btn.hide()
+            self.clear_reconcile_btn.show()
+            
+            # Update redeemable check to show reconciliation applied
+            self.redeem_check_value.setText(
+                f"Reconciliation applied: ${total_basis:.2f} basis will be consumed"
+            )
+            self.redeem_check_value.setProperty("status", "positive")
+            self.redeem_check_value.style().unpolish(self.redeem_check_value)
+            self.redeem_check_value.style().polish(self.redeem_check_value)
+    
+    def _clear_reconciliation(self):
+        """Clear reconciliation override in Start Session dialog"""
+        self.reconciliation_override = None
+        self.clear_reconcile_btn.hide()
+        # Re-run freebie label update to show reconcile button again if applicable
+        self._update_freebie_label()
 
     def _update_rtp_tooltip(self):
         """Update the RTP tooltip with Expected and Actual RTP when a game is selected"""
@@ -3417,6 +3629,30 @@ class GameSessionStartDialog(QtWidgets.QDialog):
         )
         self.start_redeem_edit.setText(str(start_redeem))
         self.notes_edit.setPlainText(self.session["notes"] or "")
+        
+        # Check for reconciliation overrides and restore state BEFORE updating labels
+        is_reconciliation = self.session.get("is_reconciliation") if isinstance(self.session, dict) else (
+            self.session["is_reconciliation"] if "is_reconciliation" in self.session.keys() else 0
+        )
+        if is_reconciliation:
+            # Load existing reconciliation override values
+            session_basis = self.session.get("session_basis_override") if isinstance(self.session, dict) else (
+                self.session["session_basis_override"] if "session_basis_override" in self.session.keys() else None
+            )
+            basis_consumed = self.session.get("basis_consumed_override") if isinstance(self.session, dict) else (
+                self.session["basis_consumed_override"] if "basis_consumed_override" in self.session.keys() else None
+            )
+            if session_basis is not None and basis_consumed is not None:
+                self.reconciliation_override = {
+                    "session_basis": session_basis,
+                    "basis_consumed": basis_consumed,
+                    "is_reconciliation": 1
+                }
+                # Hide reconcile button, show clear button
+                self.reconcile_btn.hide()
+                self.clear_reconcile_btn.show()
+        
+        # Update labels AFTER setting reconciliation_override
         self._update_freebie_label()
         self._update_rtp_tooltip()
 
@@ -3492,7 +3728,7 @@ class GameSessionStartDialog(QtWidgets.QDialog):
 
         notes = self.notes_edit.toPlainText().strip()
 
-        return {
+        data = {
             "session_date": sdate.strftime("%Y-%m-%d"),
             "start_time": stime,
             "user_name": user_name,
@@ -3503,7 +3739,13 @@ class GameSessionStartDialog(QtWidgets.QDialog):
             "starting_total_sc": start_total,
             "starting_redeemable_sc": start_redeem,
             "notes": notes,
-        }, None
+        }
+        
+        # Add reconciliation overrides if present
+        if self.reconciliation_override:
+            data.update(self.reconciliation_override)
+        
+        return data, None
 
 
 class GameSessionEndDialog(QtWidgets.QDialog):
@@ -3984,11 +4226,28 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         layout.addWidget(notes_group)
         layout.addSpacing(8)
 
+        # Reconciliation status and button
+        self.reconciliation_label = QtWidgets.QLabel()
+        self.reconciliation_label.setObjectName("WarningText")
+        self.reconciliation_label.setWordWrap(True)
+        self.reconciliation_label.hide()
+        layout.addWidget(self.reconciliation_label)
+
+        self.reconciliation_override = None
+
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
+        self.apply_reconciliation_btn = QtWidgets.QPushButton("Apply Reconciliation")
+        self.apply_reconciliation_btn.setObjectName("WarningButton")
+        self.apply_reconciliation_btn.hide()
+        self.clear_reconciliation_btn = QtWidgets.QPushButton("Clear Reconciliation")
+        self.clear_reconciliation_btn.setObjectName("DangerButton")
+        self.clear_reconciliation_btn.hide()
         self.cancel_btn = QtWidgets.QPushButton("Cancel")
         self.save_btn = QtWidgets.QPushButton("Save Changes")
         self.save_btn.setObjectName("PrimaryButton")
+        btn_row.addWidget(self.apply_reconciliation_btn)
+        btn_row.addWidget(self.clear_reconciliation_btn)
         btn_row.addWidget(self.cancel_btn)
         btn_row.addWidget(self.save_btn)
         layout.addLayout(btn_row)
@@ -4011,10 +4270,13 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         self.site_combo.currentTextChanged.connect(self._validate_inline)
         self.start_total_edit.textChanged.connect(self._validate_inline)
         self.start_redeem_edit.textChanged.connect(self._validate_inline)
+        self.start_redeem_edit.textChanged.connect(self._update_balance_label)
         self.end_total_edit.textChanged.connect(self._validate_inline)
         self.end_redeem_edit.textChanged.connect(self._validate_inline)
         self.wager_edit.textChanged.connect(self._validate_inline)
 
+        self.apply_reconciliation_btn.clicked.connect(self._show_reconciliation_dialog)
+        self.clear_reconciliation_btn.clicked.connect(self._handle_clear_reconciliation)
         self._load_session()
         self._update_completers()
         self._validate_inline()
@@ -4254,6 +4516,161 @@ class GameSessionEditDialog(QtWidgets.QDialog):
     def _set_now(self, target_edit):
         target_edit.setText(datetime.now().strftime("%H:%M"))
 
+    def _handle_clear_reconciliation(self):
+        """Clear reconciliation overrides and recalculate the session normally"""
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Clear Reconciliation",
+            "This will remove the reconciliation overrides and recalculate this session using "
+            "the standard algorithm.\n\nThe session's taxable P/L may change.\n\nContinue?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+        
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+        
+        try:
+            conn = self.db.get_connection()
+            c = conn.cursor()
+            
+            # Clear the override fields
+            c.execute("""
+                UPDATE game_sessions
+                SET session_basis_override = NULL,
+                    basis_consumed_override = NULL,
+                    is_reconciliation = 0
+                WHERE id = ?
+            """, (self.session["id"],))
+            
+            conn.commit()
+            conn.close()
+            
+            # Trigger recalculation
+            site_id = self.session["site_id"]
+            user_id = self.session["user_id"]
+            self.session_mgr.auto_recalculate_affected_sessions(site_id, user_id)
+            
+            QtWidgets.QMessageBox.information(self, "Success", "Reconciliation cleared. Session recalculated.")
+            self.accept()
+            
+            # Refresh parent if available
+            parent = self.parent()
+            if hasattr(parent, 'load_data'):
+                parent.load_data()
+            if hasattr(parent, 'on_data_changed') and parent.on_data_changed:
+                parent.on_data_changed()
+                
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", f"Failed to clear reconciliation: {exc}")
+
+    def _show_reconciliation_dialog(self):
+        """Show dialog to apply reconciliation overrides"""
+        # Get current values
+        site_name = self.site_combo.currentText().strip()
+        user_name = self.user_combo.currentText().strip()
+        start_date_str = self.start_date_edit.text().strip()
+        start_time_str = self.start_time_edit.text().strip()
+        
+        site_id, user_id = self._lookup_ids(site_name, user_name)
+        if not site_id or not user_id:
+            return
+        
+        try:
+            parsed_date = parse_date_input(start_date_str).strftime("%Y-%m-%d")
+            parsed_time = parse_time_input(start_time_str)
+        except ValueError:
+            return
+        
+        # Get available basis
+        conn = self.db.get_connection()
+        c = conn.cursor()
+        c.execute("""
+            SELECT COALESCE(SUM(remaining_amount), 0) as total_basis
+            FROM purchases
+            WHERE site_id = ? AND user_id = ?
+            AND (purchase_date < ? OR (purchase_date = ? AND purchase_time <= ?))
+            AND remaining_amount > 0
+        """, (site_id, user_id, parsed_date, parsed_date, parsed_time))
+        row = c.fetchone()
+        total_basis = float(row["total_basis"] if row else 0)
+        conn.close()
+        
+        # Show confirmation dialog
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Apply Reconciliation")
+        dialog.setMinimumWidth(500)
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
+        
+        # Header
+        header = QtWidgets.QLabel("Reconcile Session with Full Basis")
+        header.setObjectName("SectionTitle")
+        layout.addWidget(header)
+        
+        # Explanation
+        explanation = QtWidgets.QLabel(
+            "This session shows more redeemable SC than expected from recorded purchases and prior play. "
+            "This typically indicates unrecorded gameplay from previous sessions.\n\n"
+            "Reconciliation will consume all available cost basis in this session to minimize taxable income."
+        )
+        explanation.setWordWrap(True)
+        explanation.setObjectName("HelperText")
+        layout.addWidget(explanation)
+        
+        summary_group = QtWidgets.QGroupBox("Basis Summary")
+        summary_layout = QtWidgets.QGridLayout(summary_group)
+        summary_layout.addWidget(QtWidgets.QLabel("Available Basis:"), 0, 0)
+        summary_layout.addWidget(QtWidgets.QLabel(f"${total_basis:.2f}"), 0, 1)
+        summary_layout.setColumnStretch(0, 1)
+        layout.addWidget(summary_group)
+        
+        # Warning
+        warning_label = QtWidgets.QLabel(
+            "Applying reconciliation will:\n"
+            "• Consume all $" + f"{total_basis:.2f}" + " of available basis in this session\n"
+            "• Flag this session as 'Reconciliation' for audit purposes\n"
+            "• Report the full net P/L in this session's tax year\n\n"
+            "The total lifetime P/L will be correct, even if some gains occurred in prior years."
+        )
+        warning_label.setWordWrap(True)
+        warning_label.setObjectName("HelperText")
+        layout.addWidget(warning_label)
+        
+        # Buttons
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        apply_btn = QtWidgets.QPushButton("Apply Reconciliation")
+        apply_btn.setObjectName("PrimaryButton")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(apply_btn)
+        layout.addLayout(btn_row)
+        
+        cancel_btn.clicked.connect(dialog.reject)
+        apply_btn.clicked.connect(dialog.accept)
+        
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            self.reconciliation_override = {
+                "session_basis": total_basis,
+                "basis_consumed": total_basis,
+                "is_reconciliation": 1
+            }
+            
+            # Add note to session
+            current_notes = self.notes_edit.toPlainText().strip()
+            reconcile_note = f"Reconciliation applied: ${total_basis:.2f} basis consumed."
+            if current_notes:
+                self.notes_edit.setPlainText(f"{current_notes}\n\n{reconcile_note}")
+            else:
+                self.notes_edit.setPlainText(reconcile_note)
+            
+            self.reconciliation_label.setText("⚠️ Reconciliation will be applied when you save")
+            self.reconciliation_label.show()
+            self.apply_reconciliation_btn.hide()
+            self.clear_reconciliation_btn.show()
+
     def _format_date_for_input(self, date_str):
         if not date_str:
             return ""
@@ -4319,22 +4736,54 @@ class GameSessionEditDialog(QtWidgets.QDialog):
             site_id, user_id, result, parsed_date, parsed_time
         )
         expected_total = float(info.get("expected_total_sc", 0.0))
+        expected_redeem = float(info.get("expected_redeemable_sc", 0.0))
         freebies_sc = float(info.get("freebies_sc", 0.0))
         freebies_dollar = float(info.get("freebies_dollar", 0.0))
         missing_sc = float(info.get("missing_sc", 0.0))
+        
+        # Check if we should show Apply Reconciliation button
+        start_redeem_text = self.start_redeem_edit.text().strip()
+        show_reconciliation_btn = False
+        redeemable_discrepancy = 0.0
+        
+        if start_redeem_text:
+            valid_redeem, redeem_result = validate_currency(start_redeem_text)
+            if valid_redeem and redeem_result > expected_redeem:
+                # Starting redeemable is higher than expected - likely unrecorded play
+                redeemable_discrepancy = redeem_result - expected_redeem
+                show_reconciliation_btn = True
+        
+        # Only show if not already reconciled
+        is_reconciliation = self.session.get("is_reconciliation") if isinstance(self.session, dict) else (
+            self.session["is_reconciliation"] if "is_reconciliation" in self.session.keys() else 0
+        )
+        if show_reconciliation_btn and not is_reconciliation:
+            self.apply_reconciliation_btn.show()
+        else:
+            self.apply_reconciliation_btn.hide()
+        
+        # Build balance check text
+        balance_lines = []
         if freebies_sc > 0:
             self.balance_value.setProperty("status", "positive")
-            self.balance_value.setText(
-                f"+ Detected {freebies_sc:.2f} SC in extra balance (${freebies_dollar:.2f})"
-            )
+            balance_lines.append(f"Total SC: + Detected {freebies_sc:.2f} SC in extra balance (${freebies_dollar:.2f})")
         elif missing_sc > 0:
             self.balance_value.setProperty("status", "negative")
-            self.balance_value.setText(
-                f"- WARNING: Starting balance is {missing_sc:.2f} SC less than expected ({expected_total:.2f})"
-            )
+            balance_lines.append(f"Total SC: - WARNING: {missing_sc:.2f} SC less than expected ({expected_total:.2f})")
         else:
             self.balance_value.setProperty("status", "neutral")
-            self.balance_value.setText(f"Matches expected balance ({expected_total:.2f} SC)")
+            balance_lines.append(f"Total SC: Matches expected ({expected_total:.2f} SC)")
+        
+        # Add redeemable check
+        if redeemable_discrepancy > 0:
+            balance_lines.append(f"Redeemable SC: + {redeemable_discrepancy:.2f} SC more than expected ({expected_redeem:.2f})")
+            balance_lines.append("→ Suggests unrecorded play. Consider applying reconciliation.")
+        elif start_redeem_text:
+            valid_redeem, redeem_result = validate_currency(start_redeem_text)
+            if valid_redeem:
+                balance_lines.append(f"Redeemable SC: Matches expected ({expected_redeem:.2f} SC)")
+        
+        self.balance_value.setText("\n".join(balance_lines))
         self.balance_value.style().unpolish(self.balance_value)
         self.balance_value.style().polish(self.balance_value)
 
@@ -4369,6 +4818,12 @@ class GameSessionEditDialog(QtWidgets.QDialog):
             self.rtp_tooltip.setText("")
 
     def _load_session(self):
+        # Debug: Check what's in session data
+        print(f"DEBUG _load_session (GameSessionEditDialog):")
+        print(f"  Keys in session: {list(self.session.keys())}")
+        print(f"  is_reconciliation: {self.session.get('is_reconciliation') if isinstance(self.session, dict) else (self.session['is_reconciliation'] if 'is_reconciliation' in self.session.keys() else 'KEY_NOT_FOUND')}")
+        print(f"  session_basis_override: {self.session.get('session_basis_override') if isinstance(self.session, dict) else (self.session['session_basis_override'] if 'session_basis_override' in self.session.keys() else 'KEY_NOT_FOUND')}")
+        
         self.start_date_edit.setText(self._format_date_for_input(self.session["session_date"]))
         self.start_time_edit.setText(self._format_time_for_input(self.session["start_time"]))
         end_date = self.session["end_date"] or self.session["session_date"]
@@ -4407,6 +4862,33 @@ class GameSessionEditDialog(QtWidgets.QDialog):
         self.notes_edit.setPlainText(self.session["notes"] or "")
         self._update_balance_label()
         self._update_rtp_tooltip()
+        
+        # Show reconciliation status if applicable
+        is_reconciliation = self.session.get("is_reconciliation") if isinstance(self.session, dict) else (
+            self.session["is_reconciliation"] if "is_reconciliation" in self.session.keys() else 0
+        )
+        if is_reconciliation:
+            self.reconciliation_label.setText("⚠️ This session has reconciliation overrides applied")
+            self.reconciliation_label.show()
+            self.clear_reconciliation_btn.show()
+            self.apply_reconciliation_btn.hide()  # Don't show apply if already applied
+            
+            # Set reconciliation_override so it doesn't get cleared
+            session_basis = self.session.get("session_basis_override") if isinstance(self.session, dict) else (
+                self.session["session_basis_override"] if "session_basis_override" in self.session.keys() else None
+            )
+            basis_consumed = self.session.get("basis_consumed_override") if isinstance(self.session, dict) else (
+                self.session["basis_consumed_override"] if "basis_consumed_override" in self.session.keys() else None
+            )
+            if session_basis is not None and basis_consumed is not None:
+                self.reconciliation_override = {
+                    "session_basis": session_basis,
+                    "basis_consumed": basis_consumed,
+                    "is_reconciliation": 1
+                }
+        else:
+            self.reconciliation_label.hide()
+            self.clear_reconciliation_btn.hide()
 
     def collect_data(self):
         start_date_str = self.start_date_edit.text().strip()
@@ -4474,7 +4956,7 @@ class GameSessionEditDialog(QtWidgets.QDialog):
 
         notes = self.notes_edit.toPlainText().strip()
 
-        return {
+        data = {
             "session_date": start_date.strftime("%Y-%m-%d"),
             "end_date": end_date.strftime("%Y-%m-%d"),
             "start_time": start_time,
@@ -4489,7 +4971,13 @@ class GameSessionEditDialog(QtWidgets.QDialog):
             "ending_total_sc": end_total,
             "ending_redeemable_sc": end_redeem,
             "notes": notes,
-        }, None
+        }
+        
+        # Include reconciliation overrides if set
+        if self.reconciliation_override:
+            data.update(self.reconciliation_override)
+        
+        return data, None
 
 
 class DailySessionNotesDialog(QtWidgets.QDialog):
@@ -9020,12 +9508,18 @@ class GameSessionsTab(QtWidgets.QWidget):
             old_date = old_session_data["session_date"] if old_session_data else session_date
             old_time = old_session_data["start_time"] if old_session_data else start_time
 
+            # Extract reconciliation overrides if present
+            session_basis_override = data.get("session_basis")
+            basis_consumed_override = data.get("basis_consumed")
+            is_reconciliation = data.get("is_reconciliation", 0)
+            
             c.execute(
                 """
                 UPDATE game_sessions
                 SET session_date=?, start_time=?, site_id=?, user_id=?,
                     game_type=?, game_name=?, wager_amount=?,
-                    starting_sc_balance=?, starting_redeemable_sc=?, notes=?
+                    starting_sc_balance=?, starting_redeemable_sc=?, notes=?,
+                    session_basis_override=?, basis_consumed_override=?, is_reconciliation=?
                 WHERE id=?
                 """,
                 (
@@ -9039,6 +9533,9 @@ class GameSessionsTab(QtWidgets.QWidget):
                     start_total,
                     start_redeem,
                     notes,
+                    session_basis_override,
+                    basis_consumed_override,
+                    is_reconciliation,
                     session_id,
                 ),
             )
@@ -9125,13 +9622,20 @@ class GameSessionsTab(QtWidgets.QWidget):
 
         conn = self.db.get_connection()
         c = conn.cursor()
+        
+        # Extract reconciliation overrides if present
+        session_basis_override = data.get("session_basis")
+        basis_consumed_override = data.get("basis_consumed")
+        is_reconciliation = data.get("is_reconciliation", 0)
+        
         c.execute(
             """
             UPDATE game_sessions
-            SET game_name=?, wager_amount=?
+            SET game_name=?, wager_amount=?,
+                session_basis_override=?, basis_consumed_override=?, is_reconciliation=?
             WHERE id=?
             """,
-            (game_name, wager_amount, session_id),
+            (game_name, wager_amount, session_basis_override, basis_consumed_override, is_reconciliation, session_id),
         )
         conn.commit()
         conn.close()
@@ -9216,6 +9720,13 @@ class GameSessionsTab(QtWidgets.QWidget):
         if error:
             QtWidgets.QMessageBox.warning(self, "Invalid Entry", error)
             return
+        
+        # Debug: check if reconciliation override is in data
+        if data.get("is_reconciliation"):
+            print(f"DEBUG: Reconciliation override detected in data:")
+            print(f"  session_basis: {data.get('session_basis')}")
+            print(f"  basis_consumed: {data.get('basis_consumed')}")
+            print(f"  is_reconciliation: {data.get('is_reconciliation')}")
 
         conn = self.db.get_connection()
         c = conn.cursor()
@@ -9288,8 +9799,11 @@ class GameSessionsTab(QtWidgets.QWidget):
         # RTP-only pre-check (Layer 1 optimization)
         changed_fields = {k for k in old_session_values if k in new_session_values and old_session_values.get(k) != new_session_values.get(k)}
         
-        # Notes-only change - skip recomputation entirely
-        if changed_fields == {'notes'}:
+        # If reconciliation is being applied, force full path (don't use optimizations)
+        applying_reconciliation = data.get("is_reconciliation", 0) == 1
+        
+        # Notes-only change - skip recomputation entirely (unless reconciliation is being applied)
+        if changed_fields == {'notes'} and not applying_reconciliation:
             if data["end_date"] < data["session_date"]:
                 conn.close()
                 QtWidgets.QMessageBox.warning(self, "Invalid Dates", "End date is before start date.")
@@ -9316,9 +9830,9 @@ class GameSessionsTab(QtWidgets.QWidget):
             )
             return
         
-        # RTP-only change - update RTP directly without full rebuild
+        # RTP-only change - update RTP directly without full rebuild (unless reconciliation is being applied)
         rtp_only_fields = {'wager_amount', 'game_id'}
-        if changed_fields and changed_fields <= rtp_only_fields:
+        if changed_fields and changed_fields <= rtp_only_fields and not applying_reconciliation:
             if data["end_date"] < data["session_date"]:
                 conn.close()
                 QtWidgets.QMessageBox.warning(self, "Invalid Dates", "End date is before start date.")
@@ -9383,7 +9897,10 @@ class GameSessionsTab(QtWidgets.QWidget):
                 starting_redeemable_sc=?,
                 ending_sc_balance=?,
                 ending_redeemable_sc=?,
-                notes=?
+                notes=?,
+                session_basis_override=?,
+                basis_consumed_override=?,
+                is_reconciliation=?
             WHERE id=?
             """,
             (
@@ -9401,47 +9918,84 @@ class GameSessionsTab(QtWidgets.QWidget):
                 data["ending_total_sc"],
                 data["ending_redeemable_sc"],
                 data["notes"],
+                data.get("session_basis") if isinstance(data, dict) else None,
+                data.get("basis_consumed") if isinstance(data, dict) else None,
+                data.get("is_reconciliation", 0) if isinstance(data, dict) else 0,
                 old_session["id"],
             ),
         )
         conn.commit()
+        
+        # Debug: Verify the override columns were saved
+        if data.get("is_reconciliation"):
+            c2 = conn.cursor()
+            c2.execute("SELECT session_basis_override, basis_consumed_override, is_reconciliation FROM game_sessions WHERE id = ?", (old_session["id"],))
+            check = c2.fetchone()
+            print(f"DEBUG: After UPDATE, before rebuild - DB values:")
+            print(f"  session_basis_override: {check['session_basis_override']}")
+            print(f"  basis_consumed_override: {check['basis_consumed_override']}")
+            print(f"  is_reconciliation: {check['is_reconciliation']}")
+        
         conn.close()
 
-        # Scoped recalculation using new API
-        # If site/user changed, recalculate both pairs
-        if (new_site_id, new_user_id) != (old_site_id, old_user_id):
-            # Old pair: remove old timestamp
-            total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
-                old_site_id, old_user_id,
-                old_ts=(old_date, old_time),
-                new_ts=None,
-                scoped=True,
-                entity_type='session',
-                old_values=old_session_values,
-                new_values=new_session_values
+        # If reconciliation was applied, force rebuild of this specific session
+        if data.get("is_reconciliation"):
+            self.session_mgr._rebuild_session_tax_fields_for_pair_from(
+                new_site_id, new_user_id, data["session_date"], data["start_time"]
             )
-            # New pair: add new timestamp
-            total_recalc += self.session_mgr.auto_recalculate_affected_sessions(
-                new_site_id, new_user_id,
-                old_ts=None,
-                new_ts=(data["session_date"], data["start_time"]),
-                scoped=True,
-                entity_type='session',
-                old_values=old_session_values,
-                new_values=new_session_values
-            )
+            
+            # Debug: Verify the override columns are still there after rebuild
+            conn2 = self.db.get_connection()
+            c3 = conn2.cursor()
+            c3.execute("SELECT session_basis_override, basis_consumed_override, is_reconciliation FROM game_sessions WHERE id = ?", (old_session["id"],))
+            check2 = c3.fetchone()
+            conn2.close()
+            print(f"DEBUG: After rebuild - DB values:")
+            print(f"  session_basis_override: {check2['session_basis_override']}")
+            print(f"  basis_consumed_override: {check2['basis_consumed_override']}")
+            print(f"  is_reconciliation: {check2['is_reconciliation']}")
+
+        # Skip auto_recalculate if reconciliation was applied - we already did the rebuild above
+        # and don't want to clear the overrides
+        if not data.get("is_reconciliation"):
+            # Scoped recalculation using new API
+            # If site/user changed, recalculate both pairs
+            if (new_site_id, new_user_id) != (old_site_id, old_user_id):
+                # Old pair: remove old timestamp
+                total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
+                    old_site_id, old_user_id,
+                    old_ts=(old_date, old_time),
+                    new_ts=None,
+                    scoped=True,
+                    entity_type='session',
+                    old_values=old_session_values,
+                    new_values=new_session_values
+                )
+                # New pair: add new timestamp
+                total_recalc += self.session_mgr.auto_recalculate_affected_sessions(
+                    new_site_id, new_user_id,
+                    old_ts=None,
+                    new_ts=(data["session_date"], data["start_time"]),
+                    scoped=True,
+                    entity_type='session',
+                    old_values=old_session_values,
+                    new_values=new_session_values
+                )
+            else:
+                # Same pair: use both timestamps
+                total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
+                    new_site_id, new_user_id,
+                    old_ts=(old_date, old_time),
+                    new_ts=(data["session_date"], data["start_time"]),
+                    old_session_values=old_session_values,
+                    scoped=True,
+                    entity_type='session',
+                    old_values=old_session_values,
+                    new_values=new_session_values
+                )
         else:
-            # Same pair: use both timestamps
-            total_recalc = self.session_mgr.auto_recalculate_affected_sessions(
-                new_site_id, new_user_id,
-                old_ts=(old_date, old_time),
-                new_ts=(data["session_date"], data["start_time"]),
-                old_session_values=old_session_values,
-                scoped=True,
-                entity_type='session',
-                old_values=old_session_values,
-                new_values=new_session_values
-            )
+            # Reconciliation was applied - skip auto_recalculate to preserve overrides
+            total_recalc = 0
 
         dialog.accept()
         self.load_data()

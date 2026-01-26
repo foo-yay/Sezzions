@@ -1068,7 +1068,8 @@ class SessionManager:
                    COALESCE(ending_sc_balance,0) as ending_sc_balance,
                    COALESCE(starting_redeemable_sc, COALESCE(starting_sc_balance,0)) as starting_redeemable_sc,
                    COALESCE(ending_redeemable_sc, COALESCE(ending_sc_balance,0)) as ending_redeemable_sc,
-                   wager_amount, game_id, delta_total
+                   wager_amount, game_id, delta_total,
+                   is_reconciliation, session_basis_override, basis_consumed_override
             FROM game_sessions
             WHERE site_id=? AND user_id=? AND status='Closed'
             ORDER BY end_date ASC, end_time ASC, id ASC
@@ -1132,7 +1133,13 @@ class SessionManager:
             inferred_start_total_delta = start_total - expected_start_total
             inferred_start_redeem_delta = start_red - expected_start_redeem
 
-            session_basis = float(pur_cash_to_end or 0)
+            # Check for reconciliation overrides
+            has_override = bool(s['is_reconciliation'] if 'is_reconciliation' in s.keys() else 0)
+            
+            if has_override and 'session_basis_override' in s.keys() and s['session_basis_override'] is not None:
+                session_basis = float(s['session_basis_override'])
+            else:
+                session_basis = float(pur_cash_to_end or 0)
 
             # Pending basis pool rolls forward; only redeemable gains consume basis
             pending_basis_pool += session_basis
@@ -1141,11 +1148,16 @@ class SessionManager:
 
             discoverable_sc = max(0.0, start_red - expected_start_redeem)
             delta_play_sc = delta_redeem
-            locked_start = max(0.0, start_total - start_red)
-            locked_end = max(0.0, end_total - end_red)
-            locked_processed_sc = max(locked_start - locked_end, 0.0)
-            locked_processed_value = locked_processed_sc * sc_rate
-            basis_consumed = min(pending_basis_pool, locked_processed_value)
+            
+            if has_override and 'basis_consumed_override' in s.keys() and s['basis_consumed_override'] is not None:
+                basis_consumed = float(s['basis_consumed_override'])
+            else:
+                locked_start = max(0.0, start_total - start_red)
+                locked_end = max(0.0, end_total - end_red)
+                locked_processed_sc = max(locked_start - locked_end, 0.0)
+                locked_processed_value = locked_processed_sc * sc_rate
+                basis_consumed = min(pending_basis_pool, locked_processed_value)
+            
             pending_basis_pool = max(0.0, pending_basis_pool - basis_consumed)
 
             net_taxable_pl = ((discoverable_sc + delta_play_sc) * sc_rate) - basis_consumed
@@ -1159,7 +1171,7 @@ class SessionManager:
             else:
                 rtp = None
 
-            # Write derived fields
+            # Write derived fields (preserve override columns - don't update them)
             c.execute("""
                 UPDATE game_sessions
                 SET
@@ -1269,7 +1281,8 @@ class SessionManager:
                    COALESCE(ending_sc_balance,0) as ending_sc_balance,
                    COALESCE(starting_redeemable_sc, COALESCE(starting_sc_balance,0)) as starting_redeemable_sc,
                    COALESCE(ending_redeemable_sc, COALESCE(ending_sc_balance,0)) as ending_redeemable_sc,
-                   wager_amount, game_id, delta_total
+                   wager_amount, game_id, delta_total,
+                   is_reconciliation, session_basis_override, basis_consumed_override
             FROM game_sessions
             WHERE site_id = ? AND user_id = ? AND status = 'Closed'
               AND (COALESCE(end_date, session_date) > ? 
@@ -1345,12 +1358,23 @@ class SessionManager:
             inferred_start_delta_total = (start_total - expected_total) if expected_total is not None else 0.0
             inferred_start_delta_redeem = (start_red - expected_redeem) if expected_redeem is not None else 0.0
             
+            # Check for reconciliation overrides
+            has_override = bool(s['is_reconciliation'] if 'is_reconciliation' in s.keys() else 0)
+            
             # Compute session basis (cash purchases since last checkpoint)
-            session_basis = self._compute_session_basis(site_id, user_id, checkpoint_end_dt, end_date, end_time, c)
+            if has_override and 'session_basis_override' in s.keys() and s['session_basis_override'] is not None:
+                session_basis = float(s['session_basis_override'])
+            else:
+                session_basis = self._compute_session_basis(site_id, user_id, checkpoint_end_dt, end_date, end_time, c)
+            
             pending_basis += session_basis
             
             # Consume basis against locked processed value
-            basis_consumed = min(pending_basis, locked_processed_value)
+            if has_override and 'basis_consumed_override' in s.keys() and s['basis_consumed_override'] is not None:
+                basis_consumed = float(s['basis_consumed_override'])
+            else:
+                basis_consumed = min(pending_basis, locked_processed_value)
+            
             pending_basis = max(0.0, pending_basis - basis_consumed)
             
             # Net taxable = (discoverable + delta_play) * rate - basis_consumed
@@ -1362,7 +1386,7 @@ class SessionManager:
             # Note: We don't check for redemptions at session end in scoped rebuild
             # because the FIFO rebuild already processed all redemptions correctly
             
-            # Update session with computed fields (match full rebuild columns)
+            # Update session with computed fields (preserve override columns - don't update them)
             c.execute("""
                 UPDATE game_sessions
                 SET expected_start_total_sc = ?,
