@@ -6,10 +6,14 @@
 ## Active Items
 - [ ] Setup Tools tab (import/export/backup/recalc)
 - [ ] Legacy app's redeemable check isn't detecting a problem when I enter 0.42 SC on an expected 0.41 redeemable.  is there a threshhold?  It recognizes it if I put 0.92
-- [ ] Scenario:  1 SC starting redeemable on Stake.  Buy in 2500 for 2506.25.  Gamble and end with 2500.89.  It's showing -0.11 loss because it's counting the 1 SC as part of the loss, but since I never session'd that 1 SC to begin with, it shouldn't be counted.
+
 
 
 ## Completed Items
+- [X] Scenario:  1 SC starting redeemable on Stake.  Buy in 2500 for 2506.25.  Gamble and end with 2500.89.  It's showing -0.11 loss because it's counting the 1 SC as part of the loss, but since I never session'd that 1 SC to begin with, it shouldn't be counted. (Fixed on the OOP app)
+- [X] Prevent or warn from deleting sessions that have affiliated redemptions -> warn instead of blcok in case of data entry errors that the user is trying to fix.  Ensure recalculation (scoped or full) can fix the issues after the user has made changes.  We need to prevent lawless deletion of sessions when redemptions exist because it creates validation errors where Redemptions exist with unsessioned basis and could create tax reporting problems (user has redemptions but no sessions to justify the P/L).
+- [ ] Prompt the user to back-up the database before deleting Sessions or items  that could cascade.
+- [X] Implement controls preventing Redemption of Unsessioned SC, prevent $0 redemptions.
 - [X] Need to account for multi-day closed sessions on the day they close, not the day they start.
 - [X] Add Site grouping to the Daily Sessions tab so when one site has multiple sessions in a day they are consolidated and expandable/collapsable
 - [X] View Position in the Realized tab should be a mirror of the View Redemption dialog.

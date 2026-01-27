@@ -268,6 +268,9 @@ class GameSessionService:
         session_time: str
     ) -> Tuple[Decimal, Decimal]:
         """Compute expected starting total/redeemable balances for a session"""
+        print(f"\n=== DEBUG compute_expected_balances ===")
+        print(f"Looking for balances at: {session_date} {session_time}")
+        
         expected_total = Decimal("0.00")
         expected_redeemable = Decimal("0.00")
 
@@ -294,22 +297,16 @@ class GameSessionService:
                 expected_redeemable = Decimal(str(sess.ending_redeemable))
 
         # Fall back to last purchase starting balance checkpoint
-        # NOTE: starting_sc_balance means PRE-purchase balance in OOP app
+        # NOTE: starting_sc_balance is the POST-purchase balance (what user sees on site after purchase)
+        # We use the purchase BEFORE this as the checkpoint, not the purchase itself
         if checkpoint_dt is None and self.purchase_repo is not None:
             purchases = self.purchase_repo.get_by_user_and_site(user_id, site_id)
             for p in purchases:
-                if p.starting_sc_balance is None:
-                    continue
-                if Decimal(str(p.starting_sc_balance)) <= 0:
-                    continue
                 p_dt = to_dt(p.purchase_date, p.purchase_time)
-                if p_dt < cutoff and (checkpoint_dt is None or p_dt > checkpoint_dt):
-                    checkpoint_dt = p_dt
-                    # starting_sc_balance is the PRE-purchase balance
-                    # Use it directly as the checkpoint
-                    pre_purchase = Decimal(str(p.starting_sc_balance))
-                    expected_total = pre_purchase
-                    expected_redeemable = pre_purchase
+                # Only use purchases that are BEFORE the cutoff as checkpoints
+                # Don't use starting_sc_balance as a checkpoint - it causes double-counting
+                if p_dt < cutoff:
+                    pass  # Purchases will be added in the next section
 
         # Apply purchases/redemptions after checkpoint up to cutoff
         if self.purchase_repo is not None:
@@ -319,6 +316,7 @@ class GameSessionService:
                 if p_dt <= cutoff and (checkpoint_dt is None or p_dt > checkpoint_dt):
                     sc_amount = Decimal(str(p.sc_received))
                     expected_total += sc_amount
+                    print(f"  Adding purchase: ${p.amount} / {sc_amount} SC at {p_dt} (cutoff: {cutoff})")
 
         if self.redemption_repo is not None:
             redemptions = self.redemption_repo.get_by_user_and_site(user_id, site_id)
@@ -331,6 +329,7 @@ class GameSessionService:
 
         expected_total = max(Decimal("0.00"), expected_total)
         expected_redeemable = max(Decimal("0.00"), expected_redeemable)
+        
         return expected_total, expected_redeemable
     
     def _calculate_session_pl(self, session: GameSession, user_id: int, site_id: int) -> None:

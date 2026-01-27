@@ -20,6 +20,7 @@ class Purchase:
     card_id: Optional[int] = None
     purchase_time: Optional[str] = None
     remaining_amount: Optional[Decimal] = None
+    status: Optional[str] = None  # 'active', 'dormant', or NULL
     notes: Optional[str] = None
     id: Optional[int] = None
     created_at: Optional[datetime] = None

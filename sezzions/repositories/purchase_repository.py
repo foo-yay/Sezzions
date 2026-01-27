@@ -189,6 +189,7 @@ class PurchaseRepository:
             purchase_time=row.get('purchase_time'),
             card_id=row.get('card_id'),
             remaining_amount=Decimal(str(row['remaining_amount'])),
+            status=row.get('status'),  # 'active', 'dormant', or NULL
             notes=row.get('notes'),
             created_at=row.get('created_at'),
             updated_at=row.get('updated_at')

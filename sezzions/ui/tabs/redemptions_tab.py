@@ -295,6 +295,13 @@ class RedemptionsTab(QtWidgets.QWidget):
 
                 redemption_date = dialog.get_date()
                 redemption_time = dialog.get_time() or "00:00:00"
+                amount = dialog.get_amount()
+                
+                # Note: Business validation (amount, sessions, balance) is handled in
+                # RedemptionDialog._validate_and_accept() before the dialog closes.
+                # If we reach this point, all validation has passed.
+
+                # Calculate expected balance for partial/full confirmation
                 expected_total, expected_redeemable = self.facade.compute_expected_balances(
                     dialog.user_id,
                     dialog.site_id,
@@ -304,25 +311,6 @@ class RedemptionsTab(QtWidgets.QWidget):
                 site = self.facade.get_site(dialog.site_id)
                 sc_rate = Decimal(str(site.sc_rate if site else 1.0))
                 expected_balance = (expected_redeemable or Decimal("0.00")) * sc_rate
-                amount = dialog.get_amount()
-                unsessioned_amount = amount - expected_balance
-                if unsessioned_amount > Decimal("0.50"):
-                    QtWidgets.QMessageBox.warning(
-                        self,
-                        "Redemption Requires Session",
-                        "This redemption exceeds the balance we can verify from recorded sessions.\n\n"
-                        f"Redemption amount: ${float(amount):,.2f}\n"
-                        f"Expected sessioned balance: {float(expected_balance):,.2f} SC\n"
-                        f"Unsessioned amount: {float(unsessioned_amount):,.2f} SC\n\n"
-                        "What this means:\n"
-                        "• We only allow redemptions against balances that were recorded in Game Sessions.\n"
-                        "• This helps keep your session-based totals accurate.\n\n"
-                        "What to do:\n"
-                        "1) Start or end a Game Session for this site to record the current balance.\n"
-                        "2) Then try the redemption again.\n\n"
-                        "If this was a bonus or freeplay not captured in sessions, record it in a Game Session first."
-                    )
-                    return
 
                 if not self._confirm_partial_vs_balance(
                     amount,
@@ -1537,6 +1525,88 @@ class RedemptionDialog(QtWidgets.QDialog):
             self.method_id = self._method_lookup[method_key]
         else:
             self.method_id = None
+
+        # Business validations - check session requirements and unsessioned SC
+        amount = self.get_amount()
+        redemption_date = self.get_date()
+        redemption_time = self.get_time() or "00:00:00"
+        
+        # Block manual $0 redemptions - these should only come from "Close Position"
+        if amount == Decimal("0.00"):
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Invalid Redemption Amount",
+                "Cannot manually create a $0 redemption.\n\n"
+                "To document a total loss:\n"
+                "1. Go to the Unrealized tab\n"
+                "2. Select the site/user position\n"
+                "3. Click 'Close Position'\n\n"
+                "This ensures proper accounting cleanup and marks purchases as dormant."
+            )
+            return
+        
+        # Validate real redemptions require game sessions
+        if amount > Decimal("0.00"):
+            # Check if there's at least one CLOSED session for this site/user
+            db = self.facade.game_session_repo.db
+            cursor = db._connection.cursor()
+            cursor.execute("""
+                SELECT COUNT(*) as session_count
+                FROM game_sessions
+                WHERE site_id = ? AND user_id = ? 
+                  AND status = 'Closed'
+                  AND end_date IS NOT NULL
+                  AND (end_date < ? OR (end_date = ? AND end_time <= ?))
+            """, (self.site_id, self.user_id, redemption_date, redemption_date, redemption_time))
+            result = cursor.fetchone()
+            has_closed_sessions = result["session_count"] > 0 if result else False
+            
+            if not has_closed_sessions:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Redemption Requires Session",
+                    "No game sessions have been recorded for this site and user.\n\n"
+                    f"Redemption amount: ${float(amount):,.2f}\n\n"
+                    "What this means:\n"
+                    "• We only allow redemptions against balances that were recorded in Game Sessions.\n"
+                    "• You must record at least one game session before redeeming.\n\n"
+                    "What to do:\n"
+                    "1) Create a Game Session for this site/user showing your balance.\n"
+                    "2) Close the session to establish a verified balance.\n"
+                    "3) Then try the redemption again.\n\n"
+                    "If this was a bonus or freeplay, record it in a Game Session first."
+                )
+                return
+            
+            # Check if redemption exceeds verified balance
+            expected_total, expected_redeemable = self.facade.compute_expected_balances(
+                self.user_id,
+                self.site_id,
+                redemption_date,
+                redemption_time
+            )
+            site = self.facade.get_site(self.site_id)
+            sc_rate = Decimal(str(site.sc_rate if site else 1.0))
+            expected_balance = (expected_redeemable or Decimal("0.00")) * sc_rate
+            
+            if amount > expected_balance:
+                unsessioned_amount = amount - expected_balance
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Redemption Exceeds Session Balance",
+                    "This redemption exceeds the balance we can verify from recorded sessions.\n\n"
+                    f"Redemption amount: ${float(amount):,.2f}\n"
+                    f"Expected sessioned balance: {float(expected_balance):,.2f} SC\n"
+                    f"Unsessioned amount: {float(unsessioned_amount):,.2f} SC\n\n"
+                    "What this means:\n"
+                    "• Your redemption is higher than the verified balance from game sessions.\n"
+                    "• This helps keep your session-based totals accurate.\n\n"
+                    "What to do:\n"
+                    "1) Create/close a Game Session showing your current balance.\n"
+                    "2) Then try the redemption again.\n\n"
+                    "If this was a bonus or freeplay not captured in sessions, record it in a Game Session first."
+                )
+                return
 
         self.accept()
 

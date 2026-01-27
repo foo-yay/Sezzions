@@ -346,6 +346,20 @@ class GameSessionsTab(QWidget):
             QMessageBox.warning(self, "Warning", "Session not found")
             return
 
+        # Check if editing could affect subsequent redemptions
+        impact = self._check_deletion_impact(session_id)
+        if impact:
+            reply = QMessageBox.question(
+                self, "Edit May Affect Redemptions",
+                f"⚠️ This session has subsequent activity:\n\n{impact}\n\n"
+                "If you change the session date/time or ending balance, "
+                "subsequent redemptions may temporarily exceed expected balance.\n\n"
+                "Continue with edit?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+
         if (session.status or "Active") == "Closed":
             dialog = EditClosedSessionDialog(self.facade, session=session, parent=self)
         else:
@@ -535,16 +549,87 @@ class GameSessionsTab(QWidget):
             QMessageBox.warning(self, "Warning", "Please select session(s) to delete")
             return
 
+        # Check impact on subsequent redemptions
+        warning_messages = []
+        for session_id in ids:
+            impact = self._check_deletion_impact(session_id)
+            if impact:
+                warning_messages.append(impact)
+        
+        confirm_msg = f"Are you sure you want to delete {len(ids)} session(s)?\n\n"
+        confirm_msg += "This will remove the session(s) and their P/L calculations."
+        
+        if warning_messages:
+            confirm_msg += "\n\n⚠️ DELETION IMPACT:\n\n" + "\n\n".join(warning_messages)
+            confirm_msg += "\n\nTo complete your changes:\n"
+            confirm_msg += "1. Delete this session (continue below)\n"
+            confirm_msg += "2. Add a replacement session showing the correct balance\n"
+            confirm_msg += "3. Recalculation will automatically fix all links and validations"
+        
         reply = QMessageBox.question(
             self, "Confirm Delete",
-            f"Are you sure you want to delete {len(ids)} session(s)?\n\n"
-            "This will remove the session(s) and their P/L calculations.",
+            confirm_msg,
             QMessageBox.Yes | QMessageBox.No
         )
         
         if reply == QMessageBox.Yes:
             self._delete_sessions(ids)
 
+    def _check_deletion_impact(self, session_id: int) -> str:
+        """Check if deleting session would affect subsequent redemptions"""
+        try:
+            from decimal import Decimal
+            from datetime import datetime
+            
+            session = self.facade.get_game_session(session_id)
+            if not session or session.status != "Closed":
+                return ""
+            
+            # Get redemptions after this session
+            db = self.facade.game_session_repo.db
+            cursor = db._connection.cursor()
+            cursor.execute(
+                """
+                SELECT COUNT(*) as count, SUM(amount) as total
+                FROM redemptions
+                WHERE site_id = ? AND user_id = ?
+                  AND (redemption_date > ? 
+                       OR (redemption_date = ? AND redemption_time > ?))
+                """,
+                (session.site_id, session.user_id, 
+                 session.end_date, session.end_date, session.end_time)
+            )
+            result = cursor.fetchone()
+            
+            if result and result["count"] > 0:
+                count = result["count"]
+                total = Decimal(str(result["total"] or 0))
+                ending_balance = Decimal(str(session.ending_balance or 0))
+                
+                # Calculate what expected balance would be without this session
+                expected_total, _ = self.facade.compute_expected_balances(
+                    session.user_id, session.site_id,
+                    session.session_date, session.session_time
+                )
+                
+                site = self.facade.get_site(session.site_id)
+                user = self.facade.get_user(session.user_id)
+                
+                msg = f"Session: {site.name if site else 'Unknown'} / "
+                msg += f"{user.name if user else 'Unknown'}\n"
+                msg += f"Session ended with {float(ending_balance):,.2f} SC\n"
+                msg += f"Found {count} redemption(s) after this session totaling ${float(total):,.2f}\n\n"
+                msg += f"If you delete this session:\n"
+                msg += f"• Expected balance drops to {float(expected_total):,.2f} SC\n"
+                msg += f"• Redemptions may temporarily exceed expected balance\n"
+                msg += f"• You won't be able to edit redemptions until you fix the gap"
+                
+                return msg
+        except Exception as e:
+            print(f"Error checking deletion impact: {e}")
+        
+        return ""
+    
     def _delete_sessions(self, ids):
         try:
             for session_id in ids:
@@ -1242,16 +1327,30 @@ class StartSessionDialog(QDialog):
             return
 
         if not self._time_edited and parsed_date == date.today():
-            now_text = datetime.now().strftime("%H:%M")
-            if self.time_edit.text().strip() != now_text:
-                self.time_edit.setText(now_text)
-            parsed_time = parse_time_input(now_text)
+            # Only auto-update time if the field doesn't already have seconds
+            # (e.g., it was manually entered as HH:MM or is empty)
+            current_text = self.time_edit.text().strip()
+            if current_text and len(current_text) > 5:
+                # Time has seconds (HH:MM:SS), don't overwrite it
+                pass
+            else:
+                now_text = datetime.now().strftime("%H:%M")
+                if current_text != now_text:
+                    self.time_edit.setText(now_text)
+                parsed_time = parse_time_input(now_text)
+        
+        # For balance check: if time ends with :00 (user entered HH:MM), check up to :59
+        # This handles purchases saved with full seconds in the same minute
+        balance_check_time = parsed_time or datetime.now().strftime("%H:%M:%S")
+        if balance_check_time and balance_check_time.endswith(":00"):
+            # Replace :00 with :59 to include all purchases in this minute
+            balance_check_time = balance_check_time[:-2] + "59"
 
         expected_total, _expected_redeem = self.facade.compute_expected_balances(
             user_id=user_id,
             site_id=site_id,
             session_date=parsed_date or date.today(),
-            session_time=parsed_time or datetime.now().strftime("%H:%M:%S"),
+            session_time=balance_check_time,
         )
         site = self.facade.get_site(site_id)
         sc_rate = Decimal(str(site.sc_rate if site else 1.0))
@@ -3921,15 +4020,81 @@ class EndSessionDialog(QDialog):
             site = self.facade.site_repo.get_by_id(self.session.site_id) if self.facade.site_repo else None
             sc_rate = Decimal(str(getattr(site, "sc_rate", "1.0"))) if site else Decimal("1.0")
 
-            # Retrieve session basis and expected start redeemable
+            # Retrieve expected start redeemable
             expected_start_redeem = Decimal(str(self.session.expected_start_redeemable or start_redeem))
-            session_basis = Decimal(
-                str(
-                    self.session.session_basis
-                    if self.session.session_basis is not None
-                    else (self.session.purchases_during or 0)
-                )
+            
+            # Calculate session basis by querying purchases up to session end
+            # This is the LIVE calculation - matches backend logic in game_session_service.py
+            from datetime import datetime
+            from ..input_parsers import parse_date_input, parse_time_input
+            
+            # Get previous session's end datetime (checkpoint)
+            prev_checkpoint_dt = None
+            prev_sessions = self.facade.game_session_repo.get_chronological(
+                self.session.user_id,
+                self.session.site_id
             )
+            for prev_sess in prev_sessions:
+                if prev_sess.status == "Closed" and prev_sess.id != self.session.id:
+                    if prev_sess.end_date:
+                        prev_end_time = prev_sess.end_time or "00:00:00"
+                        if len(prev_end_time) == 5:
+                            prev_end_time = f"{prev_end_time}:00"
+                        prev_checkpoint_dt = datetime.combine(
+                            prev_sess.end_date,
+                            datetime.strptime(prev_end_time, "%H:%M:%S").time()
+                        )
+            
+            # Get session end datetime from dialog fields
+            try:
+                session_end_date_str = self.date_edit.text().strip()
+                session_end_date_val = parse_date_input(session_end_date_str)
+                if not session_end_date_val:
+                    # Can't calculate without valid date - fallback to session object value
+                    session_end_date_val = self.session.end_date or self.session.session_date
+                
+                session_end_time_str = self.time_edit.text().strip() or "00:00:00"
+                if len(session_end_time_str) == 5:
+                    session_end_time_str = f"{session_end_time_str}:00"
+                
+                session_end_dt = datetime.combine(
+                    session_end_date_val,
+                    datetime.strptime(session_end_time_str, "%H:%M:%S").time()
+                )
+            except (ValueError, AttributeError):
+                # If parsing fails, use session's existing end date or session start date
+                fallback_date = self.session.end_date or self.session.session_date
+                fallback_time = self.session.end_time or self.session.session_time or "00:00:00"
+                if len(fallback_time) == 5:
+                    fallback_time = f"{fallback_time}:00"
+                session_end_dt = datetime.combine(
+                    fallback_date,
+                    datetime.strptime(fallback_time, "%H:%M:%S").time()
+                )
+            
+            # Query purchases between prev checkpoint and session end
+            all_purchases = self.facade.purchase_repo.get_by_user_and_site(
+                self.session.user_id,
+                self.session.site_id
+            )
+            
+            session_basis = Decimal("0.00")
+            for purch in all_purchases:
+                purch_time_str = purch.purchase_time or "00:00:00"
+                if len(purch_time_str) == 5:
+                    purch_time_str = f"{purch_time_str}:00"
+                purch_dt = datetime.combine(
+                    purch.purchase_date,
+                    datetime.strptime(purch_time_str, "%H:%M:%S").time()
+                )
+                
+                # Check if purchase is in window (after prev checkpoint, before or at session end)
+                if prev_checkpoint_dt and purch_dt < prev_checkpoint_dt:
+                    continue  # Before checkpoint
+                if purch_dt <= session_end_dt:
+                    session_basis += Decimal(str(purch.amount))
+                else:
+                    break  # Purchases are sorted chronologically
 
             # Calculate discoverable SC (freeplay/bonus)
             discoverable_sc = max(Decimal("0.00"), start_redeem - expected_start_redeem)

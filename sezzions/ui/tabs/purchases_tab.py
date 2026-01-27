@@ -265,18 +265,32 @@ class PurchasesTab(QtWidgets.QWidget):
     def _add_purchase(self):
         """Show dialog to add new purchase"""
         dialog = PurchaseDialog(self.facade, self)
-        if dialog.exec():
+        
+        while dialog.exec():
             try:
                 purchase_date = dialog.get_date()
+                # Get time once and reuse it - don't call get_time() multiple times
+                # because it returns datetime.now() each time if field is empty!
                 purchase_time = dialog.get_time()
+                
+                # For balance check, we need to compute expected balance BEFORE this purchase
+                # So we subtract 1 second from the purchase time to get the moment just before
+                from datetime import datetime, timedelta
+                try:
+                    purchase_dt = datetime.strptime(purchase_time, "%H:%M:%S")
+                    balance_check_time = (purchase_dt - timedelta(seconds=1)).strftime("%H:%M:%S")
+                except:
+                    balance_check_time = purchase_time
+                
                 expected_total, _expected_redeem = self.facade.compute_expected_balances(
                     user_id=dialog.user_id,
                     site_id=dialog.site_id,
                     session_date=purchase_date,
-                    session_time=purchase_time,
+                    session_time=balance_check_time,
                 )
                 starting_sc = dialog.get_starting_sc_balance()
                 sc_received = dialog.get_sc_received()
+                
                 pre_purchase_balance = Decimal(str(starting_sc)) - Decimal(str(sc_received))
                 balance_delta = pre_purchase_balance - Decimal(str(expected_total))
                 if abs(balance_delta) > Decimal("0.50"):
@@ -298,9 +312,9 @@ class PurchasesTab(QtWidgets.QWidget):
                         QtWidgets.QMessageBox.No,
                     )
                     if response != QtWidgets.QMessageBox.Yes:
-                        # User said No - reopen the dialog with the same data
-                        dialog.exec()
-                        return
+                        # User said No - loop back to let them edit the dialog again
+                        continue
+                        
                 purchase = self.facade.create_purchase(
                     user_id=dialog.user_id,
                     site_id=dialog.site_id,
@@ -316,10 +330,12 @@ class PurchasesTab(QtWidgets.QWidget):
                 self.refresh_data()
                 message = f"Purchase of ${float(purchase.amount):.2f} created"
                 QtCore.QTimer.singleShot(100, lambda: self._prompt_start_session(purchase.id, message))
+                break  # Success - exit the loop
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
                     self, "Error", f"Failed to create purchase:\n{str(e)}"
                 )
+                break  # Error - exit the loop
     
     def _edit_purchase(self):
         """Show dialog to edit selected purchase"""
@@ -332,7 +348,8 @@ class PurchasesTab(QtWidgets.QWidget):
             return
 
         dialog = PurchaseDialog(self.facade, self, purchase)
-        if dialog.exec():
+        
+        while dialog.exec():
             try:
                 force_site_user_change = False
 
@@ -346,7 +363,7 @@ class PurchasesTab(QtWidgets.QWidget):
                             f"This purchase has ${float(purchase.consumed_amount):.2f} consumed.\n\n"
                             "You cannot change the purchase amount once it has allocations."
                         )
-                        return
+                        break  # Exit the loop
 
                     # Site/user changes are allowed only with explicit user confirmation.
                     if dialog.user_id != purchase.user_id or dialog.site_id != purchase.site_id:
@@ -359,7 +376,7 @@ class PurchasesTab(QtWidgets.QWidget):
                             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                         )
                         if reply != QtWidgets.QMessageBox.Yes:
-                            return
+                            break  # Exit the loop
                         force_site_user_change = True
 
                 purchase_date = dialog.get_date()
@@ -393,9 +410,45 @@ class PurchasesTab(QtWidgets.QWidget):
                         QtWidgets.QMessageBox.No,
                     )
                     if response != QtWidgets.QMessageBox.Yes:
-                        # User said No - reopen the dialog with the same data
-                        dialog.exec()
-                        return
+                        # User said No - loop back to let them edit the dialog again
+                        continue
+
+                # Check if purchase has FIFO allocations or is dormant
+                old_purchase = self.facade.get_purchase(purchase_id)
+                needs_reprocessing = False
+                if old_purchase:
+                    has_allocations = old_purchase.consumed_amount > 0
+                    is_dormant = old_purchase.status == 'dormant'
+                    
+                    # Check if user is changing critical fields
+                    critical_change = (
+                        dialog.get_amount() != old_purchase.amount or
+                        dialog.user_id != old_purchase.user_id or
+                        dialog.site_id != old_purchase.site_id or
+                        purchase_date != old_purchase.purchase_date
+                    )
+                    
+                    if (has_allocations or is_dormant) and critical_change:
+                        needs_reprocessing = True
+                        consumed_msg = f"${float(old_purchase.consumed_amount):.2f} consumed by redemptions" if has_allocations else ""
+                        dormant_msg = "marked dormant (closed position)" if is_dormant else ""
+                        status_msg = " and ".join(filter(None, [consumed_msg, dormant_msg]))
+                        
+                        response = QtWidgets.QMessageBox.question(
+                            self,
+                            "Reprocess Redemptions?",
+                            f"This purchase has {status_msg}.\n\n"
+                            "Editing will reprocess all redemptions for this site/user pair.\n\n"
+                            "This will:\n"
+                            "• Rebuild FIFO allocations from scratch\n"
+                            "• Recalculate all realized transactions\n"
+                            "• Update all cost basis amounts\n\n"
+                            "Continue?",
+                            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                            QtWidgets.QMessageBox.No,
+                        )
+                        if response != QtWidgets.QMessageBox.Yes:
+                            break  # Exit the loop
 
                 updated = self.facade.update_purchase(
                     purchase_id,
@@ -417,10 +470,12 @@ class PurchasesTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.information(
                     self, "Success", f"Purchase updated"
                 )
+                break  # Success - exit the loop
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
                     self, "Error", f"Failed to update purchase:\n{str(e)}"
                 )
+                break  # Error - exit the loop
     
     def _delete_purchase(self):
         """Delete selected purchase"""
@@ -429,22 +484,35 @@ class PurchasesTab(QtWidgets.QWidget):
             return
 
         purchases = []
-        blocked = []
+        needs_reprocessing = []
         for purchase_id in purchase_ids:
             purchase = self.facade.get_purchase(purchase_id)
             if not purchase:
                 continue
-            if purchase.consumed_amount > 0:
-                blocked.append(purchase)
+            
+            is_dormant = purchase.status == 'dormant'
+            
+            if purchase.consumed_amount > 0 or is_dormant:
+                needs_reprocessing.append((purchase, is_dormant))
             purchases.append(purchase)
 
-        if blocked:
-            QtWidgets.QMessageBox.warning(
-                self, "Cannot Delete",
-                "One or more selected purchases have FIFO allocations.\n\n"
-                "Purchases with allocations cannot be deleted to preserve FIFO integrity."
+        if needs_reprocessing:
+            consumed_list = "\n".join([
+                f"  • ${float(p.amount):.2f} on {p.purchase_date} "
+                f"({'dormant' if dormant else f'${float(p.consumed_amount):.2f} consumed'})"
+                for p, dormant in needs_reprocessing
+            ])
+            response = QtWidgets.QMessageBox.question(
+                self, "Reprocess After Delete?",
+                f"{len(needs_reprocessing)} purchase(es) have FIFO allocations or are dormant:\n\n"
+                f"{consumed_list}\n\n"
+                "Deleting will trigger reprocessing of all redemptions for affected site/user pairs.\n\n"
+                "Continue with deletion and reprocessing?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No
             )
-            return
+            if response != QtWidgets.QMessageBox.Yes:
+                return
 
         count = len(purchases)
         if count == 0:
@@ -587,8 +655,18 @@ class PurchasesTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.warning(self, "Error", "Could not load purchase data")
                 return
 
-            starting_total_sc = float(purchase.starting_sc_balance or 0.0) + float(purchase.sc_received or 0.0)
+            # Use the user-entered starting_sc_balance directly
+            # This is the POST-purchase balance that the user saw on the site
+            starting_total_sc = float(purchase.starting_sc_balance or 0.0)
+            
             purchase_time = purchase.purchase_time or "00:00:00"
+            if len(purchase_time) == 5:
+                purchase_time = f"{purchase_time}:00"
+            
+            # Use the same time as the purchase - this represents the moment you got the SC
+            # and are ready to start playing with it
+            session_time = purchase_time
+                
             if len(purchase_time) == 5:
                 purchase_time = f"{purchase_time}:00"
             try:
@@ -897,13 +975,13 @@ class PurchaseDialog(QtWidgets.QDialog):
         
         # Empty left (for alignment)
         # Starting SC Balance (right column)
-        start_sc_label = QtWidgets.QLabel("Starting SC Balance:")
+        start_sc_label = QtWidgets.QLabel("Post-Purchase SC:")
         start_sc_label.setObjectName("FieldLabel")
         start_sc_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        start_sc_label.setToolTip("Your SC balance AFTER completing this purchase (visible on site)")
+        start_sc_label.setToolTip("Your TOTAL SC balance shown on the site AFTER this purchase completes.\n\nFor example: if you had 50 SC, bought 100 SC, you should enter 150 SC here.")
         main_grid.addWidget(start_sc_label, row, 2)
         self.start_sc_edit.setFixedWidth(140)
-        self.start_sc_edit.setToolTip("Enter the balance shown on the site after your purchase completes")
+        self.start_sc_edit.setToolTip("Enter the TOTAL balance shown on site after purchase.\n\nNOT the amount you just bought - the TOTAL including what you had before.")
         main_grid.addWidget(self.start_sc_edit, row, 3)
         
         row += 1
