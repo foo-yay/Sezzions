@@ -55,6 +55,17 @@ class GameSessionService:
         if active is not None:
             raise ValueError("An active session already exists for this User/Site.")
 
+        # IMPORTANT: Reactivate any dormant purchases for this site/user
+        # When starting a new session, dormant SC becomes active again (matches legacy behavior)
+        self.session_repo.db.execute(
+            """
+            UPDATE purchases
+            SET status = 'active', updated_at = CURRENT_TIMESTAMP
+            WHERE site_id = ? AND user_id = ? AND status = 'dormant'
+            """,
+            (site_id, user_id),
+        )
+
         # Create session model
         session = GameSession(
             user_id=user_id,
@@ -283,6 +294,7 @@ class GameSessionService:
                 expected_redeemable = Decimal(str(sess.ending_redeemable))
 
         # Fall back to last purchase starting balance checkpoint
+        # NOTE: starting_sc_balance means PRE-purchase balance in OOP app
         if checkpoint_dt is None and self.purchase_repo is not None:
             purchases = self.purchase_repo.get_by_user_and_site(user_id, site_id)
             for p in purchases:
@@ -293,8 +305,11 @@ class GameSessionService:
                 p_dt = to_dt(p.purchase_date, p.purchase_time)
                 if p_dt < cutoff and (checkpoint_dt is None or p_dt > checkpoint_dt):
                     checkpoint_dt = p_dt
-                    expected_total = Decimal(str(p.starting_sc_balance))
-                    expected_redeemable = Decimal(str(p.starting_sc_balance))
+                    # starting_sc_balance is the PRE-purchase balance
+                    # Use it directly as the checkpoint
+                    pre_purchase = Decimal(str(p.starting_sc_balance))
+                    expected_total = pre_purchase
+                    expected_redeemable = pre_purchase
 
         # Apply purchases/redemptions after checkpoint up to cutoff
         if self.purchase_repo is not None:

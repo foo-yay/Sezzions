@@ -91,6 +91,9 @@ class Theme:
             QLabel#InfoField[status="negative"] {{ color: #c0392b; }}
             QLabel#InfoField[status="neutral"] {{ color: {text_muted}; }}
             QLabel#HelperText {{ color: {text_muted}; font-size: 11px; }}
+            QLabel#HelperText[status="match"] {{ color: #2e7d32; }}
+            QLabel#HelperText[status="warning"] {{ color: #f57c00; }}
+            QLabel#HelperText[status="error"] {{ color: #c0392b; }}
             QLabel#TabTip {{
                 background: {surface};
                 border: 1px solid {border};

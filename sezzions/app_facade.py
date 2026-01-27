@@ -1348,13 +1348,16 @@ class AppFacade:
         if active_session:
             raise ValueError("Cannot close balance while a session is active for this site/user.")
 
-        net_loss = total_basis - current_value
+        # When closing position: cost basis is abandoned (total loss)
+        # current_value is irrelevant since we're not redeeming
+        net_loss = total_basis
         notes = (
             f"Balance Closed - Net Loss: ${net_loss:.2f} "
             f"(${current_sc:.2f} SC marked dormant)"
         )
 
         now = datetime.now()
+        # Create $0 redemption as Full (more_remaining=False) to consume all basis
         redemption = self.redemption_service.create_redemption(
             user_id=user_id,
             site_id=site_id,
@@ -1362,31 +1365,17 @@ class AppFacade:
             redemption_date=date.today(),
             redemption_time=now.strftime("%H:%M:%S"),
             processed=True,
+            more_remaining=False,  # Full redemption - consume all basis
             notes=notes,
-            apply_fifo=False,
+            apply_fifo=True,  # Apply FIFO to consume basis
         )
 
-        self.db.execute(
-            """
-            INSERT INTO realized_transactions
-            (redemption_date, site_id, redemption_id, cost_basis, payout, net_pl, user_id)
-            VALUES (?, ?, ?, ?, 0, ?, ?)
-            """,
-            (
-                date.today().isoformat(),
-                site_id,
-                redemption.id,
-                str(net_loss),
-                str(-net_loss),
-                user_id,
-            ),
-        )
-
+        # Mark purchases as dormant (FIFO already set remaining_amount to 0)
         self.db.execute(
             """
             UPDATE purchases
             SET status = 'dormant', updated_at = CURRENT_TIMESTAMP
-            WHERE site_id = ? AND user_id = ? AND remaining_amount > 0
+            WHERE site_id = ? AND user_id = ? AND remaining_amount = 0
               AND (status IS NULL OR status = 'active')
             """,
             (site_id, user_id),

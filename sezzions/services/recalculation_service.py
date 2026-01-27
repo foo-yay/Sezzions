@@ -111,7 +111,7 @@ class RecalculationService:
         cursor.execute(
             """
                  SELECT id, amount, redemption_date, COALESCE(redemption_time,'00:00:00') AS rt,
-                     COALESCE(is_free_sc, 0) AS is_free_sc, notes
+                     COALESCE(is_free_sc, 0) AS is_free_sc, COALESCE(more_remaining, 0) AS more_remaining, notes
             FROM redemptions
             WHERE user_id = ? AND site_id = ?
             ORDER BY redemption_date ASC, COALESCE(redemption_time,'00:00:00') ASC, id ASC
@@ -164,7 +164,19 @@ class RecalculationService:
 
             cost_basis = Decimal("0.00")
             if not is_free_sc and payout > 0:
-                remaining_to_allocate = payout
+                # Check if this is a Full redemption (more_remaining=False/0)
+                more_remaining = bool(int(red_row["more_remaining"] if "more_remaining" in red_row.keys() else 1))
+                
+                if not more_remaining:
+                    # Full redemption: consume ALL remaining basis up to this timestamp
+                    remaining_to_allocate = sum(
+                        avail for pid, pdt, _pamt in purchases 
+                        if pdt <= red_dt and (avail := remaining.get(pid, Decimal("0.00"))) > 0
+                    )
+                else:
+                    # Partial redemption: just allocate the payout amount
+                    remaining_to_allocate = payout
+                
                 for purchase_id, purchase_dt, _purchase_amt in purchases:
                     if remaining_to_allocate <= 0:
                         break
@@ -287,7 +299,7 @@ class RecalculationService:
         cursor.execute(
             """
             SELECT id, amount, redemption_date, COALESCE(redemption_time,'00:00:00') AS rt,
-                   COALESCE(is_free_sc, 0) AS is_free_sc, notes
+                   COALESCE(is_free_sc, 0) AS is_free_sc, COALESCE(more_remaining, 0) AS more_remaining, notes
             FROM redemptions
             WHERE user_id = ? AND site_id = ?
               AND (redemption_date > ?
@@ -339,7 +351,19 @@ class RecalculationService:
 
             cost_basis = Decimal("0.00")
             if not is_free_sc and payout > 0:
-                remaining_to_allocate = payout
+                # Check if this is a Full redemption (more_remaining=False/0)
+                more_remaining = bool(int(red_row["more_remaining"] if "more_remaining" in red_row.keys() else 1))
+                
+                if not more_remaining:
+                    # Full redemption: consume ALL remaining basis up to this timestamp
+                    remaining_to_allocate = sum(
+                        avail for pid, pdt, _pamt in purchases 
+                        if pdt <= red_dt and (avail := remaining.get(pid, Decimal("0.00"))) > 0
+                    )
+                else:
+                    # Partial redemption: just allocate the payout amount
+                    remaining_to_allocate = payout
+                
                 for purchase_id, purchase_dt, _purchase_amt in purchases:
                     if remaining_to_allocate <= 0:
                         break

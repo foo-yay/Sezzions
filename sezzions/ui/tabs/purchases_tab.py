@@ -276,15 +276,19 @@ class PurchasesTab(QtWidgets.QWidget):
                     session_time=purchase_time,
                 )
                 starting_sc = dialog.get_starting_sc_balance()
-                balance_delta = Decimal(str(starting_sc)) - Decimal(str(expected_total))
+                sc_received = dialog.get_sc_received()
+                pre_purchase_balance = Decimal(str(starting_sc)) - Decimal(str(sc_received))
+                balance_delta = pre_purchase_balance - Decimal(str(expected_total))
                 if abs(balance_delta) > Decimal("0.50"):
                     direction = "higher" if balance_delta > 0 else "lower"
                     response = QtWidgets.QMessageBox.question(
                         self,
-                        "Starting Balance Mismatch",
-                        "The purchase starting SC does not match the expected balance from recorded sessions.\n\n"
-                        f"Starting SC: {float(starting_sc):,.2f} SC\n"
-                        f"Expected balance: {float(expected_total):,.2f} SC\n"
+                        "Balance Mismatch Detected",
+                        "The calculated pre-purchase balance does not match the expected balance from recorded sessions.\n\n"
+                        f"Post-purchase SC (entered): {float(starting_sc):,.2f} SC\n"
+                        f"SC received: {float(sc_received):,.2f} SC\n"
+                        f"Pre-purchase balance: {float(pre_purchase_balance):,.2f} SC\n"
+                        f"Expected pre-purchase: {float(expected_total):,.2f} SC\n"
                         f"Difference: {float(balance_delta):,.2f} SC ({direction})\n\n"
                         "This usually means:\n"
                         "• Untracked wins/losses or freebies\n"
@@ -367,15 +371,19 @@ class PurchasesTab(QtWidgets.QWidget):
                     session_time=purchase_time,
                 )
                 starting_sc = dialog.get_starting_sc_balance()
-                balance_delta = Decimal(str(starting_sc)) - Decimal(str(expected_total))
+                sc_received = dialog.get_sc_received()
+                pre_purchase_balance = Decimal(str(starting_sc)) - Decimal(str(sc_received))
+                balance_delta = pre_purchase_balance - Decimal(str(expected_total))
                 if abs(balance_delta) > Decimal("0.50"):
                     direction = "higher" if balance_delta > 0 else "lower"
                     response = QtWidgets.QMessageBox.question(
                         self,
-                        "Starting Balance Mismatch",
-                        "The purchase starting SC does not match the expected balance from recorded sessions.\n\n"
-                        f"Starting SC: {float(starting_sc):,.2f} SC\n"
-                        f"Expected balance: {float(expected_total):,.2f} SC\n"
+                        "Balance Mismatch Detected",
+                        "The calculated pre-purchase balance does not match the expected balance from recorded sessions.\n\n"
+                        f"Post-purchase SC (entered): {float(starting_sc):,.2f} SC\n"
+                        f"SC received: {float(sc_received):,.2f} SC\n"
+                        f"Pre-purchase balance: {float(pre_purchase_balance):,.2f} SC\n"
+                        f"Expected pre-purchase: {float(expected_total):,.2f} SC\n"
                         f"Difference: {float(balance_delta):,.2f} SC ({direction})\n\n"
                         "This usually means:\n"
                         "• Untracked wins/losses or freebies\n"
@@ -892,8 +900,10 @@ class PurchaseDialog(QtWidgets.QDialog):
         start_sc_label = QtWidgets.QLabel("Starting SC Balance:")
         start_sc_label.setObjectName("FieldLabel")
         start_sc_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        start_sc_label.setToolTip("Your SC balance AFTER completing this purchase (visible on site)")
         main_grid.addWidget(start_sc_label, row, 2)
         self.start_sc_edit.setFixedWidth(140)
+        self.start_sc_edit.setToolTip("Enter the balance shown on the site after your purchase completes")
         main_grid.addWidget(self.start_sc_edit, row, 3)
         
         row += 1
@@ -1238,21 +1248,35 @@ class PurchaseDialog(QtWidgets.QDialog):
             session_time=parsed_time,
         )
 
-        delta = Decimal(str(start_sc_val)) - Decimal(str(expected_total))
-        if delta > Decimal("0.01"):
-            self.balance_check_label.setProperty("status", "positive")
+        # Get SC received to calculate pre-purchase balance
+        sc_received_text = self.sc_edit.text().strip()
+        try:
+            sc_received_val = Decimal(sc_received_text) if sc_received_text else Decimal("0.00")
+        except Exception:
+            sc_received_val = Decimal("0.00")
+        
+        # Calculate the pre-purchase balance (what balance was BEFORE this purchase)
+        pre_purchase_balance = Decimal(str(start_sc_val)) - sc_received_val
+        delta = pre_purchase_balance - Decimal(str(expected_total))
+        
+        # Calculate expected post-purchase balance for display
+        expected_post_purchase = Decimal(str(expected_total)) + sc_received_val
+        
+        if abs(delta) <= Decimal("0.01"):
+            # Balance matches expected - all good
+            self.balance_check_label.setProperty("status", "match")
+            self.balance_check_label.setText("✓ Balance Check: No problems detected")
+        elif delta > Decimal("0.01"):
+            # Balance is higher than expected
+            self.balance_check_label.setProperty("status", "warning")
             self.balance_check_label.setText(
-                f"+ Detected {float(delta):.2f} SC above expected ({float(expected_total):.2f} SC)"
-            )
-        elif delta < Decimal("-0.01"):
-            self.balance_check_label.setProperty("status", "negative")
-            self.balance_check_label.setText(
-                f"- WARNING: Starting SC is {float(abs(delta)):.2f} less than expected ({float(expected_total):.2f} SC)"
+                f"✗ Balance Check: Starting SC balance is {float(delta):.2f} higher than expected ({float(expected_post_purchase):.2f} SC)"
             )
         else:
-            self.balance_check_label.setProperty("status", "neutral")
+            # Balance is lower than expected (problem)
+            self.balance_check_label.setProperty("status", "error")
             self.balance_check_label.setText(
-                f"Matches expected balance ({float(expected_total):.2f} SC)"
+                f"✗ Balance Check: Starting SC balance is {float(abs(delta)):.2f} lower than expected ({float(expected_post_purchase):.2f} SC)"
             )
 
         self.balance_check_label.style().unpolish(self.balance_check_label)

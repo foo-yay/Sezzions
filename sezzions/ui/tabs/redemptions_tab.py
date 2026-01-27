@@ -95,9 +95,9 @@ class RedemptionsTab(QtWidgets.QWidget):
         
         # Table
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(8)
+        self.table.setColumnCount(9)
         self.table.setHorizontalHeaderLabels([
-            "Date/Time", "User", "Site", "Amount", "Receipt", "Method", "Processed", "Notes"
+            "Date/Time", "User", "Site", "Amount", "Type", "Receipt", "Method", "Processed", "Notes"
         ])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
@@ -169,21 +169,27 @@ class RedemptionsTab(QtWidgets.QWidget):
             amount_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
             self.table.setItem(row, 3, amount_item)
 
+            # Type (Full/Partial)
+            type_display = "Full" if not redemption.more_remaining else "Partial"
+            type_item = QtWidgets.QTableWidgetItem(type_display)
+            type_item.setTextAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter)
+            self.table.setItem(row, 4, type_item)
+
             # Receipt
             receipt_item = QtWidgets.QTableWidgetItem(receipt_display)
-            self.table.setItem(row, 4, receipt_item)
+            self.table.setItem(row, 5, receipt_item)
 
             # Method
-            self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(method_display))
+            self.table.setItem(row, 6, QtWidgets.QTableWidgetItem(method_display))
 
             # Processed
             processed_item = QtWidgets.QTableWidgetItem("✓" if redemption.processed else "")
             processed_item.setTextAlignment(QtCore.Qt.AlignCenter)
-            self.table.setItem(row, 6, processed_item)
+            self.table.setItem(row, 7, processed_item)
 
             # Notes
             notes = (redemption.notes or "")[:100]
-            self.table.setItem(row, 7, QtWidgets.QTableWidgetItem(notes))
+            self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(notes))
 
             if status == "total_loss":
                 color = QtGui.QColor("#c0392b")

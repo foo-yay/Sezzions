@@ -71,21 +71,21 @@ class DailySessionsService:
 
         start_date, end_date = active_date_filter
         if start_date and end_date:
-            query += " AND gs.session_date BETWEEN ? AND ?"
+            query += " AND COALESCE(gs.end_date, gs.session_date) BETWEEN ? AND ?"
             params.extend([
                 start_date.strftime("%Y-%m-%d"),
                 end_date.strftime("%Y-%m-%d"),
             ])
         elif start_date:
-            query += " AND gs.session_date >= ?"
+            query += " AND COALESCE(gs.end_date, gs.session_date) >= ?"
             params.append(start_date.strftime("%Y-%m-%d"))
         elif end_date:
-            query += " AND gs.session_date <= ?"
+            query += " AND COALESCE(gs.end_date, gs.session_date) <= ?"
             params.append(end_date.strftime("%Y-%m-%d"))
         else:
             current_year_start = f"{date_type.today().year}-01-01"
             current_year_end = date_type.today().strftime("%Y-%m-%d")
-            query += " AND gs.session_date BETWEEN ? AND ?"
+            query += " AND COALESCE(gs.end_date, gs.session_date) BETWEEN ? AND ?"
             params.extend([current_year_start, current_year_end])
 
         query += " ORDER BY gs.session_date DESC, u.name, s.name, gs.session_time"
@@ -224,9 +224,11 @@ class DailySessionsService:
     def group_sessions(self, sessions: List[Dict]) -> List[Dict]:
         from collections import defaultdict
 
-        dates = defaultdict(lambda: defaultdict(list))
+        dates = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         for sess in sessions:
-            dates[sess["session_date"]][sess["user_id"]].append(sess)
+            # Group by end_date (or session_date if no end_date) for proper tax accounting
+            accounting_date = sess.get("end_date") or sess["session_date"]
+            dates[accounting_date][sess["user_id"]][sess["site_id"]].append(sess)
 
         notes_by_date = self.fetch_notes_for_dates(dates.keys())
         data: List[Dict] = []
@@ -235,24 +237,48 @@ class DailySessionsService:
             users = []
             for user_id in sorted(
                 users_data.keys(),
-                key=lambda uid: users_data[uid][0]["user_name"].lower(),
+                key=lambda uid: list(list(users_data[uid].values())[0])[0]["user_name"].lower(),
             ):
-                user_sessions = list(users_data[user_id])
-                user_sessions.sort(key=lambda s: s["start_time"] or "")
-                user_gameplay = sum(sess["delta_total"] for sess in user_sessions)
-                user_delta_redeem = sum(sess["delta_redeem"] or 0.0 for sess in user_sessions)
-                user_basis = sum(sess["basis_consumed"] or 0.0 for sess in user_sessions)
-                user_total = sum(sess["total_taxable"] for sess in user_sessions)
+                sites_data = users_data[user_id]
+                # Get all sessions for this user across all sites
+                all_user_sessions = [sess for site_sessions in sites_data.values() for sess in site_sessions]
+                user_gameplay = sum(sess["delta_total"] for sess in all_user_sessions)
+                user_delta_redeem = sum(sess["delta_redeem"] or 0.0 for sess in all_user_sessions)
+                user_basis = sum(sess["basis_consumed"] or 0.0 for sess in all_user_sessions)
+                user_total = sum(sess["total_taxable"] for sess in all_user_sessions)
+                
+                # Build sites list with grouped sessions
+                sites = []
+                for site_id in sorted(sites_data.keys(), key=lambda sid: sites_data[sid][0]["site_name"].lower()):
+                    site_sessions = list(sites_data[site_id])
+                    site_sessions.sort(key=lambda s: s["start_time"] or "")
+                    site_gameplay = sum(sess["delta_total"] for sess in site_sessions)
+                    site_delta_redeem = sum(sess["delta_redeem"] or 0.0 for sess in site_sessions)
+                    site_basis = sum(sess["basis_consumed"] or 0.0 for sess in site_sessions)
+                    site_total = sum(sess["total_taxable"] for sess in site_sessions)
+                    sites.append(
+                        {
+                            "site_id": site_id,
+                            "site_name": site_sessions[0]["site_name"],
+                            "gameplay": site_gameplay,
+                            "delta_redeem": site_delta_redeem,
+                            "basis": site_basis,
+                            "total": site_total,
+                            "status": "Win" if site_total >= 0 else "Loss",
+                            "sessions": site_sessions,
+                        }
+                    )
+                
                 users.append(
                     {
                         "user_id": user_id,
-                        "user_name": user_sessions[0]["user_name"],
+                        "user_name": all_user_sessions[0]["user_name"],
                         "gameplay": user_gameplay,
                         "delta_redeem": user_delta_redeem,
                         "basis": user_basis,
                         "total": user_total,
                         "status": "Win" if user_total >= 0 else "Loss",
-                        "sessions": user_sessions,
+                        "sites": sites,
                     }
                 )
 
@@ -260,7 +286,7 @@ class DailySessionsService:
             date_delta_redeem = sum(user["delta_redeem"] for user in users)
             date_basis = sum(user["basis"] for user in users)
             date_total = sum(user["total"] for user in users)
-            total_sessions = sum(len(user["sessions"]) for user in users)
+            total_sessions = sum(len(site["sessions"]) for user in users for site in user["sites"])
             data.append(
                 {
                     "date": session_date,

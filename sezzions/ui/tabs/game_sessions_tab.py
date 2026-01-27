@@ -245,6 +245,10 @@ class GameSessionsTab(QWidget):
                 if time_val and len(time_val) > 5:
                     time_val = time_val[:5]
                 date_time = f"{session.session_date} {time_val}".strip()
+                
+                # Add multi-day indicator if session spans multiple days
+                if session.end_date and session.end_date != session.session_date:
+                    date_time += " (+1d)"
 
                 game = games.get(session.game_id)
                 game_name = game.name if game else "—"
@@ -1168,6 +1172,40 @@ class StartSessionDialog(QDialog):
 
     def _update_balance_check(self):
         """Update balance check display with styled value chip"""
+        site_name = self.site_combo.currentText().strip()
+        user_name = self.user_combo.currentText().strip()
+        start_total_text = self.start_total_edit.text().strip()
+        if not site_name or not user_name or not start_total_text:
+            self.balance_check_display.setText("—")
+            self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.style().unpolish(self.balance_check_display)
+            self.balance_check_display.style().polish(self.balance_check_display)
+            return
+        valid, result = validate_currency(start_total_text)
+        if not valid:
+            self.balance_check_display.setText("—")
+            self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.style().unpolish(self.balance_check_display)
+            self.balance_check_display.style().polish(self.balance_check_display)
+            return
+        site_id, user_id = self._lookup_ids(site_name, user_name)
+        if not site_id or not user_id:
+            self.balance_check_display.setText("—")
+            self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.style().unpolish(self.balance_check_display)
+            self.balance_check_display.style().polish(self.balance_check_display)
+            return
+        session_date = self.date_edit.text().strip() or None
+        session_time = self.time_edit.text().strip() or None
+        try:
+            parsed_date = parse_date_input(session_date) if session_date else None
+            parsed_time = parse_time_input(session_time) if session_time else None
+        except ValueError:
+            self.balance_check_display.setText("—")
+            self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.style().unpolish(self.balance_check_display)
+            self.balance_check_display.style().polish(self.balance_check_display)
+            return
         site_name = self.site_combo.currentText().strip()
         user_name = self.user_combo.currentText().strip()
         start_total_text = self.start_total_edit.text().strip()

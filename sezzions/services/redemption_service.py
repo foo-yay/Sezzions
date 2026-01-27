@@ -60,13 +60,42 @@ class RedemptionService:
         
         # Apply FIFO if requested
         if apply_fifo:
-            cost_basis, taxable_profit, allocations = self.fifo_service.calculate_cost_basis(
-                user_id,
-                site_id,
-                amount,
-                redemption_date,
-                redemption_time or "23:59:59",
-            )
+            # For Full redemptions (more_remaining=False), consume ALL remaining basis
+            if not more_remaining:
+                # Get total remaining basis for this site/user as of redemption timestamp
+                available_purchases = self.redemption_repo.db.fetch_one(
+                    """
+                    SELECT COALESCE(SUM(remaining_amount), 0) as total_remaining
+                    FROM purchases
+                    WHERE user_id = ? AND site_id = ? AND remaining_amount > 0
+                      AND (purchase_date < ? OR 
+                           (purchase_date = ? AND COALESCE(purchase_time,'00:00:00') <= ?))
+                    """,
+                    (user_id, site_id, redemption_date, redemption_date, redemption_time or "23:59:59")
+                )
+                
+                total_remaining = Decimal(str(available_purchases['total_remaining'])) if available_purchases else Decimal("0.00")
+                
+                # Calculate FIFO for ALL remaining basis (not just redemption amount)
+                cost_basis, taxable_profit, allocations = self.fifo_service.calculate_cost_basis(
+                    user_id,
+                    site_id,
+                    total_remaining,  # Consume ALL remaining
+                    redemption_date,
+                    redemption_time or "23:59:59",
+                )
+                
+                # Recalculate profit: payout - cost_basis (may be negative for loss)
+                taxable_profit = amount - cost_basis
+            else:
+                # Partial redemption - just use the redemption amount
+                cost_basis, taxable_profit, allocations = self.fifo_service.calculate_cost_basis(
+                    user_id,
+                    site_id,
+                    amount,
+                    redemption_date,
+                    redemption_time or "23:59:59",
+                )
 
             redemption.cost_basis = cost_basis
             redemption.taxable_profit = taxable_profit

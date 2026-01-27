@@ -222,7 +222,8 @@ class UnrealizedTab(QtWidgets.QWidget):
         total_basis = pos.purchase_basis
         current_sc = pos.current_sc
         current_value = pos.current_value
-        net_loss = total_basis - current_value
+        # When closing: the loss is the FULL cost basis (you're abandoning it all)
+        net_loss = total_basis
 
         if total_basis <= 0:
             QtWidgets.QMessageBox.information(
@@ -234,9 +235,9 @@ class UnrealizedTab(QtWidgets.QWidget):
             f"Close balance for {pos.site_name} ({pos.user_name})?\n\n"
             f"Current SC balance: {current_sc:.2f} SC (${current_value:.2f})\n"
             f"Cost basis: ${total_basis:.2f}\n"
-            f"Net loss if closed: ${net_loss:.2f}\n\n"
+            f"Net loss: ${net_loss:.2f} (abandoning all basis)\n\n"
             "This will:\n"
-            f"• Mark ${current_sc:.2f} SC as dormant\n"
+            f"• Mark {current_sc:.2f} SC as dormant (no basis attached)\n"
             "• Remove from Unrealized tab\n"
             f"• Show -${net_loss:.2f} cash flow loss in Realized tab\n"
             "• NO tax impact (not a deduction)\n"

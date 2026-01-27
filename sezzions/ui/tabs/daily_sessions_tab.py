@@ -267,7 +267,7 @@ class DailySessionsTab(QtWidgets.QWidget):
                     self._format_currency_or_dash(user["basis"]),
                     self._format_delta(user["gameplay"]),
                     self._format_signed_currency(user["total"]),
-                    f"{len(user['sessions'])} sessions",
+                    f"{len(user['sites'])} sites, {sum(len(site['sessions']) for site in user['sites'])} sessions",
                     "",
                 ]
                 user_item = QtWidgets.QTreeWidgetItem(user_values)
@@ -275,42 +275,69 @@ class DailySessionsTab(QtWidgets.QWidget):
                 self._apply_status_color(user_item, user["total"])
                 date_item.addChild(user_item)
 
-                for sess in user["sessions"]:
-                    start_time = (sess["start_time"] or "00:00:00")[:5]
-                    end_time = sess["end_time"][:5] if sess["end_time"] else ""
-                    status = sess.get("status") or ""
-                    end_date = sess.get("end_date")
-                    if end_time:
-                        end_label = end_time
-                    elif status == "Closed":
-                        end_label = "Closed"
-                    else:
-                        end_label = "Active"
-                    if end_date and end_date != sess.get("session_date") and end_label not in ("Active", "Closed"):
-                        end_label = f"{end_date} {end_label}"
-                    time_range = f"{start_time}-{end_label}"
-                    sess_values = [
-                        f"⤷ {sess['site_name']}",
-                        sess["game_name"] or "",
-                        self._format_delta(sess["delta_redeem"]),
-                        self._format_currency_or_dash(sess["basis_consumed"]),
-                        self._format_delta(sess["delta_total"]),
-                        self._format_signed_currency(sess["total_taxable"]),
-                        time_range,
-                        sess["notes"],
+                for site in user["sites"]:
+                    site_values = [
+                        f"🏢 {site['site_name']}",
+                        "",
+                        self._format_delta(site["delta_redeem"]),
+                        self._format_currency_or_dash(site["basis"]),
+                        self._format_delta(site["gameplay"]),
+                        self._format_signed_currency(site["total"]),
+                        f"{len(site['sessions'])} sessions",
+                        "",
                     ]
-                    sess_item = QtWidgets.QTreeWidgetItem(sess_values)
-                    sess_item.setData(
-                        0,
-                        QtCore.Qt.UserRole,
-                        {
-                            "kind": "session",
-                            "session_id": sess["id"],
-                            "date": sess["session_date"],
-                        },
-                    )
-                    self._apply_status_color(sess_item, sess["total_taxable"])
-                    user_item.addChild(sess_item)
+                    site_item = QtWidgets.QTreeWidgetItem(site_values)
+                    site_item.setData(0, QtCore.Qt.UserRole, {"kind": "site", "site_id": site["site_id"]})
+                    self._apply_status_color(site_item, site["total"])
+                    user_item.addChild(site_item)
+
+                    for sess in site["sessions"]:
+                        # Check if session spans multiple days
+                        is_multi_day = sess.get("end_date") and sess.get("end_date") != sess.get("session_date")
+                        
+                        # Format time display
+                        start_time = (sess["start_time"] or "00:00:00")[:5]
+                        end_time = sess["end_time"][:5] if sess["end_time"] else ""
+                        status = sess.get("status") or ""
+                        
+                        if is_multi_day and end_time:
+                            # Show full dates for multi-day sessions
+                            start_date = sess.get("session_date", "")
+                            end_date = sess.get("end_date", "")
+                            time_range = f"{start_date} {start_time} → {end_date} {end_time}"
+                        elif end_time:
+                            # Same day session
+                            time_range = f"{start_time} → {end_time}"
+                        elif status == "Closed":
+                            time_range = f"{start_time} → Closed"
+                        else:
+                            time_range = f"{start_time} → Active"
+                        
+                        # Add clock emoji for multi-day sessions
+                        session_prefix = "🕐 ⤷" if is_multi_day else "⤷"
+                        
+                        sess_values = [
+                            f"{session_prefix} {sess['game_name'] or 'Unknown'}",
+                            "",
+                            self._format_delta(sess["delta_redeem"]),
+                            self._format_currency_or_dash(sess["basis_consumed"]),
+                            self._format_delta(sess["delta_total"]),
+                            self._format_signed_currency(sess["total_taxable"]),
+                            time_range,
+                            sess["notes"],
+                        ]
+                        sess_item = QtWidgets.QTreeWidgetItem(sess_values)
+                        sess_item.setData(
+                            0,
+                            QtCore.Qt.UserRole,
+                            {
+                                "kind": "session",
+                                "session_id": sess["id"],
+                                "date": sess["session_date"],
+                            },
+                        )
+                        self._apply_status_color(sess_item, sess["total_taxable"])
+                        site_item.addChild(sess_item)
 
     def _format_delta(self, value):
         if value is None:
@@ -370,19 +397,25 @@ class DailySessionsTab(QtWidgets.QWidget):
         if col_index == 5:
             return self._format_signed_currency(sess["total_taxable"])
         if col_index == 6:
+            # Check if session spans multiple days
+            is_multi_day = sess.get("end_date") and sess.get("end_date") != sess.get("session_date")
+            
             start_time = (sess["start_time"] or "00:00:00")[:5]
             end_time = sess["end_time"][:5] if sess["end_time"] else ""
             status = sess.get("status") or ""
-            end_date = sess.get("end_date")
-            if end_time:
-                end_label = end_time
+            
+            if is_multi_day and end_time:
+                # Show full dates for multi-day sessions
+                start_date = sess.get("session_date", "")
+                end_date = sess.get("end_date", "")
+                return f"{start_date} {start_time} → {end_date} {end_time}"
+            elif end_time:
+                # Same day session
+                return f"{start_time} → {end_time}"
             elif status == "Closed":
-                end_label = "Closed"
+                return f"{start_time} → Closed"
             else:
-                end_label = "Active"
-            if end_date and end_date != sess.get("session_date") and end_label not in ("Active", "Closed"):
-                end_label = f"{end_date} {end_label}"
-            return f"{start_time}-{end_label}"
+                return f"{start_time} → Active"
         if col_index == 7:
             return sess["notes"] or ""
         return ""
