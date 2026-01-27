@@ -12,8 +12,13 @@ class RedemptionMethodRepository:
         self.db = db_manager
     
     def get_by_id(self, method_id: int) -> Optional[RedemptionMethod]:
-        """Get redemption method by ID"""
-        query = "SELECT * FROM redemption_methods WHERE id = ?"
+        """Get redemption method by ID with user name"""
+        query = """
+            SELECT rm.*, u.name as user_name
+            FROM redemption_methods rm
+            LEFT JOIN users u ON rm.user_id = u.id
+            WHERE rm.id = ?
+        """
         row = self.db.fetch_one(query, (method_id,))
         return self._row_to_model(row) if row else None
     
@@ -72,7 +77,7 @@ class RedemptionMethodRepository:
     
     def _row_to_model(self, row: dict) -> RedemptionMethod:
         """Convert database row to RedemptionMethod model"""
-        return RedemptionMethod(
+        method = RedemptionMethod(
             id=row['id'],
             name=row['name'],
             method_type=row['method_type'] if 'method_type' in row.keys() else None,
@@ -82,3 +87,7 @@ class RedemptionMethodRepository:
             created_at=row['created_at'] if 'created_at' in row.keys() else None,
             updated_at=row['updated_at'] if 'updated_at' in row.keys() else None
         )
+        # Add user_name if present (from JOIN)
+        if 'user_name' in row.keys():
+            method.user_name = row['user_name']
+        return method

@@ -316,127 +316,124 @@ class UsersTab(QtWidgets.QWidget):
         user = self.facade.get_user(user_id)
         if not user:
             return
-        def handle_edit():
-            dialog.close()
-            self._edit_user()
-
-        def handle_delete():
-            dialog.close()
-            self._delete_user()
-
-        dialog = UserDialog(
-            self,
+        
+        dialog = UserViewDialog(
             user,
-            read_only=True,
-            suggestions=self.users,
-            on_edit=handle_edit,
-            on_delete=handle_delete,
+            parent=self,
+            on_edit=self._edit_user,
+            on_delete=self._delete_user,
         )
         dialog.exec()
+        self.refresh_data()
 
 
 class UserDialog(QtWidgets.QDialog):
     """Dialog for adding/editing users"""
     
-    def __init__(self, parent=None, user: User = None, read_only: bool = False, suggestions=None, on_edit=None, on_delete=None):
+    def __init__(self, parent=None, user: User = None, suggestions=None):
         super().__init__(parent)
         self.user = user
-        self.read_only = read_only
         self.suggestions = suggestions or []
-        self._on_edit = on_edit
-        self._on_delete = on_delete
-        if self.read_only:
-            self.setWindowTitle("View User")
-        else:
-            self.setWindowTitle("Edit User" if user else "Add User")
-        self.resize(500, 300)
+        self.setWindowTitle("Edit User" if user else "Add User")
+        self.setMinimumSize(400, 300)
         
-        layout = QtWidgets.QGridLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setHorizontalSpacing(10)
-        layout.setVerticalSpacing(12)
-        layout.setColumnStretch(1, 1)
+        # Main layout
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(16)
         
-        # Name
-        self.name_edit = QtWidgets.QLineEdit()
-        if user:
-            self.name_edit.setText(user.name)
-        name_label = QtWidgets.QLabel("Name:")
-        name_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        layout.addWidget(name_label, 0, 0)
-        layout.addWidget(self.name_edit, 0, 1)
+        # Section header
+        header = QtWidgets.QLabel("👤 User Details")
+        header.setObjectName("SectionHeader")
+        main_layout.addWidget(header)
         
-        # Email
-        self.email_edit = QtWidgets.QLineEdit()
-        if user and user.email:
-            self.email_edit.setText(user.email)
-        email_label = QtWidgets.QLabel("Email:")
-        email_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        layout.addWidget(email_label, 1, 0)
-        layout.addWidget(self.email_edit, 1, 1, 1, 3)
+        # Main section
+        main_section = QtWidgets.QWidget()
+        main_section.setObjectName("SectionBackground")
+        main_grid = QtWidgets.QGridLayout(main_section)
+        main_grid.setContentsMargins(12, 12, 12, 12)
+        main_grid.setHorizontalSpacing(20)
+        main_grid.setVerticalSpacing(10)
         
-        # Active
+        # Active checkbox - row 0 (alone)
+        active_label = QtWidgets.QLabel("Active:")
+        active_label.setObjectName("FieldLabel")
+        active_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.active_check = QtWidgets.QCheckBox()
         self.active_check.setChecked(user.is_active if user else True)
-        active_label = QtWidgets.QLabel("Active")
-        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        layout.addWidget(active_label, 0, 2)
-        layout.addWidget(self.active_check, 0, 3)
+        main_grid.addWidget(active_label, 0, 0)
+        main_grid.addWidget(self.active_check, 0, 1)
         
-        # Notes
-        self.notes_edit = QtWidgets.QTextEdit()
+        # Name (required) - same width as Email
+        name_label = QtWidgets.QLabel("Name:")
+        name_label.setObjectName("FieldLabel")
+        name_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.name_edit = QtWidgets.QLineEdit()
+        self.name_edit.setPlaceholderText("Required")
+        if user:
+            self.name_edit.setText(user.name)
+        main_grid.addWidget(name_label, 1, 0)
+        main_grid.addWidget(self.name_edit, 1, 1)
+        
+        # Email (optional) - same width as Name
+        email_label = QtWidgets.QLabel("Email:")
+        email_label.setObjectName("FieldLabel")
+        email_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.email_edit = QtWidgets.QLineEdit()
+        self.email_edit.setPlaceholderText("Optional")
+        if user and user.email:
+            self.email_edit.setText(user.email)
+        main_grid.addWidget(email_label, 2, 0)
+        main_grid.addWidget(self.email_edit, 2, 1)
+        
+        main_layout.addWidget(main_section)
+        
+        # Notes section (collapsible)
+        self.notes_collapsed = True
+        self.notes_toggle = QtWidgets.QPushButton("📝 Add Notes...")
+        self.notes_toggle.setObjectName("SectionHeader")
+        self.notes_toggle.setCursor(QtCore.Qt.PointingHandCursor)
+        self.notes_toggle.setFlat(True)
+        self.notes_toggle.clicked.connect(self._toggle_notes)
+        main_layout.addWidget(self.notes_toggle)
+        
+        self.notes_section = QtWidgets.QWidget()
+        self.notes_section.setObjectName("SectionBackground")
+        notes_layout = QtWidgets.QVBoxLayout(self.notes_section)
+        notes_layout.setContentsMargins(12, 12, 12, 12)
+        self.notes_edit = QtWidgets.QPlainTextEdit()
+        self.notes_edit.setPlaceholderText("Optional...")
+        self.notes_edit.setFixedHeight(80)
         if user and user.notes:
             self.notes_edit.setPlainText(user.notes)
-        notes_label = QtWidgets.QLabel("Notes:")
-        notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-        layout.addWidget(notes_label, 2, 0)
-        layout.addWidget(self.notes_edit, 2, 1, 1, 3)
+        notes_layout.addWidget(self.notes_edit)
+        self.notes_section.setVisible(False)
+        main_layout.addWidget(self.notes_section)
+        
+        # Expand notes if editing and notes exist
+        if user and user.notes:
+            self._toggle_notes()
         
         # Buttons
-        if self.read_only:
-            btn_row = QtWidgets.QHBoxLayout()
-            btn_row.setSpacing(8)
-            if self._on_delete:
-                delete_btn = QtWidgets.QPushButton("🗑️ Delete")
-                delete_btn.clicked.connect(self._on_delete)
-                btn_row.addWidget(delete_btn)
-            btn_row.addStretch(1)
-            if self._on_edit:
-                edit_btn = QtWidgets.QPushButton("✏️ Edit")
-                edit_btn.clicked.connect(self._on_edit)
-                btn_row.addWidget(edit_btn)
-            close_btn = QtWidgets.QPushButton("✖️ Close")
-            close_btn.clicked.connect(self.accept)
-            btn_row.addWidget(close_btn)
-            layout.addLayout(btn_row, 3, 0, 1, 4)
-        else:
-            btn_row = QtWidgets.QHBoxLayout()
-            btn_row.addStretch(1)
-            btn_row.setSpacing(8)
-            cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
-            save_btn = QtWidgets.QPushButton("💾 Save")
-            save_btn.setObjectName("PrimaryButton")
-            cancel_btn.clicked.connect(self.reject)
-            save_btn.clicked.connect(self._validate_and_accept)
-            btn_row.addWidget(cancel_btn)
-            btn_row.addWidget(save_btn)
-            layout.addLayout(btn_row, 3, 0, 1, 4)
-
-        if self.read_only:
-            for widget in (self.name_edit, self.email_edit, self.active_check, self.notes_edit):
-                widget.setEnabled(False)
-            if not (user and user.notes):
-                notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-                self.notes_edit.setPlaceholderText("-")
-                self.notes_edit.setFixedHeight(self.notes_edit.fontMetrics().lineSpacing() + 12)
-            else:
-                notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-                self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        
+        cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+        
+        self.save_btn = QtWidgets.QPushButton("💾 Save")
+        self.save_btn.setObjectName("PrimaryButton")
+        self.save_btn.clicked.connect(self._validate_and_accept)
+        btn_row.addWidget(self.save_btn)
+        
+        main_layout.addLayout(btn_row)
+        
+        # Validation
         self.name_edit.textChanged.connect(self._validate_inline)
         self._validate_inline()
-
+        
+        # Autocomplete
         if self.suggestions:
             name_model = QtCore.QStringListModel([u.name for u in self.suggestions if u and u.name])
             name_completer = QtWidgets.QCompleter(name_model)
@@ -444,7 +441,7 @@ class UserDialog(QtWidgets.QDialog):
             name_completer.setFilterMode(QtCore.Qt.MatchStartsWith)
             name_completer.setCompletionMode(QtWidgets.QCompleter.InlineCompletion)
             self.name_edit.setCompleter(name_completer)
-
+            
             emails = [u.email for u in self.suggestions if u and u.email]
             if emails:
                 email_model = QtCore.QStringListModel(emails)
@@ -453,32 +450,209 @@ class UserDialog(QtWidgets.QDialog):
                 email_completer.setFilterMode(QtCore.Qt.MatchStartsWith)
                 email_completer.setCompletionMode(QtWidgets.QCompleter.InlineCompletion)
                 self.email_edit.setCompleter(email_completer)
-
+        
+        # Tab order
+        self.setTabOrder(self.name_edit, self.active_check)
+        self.setTabOrder(self.active_check, self.email_edit)
+        self.setTabOrder(self.email_edit, self.notes_edit)
+        self.setTabOrder(self.notes_edit, self.save_btn)
+    
+    def _toggle_notes(self):
+        """Toggle notes section visibility"""
+        self.notes_collapsed = not self.notes_collapsed
+        self.notes_section.setVisible(not self.notes_collapsed)
+        if self.notes_collapsed:
+            self.notes_toggle.setText("📝 Add Notes...")
+            self.setMinimumHeight(350)
+            self.setMaximumHeight(350)
+            self.resize(self.width(), 350)
+        else:
+            self.notes_toggle.setText("📝 Hide Notes")
+            self.setMinimumHeight(430)
+            self.setMaximumHeight(16777215)
+            self.resize(self.width(), 430)
+    
     def _set_invalid(self, widget, message):
         widget.setProperty("invalid", True)
         widget.setToolTip(message)
         widget.style().unpolish(widget)
         widget.style().polish(widget)
-
+    
     def _set_valid(self, widget):
         widget.setProperty("invalid", False)
         widget.setToolTip("")
         widget.style().unpolish(widget)
         widget.style().polish(widget)
-
-    def _validate_inline(self):
-        if self.read_only:
-            return
+    
+    def _validate_inline(self) -> bool:
+        """Validate all fields and return True if valid"""
+        valid = True
+        
         if not self.name_edit.text().strip():
-            self._set_invalid(self.name_edit, "Name is required")
+            self._set_invalid(self.name_edit, "Name is required.")
+            valid = False
         else:
             self._set_valid(self.name_edit)
+        
+        self.save_btn.setEnabled(valid)
+        return valid
     
     def _validate_and_accept(self):
-        """Validate input and accept dialog"""
-        if not self.name_edit.text().strip():
+        """Final validation before accepting"""
+        if not self._validate_inline():
             QtWidgets.QMessageBox.warning(
-                self, "Validation Error", "Name is required"
+                self, "Validation Error", "Please correct the highlighted fields."
             )
             return
         self.accept()
+
+
+class UserViewDialog(QtWidgets.QDialog):
+    """Dialog for viewing user details"""
+    
+    def __init__(self, user: User, parent=None, on_edit=None, on_delete=None):
+        super().__init__(parent)
+        self.user = user
+        self._on_edit = on_edit
+        self._on_delete = on_delete
+        self.setWindowTitle("View User")
+        self.setMinimumSize(520, 300)
+        
+        # Main layout
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(12)
+        
+        # User details section header
+        details_header = QtWidgets.QLabel("👤 User Details")
+        details_header.setObjectName("SectionHeader")
+        main_layout.addWidget(details_header)
+        
+        # User details section
+        details_section = QtWidgets.QWidget()
+        details_section.setObjectName("SectionBackground")
+        details_layout = QtWidgets.QVBoxLayout(details_section)
+        details_layout.setContentsMargins(12, 12, 12, 12)
+        details_layout.setSpacing(6)
+        
+        # Two-column layout
+        columns = QtWidgets.QHBoxLayout()
+        columns.setSpacing(30)
+        
+        # Left column
+        left_grid = QtWidgets.QGridLayout()
+        left_grid.setHorizontalSpacing(12)
+        left_grid.setVerticalSpacing(6)
+        left_grid.setColumnStretch(1, 1)
+        
+        name_lbl = QtWidgets.QLabel("Name:")
+        name_lbl.setStyleSheet("color: palette(mid);")
+        name_val = self._make_selectable_label(user.name)
+        left_grid.addWidget(name_lbl, 0, 0, QtCore.Qt.AlignRight)
+        left_grid.addWidget(name_val, 0, 1)
+        
+        email_lbl = QtWidgets.QLabel("Email:")
+        email_lbl.setStyleSheet("color: palette(mid);")
+        email_val = self._make_selectable_label(user.email or "—")
+        left_grid.addWidget(email_lbl, 1, 0, QtCore.Qt.AlignRight)
+        left_grid.addWidget(email_val, 1, 1)
+        
+        columns.addLayout(left_grid, 1)
+        
+        # Right column
+        right_grid = QtWidgets.QGridLayout()
+        right_grid.setHorizontalSpacing(12)
+        right_grid.setVerticalSpacing(6)
+        right_grid.setColumnStretch(1, 1)
+        
+        status_lbl = QtWidgets.QLabel("Status:")
+        status_lbl.setStyleSheet("color: palette(mid);")
+        status_val = self._make_selectable_label("Active" if user.is_active else "Inactive")
+        right_grid.addWidget(status_lbl, 0, 0, QtCore.Qt.AlignRight)
+        right_grid.addWidget(status_val, 0, 1)
+        
+        columns.addLayout(right_grid, 1)
+        
+        details_layout.addLayout(columns)
+        main_layout.addWidget(details_section)
+        
+        # Notes section header
+        notes_header = QtWidgets.QLabel("📝 Notes")
+        notes_header.setObjectName("SectionHeader")
+        main_layout.addWidget(notes_header)
+        
+        # Notes section
+        notes_section = QtWidgets.QWidget()
+        notes_section.setObjectName("SectionBackground")
+        notes_layout = QtWidgets.QVBoxLayout(notes_section)
+        notes_layout.setContentsMargins(12, 12, 12, 12)
+        notes_layout.setSpacing(6)
+        
+        if user.notes:
+            notes_display = QtWidgets.QTextEdit()
+            notes_display.setReadOnly(True)
+            notes_display.setPlainText(user.notes)
+            notes_display.setMaximumHeight(80)
+            notes_display.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            notes_layout.addWidget(notes_display)
+        else:
+            notes_empty = QtWidgets.QLabel("—")
+            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_layout.addWidget(notes_empty)
+        main_layout.addWidget(notes_section)
+        
+        # Stretch
+        main_layout.addStretch(1)
+        
+        # Buttons
+        btn_row = QtWidgets.QHBoxLayout()
+        
+        if self._on_delete:
+            delete_btn = QtWidgets.QPushButton("🗑️ Delete")
+            delete_btn.clicked.connect(self._handle_delete)
+            btn_row.addWidget(delete_btn)
+        
+        btn_row.addStretch(1)
+        
+        if self._on_edit:
+            edit_btn = QtWidgets.QPushButton("✏️ Edit")
+            edit_btn.clicked.connect(self._handle_edit)
+            btn_row.addWidget(edit_btn)
+        
+        close_btn = QtWidgets.QPushButton("✖️ Close")
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        
+        main_layout.addLayout(btn_row)
+    
+    def _create_section(self, title):
+        """Create a section with header"""
+        header = QtWidgets.QLabel(title)
+        header.setObjectName("SectionHeader")
+        
+        section = QtWidgets.QWidget()
+        section.setObjectName("SectionBackground")
+        layout = QtWidgets.QVBoxLayout(section)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
+        
+        return section, layout
+    
+    def _make_selectable_label(self, text):
+        """Create selectable text label"""
+        label = QtWidgets.QLabel(text)
+        label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        label.setCursor(QtCore.Qt.IBeamCursor)
+        return label
+    
+    def _handle_edit(self):
+        """Close dialog before triggering edit callback"""
+        self.accept()
+        if self._on_edit:
+            self._on_edit()
+    
+    def _handle_delete(self):
+        """Close dialog before triggering delete callback"""
+        self.accept()
+        if self._on_delete:
+            self._on_delete()

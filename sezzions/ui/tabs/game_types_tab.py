@@ -289,127 +289,297 @@ class GameTypesTab(QtWidgets.QWidget):
         game_type = self.facade.get_game_type(type_id)
         if not game_type:
             return
-        def handle_edit():
-            dialog.close()
-            self._edit_type()
-
-        def handle_delete():
-            dialog.close()
-            self._delete_type()
-
-        dialog = GameTypeDialog(self, game_type, read_only=True, on_edit=handle_edit, on_delete=handle_delete)
+        
+        dialog = GameTypeViewDialog(
+            game_type,
+            parent=self,
+            on_edit=self._edit_type,
+            on_delete=self._delete_type,
+        )
         dialog.exec()
+        self.refresh_data()
 
 
 class GameTypeDialog(QtWidgets.QDialog):
     """Dialog for adding/editing game types"""
 
-    def __init__(self, parent=None, game_type: GameType = None, read_only: bool = False, on_edit=None, on_delete=None):
+    def __init__(self, parent=None, game_type: GameType = None):
         super().__init__(parent)
         self.game_type = game_type
-        self.read_only = read_only
-        self._on_edit = on_edit
-        self._on_delete = on_delete
-        if self.read_only:
-            self.setWindowTitle("View Game Type")
-        else:
-            self.setWindowTitle("Edit Game Type" if game_type else "Add Game Type")
-        self.resize(480, 300)
-
-        layout = QtWidgets.QGridLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setHorizontalSpacing(10)
-        layout.setVerticalSpacing(12)
-        layout.setColumnStretch(1, 1)
-
-        self.name_edit = QtWidgets.QLineEdit()
-        if game_type:
-            self.name_edit.setText(game_type.name)
-        name_label = QtWidgets.QLabel("Name:")
-        name_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        layout.addWidget(name_label, 0, 0)
-        layout.addWidget(self.name_edit, 0, 1)
-
+        self.setWindowTitle("Edit Game Type" if game_type else "Add Game Type")
+        self.setMinimumSize(400, 320)
+        
+        # Main layout
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(16)
+        
+        # Section header
+        header = QtWidgets.QLabel("🎮 Game Type Details")
+        header.setObjectName("SectionHeader")
+        main_layout.addWidget(header)
+        
+        # Main section
+        main_section = QtWidgets.QWidget()
+        main_section.setObjectName("SectionBackground")
+        main_grid = QtWidgets.QGridLayout(main_section)
+        main_grid.setContentsMargins(12, 12, 12, 12)
+        main_grid.setHorizontalSpacing(20)
+        main_grid.setVerticalSpacing(10)
+        main_grid.setColumnStretch(0, 0)  # Label column doesn't stretch
+        
+        # Active checkbox - row 0 (alone)
+        active_label = QtWidgets.QLabel("Active:")
+        active_label.setObjectName("FieldLabel")
+        active_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.active_check = QtWidgets.QCheckBox()
         self.active_check.setChecked(game_type.is_active if game_type else True)
-        active_label = QtWidgets.QLabel("Active")
-        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        layout.addWidget(active_label, 0, 2)
-        layout.addWidget(self.active_check, 0, 3)
-
-        self.notes_edit = QtWidgets.QTextEdit()
+        main_grid.addWidget(active_label, 0, 0)
+        main_grid.addWidget(self.active_check, 0, 1, alignment=QtCore.Qt.AlignLeft)
+        
+        # Name (required) - fixed at 250px
+        name_label = QtWidgets.QLabel("Name:")
+        name_label.setObjectName("FieldLabel")
+        name_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.name_edit = QtWidgets.QLineEdit()
+        self.name_edit.setPlaceholderText("Required")
+        self.name_edit.setFixedWidth(250)
+        if game_type:
+            self.name_edit.setText(game_type.name)
+        main_grid.addWidget(name_label, 1, 0)
+        main_grid.addWidget(self.name_edit, 1, 1, alignment=QtCore.Qt.AlignLeft)
+        
+        main_layout.addWidget(main_section)
+        
+        # Notes section (collapsible)
+        self.notes_collapsed = True
+        self.notes_toggle = QtWidgets.QPushButton("📝 Add Notes...")
+        self.notes_toggle.setObjectName("SectionHeader")
+        self.notes_toggle.setCursor(QtCore.Qt.PointingHandCursor)
+        self.notes_toggle.setFlat(True)
+        self.notes_toggle.clicked.connect(self._toggle_notes)
+        main_layout.addWidget(self.notes_toggle)
+        
+        self.notes_section = QtWidgets.QWidget()
+        self.notes_section.setObjectName("SectionBackground")
+        notes_layout = QtWidgets.QVBoxLayout(self.notes_section)
+        notes_layout.setContentsMargins(12, 12, 12, 12)
+        self.notes_edit = QtWidgets.QPlainTextEdit()
+        self.notes_edit.setPlaceholderText("Optional...")
+        self.notes_edit.setFixedHeight(80)
         if game_type and game_type.notes:
             self.notes_edit.setPlainText(game_type.notes)
-        notes_label = QtWidgets.QLabel("Notes:")
-        notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-        layout.addWidget(notes_label, 1, 0)
-        layout.addWidget(self.notes_edit, 1, 1, 1, 3)
-
-        button_layout = QtWidgets.QHBoxLayout()
-        if self.read_only:
-            button_layout.setSpacing(8)
-            if self._on_delete:
-                delete_btn = QtWidgets.QPushButton("🗑️ Delete")
-                delete_btn.clicked.connect(self._on_delete)
-                button_layout.addWidget(delete_btn)
-            button_layout.addStretch(1)
-            if self._on_edit:
-                edit_btn = QtWidgets.QPushButton("✏️ Edit")
-                edit_btn.clicked.connect(self._on_edit)
-                button_layout.addWidget(edit_btn)
-            close_btn = QtWidgets.QPushButton("✖️ Close")
-            close_btn.clicked.connect(self.accept)
-            button_layout.addWidget(close_btn)
-            layout.addLayout(button_layout, 2, 0, 1, 4)
-        else:
-            button_layout.addStretch(1)
-            button_layout.setSpacing(8)
-            cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
-            save_btn = QtWidgets.QPushButton("💾 Save")
-            save_btn.setObjectName("PrimaryButton")
-            cancel_btn.clicked.connect(self.reject)
-            save_btn.clicked.connect(self.accept)
-            button_layout.addWidget(cancel_btn)
-            button_layout.addWidget(save_btn)
-            layout.addLayout(button_layout, 2, 0, 1, 4)
-
-        if self.read_only:
-            for widget in (self.name_edit, self.active_check, self.notes_edit):
-                widget.setEnabled(False)
-            if not (game_type and game_type.notes):
-                notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-                self.notes_edit.setPlaceholderText("-")
-                self.notes_edit.setFixedHeight(self.notes_edit.fontMetrics().lineSpacing() + 12)
-            else:
-                notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-                self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-
+        notes_layout.addWidget(self.notes_edit)
+        self.notes_section.setVisible(False)
+        main_layout.addWidget(self.notes_section)
+        
+        # Expand notes if editing and notes exist
+        if game_type and game_type.notes:
+            self._toggle_notes()
+        
+        # Stretch
+        main_layout.addStretch(1)
+        
+        # Buttons
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        
+        cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+        
+        self.save_btn = QtWidgets.QPushButton("💾 Save")
+        self.save_btn.setObjectName("PrimaryButton")
+        self.save_btn.clicked.connect(self._validate_and_accept)
+        btn_row.addWidget(self.save_btn)
+        
+        main_layout.addLayout(btn_row)
+        
+        # Validation
         self.name_edit.textChanged.connect(self._validate_inline)
         self._validate_inline()
-
+        
+        # Tab order
+        self.setTabOrder(self.name_edit, self.active_check)
+        self.setTabOrder(self.active_check, self.notes_edit)
+        self.setTabOrder(self.notes_edit, self.save_btn)
+    
+    def _toggle_notes(self):
+        """Toggle notes section visibility"""
+        self.notes_collapsed = not self.notes_collapsed
+        self.notes_section.setVisible(not self.notes_collapsed)
+        if self.notes_collapsed:
+            self.notes_toggle.setText("📝 Add Notes...")
+            self.setMinimumHeight(320)
+            self.setMaximumHeight(320)
+            self.resize(self.width(), 320)
+        else:
+            self.notes_toggle.setText("📝 Hide Notes")
+            self.setMinimumHeight(400)
+            self.setMaximumHeight(16777215)
+            self.resize(self.width(), 400)
+    
     def _set_invalid(self, widget, message):
         widget.setProperty("invalid", True)
         widget.setToolTip(message)
         widget.style().unpolish(widget)
         widget.style().polish(widget)
-
+    
     def _set_valid(self, widget):
         widget.setProperty("invalid", False)
         widget.setToolTip("")
         widget.style().unpolish(widget)
         widget.style().polish(widget)
-
-    def _validate_inline(self):
-        if self.read_only:
-            return
+    
+    def _validate_inline(self) -> bool:
+        """Validate all fields and return True if valid"""
+        valid = True
+        
         if not self.name_edit.text().strip():
-            self._set_invalid(self.name_edit, "Name is required")
+            self._set_invalid(self.name_edit, "Name is required.")
+            valid = False
         else:
             self._set_valid(self.name_edit)
-
-    def accept(self):
-        if not self.name_edit.text().strip():
-            QtWidgets.QMessageBox.warning(self, "Validation Error", "Name is required")
+        
+        self.save_btn.setEnabled(valid)
+        return valid
+    
+    def _validate_and_accept(self):
+        """Final validation before accepting"""
+        if not self._validate_inline():
+            QtWidgets.QMessageBox.warning(
+                self, "Validation Error", "Please correct the highlighted fields."
+            )
             return
-        super().accept()
+        self.accept()
+
+
+class GameTypeViewDialog(QtWidgets.QDialog):
+    """Dialog for viewing game type details"""
+    
+    def __init__(self, game_type: GameType, parent=None, on_edit=None, on_delete=None):
+        super().__init__(parent)
+        self.game_type = game_type
+        self._on_edit = on_edit
+        self._on_delete = on_delete
+        self.setWindowTitle("View Game Type")
+        self.setMinimumSize(500, 280)
+        
+        # Main layout
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(12)
+        
+        # Game Type details section header
+        details_header = QtWidgets.QLabel("🎯 Game Type Details")
+        details_header.setObjectName("SectionHeader")
+        main_layout.addWidget(details_header)
+        
+        # Game Type details section
+        details_section = QtWidgets.QWidget()
+        details_section.setObjectName("SectionBackground")
+        details_layout = QtWidgets.QVBoxLayout(details_section)
+        details_layout.setContentsMargins(12, 12, 12, 12)
+        details_layout.setSpacing(6)
+        
+        # Single-column layout (simple entity)
+        grid = QtWidgets.QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(6)
+        grid.setColumnStretch(1, 1)
+        
+        name_lbl = QtWidgets.QLabel("Name:")
+        name_lbl.setStyleSheet("color: palette(mid);")
+        name_val = self._make_selectable_label(game_type.name)
+        grid.addWidget(name_lbl, 0, 0, QtCore.Qt.AlignRight)
+        grid.addWidget(name_val, 0, 1)
+        
+        status_lbl = QtWidgets.QLabel("Status:")
+        status_lbl.setStyleSheet("color: palette(mid);")
+        status_val = self._make_selectable_label("Active" if game_type.is_active else "Inactive")
+        grid.addWidget(status_lbl, 1, 0, QtCore.Qt.AlignRight)
+        grid.addWidget(status_val, 1, 1)
+        
+        details_layout.addLayout(grid)
+        main_layout.addWidget(details_section)
+        
+        # Notes section header
+        notes_header = QtWidgets.QLabel("📝 Notes")
+        notes_header.setObjectName("SectionHeader")
+        main_layout.addWidget(notes_header)
+        
+        # Notes section
+        notes_section = QtWidgets.QWidget()
+        notes_section.setObjectName("SectionBackground")
+        notes_layout = QtWidgets.QVBoxLayout(notes_section)
+        notes_layout.setContentsMargins(12, 12, 12, 12)
+        notes_layout.setSpacing(6)
+        
+        if game_type.notes:
+            notes_display = QtWidgets.QTextEdit()
+            notes_display.setReadOnly(True)
+            notes_display.setPlainText(game_type.notes)
+            notes_display.setMaximumHeight(80)
+            notes_display.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            notes_layout.addWidget(notes_display)
+        else:
+            notes_empty = QtWidgets.QLabel("—")
+            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_layout.addWidget(notes_empty)
+        main_layout.addWidget(notes_section)
+        
+        # Stretch
+        main_layout.addStretch(1)
+        
+        # Buttons
+        btn_row = QtWidgets.QHBoxLayout()
+        
+        if self._on_delete:
+            delete_btn = QtWidgets.QPushButton("🗑️ Delete")
+            delete_btn.clicked.connect(self._handle_delete)
+            btn_row.addWidget(delete_btn)
+        
+        btn_row.addStretch(1)
+        
+        if self._on_edit:
+            edit_btn = QtWidgets.QPushButton("✏️ Edit")
+            edit_btn.clicked.connect(self._handle_edit)
+            btn_row.addWidget(edit_btn)
+        
+        close_btn = QtWidgets.QPushButton("✖️ Close")
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        
+        main_layout.addLayout(btn_row)
+    
+    def _create_section(self, title):
+        """Create a section with header"""
+        header = QtWidgets.QLabel(title)
+        header.setObjectName("SectionHeader")
+        
+        section = QtWidgets.QWidget()
+        section.setObjectName("SectionBackground")
+        layout = QtWidgets.QVBoxLayout(section)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
+        
+        return section, layout
+    
+    def _make_selectable_label(self, text):
+        """Create selectable text label"""
+        label = QtWidgets.QLabel(text)
+        label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        label.setCursor(QtCore.Qt.IBeamCursor)
+        return label
+    
+    def _handle_edit(self):
+        """Close dialog before triggering edit callback"""
+        self.accept()
+        if self._on_edit:
+            self._on_edit()
+    
+    def _handle_delete(self):
+        """Close dialog before triggering delete callback"""
+        self.accept()
+        if self._on_delete:
+            self._on_delete()

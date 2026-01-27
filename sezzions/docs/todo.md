@@ -8,8 +8,6 @@
 - [ ] Add Site grouping to the Daily Sessions tab so when one site has multiple sessions in a day they are consolidated and expandable/collapsable
 - [ ] Add dormant basis to purchases table so we can see what the actual starting balance should be after a purchase
 - [ ] Legacy app's redeemable check isn't detecting a problem when I enter 0.42 SC on an expected 0.41 redeemable.  is there a threshhold?  It recognizes it if I put 0.92
-- [ ] Update the Add/Edit Expenses dialog
-- [ ] Cascading updates to Users/Sites/Cards/Method Types/Methods/Game Types/Games Add/Edit/View dialogs.  Will need to formalize the style we want and have Claude take license to do them all in teh same fashion.
 - [ ] Need to account for multi-day closed sessions on the day they close, not the day they start.
 - [ ] Scenario:  1 SC starting redeemable on Stake.  Buy in 2500 for 2506.25.  Gamble and end with 2500.89.  It's showing -0.11 loss because it's counting the 1 SC as part of the loss, but since I never session'd that 1 SC to begin with, it shouldn't be counted.
 
@@ -35,3 +33,6 @@
 - [X] Full Realized tab parity port
 - [X] Update the "View Redemption" dialog with our new style next.
 - [X] View Position in Unrealized tab is next to update styles for.
+- [X] Update the Add/Edit Expenses dialog
+- [X] Cascading updates to Users/Sites/Cards/Method Types/Methods/Game Types/Games Add/Edit/View dialogs.  Will need to formalize the style we want and have Claude take license to do them all in teh same fashion.- [X] Update the Add/Edit Expenses dialog
+- [X] Cascading updates to Users/Sites/Cards/Method Types/Methods/Game Types/Games Add/Edit/View dialogs.  Will need to formalize the style we want and have Claude take license to do them all in teh same fashion.

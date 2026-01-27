@@ -12,8 +12,13 @@ class CardRepository:
         self.db = db_manager
     
     def get_by_id(self, card_id: int) -> Optional[Card]:
-        """Get card by ID"""
-        query = "SELECT * FROM cards WHERE id = ?"
+        """Get card by ID with user name"""
+        query = """
+            SELECT c.*, u.name as user_name
+            FROM cards c
+            LEFT JOIN users u ON c.user_id = u.id
+            WHERE c.id = ?
+        """
         row = self.db.fetch_one(query, (card_id,))
         return self._row_to_model(row) if row else None
     

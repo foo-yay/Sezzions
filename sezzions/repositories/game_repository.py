@@ -12,8 +12,13 @@ class GameRepository:
         self.db = db_manager
     
     def get_by_id(self, game_id: int) -> Optional[Game]:
-        """Get game by ID"""
-        query = "SELECT * FROM games WHERE id = ?"
+        """Get game by ID with game type name"""
+        query = """
+            SELECT g.*, gt.name as game_type_name
+            FROM games g
+            LEFT JOIN game_types gt ON g.game_type_id = gt.id
+            WHERE g.id = ?
+        """
         row = self.db.fetch_one(query, (game_id,))
         return self._row_to_model(row) if row else None
     
@@ -88,7 +93,7 @@ class GameRepository:
         def row_value(key, default=None):
             return row[key] if key in row.keys() else default
 
-        return Game(
+        game = Game(
             id=row['id'],
             name=row['name'],
             game_type_id=row['game_type_id'],
@@ -99,3 +104,7 @@ class GameRepository:
             created_at=row_value('created_at'),
             updated_at=row_value('updated_at')
         )
+        # Add game_type_name if present (from JOIN)
+        if 'game_type_name' in row.keys():
+            game.game_type_name = row['game_type_name']
+        return game

@@ -331,86 +331,72 @@ class CardsTab(QtWidgets.QWidget):
         card = self.facade.get_card(card_id)
         if not card:
             return
-        def handle_edit():
-            dialog.close()
-            self._edit_card()
-
-        def handle_delete():
-            dialog.close()
-            self._delete_card()
-
-        dialog = CardDialog(
-            self.facade,
-            self,
+        
+        dialog = CardViewDialog(
             card,
-            read_only=True,
-            on_edit=handle_edit,
-            on_delete=handle_delete,
+            parent=self,
+            on_edit=self._edit_card,
+            on_delete=self._delete_card,
         )
         dialog.exec()
+        self.refresh_data()
 
 
 class CardDialog(QtWidgets.QDialog):
     """Dialog for adding/editing cards"""
     
-    def __init__(self, facade: AppFacade, parent=None, card: Card = None, read_only: bool = False, on_edit=None, on_delete=None):
+    def __init__(self, facade: AppFacade, parent=None, card: Card = None):
         super().__init__(parent)
         self.facade = facade
         self.card = card
-        self.read_only = read_only
         self.user_id = card.user_id if card else None
-        self._on_edit = on_edit
-        self._on_delete = on_delete
+        self.setWindowTitle("Edit Card" if card else "Add Card")
+        self.setMinimumSize(400, 340)
         
-        if self.read_only:
-            self.setWindowTitle("View Card")
-        else:
-            self.setWindowTitle("Edit Card" if card else "Add Card")
-        self.resize(500, 400)
+        # Main layout
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(16)
         
-        layout = QtWidgets.QGridLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setHorizontalSpacing(10)
-        layout.setVerticalSpacing(12)
-        layout.setColumnStretch(1, 1)
-        layout.setColumnStretch(3, 1)
-        # Card Name + Active
-        self.name_edit = QtWidgets.QLineEdit()
-        if card:
-            self.name_edit.setText(card.name)
-        name_label = QtWidgets.QLabel("Card Name:")
-        name_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-
+        # Section header
+        header = QtWidgets.QLabel("💳 Card Details")
+        header.setObjectName("SectionHeader")
+        main_layout.addWidget(header)
+        
+        # Main section
+        main_section = QtWidgets.QWidget()
+        main_section.setObjectName("SectionBackground")
+        main_grid = QtWidgets.QGridLayout(main_section)
+        main_grid.setContentsMargins(12, 12, 12, 12)
+        main_grid.setHorizontalSpacing(20)
+        main_grid.setVerticalSpacing(10)
+        main_grid.setColumnStretch(0, 0)  # Label column doesn't stretch
+        
+        # Active checkbox - row 0 (alone)
+        active_label = QtWidgets.QLabel("Active:")
+        active_label.setObjectName("FieldLabel")
+        active_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.active_check = QtWidgets.QCheckBox()
         self.active_check.setChecked(card.is_active if card else True)
-        active_label = QtWidgets.QLabel("Active")
-        active_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-
-        name_row = QtWidgets.QHBoxLayout()
-        name_row.setSpacing(12)
-        name_row.addWidget(self.name_edit, 1)
-        name_row.addWidget(active_label)
-        name_row.addWidget(self.active_check)
-
-        layout.addWidget(name_label, 0, 0)
-        layout.addLayout(name_row, 0, 1, 1, 3)
-
-        # User
+        main_grid.addWidget(active_label, 0, 0)
+        main_grid.addWidget(self.active_check, 0, 1)
+        
+        # User (required) - increased from 200px to 250px
+        user_label = QtWidgets.QLabel("User:")
+        user_label.setObjectName("FieldLabel")
+        user_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.user_combo = QtWidgets.QComboBox()
         self.user_combo.setEditable(True)
         self.user_combo.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
-        user_label = QtWidgets.QLabel("User:")
-        user_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        layout.addWidget(user_label, 1, 0)
-        layout.addWidget(self.user_combo, 1, 1, 1, 3)
-
+        self.user_combo.setFixedWidth(250)
+        
         # Load users
         users = facade.get_all_users(active_only=True)
         self.user_map = {}
         for user in users:
             self.user_combo.addItem(user.name, user.id)
             self.user_map[user.id] = user.name
-
+        
         # Set current user if editing
         if card:
             index = self.user_combo.findData(card.user_id)
@@ -420,90 +406,104 @@ class CardDialog(QtWidgets.QDialog):
             self.user_combo.setCurrentIndex(-1)
             if self.user_combo.isEditable():
                 self.user_combo.setEditText("")
-                self.user_combo.lineEdit().setPlaceholderText("Select a user")
-
+                if self.user_combo.lineEdit() is not None:
+                    self.user_combo.lineEdit().setPlaceholderText("Required")
+        
         self.user_combo.currentIndexChanged.connect(self._on_user_changed)
-
-        # Last Four
-        self.last_four_edit = QtWidgets.QLineEdit()
-        self.last_four_edit.setMaxLength(4)
-        if card and card.last_four:
-            self.last_four_edit.setText(card.last_four)
-        last_four_label = QtWidgets.QLabel("Last Four:")
-        last_four_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        layout.addWidget(last_four_label, 2, 0)
-        layout.addWidget(self.last_four_edit, 2, 1)
-
-        # Cashback Rate
+        main_grid.addWidget(user_label, 1, 0)
+        main_grid.addWidget(self.user_combo, 1, 1)
+        
+        # Card Name (required) - increased from 200px to 250px
+        name_label = QtWidgets.QLabel("Card Name:")
+        name_label.setObjectName("FieldLabel")
+        name_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.name_edit = QtWidgets.QLineEdit()
+        self.name_edit.setPlaceholderText("Required")
+        self.name_edit.setFixedWidth(250)
+        if card:
+            self.name_edit.setText(card.name)
+        main_grid.addWidget(name_label, 2, 0)
+        main_grid.addWidget(self.name_edit, 2, 1)
+        
+        # Cashback Rate (optional) - increased to 160px to fit placeholder
+        cashback_label = QtWidgets.QLabel("Cashback %:")
+        cashback_label.setObjectName("FieldLabel")
+        cashback_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.cashback_rate_edit = QtWidgets.QLineEdit()
-        self.cashback_rate_edit.setPlaceholderText("0.00")
+        self.cashback_rate_edit.setPlaceholderText("Optional (0.00)")
+        self.cashback_rate_edit.setFixedWidth(160)
         if card:
             self.cashback_rate_edit.setText(f"{float(card.cashback_rate):.2f}")
-        cashback_label = QtWidgets.QLabel("Cashback %:")
-        cashback_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-        layout.addWidget(cashback_label, 2, 2)
-        layout.addWidget(self.cashback_rate_edit, 2, 3)
-
-        # Notes
-        self.notes_edit = QtWidgets.QTextEdit()
+        main_grid.addWidget(cashback_label, 3, 0)
+        main_grid.addWidget(self.cashback_rate_edit, 3, 1)
+        
+        # Last Four (optional)
+        last_four_label = QtWidgets.QLabel("Last 4:")
+        last_four_label.setObjectName("FieldLabel")
+        last_four_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.last_four_edit = QtWidgets.QLineEdit()
+        self.last_four_edit.setMaxLength(4)
+        self.last_four_edit.setPlaceholderText("Optional")
+        self.last_four_edit.setFixedWidth(80)
+        if card and card.last_four:
+            self.last_four_edit.setText(card.last_four)
+        main_grid.addWidget(last_four_label, 4, 0)
+        main_grid.addWidget(self.last_four_edit, 4, 1)
+        
+        main_layout.addWidget(main_section)
+        
+        # Notes section (collapsible)
+        self.notes_collapsed = True
+        self.notes_toggle = QtWidgets.QPushButton("📝 Add Notes...")
+        self.notes_toggle.setObjectName("SectionHeader")
+        self.notes_toggle.setCursor(QtCore.Qt.PointingHandCursor)
+        self.notes_toggle.setFlat(True)
+        self.notes_toggle.clicked.connect(self._toggle_notes)
+        main_layout.addWidget(self.notes_toggle)
+        
+        self.notes_section = QtWidgets.QWidget()
+        self.notes_section.setObjectName("SectionBackground")
+        notes_layout = QtWidgets.QVBoxLayout(self.notes_section)
+        notes_layout.setContentsMargins(12, 12, 12, 12)
+        self.notes_edit = QtWidgets.QPlainTextEdit()
+        self.notes_edit.setPlaceholderText("Optional...")
+        self.notes_edit.setFixedHeight(80)
         if card and card.notes:
             self.notes_edit.setPlainText(card.notes)
-        notes_label = QtWidgets.QLabel("Notes:")
-        notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-        self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-        layout.addWidget(notes_label, 3, 0)
-        layout.addWidget(self.notes_edit, 3, 1, 1, 3)
+        notes_layout.addWidget(self.notes_edit)
+        self.notes_section.setVisible(False)
+        main_layout.addWidget(self.notes_section)
+        
+        # Expand notes if editing and notes exist
+        if card and card.notes:
+            self._toggle_notes()
         
         # Buttons
-        if self.read_only:
-            btn_row = QtWidgets.QHBoxLayout()
-            btn_row.setSpacing(8)
-            if self._on_delete:
-                delete_btn = QtWidgets.QPushButton("🗑️ Delete")
-                delete_btn.clicked.connect(self._on_delete)
-                btn_row.addWidget(delete_btn)
-            btn_row.addStretch(1)
-            if self._on_edit:
-                edit_btn = QtWidgets.QPushButton("✏️ Edit")
-                edit_btn.clicked.connect(self._on_edit)
-                btn_row.addWidget(edit_btn)
-            close_btn = QtWidgets.QPushButton("✖️ Close")
-            close_btn.clicked.connect(self.accept)
-            btn_row.addWidget(close_btn)
-            layout.addLayout(btn_row, 4, 0, 1, 4)
-        else:
-            btn_row = QtWidgets.QHBoxLayout()
-            btn_row.addStretch(1)
-            btn_row.setSpacing(8)
-            cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
-            save_btn = QtWidgets.QPushButton("💾 Save")
-            save_btn.setObjectName("PrimaryButton")
-            cancel_btn.clicked.connect(self.reject)
-            save_btn.clicked.connect(self._validate_and_accept)
-            btn_row.addWidget(cancel_btn)
-            btn_row.addWidget(save_btn)
-            layout.addLayout(btn_row, 4, 0, 1, 4)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        
+        cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+        
+        self.save_btn = QtWidgets.QPushButton("💾 Save")
+        self.save_btn.setObjectName("PrimaryButton")
+        self.save_btn.clicked.connect(self._validate_and_accept)
+        btn_row.addWidget(self.save_btn)
+        
+        main_layout.addLayout(btn_row)
         
         # Set initial user_id
         self._on_user_changed()
-
-        if self.read_only:
-            for widget in (self.user_combo, self.name_edit, self.last_four_edit, self.cashback_rate_edit, self.active_check, self.notes_edit):
-                widget.setEnabled(False)
-            if not (card and card.notes):
-                notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-                self.notes_edit.setPlaceholderText("-")
-                self.notes_edit.setFixedHeight(self.notes_edit.fontMetrics().lineSpacing() + 12)
-            else:
-                notes_label.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
-                self.notes_edit.setMinimumHeight(self.notes_edit.fontMetrics().lineSpacing() * 3 + 12)
-
+        
+        # Validation
         self.name_edit.textChanged.connect(self._validate_inline)
         self.last_four_edit.textChanged.connect(self._validate_inline)
         self.cashback_rate_edit.textChanged.connect(self._validate_inline)
         self.user_combo.currentTextChanged.connect(self._validate_inline)
         self._validate_inline()
-
+        
+        # User combo autocomplete
         completer = QtWidgets.QCompleter(self.user_combo.model())
         completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
         completer.setFilterMode(QtCore.Qt.MatchStartsWith)
@@ -514,6 +514,29 @@ class CardDialog(QtWidgets.QDialog):
             app = QtWidgets.QApplication.instance()
             if app is not None and hasattr(app, "_completer_filter"):
                 self.user_combo.lineEdit().installEventFilter(app._completer_filter)
+        
+        # Tab order
+        self.setTabOrder(self.user_combo, self.active_check)
+        self.setTabOrder(self.active_check, self.name_edit)
+        self.setTabOrder(self.name_edit, self.last_four_edit)
+        self.setTabOrder(self.last_four_edit, self.cashback_rate_edit)
+        self.setTabOrder(self.cashback_rate_edit, self.notes_edit)
+        self.setTabOrder(self.notes_edit, self.save_btn)
+    
+    def _toggle_notes(self):
+        """Toggle notes section visibility"""
+        self.notes_collapsed = not self.notes_collapsed
+        self.notes_section.setVisible(not self.notes_collapsed)
+        if self.notes_collapsed:
+            self.notes_toggle.setText("📝 Add Notes...")
+            self.setMinimumHeight(420)
+            self.setMaximumHeight(420)
+            self.resize(self.width(), 420)
+        else:
+            self.notes_toggle.setText("📝 Hide Notes")
+            self.setMinimumHeight(500)
+            self.setMaximumHeight(16777215)
+            self.resize(self.width(), 500)
     
     def _on_user_changed(self):
         """Update user_id when selection changes"""
@@ -524,35 +547,42 @@ class CardDialog(QtWidgets.QDialog):
                 if name.lower() == text:
                     self.user_id = uid
                     break
-
+    
     def _set_invalid(self, widget, message):
         widget.setProperty("invalid", True)
         widget.setToolTip(message)
         widget.style().unpolish(widget)
         widget.style().polish(widget)
-
+    
     def _set_valid(self, widget):
         widget.setProperty("invalid", False)
         widget.setToolTip("")
         widget.style().unpolish(widget)
         widget.style().polish(widget)
-
-    def _validate_inline(self):
-        if self.read_only:
-            return
+    
+    def _validate_inline(self) -> bool:
+        """Validate all fields and return True if valid"""
+        valid = True
+        
         if not self.user_combo.currentText().strip():
-            self._set_invalid(self.user_combo, "User is required")
+            self._set_invalid(self.user_combo, "User is required.")
+            valid = False
         else:
             self._set_valid(self.user_combo)
+        
         if not self.name_edit.text().strip():
-            self._set_invalid(self.name_edit, "Card name is required")
+            self._set_invalid(self.name_edit, "Card name is required.")
+            valid = False
         else:
             self._set_valid(self.name_edit)
+        
         last_four = self.last_four_edit.text().strip()
         if last_four and not last_four.isdigit():
             self._set_invalid(self.last_four_edit, "Last four must be numeric")
+            valid = False
         else:
             self._set_valid(self.last_four_edit)
+        
         rate_text = self.cashback_rate_edit.text().strip()
         if rate_text:
             try:
@@ -562,45 +592,194 @@ class CardDialog(QtWidgets.QDialog):
                 self._set_valid(self.cashback_rate_edit)
             except Exception:
                 self._set_invalid(self.cashback_rate_edit, "Cashback % must be 0-100")
+                valid = False
         else:
             self._set_valid(self.cashback_rate_edit)
+        
+        self.save_btn.setEnabled(valid)
+        return valid
     
     def _validate_and_accept(self):
-        """Validate input and accept dialog"""
+        """Final validation before accepting"""
+        if not self._validate_inline():
+            QtWidgets.QMessageBox.warning(
+                self, "Validation Error", "Please correct the highlighted fields."
+            )
+            return
+        
         if not self.user_id:
             QtWidgets.QMessageBox.warning(
-                self, "Validation Error", "User is required"
+                self, "Validation Error", "Please select a valid user."
             )
             return
-        
-        if not self.name_edit.text().strip():
-            QtWidgets.QMessageBox.warning(
-                self, "Validation Error", "Card name is required"
-            )
-            return
-        
-        # Validate last four if provided
-        last_four = self.last_four_edit.text().strip()
-        if last_four and not last_four.isdigit():
-            QtWidgets.QMessageBox.warning(
-                self, "Validation Error", "Last four must be numeric"
-            )
-            return
-
-        rate_text = self.cashback_rate_edit.text().strip()
-        if rate_text:
-            try:
-                rate_val = float(rate_text)
-                if rate_val < 0 or rate_val > 100:
-                    raise ValueError("out of range")
-            except Exception:
-                QtWidgets.QMessageBox.warning(
-                    self, "Validation Error", "Cashback % must be between 0 and 100"
-                )
-                return
         
         self.accept()
-
+    
     def get_cashback_rate(self) -> float:
         text = self.cashback_rate_edit.text().strip()
         return float(text) if text else 0.0
+
+
+class CardViewDialog(QtWidgets.QDialog):
+    """Dialog for viewing card details"""
+    
+    def __init__(self, card: Card, parent=None, on_edit=None, on_delete=None):
+        super().__init__(parent)
+        self.card = card
+        self._on_edit = on_edit
+        self._on_delete = on_delete
+        self.setWindowTitle("View Card")
+        self.setMinimumSize(600, 360)
+        
+        # Main layout
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(12)
+        
+        # Card details section header
+        details_header = QtWidgets.QLabel("💳 Card Details")
+        details_header.setObjectName("SectionHeader")
+        main_layout.addWidget(details_header)
+        
+        # Card details section
+        details_section = QtWidgets.QWidget()
+        details_section.setObjectName("SectionBackground")
+        details_layout = QtWidgets.QVBoxLayout(details_section)
+        details_layout.setContentsMargins(12, 12, 12, 12)
+        details_layout.setSpacing(6)
+        
+        # Two-column layout
+        columns = QtWidgets.QHBoxLayout()
+        columns.setSpacing(30)
+        
+        # Left column
+        left_grid = QtWidgets.QGridLayout()
+        left_grid.setHorizontalSpacing(12)
+        left_grid.setVerticalSpacing(6)
+        left_grid.setColumnStretch(1, 1)
+        
+        user_lbl = QtWidgets.QLabel("User:")
+        user_lbl.setStyleSheet("color: palette(mid);")
+        user_name = getattr(card, 'user_name', None)
+        user_display = user_name if user_name else "Unknown User" if card.user_id else "—"
+        user_val = self._make_selectable_label(user_display)
+        left_grid.addWidget(user_lbl, 0, 0, QtCore.Qt.AlignRight)
+        left_grid.addWidget(user_val, 0, 1)
+        
+        name_lbl = QtWidgets.QLabel("Card Name:")
+        name_lbl.setStyleSheet("color: palette(mid);")
+        name_val = self._make_selectable_label(card.name)
+        left_grid.addWidget(name_lbl, 1, 0, QtCore.Qt.AlignRight)
+        left_grid.addWidget(name_val, 1, 1)
+        
+        last_four_lbl = QtWidgets.QLabel("Last Four:")
+        last_four_lbl.setStyleSheet("color: palette(mid);")
+        last_four_val = self._make_selectable_label(card.last_four or "—")
+        left_grid.addWidget(last_four_lbl, 2, 0, QtCore.Qt.AlignRight)
+        left_grid.addWidget(last_four_val, 2, 1)
+        
+        columns.addLayout(left_grid, 1)
+        
+        # Right column
+        right_grid = QtWidgets.QGridLayout()
+        right_grid.setHorizontalSpacing(12)
+        right_grid.setVerticalSpacing(6)
+        right_grid.setColumnStretch(1, 1)
+        
+        status_lbl = QtWidgets.QLabel("Status:")
+        status_lbl.setStyleSheet("color: palette(mid);")
+        status_val = self._make_selectable_label("Active" if card.is_active else "Inactive")
+        right_grid.addWidget(status_lbl, 0, 0, QtCore.Qt.AlignRight)
+        right_grid.addWidget(status_val, 0, 1)
+        
+        cashback_lbl = QtWidgets.QLabel("Cashback %:")
+        cashback_lbl.setStyleSheet("color: palette(mid);")
+        cashback_val = self._make_selectable_label(f"{float(card.cashback_rate):.2f}" if card.cashback_rate else "0.00")
+        right_grid.addWidget(cashback_lbl, 1, 0, QtCore.Qt.AlignRight)
+        right_grid.addWidget(cashback_val, 1, 1)
+        
+        columns.addLayout(right_grid, 1)
+        
+        details_layout.addLayout(columns)
+        main_layout.addWidget(details_section)
+        
+        # Notes section header
+        notes_header = QtWidgets.QLabel("📝 Notes")
+        notes_header.setObjectName("SectionHeader")
+        main_layout.addWidget(notes_header)
+        
+        # Notes section
+        notes_section = QtWidgets.QWidget()
+        notes_section.setObjectName("SectionBackground")
+        notes_layout = QtWidgets.QVBoxLayout(notes_section)
+        notes_layout.setContentsMargins(12, 12, 12, 12)
+        notes_layout.setSpacing(6)
+        
+        if card.notes:
+            notes_display = QtWidgets.QTextEdit()
+            notes_display.setReadOnly(True)
+            notes_display.setPlainText(card.notes)
+            notes_display.setMaximumHeight(80)
+            notes_display.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            notes_layout.addWidget(notes_display)
+        else:
+            notes_empty = QtWidgets.QLabel("—")
+            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_layout.addWidget(notes_empty)
+        main_layout.addWidget(notes_section)
+        
+        # Stretch
+        main_layout.addStretch(1)
+        
+        # Buttons
+        btn_row = QtWidgets.QHBoxLayout()
+        
+        if self._on_delete:
+            delete_btn = QtWidgets.QPushButton("🗑️ Delete")
+            delete_btn.clicked.connect(self._handle_delete)
+            btn_row.addWidget(delete_btn)
+        
+        btn_row.addStretch(1)
+        
+        if self._on_edit:
+            edit_btn = QtWidgets.QPushButton("✏️ Edit")
+            edit_btn.clicked.connect(self._handle_edit)
+            btn_row.addWidget(edit_btn)
+        
+        close_btn = QtWidgets.QPushButton("✖️ Close")
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        
+        main_layout.addLayout(btn_row)
+    
+    def _create_section(self, title):
+        """Create a section with header"""
+        header = QtWidgets.QLabel(title)
+        header.setObjectName("SectionHeader")
+        
+        section = QtWidgets.QWidget()
+        section.setObjectName("SectionBackground")
+        layout = QtWidgets.QVBoxLayout(section)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
+        
+        return section, layout
+    
+    def _make_selectable_label(self, text):
+        """Create selectable text label"""
+        label = QtWidgets.QLabel(text)
+        label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        label.setCursor(QtCore.Qt.IBeamCursor)
+        return label
+    
+    def _handle_edit(self):
+        """Close dialog before triggering edit callback"""
+        self.accept()
+        if self._on_edit:
+            self._on_edit()
+    
+    def _handle_delete(self):
+        """Close dialog before triggering delete callback"""
+        self.accept()
+        if self._on_delete:
+            self._on_delete()
