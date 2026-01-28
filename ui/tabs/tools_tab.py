@@ -960,16 +960,79 @@ class ToolsTab(QWidget):
     
     def _on_restore_database(self):
         """Handle database restore"""
-        # Coming in next implementation phase
-        QMessageBox.information(
-            self,
-            "Restore Database",
-            "Restore functionality coming soon.\n\n"
-            "This will allow you to restore from a backup file with:\n"
-            "• Merge mode (import without deleting existing data)\n"
-            "• Replace mode (full database replacement)\n"
-            "• Validation and duplicate detection"
-        )
+        from PySide6.QtWidgets import QMessageBox
+        from ui.tools_dialogs import RestoreDialog
+        from services.tools.restore_service import RestoreService
+        from services.tools.backup_service import BackupService
+        import os
+        from datetime import datetime
+        
+        # Show restore dialog
+        dialog = RestoreDialog(self)
+        if dialog.exec() != dialog.Accepted:
+            return
+            
+        backup_path = dialog.backup_path
+        restore_mode = dialog.get_restore_mode()
+        
+        # Validate backup file exists
+        if not os.path.exists(backup_path):
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Backup file not found: {backup_path}"
+            )
+            return
+            
+        # For replace mode, create safety backup first
+        if restore_mode.name == "REPLACE":
+            backup_service = BackupService(self.facade.db)
+            
+            # Get backup directory from last backup
+            if hasattr(self, 'backup_directory') and self.backup_directory:
+                backup_dir = self.backup_directory
+            else:
+                backup_dir = os.path.dirname(backup_path)
+                
+            result = backup_service.backup_database(backup_dir)
+            if not result.success:
+                QMessageBox.critical(
+                    self,
+                    "Backup Failed",
+                    f"Could not create safety backup before restore:\n{result.error}\n\n"
+                    "Restore operation cancelled for safety."
+                )
+                return
+                
+            safety_backup_file = os.path.basename(result.backup_path)
+            QMessageBox.information(
+                self,
+                "Safety Backup Created",
+                f"Safety backup created: {safety_backup_file}\n\n"
+                "Proceeding with database replacement..."
+            )
+        
+        # Perform restore
+        restore_service = RestoreService(self.facade.db)
+        result = restore_service.restore_database(backup_path, restore_mode)
+        
+        if result.success:
+            tables_info = f"\n• ".join(result.tables_affected) if result.tables_affected else "All tables"
+            QMessageBox.information(
+                self,
+                "Restore Complete",
+                f"✓ Database restored successfully!\n\n"
+                f"Mode: {restore_mode.name.replace('_', ' ').title()}\n"
+                f"Records restored: {result.records_restored:,}\n"
+                f"Tables affected:\n• {tables_info}\n\n"
+                "Please restart the application to see all changes."
+            )
+        else:
+            QMessageBox.critical(
+                self,
+                "Restore Failed",
+                f"Database restore failed:\n{result.error}"
+            )
     
     def _on_reset_database(self):
         """Handle database reset"""

@@ -288,3 +288,206 @@ class PostImportPromptDialog(QDialog):
         layout.addWidget(button_box)
         
         self.setLayout(layout)
+
+
+class RestoreDialog(QDialog):
+    """Dialog for configuring database restore operation."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Restore Database")
+        self.setModal(True)
+        self.resize(600, 400)
+        self.backup_path = None
+        self._setup_ui()
+        
+    def _setup_ui(self):
+        """Setup the UI components"""
+        layout = QVBoxLayout(self)
+        
+        # Warning message
+        warning_label = QLabel(
+            "⚠️ Restoring a database will modify your current data.\n"
+            "It is strongly recommended to create a backup first."
+        )
+        warning_label.setWordWrap(True)
+        warning_label.setStyleSheet(
+            "background-color: #fff3cd; border: 1px solid #ffc107; "
+            "border-radius: 4px; padding: 10px; color: #856404; font-weight: bold;"
+        )
+        layout.addWidget(warning_label)
+        
+        # Backup file selection
+        file_group = QGroupBox("Backup File")
+        file_layout = QVBoxLayout()
+        
+        file_select_layout = QHBoxLayout()
+        self.file_path_label = QLabel("(No file selected)")
+        self.file_path_label.setStyleSheet("color: #666; font-style: italic;")
+        file_select_layout.addWidget(self.file_path_label, 1)
+        
+        select_btn = QPushButton("Choose Backup File...")
+        select_btn.clicked.connect(self._on_select_file)
+        file_select_layout.addWidget(select_btn)
+        
+        file_layout.addLayout(file_select_layout)
+        file_group.setLayout(file_layout)
+        layout.addWidget(file_group)
+        
+        # Restore mode selection
+        mode_group = QGroupBox("Restore Mode")
+        mode_layout = QVBoxLayout()
+        
+        # Merge mode (default)
+        self.merge_radio = QPushButton()
+        self.merge_radio.setCheckable(True)
+        self.merge_radio.setChecked(True)
+        self.merge_radio.setText("Merge (Import without deleting existing data)")
+        self.merge_radio.setStyleSheet("""
+            QPushButton {
+                text-align: left;
+                padding: 10px;
+                border: 2px solid #ccc;
+                border-radius: 4px;
+                background-color: white;
+            }
+            QPushButton:checked {
+                border-color: #0078d4;
+                background-color: #e7f3ff;
+            }
+        """)
+        self.merge_radio.clicked.connect(lambda: self._on_mode_changed(self.merge_radio))
+        
+        merge_desc = QLabel(
+            "  • Imports data from backup and merges with existing records\n"
+            "  • Validates data and detects duplicates (same as CSV import)\n"
+            "  • Safe - does not delete existing data"
+        )
+        merge_desc.setStyleSheet("color: #666; font-size: 10pt; margin-left: 20px;")
+        
+        mode_layout.addWidget(self.merge_radio)
+        mode_layout.addWidget(merge_desc)
+        mode_layout.addSpacing(10)
+        
+        # Replace mode (destructive)
+        self.replace_radio = QPushButton()
+        self.replace_radio.setCheckable(True)
+        self.replace_radio.setText("Replace (Delete all existing data)")
+        self.replace_radio.setStyleSheet("""
+            QPushButton {
+                text-align: left;
+                padding: 10px;
+                border: 2px solid #ccc;
+                border-radius: 4px;
+                background-color: white;
+            }
+            QPushButton:checked {
+                border-color: #dc3545;
+                background-color: #f8d7da;
+            }
+        """)
+        self.replace_radio.clicked.connect(lambda: self._on_mode_changed(self.replace_radio))
+        
+        replace_desc = QLabel(
+            "  • Replaces entire database with backup\n"
+            "  • ⚠️ DESTRUCTIVE - all current data will be lost\n"
+            "  • Automatic safety backup created before replacement"
+        )
+        replace_desc.setStyleSheet("color: #dc3545; font-size: 10pt; margin-left: 20px; font-weight: bold;")
+        
+        mode_layout.addWidget(self.replace_radio)
+        mode_layout.addWidget(replace_desc)
+        
+        mode_group.setLayout(mode_layout)
+        layout.addWidget(mode_group)
+        
+        # Confirmation checkbox (for replace mode)
+        self.confirm_checkbox = QLabel()
+        self.confirm_checkbox.setVisible(False)
+        self.confirm_checkbox.setWordWrap(True)
+        self.confirm_checkbox.setStyleSheet("color: #dc3545; font-weight: bold; margin: 10px;")
+        layout.addWidget(self.confirm_checkbox)
+        
+        layout.addStretch()
+        
+        # Button box
+        button_box = QDialogButtonBox()
+        self.restore_btn = button_box.addButton("Restore", QDialogButtonBox.AcceptRole)
+        self.restore_btn.setEnabled(False)
+        cancel_btn = button_box.addButton("Cancel", QDialogButtonBox.RejectRole)
+        
+        button_box.accepted.connect(self._on_restore_clicked)
+        button_box.rejected.connect(self.reject)
+        
+        layout.addWidget(button_box)
+        
+    def _on_select_file(self):
+        """Handle backup file selection"""
+        from PySide6.QtWidgets import QFileDialog
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Backup File",
+            "",
+            "Database Files (*.db *.sqlite *.sqlite3);;All Files (*)"
+        )
+        
+        if file_path:
+            self.backup_path = file_path
+            # Show abbreviated path
+            display_path = file_path
+            if len(display_path) > 60:
+                display_path = "..." + display_path[-57:]
+            self.file_path_label.setText(display_path)
+            self.file_path_label.setStyleSheet("color: #000;")
+            self.restore_btn.setEnabled(True)
+            
+    def _on_mode_changed(self, clicked_button):
+        """Handle restore mode change"""
+        # Toggle buttons (only one can be checked)
+        if clicked_button == self.merge_radio:
+            self.merge_radio.setChecked(True)
+            self.replace_radio.setChecked(False)
+            self.confirm_checkbox.setVisible(False)
+        else:
+            self.merge_radio.setChecked(False)
+            self.replace_radio.setChecked(True)
+            self.confirm_checkbox.setVisible(True)
+            self.confirm_checkbox.setText(
+                "⚠️ WARNING: This will permanently delete all existing data. "
+                "A safety backup will be created automatically."
+            )
+            
+    def _on_restore_clicked(self):
+        """Handle restore button click"""
+        if not self.backup_path:
+            return
+            
+        # Additional confirmation for replace mode
+        if self.replace_radio.isChecked():
+            from PySide6.QtWidgets import QMessageBox
+            reply = QMessageBox.warning(
+                self,
+                "Confirm Database Replacement",
+                "Are you absolutely sure you want to REPLACE the entire database?\n\n"
+                "This will permanently delete all existing data:\n"
+                "• All purchases, redemptions, and game sessions\n"
+                "• All users, sites, cards, and other setup data\n"
+                "• All calculations and reports\n\n"
+                "A safety backup will be created first, but this action cannot be undone.\n\n"
+                "Do you want to continue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply != QMessageBox.Yes:
+                return
+                
+        self.accept()
+        
+    def get_restore_mode(self):
+        """Get selected restore mode"""
+        from services.tools.enums import RestoreMode
+        if self.merge_radio.isChecked():
+            return RestoreMode.MERGE_ALL
+        else:
+            return RestoreMode.REPLACE
