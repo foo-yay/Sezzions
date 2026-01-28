@@ -28,7 +28,18 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Database backups
-*.db.backup*
+# Database files (local instance data)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 
-# Local settings (keep settings.json in repo for now)
+# Database backups (user-created backup directory)
+*.db.backup*
+backup/
+
+# Local settings (user-specific configuration)
+settings.json
+
+# Temporary files
+*.txt
