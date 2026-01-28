@@ -102,7 +102,69 @@ Tools are part of “production readiness”:
 - CSV import/export (schema-driven)
 - Backup/restore/reset
 - Recalculation (full and scoped)
+### 6.1 Database Tools (Backup/Restore/Reset)
 
+**Backup Operations:**
+- Manual backup: User selects directory, creates timestamped backup files
+- Automatic backup: Configurable scheduling (1-168 hours), JSON-based settings, non-blocking QTimer execution
+- Backup format: `backup_YYYYMMDD_HHMMSS.db` or `auto_backup_YYYYMMDD_HHMMSS.db`
+- Uses SQLite online backup API for consistency
+- Optional audit log exclusion during backup
+- Settings stored in `settings.json` under `automatic_backup` key
+
+**Restore Operations:**
+- **Replace Mode**: Full database replacement (destructive, requires confirmation)
+  - Closes connection, replaces file, reopens connection
+  - UI must handle connection lifecycle
+  - Use case: Complete rollback to backup state
+- **Merge All Mode**: Non-destructive merge of all tables from backup
+  - Uses `INSERT OR IGNORE` to skip duplicates based on primary keys
+  - Preserves existing data not in backup
+  - Use case: Combining data from multiple sources
+- **Merge Selected Mode**: Selective table restoration
+  - User specifies exact tables to merge
+  - Same INSERT OR IGNORE strategy
+  - Use case: Restore specific data only (e.g., purchases)
+- All modes include pre-restore backup integrity verification
+- Safety features: automatic backups before destructive operations, confirmation dialogs
+
+**Reset Operations:**
+- **Full Reset**: Clears all data including setup tables (users, sites, cards, etc.)
+  - Multiple confirmation steps including typing "DELETE"
+  - Optional pre-reset backup prompt
+- **Partial Reset** (Preserve Setup Data): Clears only transaction tables
+  - Preserves: users, sites, cards, redemption_methods, game_types, games
+  - Clears: purchases, redemptions, game_sessions, daily_sessions, expenses
+  - Use case: Start fresh transactions while keeping configuration
+- **Table-Specific Reset**: Reset individual tables
+- Resets autoincrement counters via sqlite_sequence
+- Foreign keys temporarily disabled during reset for safe deletion
+- Preview mode: shows table counts and records to be deleted without modifying data
+
+**Audit Logging:**
+- All backup/restore/reset operations log to `audit_log` table
+- Entries include: action type, table name, details (file paths, record counts), timestamp
+- Action types: `BACKUP`, `RESTORE_REPLACE`, `RESTORE_MERGE`, `RESET_FULL`, `RESET_PARTIAL`
+- Audit log can be preserved during reset operations (keep_audit_log flag)
+- Backup can optionally exclude audit log for privacy
+
+**Settings Persistence Architecture:**
+- Settings stored in `settings.json` with nested structure (e.g., `automatic_backup` object)
+- Each `Settings()` instantiation loads fresh from disk—no singleton pattern currently
+- **Critical Pattern**: Components that partially update settings.json must reload from disk first
+  - Example: `MainWindow.closeEvent()` reloads settings before saving window geometry to avoid overwriting other components' changes (e.g., ToolsTab's automatic_backup config)
+  - Pattern: `self.settings.settings = self.settings._load_settings()` before partial update
+- **Signal Management**: Qt widgets emit signals during `setValue()` even during initialization
+  - Pattern: Block signals before loading values, unblock after all widgets set
+  - Example: `ToolsTab._load_automatic_backup_settings()` blocks spinbox/checkbox signals during load to prevent premature saves
+- **Disk Sync**: Settings.save() uses `flush()` and `fsync()` to force OS buffer writes, preventing data loss on crash
+
+**UI Integration:**
+- Tools tab provides unified interface for all database operations
+- Manual backup: directory picker, "Backup Now" button, status display with file size, last backup timestamp
+- Restore: dialog with mode selection (Replace/Merge All/Merge Selected), safety warnings
+- Reset: dialog with table counts, preserve setup data checkbox, typed confirmation
+- Automatic backup: enable toggle, directory selection, frequency spinner (1-168 hrs), status label (color-coded), test button, last backup timestamp display
 Helpful maintenance scripts:
 - Validate schema vs spec: `python3 tools/validate_schema.py`
 

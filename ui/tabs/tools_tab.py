@@ -4,7 +4,8 @@ Tools Tab - Recalculation, CSV Import/Export, Database Tools, Audit
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QPushButton, QLabel, QMessageBox, QFileDialog,
-    QComboBox, QCompleter, QListView, QDialog
+    QComboBox, QCompleter, QListView, QDialog, QLineEdit,
+    QCheckBox, QSpinBox
 )
 from PySide6.QtCore import QThreadPool, Qt
 from typing import Optional
@@ -33,6 +34,7 @@ class ToolsTab(QWidget):
     def __init__(self, app_facade, parent=None):
         super().__init__(parent)
         self.facade = app_facade
+        self.backup_dir = ''  # Initialize backup directory attribute
         self.thread_pool = QThreadPool.globalInstance()
         self._setup_ui()
         
@@ -49,7 +51,7 @@ class ToolsTab(QWidget):
         csv_group = self._create_csv_group()
         layout.addWidget(csv_group)
         
-        # Database Tools Section (placeholder for now)
+        # Database Tools Section (unified backup/restore/reset)
         db_group = self._create_database_group()
         layout.addWidget(db_group)
         
@@ -190,31 +192,150 @@ class ToolsTab(QWidget):
         return group
         
     def _create_database_group(self) -> QGroupBox:
-        """Create the database tools section (placeholder)"""
+        """Create unified database tools section with streamlined backup controls"""
+        from PySide6.QtCore import QTimer
+        
         group = QGroupBox("Database Tools")
         layout = QVBoxLayout(group)
         
         desc_label = QLabel(
             "Backup, restore, and reset database. "
-            "Database tools coming soon."
+            "Always create a backup before restore or reset operations."
         )
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("color: #666;")
+        desc_label.setStyleSheet("color: #666; margin-bottom: 10px;")
         layout.addWidget(desc_label)
         
-        # Placeholder buttons (disabled)
-        btn_layout = QHBoxLayout()
-        backup_btn = QPushButton("Backup Now")
-        backup_btn.setEnabled(False)
+        # Backup directory section (shared by manual and automatic)
+        dir_layout = QHBoxLayout()
+        dir_layout.setSpacing(10)
+        
+        dir_label = QLabel("Backup directory:")
+        dir_layout.addWidget(dir_label)
+        
+        # Directory input using global stylesheet (no custom styling)
+        self.backup_dir_input = QLineEdit()
+        self.backup_dir_input.setPlaceholderText("Select backup directory...")
+        self.backup_dir_input.setReadOnly(True)
+        dir_layout.addWidget(self.backup_dir_input, 1)
+        
+        # Browse button
+        browse_btn = QPushButton("Browse...")
+        browse_btn.setMinimumHeight(32)
+        browse_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6c757d;
+                color: white;
+                border-radius: 4px;
+                padding: 6px 16px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #5a6268;
+            }
+        """)
+        browse_btn.clicked.connect(self._on_select_backup_directory)
+        dir_layout.addWidget(browse_btn)
+        
+        layout.addLayout(dir_layout)
+        layout.addSpacing(15)  # Add vertical spacing
+        
+        # Action buttons row with automatic backup controls
+        actions_layout = QHBoxLayout()
+        actions_layout.setSpacing(10)
+        
+        # Backup Now button
+        self.backup_now_btn = QPushButton("Backup Now")
+        self.backup_now_btn.setMinimumHeight(36)
+        self.backup_now_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #28a745;
+                color: white;
+                font-weight: 600;
+                border-radius: 4px;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+        """)
+        self.backup_now_btn.setEnabled(False)
+        self.backup_now_btn.clicked.connect(self._on_backup_now)
+        actions_layout.addWidget(self.backup_now_btn)
+        
+        # Restore button
         restore_btn = QPushButton("Restore...")
-        restore_btn.setEnabled(False)
-        reset_btn = QPushButton("Reset Database")
-        reset_btn.setEnabled(False)
-        btn_layout.addWidget(backup_btn)
-        btn_layout.addWidget(restore_btn)
-        btn_layout.addWidget(reset_btn)
-        btn_layout.addStretch()
-        layout.addLayout(btn_layout)
+        restore_btn.setMinimumHeight(36)
+        restore_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #007bff;
+                color: white;
+                font-weight: 600;
+                border-radius: 4px;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+        """)
+        restore_btn.clicked.connect(self._on_restore_database)
+        actions_layout.addWidget(restore_btn)
+        
+        # Reset button
+        reset_btn = QPushButton("Reset...")
+        reset_btn.setMinimumHeight(36)
+        reset_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #dc3545;
+                color: white;
+                font-weight: 600;
+                border-radius: 4px;
+                padding: 8px 16px;
+            }
+            QPushButton:hover {
+                background-color: #c82333;
+            }
+        """)
+        reset_btn.clicked.connect(self._on_reset_database)
+        actions_layout.addWidget(reset_btn)
+        
+        # Add spacing before automatic backup controls
+        actions_layout.addSpacing(20)
+        
+        # Automatic backup checkbox
+        self.auto_backup_enabled_checkbox = QCheckBox("Auto backup every")
+        self.auto_backup_enabled_checkbox.toggled.connect(self._on_auto_backup_toggle)
+        actions_layout.addWidget(self.auto_backup_enabled_checkbox)
+        
+        # Frequency spinbox using global stylesheet
+        self.auto_backup_frequency_spinbox = QSpinBox()
+        self.auto_backup_frequency_spinbox.setRange(1, 30)  # 1 to 30 days
+        self.auto_backup_frequency_spinbox.setValue(1)
+        self.auto_backup_frequency_spinbox.setSuffix(" day(s)")
+        self.auto_backup_frequency_spinbox.setMinimumWidth(100)
+        self.auto_backup_frequency_spinbox.setEnabled(False)
+        self.auto_backup_frequency_spinbox.valueChanged.connect(self._on_auto_backup_frequency_changed)
+        actions_layout.addWidget(self.auto_backup_frequency_spinbox)
+        
+        actions_layout.addStretch()
+        layout.addLayout(actions_layout)
+        
+        # Last backup status (below action buttons)
+        self.last_backup_label = QLabel("No backups yet")
+        self.last_backup_label.setStyleSheet("color: #666; font-size: 11px; margin: 8px 0 5px 0;")
+        layout.addWidget(self.last_backup_label)
+        
+        # Timer for checking backup schedule (check every 5 minutes)
+        self.backup_check_timer = QTimer(self)
+        self.backup_check_timer.timeout.connect(self._check_automatic_backup)
+        self.backup_check_timer.setInterval(5 * 60 * 1000)  # 5 minutes
+        
+        # Load saved settings
+        self._load_automatic_backup_settings()
         
         return group
         
@@ -818,6 +939,257 @@ class ToolsTab(QWidget):
             )
     
     # ========================================================================
+    # Database Tools Handlers
+    # ========================================================================
+    
+    def _on_select_backup_directory(self):
+        """Handle backup directory selection"""
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "Select Backup Directory",
+            "",
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        
+        if directory:
+            self.backup_dir = directory
+            self.backup_dir_input.setText(directory)
+            self.backup_now_btn.setEnabled(True)
+            
+            # Save to settings (shared with automatic backup)
+            self._save_automatic_backup_settings()
+            
+            # If automatic backup is enabled, restart timer
+            if self.auto_backup_enabled_checkbox.isChecked():
+                self.backup_check_timer.start()
+    
+    def _on_backup_now(self):
+        """Handle manual backup"""
+        if not hasattr(self, 'backup_dir') or not self.backup_dir:
+            QMessageBox.warning(
+                self,
+                "No Directory Selected",
+                "Please select a backup directory first."
+            )
+            return
+        try:
+            from services.tools import BackupService
+            from datetime import datetime
+            from ui.settings import Settings
+            
+            # Create timestamped backup filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"sezzions_backup_{timestamp}.db"
+            backup_path = os.path.join(self.backup_dir, backup_filename)
+            
+            # Create backup service
+            backup_service = BackupService(self.facade.db)
+            result = backup_service.backup_database(backup_path)
+            
+            if result.success:
+                size_mb = result.size_bytes / (1024 * 1024)
+                
+                # Save backup time to settings
+                now = datetime.now()
+                settings = Settings()
+                config = settings.get_automatic_backup_config()
+                config['last_backup_time'] = now.isoformat()
+                settings.set_automatic_backup_config(config)
+                
+                # Update last backup display
+                self._update_last_backup_display()
+                
+                QMessageBox.information(
+                    self,
+                    "Backup Complete",
+                    f"Database backed up successfully:\n\n{backup_path}\n\nSize: {size_mb:.2f} MB"
+                )
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Backup Failed",
+                    f"Failed to create backup:\n\n{result.error}"
+                )
+        
+        except Exception as e:
+            self.backup_status_label.setText(f"✗ Backup error")
+            self.backup_status_label.setStyleSheet("color: #dc3545; font-size: 11px; margin-top: 5px;")
+            
+            QMessageBox.critical(
+                self,
+                "Backup Error",
+                f"An error occurred:\n\n{str(e)}"
+            )
+    
+    def _on_restore_database(self):
+        """Handle database restore"""
+        from PySide6.QtWidgets import QMessageBox
+        from ui.tools_dialogs import RestoreDialog
+        from services.tools.restore_service import RestoreService
+        from services.tools.backup_service import BackupService
+        import os
+        from datetime import datetime
+        
+        # Show restore dialog
+        dialog = RestoreDialog(self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+            
+        backup_path = dialog.backup_path
+        restore_mode = dialog.get_restore_mode()
+        
+        # Validate backup file exists
+        if not os.path.exists(backup_path):
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"Backup file not found: {backup_path}"
+            )
+            return
+            
+        # For replace mode, create safety backup first
+        if restore_mode.name == "REPLACE":
+            backup_service = BackupService(self.facade.db)
+            
+            # Get backup directory from last backup
+            if hasattr(self, 'backup_directory') and self.backup_directory:
+                backup_dir = self.backup_directory
+            else:
+                backup_dir = os.path.dirname(backup_path)
+            
+            # Generate timestamped filename for safety backup
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safety_backup_path = os.path.join(backup_dir, f"pre_restore_backup_{timestamp}.db")
+                
+            result = backup_service.backup_database(safety_backup_path)
+            if not result.success:
+                QMessageBox.critical(
+                    self,
+                    "Backup Failed",
+                    f"Could not create safety backup before restore:\n{result.error}\n\n"
+                    "Restore operation cancelled for safety."
+                )
+                return
+                
+            safety_backup_file = os.path.basename(result.backup_path)
+            QMessageBox.information(
+                self,
+                "Safety Backup Created",
+                f"Safety backup created: {safety_backup_file}\n\n"
+                "Proceeding with database replacement..."
+            )
+        
+        # Perform restore
+        restore_service = RestoreService(self.facade.db)
+        result = restore_service.restore_database(backup_path, restore_mode)
+        
+        if result.success:
+            tables_info = f"\n• ".join(result.tables_affected) if result.tables_affected else "All tables"
+            QMessageBox.information(
+                self,
+                "Restore Complete",
+                f"✓ Database restored successfully!\n\n"
+                f"Mode: {restore_mode.name.replace('_', ' ').title()}\n"
+                f"Records restored: {result.records_restored:,}\n"
+                f"Tables affected:\n• {tables_info}\n\n"
+                "Please restart the application to see all changes."
+            )
+        else:
+            QMessageBox.critical(
+                self,
+                "Restore Failed",
+                f"Database restore failed:\n{result.error}"
+            )
+    
+    def _on_reset_database(self):
+        """Handle database reset"""
+        from PySide6.QtWidgets import QMessageBox
+        from ui.tools_dialogs import ResetDialog
+        from services.tools.reset_service import ResetService
+        from services.tools.backup_service import BackupService
+        import os
+        
+        # Get current table counts
+        reset_service = ResetService(self.facade.db)
+        table_counts = reset_service.get_table_counts()
+        
+        # Show reset dialog
+        dialog = ResetDialog(table_counts, self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+            
+        preserve_setup = dialog.should_preserve_setup()
+        
+        # Final confirmation
+        reset_type = "transactional data only" if preserve_setup else "ALL DATA"
+        reply = QMessageBox.warning(
+            self,
+            "Final Confirmation",
+            f"This will permanently delete {reset_type}.\n\n"
+            "Are you absolutely sure you want to proceed?\n\n"
+            "This action CANNOT be undone!",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply != QMessageBox.Yes:
+            return
+            
+        # Offer to create backup first
+        if hasattr(self, 'backup_directory') and self.backup_directory:
+            backup_reply = QMessageBox.question(
+                self,
+                "Create Backup First?",
+                "Would you like to create a safety backup before resetting?\n\n"
+                "This is STRONGLY recommended.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if backup_reply == QMessageBox.Yes:
+                backup_service = BackupService(self.facade.db)
+                result = backup_service.backup_database(self.backup_directory)
+                if result.success:
+                    backup_file = os.path.basename(result.backup_path)
+                    QMessageBox.information(
+                        self,
+                        "Backup Created",
+                        f"Safety backup created: {backup_file}\n\n"
+                        "Proceeding with reset..."
+                    )
+                else:
+                    QMessageBox.critical(
+                        self,
+                        "Backup Failed",
+                        f"Could not create backup:\n{result.error}\n\n"
+                        "Reset cancelled for safety."
+                    )
+                    return
+        
+        # Perform reset
+        result = reset_service.reset_database(
+            keep_setup_data=preserve_setup,
+            keep_audit_log=True
+        )
+        
+        if result.success:
+            tables_info = "\n• ".join(result.tables_cleared) if result.tables_cleared else "None"
+            QMessageBox.information(
+                self,
+                "Reset Complete",
+                f"✓ Database reset successfully!\n\n"
+                f"Records deleted: {result.records_deleted:,}\n"
+                f"Tables cleared:\n• {tables_info}\n\n"
+                "Please restart the application to see all changes."
+            )
+        else:
+            QMessageBox.critical(
+                self,
+                "Reset Failed",
+                f"Database reset failed:\n{result.error}"
+            )
+    
+    # ========================================================================
     # Post-Import Recalculation
     # ========================================================================
     
@@ -881,3 +1253,166 @@ class ToolsTab(QWidget):
         
         # Show progress dialog
         progress_dialog.exec()
+    
+    # ========================================================================
+    # Automatic Backup Management
+    # ========================================================================
+    
+    def _load_automatic_backup_settings(self):
+        """Load automatic backup settings from JSON"""
+        from ui.settings import Settings
+        settings = Settings()
+        config = settings.get_automatic_backup_config()
+        
+        # Block signals during load to prevent premature saves
+        self.auto_backup_enabled_checkbox.blockSignals(True)
+        self.auto_backup_frequency_spinbox.blockSignals(True)
+        
+        # Apply settings to UI
+        enabled = config.get('enabled', False)
+        self.auto_backup_enabled_checkbox.setChecked(enabled)
+        
+        directory = config.get('directory', '')
+        if directory:
+            self.backup_dir_input.setText(directory)
+            self.backup_dir = directory
+            self.backup_now_btn.setEnabled(True)
+        
+        # Convert hours to days for spinbox display
+        frequency_hours = config.get('frequency_hours', 24)
+        frequency_days = max(1, frequency_hours // 24)  # At least 1 day
+        self.auto_backup_frequency_spinbox.setValue(frequency_days)
+        
+        # Set spinbox enabled state based on checkbox (while signals still blocked)
+        self.auto_backup_frequency_spinbox.setEnabled(enabled)
+        
+        # Enable/disable spinbox based on checkbox
+        self.auto_backup_frequency_spinbox.setEnabled(config.get('enabled', False))
+        
+        # Update last backup label
+        self._update_last_backup_display()
+        
+        # Start timer if enabled
+        if config.get('enabled', False) and directory:
+            self.backup_check_timer.start()
+    
+    def _save_automatic_backup_settings(self):
+        """Save automatic backup settings to JSON"""
+        from ui.settings import Settings
+        
+        settings = Settings()
+        config = settings.get_automatic_backup_config()
+        
+        # Update config
+        config['enabled'] = self.auto_backup_enabled_checkbox.isChecked()
+        config['directory'] = self.backup_dir if self.backup_dir else ''
+        # Convert days to hours for storage
+        config['frequency_hours'] = self.auto_backup_frequency_spinbox.value() * 24
+        
+        settings.set_automatic_backup_config(config)
+    
+    def _on_auto_backup_toggle(self, checked):
+        """Handle automatic backup enable/disable"""
+        # Enable/disable spinbox
+        self.auto_backup_frequency_spinbox.setEnabled(checked)
+        
+        # Start/stop timer
+        if checked and self.backup_dir:
+            self.backup_check_timer.start()
+        else:
+            self.backup_check_timer.stop()
+        
+        self._save_automatic_backup_settings()
+    
+    def _on_auto_backup_frequency_changed(self, value):
+        """Handle frequency change"""
+        self._save_automatic_backup_settings()
+    
+    def _update_last_backup_display(self):
+        """Update the last backup label with most recent backup time"""
+        from ui.settings import Settings
+        from datetime import datetime
+        
+        settings = Settings()
+        config = settings.get_automatic_backup_config()
+        last_backup_str = config.get('last_backup_time')
+        
+        if last_backup_str:
+            try:
+                last_time = datetime.fromisoformat(last_backup_str)
+                time_str = last_time.strftime('%Y-%m-%d %H:%M')
+                self.last_backup_label.setText(f"Last backup: {time_str}")
+                self.last_backup_label.setStyleSheet("color: #28a745; font-size: 11px; margin: 8px 0 5px 0;")
+            except:
+                self.last_backup_label.setText("No backups yet")
+                self.last_backup_label.setStyleSheet("color: #666; font-size: 11px; margin: 8px 0 5px 0;")
+        else:
+            self.last_backup_label.setText("No backups yet")
+            self.last_backup_label.setStyleSheet("color: #666; font-size: 11px; margin: 8px 0 5px 0;")
+    
+    def _check_automatic_backup(self):
+        """Check if it's time to run an automatic backup"""
+        from ui.settings import Settings
+        from datetime import datetime, timedelta
+        
+        settings = Settings()
+        config = settings.get_automatic_backup_config()
+        
+        if not config.get('enabled', False):
+            return
+        
+        directory = config.get('directory', '')
+        if not directory:
+            return
+        
+        frequency_hours = config.get('frequency_hours', 24)
+        last_backup_str = config.get('last_backup_time')
+        
+        should_backup = False
+        if not last_backup_str:
+            # Never backed up - do it now
+            should_backup = True
+        else:
+            try:
+                last_backup = datetime.fromisoformat(last_backup_str)
+                next_backup = last_backup + timedelta(hours=frequency_hours)
+                should_backup = datetime.now() >= next_backup
+            except:
+                # Invalid timestamp - backup now
+                should_backup = True
+        
+        if should_backup:
+            self._perform_automatic_backup()
+    
+    def _perform_automatic_backup(self):
+        """Perform an automatic backup"""
+        from services.tools.backup_service import BackupService
+        from ui.settings import Settings
+        from datetime import datetime
+        import os
+        
+        settings = Settings()
+        config = settings.get_automatic_backup_config()
+        directory = config.get('directory', '')
+        
+        if not directory:
+            return
+        
+        # Perform backup
+        backup_service = BackupService(self.facade.db)
+        result = backup_service.backup_with_timestamp(directory, prefix="auto_backup")
+        
+        if result.success:
+            # Update last backup time
+            config['last_backup_time'] = datetime.now().isoformat()
+            settings.set_automatic_backup_config(config)
+            self._update_last_backup_display()
+            
+            # Log success (non-blocking)
+            filename = os.path.basename(result.backup_path)
+            size_mb = result.size_bytes / (1024 * 1024)
+            print(f"[Auto-Backup] Created: {filename} ({size_mb:.2f} MB)")
+        else:
+            # Log error but don't block UI
+            print(f"[Auto-Backup] Failed: {result.error}")
+    

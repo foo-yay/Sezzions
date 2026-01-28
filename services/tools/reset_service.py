@@ -79,8 +79,6 @@ class ResetService:
             >>> result = service.reset_database(tables_to_reset=['purchases', 'game_sessions'])
         """
         try:
-            cursor = self._get_cursor()
-            
             # Determine which tables to reset
             if tables_to_reset:
                 # User specified exact tables
@@ -93,37 +91,51 @@ class ResetService:
                 tables = self._get_all_resettable_tables(keep_audit_log)
             
             # Disable foreign key constraints temporarily
-            cursor.execute("PRAGMA foreign_keys = OFF")
+            self.db.execute_no_commit("PRAGMA foreign_keys = OFF")
             
             total_deleted = 0
             tables_affected = []
             errors = []
+            table_counts = {}
             
             # Delete data from each table
             for table_name in tables:
                 try:
                     # Count records before deletion
-                    cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
-                    count_before = cursor.fetchone()[0]
+                    result = self.db.fetch_one(f"SELECT COUNT(*) as count FROM {table_name}")
+                    count_before = result['count'] if result else 0
                     
                     if count_before > 0:
                         # Delete all records
-                        cursor.execute(f"DELETE FROM {table_name}")
+                        self.db.execute_no_commit(f"DELETE FROM {table_name}")
                         
                         # Reset autoincrement counter
-                        cursor.execute(f"DELETE FROM sqlite_sequence WHERE name='{table_name}'")
+                        self.db.execute_no_commit(f"DELETE FROM sqlite_sequence WHERE name='{table_name}'")
                         
                         total_deleted += count_before
                         tables_affected.append(table_name)
+                        table_counts[table_name] = count_before
                         
                 except Exception as e:
                     errors.append(f"{table_name}: {str(e)}")
             
             # Re-enable foreign key constraints
-            cursor.execute("PRAGMA foreign_keys = ON")
+            self.db.execute_no_commit("PRAGMA foreign_keys = ON")
             
             # Commit changes
             self._commit()
+            
+            # Log audit trail
+            action_type = 'RESET_PARTIAL' if keep_setup_data else 'RESET_FULL'
+            table_summary = ', '.join([f"{t}" for t in tables_affected[:5]])
+            if len(tables_affected) > 5:
+                table_summary += f", +{len(tables_affected)-5} more"
+            
+            self.db.log_audit(
+                action=action_type,
+                table_name='database',
+                details=f"Reset {len(tables_affected)} table(s): {table_summary}. Total records: {total_deleted}"
+            )
             
             if errors:
                 return ResetResult(
@@ -194,18 +206,17 @@ class ResetService:
             >>> for table, count in counts.items():
             ...     print(f"{table}: {count} records")
         """
-        cursor = self._get_cursor()
-        cursor.execute("""
+        tables_result = self.db.fetch_all("""
             SELECT name FROM sqlite_master 
             WHERE type='table' AND name NOT LIKE 'sqlite_%'
         """)
-        tables = [row[0] for row in cursor.fetchall()]
+        tables = [row['name'] for row in tables_result]
         
         counts = {}
         for table in tables:
             try:
-                cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                counts[table] = cursor.fetchone()[0]
+                result = self.db.fetch_one(f"SELECT COUNT(*) as count FROM {table}")
+                counts[table] = result['count'] if result else 0
             except Exception:
                 counts[table] = 0
         
@@ -267,13 +278,12 @@ class ResetService:
     
     def _get_all_tables(self) -> List[str]:
         """Get list of all user tables (excludes sqlite internal tables)."""
-        cursor = self._get_cursor()
-        cursor.execute("""
+        tables_result = self.db.fetch_all("""
             SELECT name FROM sqlite_master 
             WHERE type='table' AND name NOT LIKE 'sqlite_%'
             ORDER BY name
         """)
-        return [row[0] for row in cursor.fetchall()]
+        return [row['name'] for row in tables_result]
     
     def _get_cursor(self):
         """Get database cursor."""

@@ -12,6 +12,70 @@ Rules:
 ## 2026-01-28
 
 ```yaml
+id: 2026-01-28-13
+type: fix
+areas: [tools, ui, settings, repository]
+summary: "Post-PR improvements (Issue #2 follow-up): fixed settings persistence bugs (MainWindow reload pattern, signal blocking), UI polish (spacing, separator removal), repository hygiene (removed 139 .pyc files, added .gitignore), and service bug fixes."
+files_changed:
+  - ui/main_window.py
+  - ui/tabs/tools_tab.py
+  - ui/settings.py
+  - services/tools/reset_service.py
+  - services/tools/restore_service.py
+  - ui/tools_dialogs.py
+  - .gitignore
+```
+
+Notes:
+- **Problem Discovered**: User testing revealed settings persistence bugs—backup directory, auto-backup checkbox state, and frequency spinner weren't saving across app restarts
+- **Root Cause**: Two interacting issues:
+  1. `QSpinBox.setValue()` triggered `valueChanged` signal during load, causing premature saves with incomplete state
+  2. `MainWindow.closeEvent()` created fresh Settings instance with stale data, overwrote automatic_backup config when saving window geometry
+- **Signal Blocking Fix**: Block signals before setValue(), set all widgets while blocked, unblock after—prevents premature signal emission during initialization
+- **MainWindow Reload Pattern**: Added `self.settings.settings = self.settings._load_settings()` in closeEvent() before saving geometry—ensures latest settings from disk are loaded before partial update
+- **Explicit Disk Sync**: Added flush() and fsync() to Settings.save()—forces OS to write buffers immediately, prevents data loss on crash
+- **Attribute Init**: Added `self.backup_dir = ''` in __init__—ensures attribute always exists, simplified conditional logic
+- **UI Polish**: Removed vertical separator, added spacing (15px between dir/buttons, 20px before checkbox)—cleaner visual hierarchy
+- **Repository Hygiene**: Created .gitignore (Python/IDE/OS exclusions), untracked 139 .pyc files—prevents future cache pollution
+- **Service Fixes**: reset_service.py, restore_service.py fixed to use DatabaseManager API correctly (fetch_all/fetch_one/execute_no_commit), tools_dialogs.py added missing imports and fixed font rendering
+- **Testing**: Manual verification of settings persistence, signal blocking, reload pattern, git status
+- **Design Insight**: Qt signals fire during setValue() even if widget not visible; Settings() creates new instance each call, loads from disk; multiple components sharing settings file must reload before partial updates
+
+Refs: Issue #2, PR #3
+
+```yaml
+id: 2026-01-28-12
+type: feature
+areas: [tools, database, ui, testing]
+summary: "Complete database tools implementation (Issue #2): backup/restore/reset with automatic scheduling, audit logging, and comprehensive testing."
+files_changed:
+  - ui/tabs/tools_tab.py
+  - ui/tools_dialogs.py
+  - ui/settings.py
+  - services/tools/backup_service.py
+  - services/tools/restore_service.py
+  - services/tools/reset_service.py
+  - repositories/database.py
+  - settings.json
+  - tests/integration/test_database_tools_integration.py
+  - tests/integration/test_database_tools_audit.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Manual Backup UI**: Directory selection, "Backup Now" button, timestamped files (backup_YYYYMMDD_HHMMSS.db), status display with file size
+- **Restore UI**: RestoreDialog with three modes (Replace/Merge All/Merge Selected), safety backups, file validation, confirmations
+- **Reset UI**: ResetDialog with preserve setup data option, table count preview, typed "DELETE" confirmation, optional pre-reset backup
+- **Automatic Backup**: JSON-based configuration in settings.json with enable toggle, directory selection, frequency (1-168 hrs), QTimer scheduling (5-min checks), non-blocking execution, color-coded status, test button
+- **Audit Logging**: DatabaseManager.log_audit() method, all operations log to audit_log table with action type/table/details/timestamp
+- **Testing**: 19 tests total (9 existing database tools + 10 new audit logging tests), all passing
+- **Services**: BackupService, RestoreService, ResetService use SQLite online backup API
+- **Safety Features**: Integrity checks, automatic safety backups, multiple confirmations, typed confirmations for destructive actions
+
+Refs: Issue #2
+
+```yaml
 id: 2026-01-28-01
 type: docs
 areas: [docs, workflow]

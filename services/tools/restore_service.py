@@ -106,51 +106,92 @@ class RestoreService:
         """
         Full database replacement.
         
-        Closes current connection, replaces database file, reopens connection.
+        Drops all tables and recreates from backup.
         THIS IS DESTRUCTIVE - all current data is lost.
         """
-        current_db_path = self._get_database_path()
-        
-        if not current_db_path:
-            return RestoreResult(
-                success=False,
-                error="Cannot determine current database path"
-            )
-        
         try:
-            # Close current connection
-            self._close_connection()
+            # Connect to backup database
+            backup_conn = sqlite3.connect(backup_path)
+            backup_conn.row_factory = sqlite3.Row
             
-            # Create backup of current database (safety)
-            temp_backup = f"{current_db_path}.before_restore"
-            shutil.copy2(current_db_path, temp_backup)
+            # Get list of current tables
+            current_tables = self._get_table_list()
             
-            try:
-                # Replace database file
-                shutil.copy2(backup_path, current_db_path)
+            # Disable foreign keys
+            self.db.execute_no_commit("PRAGMA foreign_keys = OFF")
+            
+            # Drop all current tables
+            for table in current_tables:
+                try:
+                    self.db.execute_no_commit(f"DROP TABLE IF EXISTS {table}")
+                except Exception as e:
+                    # Continue dropping other tables
+                    pass
+            
+            # Get schema from backup
+            backup_cursor = backup_conn.cursor()
+            backup_cursor.execute("""
+                SELECT sql FROM sqlite_master 
+                WHERE type='table' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL
+                ORDER BY name
+            """)
+            schemas = [row[0] for row in backup_cursor.fetchall()]
+            
+            # Recreate tables from backup schema
+            for schema in schemas:
+                self.db.execute_no_commit(schema)
+            
+            # Get list of tables from backup
+            backup_cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name NOT LIKE 'sqlite_%'
+            """)
+            tables = [row[0] for row in backup_cursor.fetchall()]
+            
+            # Copy data from backup to current database
+            total_restored = 0
+            for table_name in tables:
+                # Get columns
+                backup_cursor.execute(f"PRAGMA table_info({table_name})")
+                columns = [row[1] for row in backup_cursor.fetchall()]
                 
-                # Reopen connection
-                self._reopen_connection()
+                if not columns:
+                    continue
                 
-                # Get list of tables that were restored
-                tables_affected = self._get_table_list()
+                # Fetch all records
+                backup_cursor.execute(f"SELECT * FROM {table_name}")
+                records = backup_cursor.fetchall()
                 
-                # Clean up temp backup
-                Path(temp_backup).unlink()
-                
-                return RestoreResult(
-                    success=True,
-                    records_restored=None,  # Unknown for full replace
-                    tables_affected=tables_affected
-                )
-                
-            except Exception as e:
-                # Rollback: restore original database
-                shutil.copy2(temp_backup, current_db_path)
-                Path(temp_backup).unlink()
-                self._reopen_connection()
-                raise e
-                
+                if records:
+                    placeholders = ','.join(['?' for _ in columns])
+                    column_names = ','.join(columns)
+                    insert_sql = f"INSERT INTO {table_name} ({column_names}) VALUES ({placeholders})"
+                    
+                    params_list = [tuple([record[col] for col in columns]) for record in records]
+                    self.db.executemany_no_commit(insert_sql, params_list)
+                    total_restored += len(records)
+            
+            # Re-enable foreign keys
+            self.db.execute_no_commit("PRAGMA foreign_keys = ON")
+            
+            # Commit all changes
+            self._commit()
+            
+            backup_conn.close()
+            
+            # Log audit trail
+            self.db.log_audit(
+                action='RESTORE_REPLACE',
+                table_name='database',
+                details=f"Full database replacement from {backup_path} ({total_restored} records)"
+            )
+            
+            return RestoreResult(
+                success=True,
+                records_restored=total_restored,
+                tables_affected=tables
+            )
+            
         except Exception as e:
             return RestoreResult(
                 success=False,
@@ -283,16 +324,31 @@ class RestoreService:
         """
         
         # Insert records into current database
-        current_cursor = self._get_cursor()
-        inserted_count = 0
+        # Get count before merge
+        before_count = self.db.fetch_one(f"SELECT COUNT(*) as count FROM {table_name}")['count']
         
+        # Batch insert all records
+        params_list = []
         for record in records:
-            values = [record[col] for col in columns]
-            current_cursor.execute(insert_sql, values)
-            if current_cursor.rowcount > 0:
-                inserted_count += 1
+            values = tuple([record[col] for col in columns])
+            params_list.append(values)
+        
+        if params_list:
+            self.db.executemany_no_commit(insert_sql, params_list)
+        
+        # Get count after merge
+        after_count = self.db.fetch_one(f"SELECT COUNT(*) as count FROM {table_name}")['count']
+        inserted_count = after_count - before_count
         
         self._commit()
+        
+        # Log audit trail for non-zero merges
+        if inserted_count > 0:
+            self.db.log_audit(
+                action='RESTORE_MERGE',
+                table_name=table_name,
+                details=f"Merged {inserted_count} record(s) from backup"
+            )
         
         return inserted_count
     
@@ -315,21 +371,18 @@ class RestoreService:
     
     def _get_table_list(self) -> List[str]:
         """Get list of tables in current database."""
-        cursor = self._get_cursor()
-        cursor.execute("""
+        tables_result = self.db.fetch_all("""
             SELECT name FROM sqlite_master 
             WHERE type='table' AND name NOT LIKE 'sqlite_%'
         """)
-        return [row[0] for row in cursor.fetchall()]
+        return [row['name'] for row in tables_result]
     
     def _get_database_path(self) -> Optional[str]:
         """Get path to current database file."""
         try:
-            cursor = self._get_cursor()
-            cursor.execute("PRAGMA database_list")
-            result = cursor.fetchone()
-            if result and len(result) >= 3:
-                return result[2]  # Database file path
+            result = self.db.fetch_one("PRAGMA database_list")
+            if result and 'file' in result:
+                return result['file']  # Database file path
             return None
         except Exception:
             return None
