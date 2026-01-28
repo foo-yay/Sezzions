@@ -46,6 +46,8 @@ class Settings:
         try:
             with open(self.settings_file, 'w') as f:
                 json.dump(self.settings, f, indent=2)
+                f.flush()  # Ensure data is written to disk
+                os.fsync(f.fileno())  # Force OS to write to disk
         except Exception as e:
             print(f"Warning: Could not save settings: {e}")
     

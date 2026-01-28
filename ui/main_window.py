@@ -85,6 +85,10 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def closeEvent(self, event):
         """Save settings on close"""
+        # Reload settings from disk to get any changes made by other components
+        self.settings.settings = self.settings._load_settings()
+        
+        # Update window geometry
         self.settings.set('window_width', self.width())
         self.settings.set('window_height', self.height())
         self.settings.set('last_tab', self.tab_bar.currentIndex())
