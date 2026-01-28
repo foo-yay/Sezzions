@@ -181,6 +181,39 @@ class RedemptionService:
         # Delete the redemption
         self.redemption_repo.delete(redemption_id)
     
+    def delete_redemptions_bulk(self, redemption_ids: List[int]) -> None:
+        """
+        Delete multiple redemptions in a single transaction.
+        More efficient than calling delete_redemption in a loop.
+        """
+        if not redemption_ids:
+            return
+        
+        # Process all deletes in a single transaction
+        for redemption_id in redemption_ids:
+            redemption = self.redemption_repo.get_by_id(redemption_id)
+            if not redemption:
+                continue
+            
+            # Check if allocations exist
+            allocations = self._get_allocations(redemption_id)
+            
+            if allocations:
+                # Reverse the allocations (restore purchase remaining_amount)
+                self.fifo_service.reverse_allocation(allocations)
+                
+                # Delete allocation records
+                self._delete_allocations(redemption_id)
+                
+                # Delete realized_transaction record
+                self._delete_realized_transaction(redemption_id)
+            
+            # Delete the redemption
+            self.redemption_repo.delete(redemption_id)
+        
+        # Commit once at the end
+        self.db.commit()
+    
     def get_redemption(self, redemption_id: int) -> Optional[Redemption]:
         """Get redemption by ID"""
         return self.redemption_repo.get_by_id(redemption_id)

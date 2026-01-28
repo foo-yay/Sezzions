@@ -549,22 +549,67 @@ class GameSessionsTab(QWidget):
             QMessageBox.warning(self, "Warning", "Please select session(s) to delete")
             return
 
-        # Check impact on subsequent redemptions
-        warning_messages = []
-        for session_id in ids:
-            impact = self._check_deletion_impact(session_id)
-            if impact:
-                warning_messages.append(impact)
+        # For bulk operations (3+), show concise warning
+        # For smaller operations, show detailed impact
+        is_bulk = len(ids) >= 3
         
-        confirm_msg = f"Are you sure you want to delete {len(ids)} session(s)?\n\n"
-        confirm_msg += "This will remove the session(s) and their P/L calculations."
-        
-        if warning_messages:
-            confirm_msg += "\n\n⚠️ DELETION IMPACT:\n\n" + "\n\n".join(warning_messages)
-            confirm_msg += "\n\nTo complete your changes:\n"
-            confirm_msg += "1. Delete this session (continue below)\n"
-            confirm_msg += "2. Add a replacement session showing the correct balance\n"
-            confirm_msg += "3. Recalculation will automatically fix all links and validations"
+        if is_bulk:
+            # Get summary info for bulk delete
+            affected_pairs = set()
+            closed_count = 0
+            for session_id in ids:
+                try:
+                    session = self.facade.get_game_session(session_id)
+                    if session:
+                        affected_pairs.add((session.site_id, session.user_id))
+                        if session.status == "Closed":
+                            closed_count += 1
+                except:
+                    pass
+            
+            confirm_msg = f"⚠️ BULK DELETE WARNING ⚠️\n\n"
+            confirm_msg += f"You are about to delete {len(ids)} session(s):\n"
+            confirm_msg += f"• {closed_count} closed session(s) with P/L calculations\n"
+            confirm_msg += f"• Affecting {len(affected_pairs)} user/site pair(s)\n\n"
+            confirm_msg += "This will:\n"
+            confirm_msg += "• Remove all session records and P/L calculations\n"
+            confirm_msg += "• Trigger recalculation for affected pairs\n"
+            confirm_msg += "• May affect subsequent redemption validations\n\n"
+            confirm_msg += "Consider using Tools > Recalculate for data fixes instead.\n\n"
+            confirm_msg += "Are you sure you want to proceed?"
+        else:
+            # Check detailed impact for small deletes
+            warning_messages = []
+            for session_id in ids:
+                impact = self._check_deletion_impact(session_id)
+                if impact:
+                    warning_messages.append(impact)
+            
+            if len(ids) == 1:
+                session = self.facade.get_game_session(ids[0])
+                if session:
+                    site = self.facade.get_site(session.site_id)
+                    user = self.facade.get_user(session.user_id)
+                    confirm_msg = f"Delete session for {site.name if site else 'Unknown'} / {user.name if user else 'Unknown'}?\n\n"
+                    confirm_msg += f"Date: {session.session_date} at {session.session_time}\n"
+                    if session.status == "Closed":
+                        confirm_msg += f"P/L: ${float(session.profit_loss or 0):,.2f}\n"
+                        confirm_msg += f"Ending Balance: {float(session.ending_balance or 0):,.2f} SC\n"
+                else:
+                    confirm_msg = "Are you sure you want to delete this session?\n"
+            else:
+                confirm_msg = f"Are you sure you want to delete {len(ids)} session(s)?\n\n"
+                confirm_msg += "This will remove the session(s) and their P/L calculations."
+            
+            if warning_messages:
+                confirm_msg += "\n\n⚠️ DELETION IMPACT:\n\n" + "\n\n".join(warning_messages)
+                confirm_msg += "\n\nTo complete your changes:\n"
+                confirm_msg += "1. Delete this session (continue below)\n"
+                confirm_msg += "2. Add a replacement session showing the correct balance\n"
+                confirm_msg += "3. Recalculation will automatically fix all links and validations"
+            else:
+                # No specific impact detected, but still inform user
+                confirm_msg += "\n\nThis will trigger recalculation for the affected user/site pair."
         
         reply = QMessageBox.question(
             self, "Confirm Delete",
@@ -632,12 +677,33 @@ class GameSessionsTab(QWidget):
     
     def _delete_sessions(self, ids):
         try:
-            for session_id in ids:
-                self.facade.delete_game_session(session_id)
+            # Use bulk delete if available, otherwise fall back to individual deletes
+            if hasattr(self.facade, 'delete_game_sessions_bulk'):
+                self.facade.delete_game_sessions_bulk(ids)
+            else:
+                for session_id in ids:
+                    self.facade.delete_game_session(session_id)
             self.load_data()
             QMessageBox.information(self, "Success", "Session(s) deleted successfully!")
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to delete session: {e}")
+            import traceback
+            # Show error in a custom dialog that's scrollable and limited in size
+            from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Delete Error")
+            dialog.setMinimumWidth(600)
+            dialog.setMinimumHeight(400)
+            dialog.setMaximumHeight(600)
+            layout = QVBoxLayout(dialog)
+            text_edit = QTextEdit()
+            text_edit.setReadOnly(True)
+            text_edit.setPlainText(f"Failed to delete session(s):\n\n{str(e)}\n\n{traceback.format_exc()}")
+            layout.addWidget(text_edit)
+            close_btn = QPushButton("Close")
+            close_btn.clicked.connect(dialog.accept)
+            layout.addWidget(close_btn)
+            dialog.exec()
+
 
     def export_csv(self):
         import csv

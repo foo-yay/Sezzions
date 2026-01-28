@@ -221,6 +221,26 @@ class GameSessionService:
             self._remove_session_from_game_rtp(session)
         self.session_repo.delete(session_id)
     
+    def delete_sessions_bulk(self, session_ids: List[int]) -> None:
+        """Delete multiple sessions efficiently in a single transaction"""
+        if not session_ids:
+            return
+        
+        # Fetch all sessions first
+        sessions = [self.session_repo.get_by_id(sid) for sid in session_ids]
+        
+        # Remove from RTP aggregates
+        for session in sessions:
+            if session:
+                self._remove_session_from_game_rtp(session)
+        
+        # Delete all sessions in one transaction
+        conn = self.session_repo.db._connection
+        cursor = conn.cursor()
+        placeholders = ','.join(['?'] * len(session_ids))
+        cursor.execute(f"DELETE FROM game_sessions WHERE id IN ({placeholders})", session_ids)
+        conn.commit()
+    
     def get_session(self, session_id: int) -> Optional[GameSession]:
         """Get session by ID"""
         return self.session_repo.get_by_id(session_id)
@@ -268,9 +288,6 @@ class GameSessionService:
         session_time: str
     ) -> Tuple[Decimal, Decimal]:
         """Compute expected starting total/redeemable balances for a session"""
-        print(f"\n=== DEBUG compute_expected_balances ===")
-        print(f"Looking for balances at: {session_date} {session_time}")
-        
         expected_total = Decimal("0.00")
         expected_redeemable = Decimal("0.00")
 
@@ -316,7 +333,6 @@ class GameSessionService:
                 if p_dt <= cutoff and (checkpoint_dt is None or p_dt > checkpoint_dt):
                     sc_amount = Decimal(str(p.sc_received))
                     expected_total += sc_amount
-                    print(f"  Adding purchase: ${p.amount} / {sc_amount} SC at {p_dt} (cutoff: {cutoff})")
 
         if self.redemption_repo is not None:
             redemptions = self.redemption_repo.get_by_user_and_site(user_id, site_id)

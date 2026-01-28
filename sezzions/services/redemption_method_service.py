@@ -55,6 +55,16 @@ class RedemptionMethodService:
         """Activate redemption method"""
         return self.update_method(method_id, is_active=True)
     
+    def delete_method(self, method_id: int) -> None:
+        """Hard delete redemption method (use with caution - prefer deactivate_method)"""
+        method = self.method_repo.get_by_id(method_id)
+        if not method:
+            raise ValueError(f"Redemption method {method_id} not found")
+        
+        # Note: Cascade delete behavior is handled at database level
+        # via foreign key constraints
+        self.method_repo.delete(method_id)
+    
     def list_active_methods(self) -> List[RedemptionMethod]:
         """Get all active redemption methods"""
         return self.method_repo.get_active()

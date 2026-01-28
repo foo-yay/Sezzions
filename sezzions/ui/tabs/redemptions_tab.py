@@ -525,17 +525,49 @@ class RedemptionsTab(QtWidgets.QWidget):
         if not redemptions:
             return
 
-        if len(redemptions) == 1:
-            redemption = redemptions[0]
-            msg = (
-                f"Delete redemption of ${float(redemption.amount):.2f} on {redemption.redemption_date}?\n\n"
-                "This cannot be undone."
-            )
+        # For bulk operations (3+), show concise warning
+        # For smaller operations, show detailed impact
+        is_bulk = len(redemptions) >= 3
+        
+        if is_bulk:
+            # Get summary info for bulk delete
+            affected_pairs = set()
+            total_amount = sum(float(r.amount) for r in redemptions)
+            
+            for redemption in redemptions:
+                affected_pairs.add((redemption.site_id, redemption.user_id))
+            
+            msg = f"⚠️ BULK DELETE WARNING ⚠️\n\n"
+            msg += f"You are about to delete {len(redemptions)} redemption(s):\n"
+            msg += f"• Total amount: ${total_amount:,.2f}\n"
+            msg += f"• Affecting {len(affected_pairs)} user/site pair(s)\n\n"
+            msg += "This will:\n"
+            msg += "• Reverse FIFO allocations for these redemptions\n"
+            msg += "• Trigger recalculation for affected pairs\n"
+            msg += "• Recalculate game session balances\n\n"
+            msg += "Consider using Tools > Recalculate for data fixes instead.\n\n"
+            msg += "Are you sure you want to proceed?"
         else:
-            msg = (
-                f"Delete {len(redemptions)} redemptions?\n\n"
-                "This cannot be undone."
-            )
+            # Check detailed impact for small deletes
+            warning_messages = []
+            for redemption in redemptions:
+                impact = self._check_redemption_deletion_impact(redemption)
+                if impact:
+                    warning_messages.append(impact)
+            
+            if len(redemptions) == 1:
+                redemption = redemptions[0]
+                msg = f"Delete redemption of ${float(redemption.amount):.2f} on {redemption.redemption_date}?\n\n"
+            else:
+                msg = f"Delete {len(redemptions)} redemptions?\n\n"
+            
+            msg += "This will:\n"
+            msg += "• Reverse FIFO allocations\n"
+            msg += "• Trigger recalculation for affected pairs\n"
+            msg += "• Recalculate game session balances\n"
+            
+            if warning_messages:
+                msg += "\n\n⚠️ DELETION IMPACT:\n\n" + "\n\n".join(warning_messages)
 
         reply = QtWidgets.QMessageBox.question(
             self,
@@ -546,8 +578,13 @@ class RedemptionsTab(QtWidgets.QWidget):
 
         if reply == QtWidgets.QMessageBox.Yes:
             try:
-                for redemption in redemptions:
-                    self.facade.delete_redemption(redemption.id)
+                # Use bulk delete for better performance
+                if hasattr(self.facade, 'delete_redemptions_bulk'):
+                    self.facade.delete_redemptions_bulk(redemption_ids)
+                else:
+                    # Fallback to individual deletes if bulk method not available
+                    for redemption_id in redemption_ids:
+                        self.facade.delete_redemption(redemption_id)
                 self.refresh_data()
                 if hasattr(self, "main_window") and self.main_window is not None:
                     self.main_window.refresh_all_tabs()
@@ -555,10 +592,67 @@ class RedemptionsTab(QtWidgets.QWidget):
                     self, "Success", "Redemption(s) deleted"
                 )
             except Exception as e:
+                import traceback
+                error_detail = traceback.format_exc()
                 QtWidgets.QMessageBox.warning(
-                    self, "Error", f"Failed to delete redemption(s):\n{str(e)}"
+                    self, "Error", f"Failed to delete redemption(s):\n{str(e)}\n\n{error_detail}"
                 )
 
+    def _check_redemption_deletion_impact(self, redemption) -> str:
+        """Check impact of deleting a redemption"""
+        try:
+            from decimal import Decimal
+            
+            # Check if this redemption has FIFO allocations
+            db = self.facade.redemption_repo.db
+            cursor = db._connection.cursor()
+            cursor.execute(
+                """
+                SELECT COUNT(*) as count, SUM(amount_allocated) as total
+                FROM fifo_allocations
+                WHERE redemption_id = ?
+                """,
+                (redemption.id,)
+            )
+            fifo_result = cursor.fetchone()
+            
+            # Check affected game sessions
+            cursor.execute(
+                """
+                SELECT COUNT(*) as count
+                FROM game_sessions
+                WHERE site_id = ? AND user_id = ?
+                  AND status = 'Closed'
+                  AND (end_date > ? OR (end_date = ? AND end_time >= ?))
+                """,
+                (redemption.site_id, redemption.user_id,
+                 redemption.redemption_date, redemption.redemption_date, redemption.redemption_time)
+            )
+            session_result = cursor.fetchone()
+            
+            if fifo_result and fifo_result["count"] > 0:
+                allocated_amount = Decimal(str(fifo_result["total"] or 0))
+                session_count = session_result["count"] if session_result else 0
+                
+                site = self.facade.get_site(redemption.site_id)
+                user = self.facade.get_user(redemption.user_id)
+                
+                msg = f"Redemption: {site.name if site else 'Unknown'} / "
+                msg += f"{user.name if user else 'Unknown'}\n"
+                msg += f"Amount: ${float(redemption.amount):,.2f} on {redemption.redemption_date}\n"
+                msg += f"FIFO allocated from {fifo_result['count']} purchase(s): ${float(allocated_amount):,.2f}\n\n"
+                msg += f"Deleting will:\n"
+                msg += f"• Reverse ${float(allocated_amount):,.2f} in FIFO allocations\n"
+                if session_count > 0:
+                    msg += f"• Recalculate {session_count} subsequent session(s)\n"
+                msg += f"• May affect validation of subsequent transactions"
+                
+                return msg
+        except Exception as e:
+            print(f"Error checking redemption deletion impact: {e}")
+        
+        return ""
+    
     def _clear_search(self):
         """Clear search filter"""
         self.search_edit.clear()
@@ -1383,17 +1477,20 @@ class RedemptionDialog(QtWidgets.QDialog):
 
     def _update_method_types_for_user(self, preserve: bool = False):
         current = self.method_type_combo.currentText().strip()
-        method_types = sorted({(m.method_type or "").strip() for m in self._get_methods_for_user() if m.method_type})
+        
+        # Method types are global - get them directly from the service
+        all_method_types = self.facade.get_all_redemption_method_types(active_only=True)
+        method_type_names = sorted([mt.name for mt in all_method_types if mt.name])
 
         self.method_type_combo.blockSignals(True)
         self.method_type_combo.clear()
-        self.method_type_combo.addItems(method_types)
+        self.method_type_combo.addItems(method_type_names)
         if self.user_id is None:
             self.method_type_combo.lineEdit().setPlaceholderText("Select a user first")
         else:
             self.method_type_combo.lineEdit().setPlaceholderText("")
 
-        if preserve and current and current in method_types:
+        if preserve and current and current in method_type_names:
             self.method_type_combo.setCurrentText(current)
         else:
             self.method_type_combo.setCurrentIndex(-1)

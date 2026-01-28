@@ -62,5 +62,18 @@ class UserService:
         return self.user_repo.get_by_id(user_id)
 
     def delete_user(self, user_id: int) -> None:
-        """Delete user"""
-        self.user_repo.delete(user_id)
+        """Hard delete user (use with caution - prefer deactivate_user)"""
+        user = self.user_repo.get_by_id(user_id)
+        if not user:
+            raise ValueError(f"User {user_id} not found")
+        
+        try:
+            self.user_repo.delete(user_id)
+        except Exception as e:
+            if "FOREIGN KEY constraint failed" in str(e):
+                raise ValueError(
+                    f"Cannot delete user '{user.name}' because they have related records. "
+                    f"Purchases, cards, or other data still reference this user. "
+                    f"Consider deactivating instead of deleting."
+                ) from e
+            raise

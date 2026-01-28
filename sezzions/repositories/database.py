@@ -1,8 +1,9 @@
 """
 Database connection and management
 """
+from contextlib import contextmanager
 import sqlite3
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Iterator, Sequence
 
 
 class DatabaseManager:
@@ -82,7 +83,7 @@ class DatabaseManager:
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS redemption_methods (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
                 method_type TEXT,
                 user_id INTEGER,
                 is_active INTEGER DEFAULT 1,
@@ -145,6 +146,7 @@ class DatabaseManager:
                 sc_received TEXT DEFAULT '0.00',
                 starting_sc_balance TEXT DEFAULT '0.00',
                 cashback_earned TEXT DEFAULT '0.00',
+                cashback_is_manual INTEGER DEFAULT 0,
                 purchase_date TEXT NOT NULL,
                 purchase_time TEXT,
                 card_id INTEGER,
@@ -268,6 +270,7 @@ class DatabaseManager:
         
         # Migration: Add new columns if table already exists
         self._migrate_game_sessions_table()
+        self._migrate_game_rtp_aggregates_table()
         
         # Redemption allocations table (tracks FIFO purchase consumption)
         # Reference: DATABASE_DESIGN.md §6
@@ -607,12 +610,13 @@ class DatabaseManager:
                     pass
 
     def _migrate_redemption_methods_table(self):
-        """Add new columns to redemption_methods if they don't exist"""
+        """Add new columns to redemption_methods and remove UNIQUE constraint from name"""
         cursor = self._connection.cursor()
 
         cursor.execute("PRAGMA table_info(redemption_methods)")
         existing_columns = {row[1] for row in cursor.fetchall()}
 
+        # Add columns if missing
         migrations = [
             ("method_type", "TEXT"),
             ("user_id", "INTEGER"),
@@ -624,6 +628,91 @@ class DatabaseManager:
                     cursor.execute(f"ALTER TABLE redemption_methods ADD COLUMN {column_name} {column_def}")
                 except Exception:
                     pass
+
+        # Check if name has UNIQUE constraint - if so, need to recreate table
+        # SQLite doesn't store constraint names in an easily queryable way,
+        # so we check the SQL create statement
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='redemption_methods'")
+        row = cursor.fetchone()
+        if row and 'UNIQUE' in row[0] and 'name' in row[0]:
+            # Need to recreate table without UNIQUE constraint on name
+            try:
+                # Create new table
+                cursor.execute('''
+                    CREATE TABLE redemption_methods_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        method_type TEXT,
+                        user_id INTEGER,
+                        is_active INTEGER DEFAULT 1,
+                        notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+                    )
+                ''')
+                
+                # Copy data
+                cursor.execute('''
+                    INSERT INTO redemption_methods_new 
+                    SELECT id, name, method_type, user_id, is_active, notes, created_at, updated_at
+                    FROM redemption_methods
+                ''')
+                
+                # Drop old table
+                cursor.execute('DROP TABLE redemption_methods')
+                
+                # Rename new table
+                cursor.execute('ALTER TABLE redemption_methods_new RENAME TO redemption_methods')
+                
+                self._connection.commit()
+            except Exception as e:
+                # If migration fails, roll back and continue
+                self._connection.rollback()
+                pass
+
+    def _migrate_game_rtp_aggregates_table(self):
+        """Fix foreign key constraint on game_rtp_aggregates to include ON DELETE CASCADE"""
+        cursor = self._connection.cursor()
+        
+        # Check if foreign key has CASCADE
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='game_rtp_aggregates'")
+        result = cursor.fetchone()
+        
+        # If table exists and doesn't have ON DELETE CASCADE, recreate it
+        if result and 'ON DELETE CASCADE' not in result[0]:
+            try:
+                cursor.execute("PRAGMA foreign_keys=OFF")
+                
+                # Create new table with proper CASCADE
+                cursor.execute('''
+                    CREATE TABLE game_rtp_aggregates_new (
+                        game_id INTEGER PRIMARY KEY REFERENCES games(id) ON DELETE CASCADE,
+                        total_wager REAL DEFAULT 0,
+                        total_delta REAL DEFAULT 0,
+                        session_count INTEGER DEFAULT 0,
+                        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                ''')
+                
+                # Copy existing data
+                cursor.execute('''
+                    INSERT INTO game_rtp_aggregates_new 
+                    SELECT game_id, total_wager, total_delta, session_count, last_updated
+                    FROM game_rtp_aggregates
+                ''')
+                
+                # Drop old table and rename new one
+                cursor.execute('DROP TABLE game_rtp_aggregates')
+                cursor.execute('ALTER TABLE game_rtp_aggregates_new RENAME TO game_rtp_aggregates')
+                
+                self._connection.commit()
+                cursor.execute("PRAGMA foreign_keys=ON")
+            except Exception as e:
+                # If migration fails, rollback and restore foreign keys
+                self._connection.rollback()
+                cursor.execute("PRAGMA foreign_keys=ON")
+                # Don't raise - allow app to continue with old schema
 
     def _migrate_expenses_table(self):
         """Add new columns to expenses if they don't exist, and remove DEFAULT constraint from category"""
@@ -691,6 +780,7 @@ class DatabaseManager:
             ("sc_received", "TEXT DEFAULT '0.00'"),
             ("starting_sc_balance", "TEXT DEFAULT '0.00'"),
             ("cashback_earned", "TEXT DEFAULT '0.00'"),
+            ("cashback_is_manual", "INTEGER DEFAULT 0"),
             ("status", "TEXT DEFAULT 'active'"),
         ]
 
@@ -756,6 +846,21 @@ class DatabaseManager:
         cursor.execute(query, params)
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
+
+    def execute_no_commit(self, query: str, params: tuple = ()) -> int:
+        """Execute a statement without committing.
+
+        This exists to support atomic bulk operations that manage their own
+        transaction boundary (e.g., Tools CSV import, reset, merge/restore).
+        """
+        cursor = self._connection.cursor()
+        cursor.execute(query, params)
+        return cursor.lastrowid
+
+    def executemany_no_commit(self, query: str, params_seq: Sequence[tuple]) -> None:
+        """Execute many statements without committing."""
+        cursor = self._connection.cursor()
+        cursor.executemany(query, params_seq)
     
     def execute(self, query: str, params: tuple = ()) -> int:
         """Execute query and return last insert ID"""
@@ -791,6 +896,24 @@ class DatabaseManager:
     def rollback(self):
         """Rollback transaction"""
         self._connection.rollback()
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """Context manager for an explicit DB transaction.
+
+        IMPORTANT: To preserve atomicity, callers should use
+        `execute_no_commit`/`executemany_no_commit` inside this context.
+        Using `execute()` inside will auto-commit and break atomicity.
+        """
+        self.begin_transaction()
+        try:
+            yield
+        except Exception:
+            self.rollback()
+            raise
+        else:
+            self.commit()
+            self._notify_change()
     
     def close(self):
         """Close database connection"""

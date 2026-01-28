@@ -57,6 +57,25 @@ class CardService:
         """Activate card"""
         return self.update_card(card_id, is_active=True)
     
+    def delete_card(self, card_id: int) -> None:
+        """Hard delete card (use with caution - prefer deactivate_card)"""
+        card = self.card_repo.get_by_id(card_id)
+        if not card:
+            raise ValueError(f"Card {card_id} not found")
+        
+        # Note: Cascade delete behavior is handled at database level
+        # via foreign key constraints
+        try:
+            self.card_repo.delete(card_id)
+        except Exception as e:
+            if "FOREIGN KEY constraint failed" in str(e):
+                raise ValueError(
+                    f"Cannot delete card '{card.name}' because it has related records. "
+                    f"Purchases still reference this card. "
+                    f"Consider deactivating instead of deleting."
+                ) from e
+            raise
+    
     def list_user_cards(self, user_id: int, active_only: bool = True) -> List[Card]:
         """Get cards for a user"""
         if active_only:

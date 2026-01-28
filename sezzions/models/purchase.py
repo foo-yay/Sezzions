@@ -17,6 +17,7 @@ class Purchase:
     sc_received: Decimal = Decimal("0.00")
     starting_sc_balance: Decimal = Decimal("0.00")
     cashback_earned: Decimal = Decimal("0.00")
+    cashback_is_manual: bool = False
     card_id: Optional[int] = None
     purchase_time: Optional[str] = None
     remaining_amount: Optional[Decimal] = None
@@ -68,8 +69,8 @@ class Purchase:
         # Validate remaining_amount
         if self.remaining_amount < 0:
             raise ValueError("Remaining amount cannot be negative")
-        if self.remaining_amount > self.amount:
-            raise ValueError("Remaining amount cannot exceed purchase amount")
+        if self.remaining_amount > self.sc_received:
+            raise ValueError("Remaining amount cannot exceed SC received")
     
     @property
     def consumed_amount(self) -> Decimal:

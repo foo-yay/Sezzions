@@ -51,6 +51,29 @@ class GameTypeService:
         """Activate game type"""
         return self.update_type(type_id, is_active=True)
     
+    def delete_type(self, type_id: int) -> None:
+        """Hard delete game type (only if no games reference it)"""
+        game_type = self.type_repo.get_by_id(type_id)
+        if not game_type:
+            raise ValueError(f"Game type {type_id} not found")
+        
+        # Check if any games reference this game type
+        db = self.type_repo.db
+        result = db.fetch_one(
+            "SELECT COUNT(*) as count FROM games WHERE game_type_id = ?",
+            (type_id,)
+        )
+        game_count = result['count'] if result else 0
+        
+        if game_count > 0:
+            raise ValueError(
+                f"Cannot delete game type '{game_type.name}' because {game_count} game(s) still reference it. "
+                f"Please delete or reassign those games first, or deactivate this game type instead."
+            )
+        
+        # Safe to delete - no games reference this type
+        self.type_repo.delete(type_id)
+    
     def list_active_types(self) -> List[GameType]:
         """Get all active game types"""
         return self.type_repo.get_active()

@@ -118,8 +118,8 @@ class PurchaseRepository:
         query = """
             INSERT INTO purchases 
             (user_id, site_id, amount, sc_received, starting_sc_balance, cashback_earned,
-             purchase_date, purchase_time, card_id, remaining_amount, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             cashback_is_manual, purchase_date, purchase_time, card_id, remaining_amount, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         purchase_id = self.db.execute(query, (
             purchase.user_id,
@@ -128,6 +128,7 @@ class PurchaseRepository:
             str(purchase.sc_received),
             str(purchase.starting_sc_balance),
             str(purchase.cashback_earned),
+            1 if purchase.cashback_is_manual else 0,
             purchase.purchase_date.isoformat(),
             purchase.purchase_time,
             purchase.card_id,
@@ -145,7 +146,7 @@ class PurchaseRepository:
         query = """
             UPDATE purchases
             SET user_id = ?, site_id = ?, amount = ?, sc_received = ?, starting_sc_balance = ?,
-                cashback_earned = ?, purchase_date = ?, purchase_time = ?, card_id = ?,
+                cashback_earned = ?, cashback_is_manual = ?, purchase_date = ?, purchase_time = ?, card_id = ?,
                 remaining_amount = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """
@@ -156,6 +157,7 @@ class PurchaseRepository:
             str(purchase.sc_received),
             str(purchase.starting_sc_balance),
             str(purchase.cashback_earned),
+            1 if purchase.cashback_is_manual else 0,
             purchase.purchase_date.isoformat(),
             purchase.purchase_time,
             purchase.card_id,
@@ -185,6 +187,7 @@ class PurchaseRepository:
             sc_received=Decimal(str(row.get('sc_received', '0.00'))),
             starting_sc_balance=Decimal(str(row.get('starting_sc_balance', '0.00'))),
             cashback_earned=Decimal(str(row.get('cashback_earned', '0.00'))),
+            cashback_is_manual=bool(row.get('cashback_is_manual', 0)),
             purchase_date=purchase_date,
             purchase_time=row.get('purchase_time'),
             card_id=row.get('card_id'),

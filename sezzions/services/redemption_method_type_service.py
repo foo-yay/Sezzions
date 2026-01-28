@@ -34,6 +34,16 @@ class RedemptionMethodTypeService:
     def activate_type(self, type_id: int) -> RedemptionMethodType:
         return self.update_type(type_id, is_active=True)
 
+    def delete_type(self, type_id: int) -> None:
+        """Hard delete redemption method type (use with caution - prefer deactivate_type)"""
+        method_type = self.type_repo.get_by_id(type_id)
+        if not method_type:
+            raise ValueError(f"Redemption method type {type_id} not found")
+        
+        # Note: Cascade delete behavior is handled at database level
+        # via foreign key constraints
+        self.type_repo.delete(type_id)
+
     def list_active_types(self) -> List[RedemptionMethodType]:
         return self.type_repo.get_active()
 

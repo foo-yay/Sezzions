@@ -11,6 +11,7 @@ from ui.tabs.unrealized_tab import UnrealizedTab
 from ui.tabs.realized_tab import RealizedTab
 from ui.tabs.daily_sessions_tab import DailySessionsTab
 from ui.tabs.setup_tab import SetupTab
+from ui.tabs.tools_tab import ToolsTab
 from ui.themes import get_theme, get_theme_names
 from ui.settings import Settings
 
@@ -129,6 +130,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tab_bar.addTab("⚙️ Setup")
         self.stack.addWidget(self.setup_tab)
         self._tab_index["setup"] = self.tab_bar.count() - 1
+        
+        # Tools tab (recalculation, CSV import/export, backups)
+        self.tools_tab = ToolsTab(self.facade)
+        self.tab_bar.addTab("🔧 Tools")
+        self.stack.addWidget(self.tools_tab)
+        self._tab_index["tools"] = self.tab_bar.count() - 1
 
     def open_purchase(self, purchase_id: int):
         self.tab_bar.setCurrentIndex(self._tab_index.get("purchases", 0))
@@ -218,6 +225,12 @@ class MainWindow(QtWidgets.QMainWindow):
         recalc_action.triggered.connect(self._recalculate_everything)
         tools_menu.addAction(recalc_action)
         
+        tools_menu.addSeparator()
+        
+        open_tools_action = QtGui.QAction("Open &Tools Tab", self)
+        open_tools_action.triggered.connect(lambda: self.tab_bar.setCurrentIndex(self._tab_index.get("tools", 8)))
+        tools_menu.addAction(open_tools_action)
+        
         # Help menu
         help_menu = menubar.addMenu("&Help")
         
@@ -243,11 +256,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.unrealized_tab,
             self.realized_tab,
             self.setup_tab,
+            self.tools_tab,
         ):
             if hasattr(widget, "refresh_data"):
                 widget.refresh_data()
             elif hasattr(widget, "load_data"):
                 widget.load_data()
+            elif hasattr(widget, "refresh"):
+                widget.refresh()
             elif hasattr(widget, "refresh_all"):
                 widget.refresh_all()
     
@@ -295,36 +311,11 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def _recalculate_everything(self):
-        reply = QtWidgets.QMessageBox.question(
-            self,
-            "Recalculate Everything",
-            "This will rebuild FIFO allocations, realized P/L, and recompute session P/L.\n\n"
-            "Depending on database size, this may take a moment.\n\n"
-            "Proceed?",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-        )
-        if reply != QtWidgets.QMessageBox.Yes:
-            return
-
-        try:
-            result = self.facade.recalculate_everything()
-            self.refresh_all_tabs()
-            fifo = result.get("fifo")
-            message = (
-                "Recalculation complete.\n\n"
-                f"Pairs processed: {getattr(fifo, 'pairs_processed', '?')}\n"
-                f"Purchases updated: {getattr(fifo, 'purchases_updated', '?')}\n"
-                f"Redemptions processed: {getattr(fifo, 'redemptions_processed', '?')}\n"
-                f"Allocations written: {getattr(fifo, 'allocations_written', '?')}\n"
-                f"Session pairs recalculated: {result.get('session_pairs_recalculated', '?')}"
-            )
-            QtWidgets.QMessageBox.information(self, "Recalculate Everything", message)
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Recalculate Everything",
-                f"Recalculation failed:\n{e}",
-            )
+        """Delegate to Tools tab for recalculation"""
+        # Switch to Tools tab and trigger recalculation
+        self.tab_bar.setCurrentIndex(self._tab_index.get("tools", 8))
+        # Use QTimer to ensure tab is visible before triggering
+        QtCore.QTimer.singleShot(100, self.tools_tab._on_recalculate_all)
     
     def _apply_theme(self, theme_name: str):
         """Apply theme to application"""

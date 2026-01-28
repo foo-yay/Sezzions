@@ -42,6 +42,8 @@ from services.validation_service import ValidationService
 from services.recalculation_service import RecalculationService
 from services.game_session_event_link_service import GameSessionEventLinkService
 from services.expense_service import ExpenseService
+from services.tools.csv_import_service import CSVImportService
+from services.tools.csv_export_service import CSVExportService
 
 from models.user import User
 from models.site import Site
@@ -103,7 +105,7 @@ class AppFacade:
         self.redemption_method_type_service = RedemptionMethodTypeService(self.redemption_method_type_repo)
         
         self.fifo_service = FIFOService(self.purchase_repo)
-        self.purchase_service = PurchaseService(self.purchase_repo)
+        self.purchase_service = PurchaseService(self.purchase_repo, card_repo=self.card_repo)
         self.redemption_service = RedemptionService(
             self.redemption_repo,
             self.fifo_service,
@@ -124,7 +126,8 @@ class AppFacade:
         self.expense_service = ExpenseService(self.expense_repo)
 
         # Bulk rebuild / recalculation orchestration (legacy parity)
-        self.recalculation_service = RecalculationService(self.db)
+        # Pass game_session_service so RecalculationService can recalculate both FIFO + sessions
+        self.recalculation_service = RecalculationService(self.db, game_session_service=self.game_session_service)
         self.game_session_event_link_service = GameSessionEventLinkService(
             self.game_session_event_link_repo,
             self.game_session_repo,
@@ -132,6 +135,10 @@ class AppFacade:
             self.redemption_repo,
             self.db,
         )
+        
+        # Tools services (CSV import/export, backup/restore)
+        self.csv_import_service = CSVImportService(self.db)
+        self.csv_export_service = CSVExportService(self.db)
 
     @staticmethod
     def _normalize_time(value: Optional[str]) -> str:
@@ -333,7 +340,7 @@ class AppFacade:
 
     def delete_redemption_method(self, method_id: int) -> None:
         """Delete redemption method."""
-        self.redemption_method_service.method_repo.delete(method_id)
+        self.redemption_method_service.delete_method(method_id)
 
     def get_all_redemption_method_types(self, active_only: bool = False) -> List[RedemptionMethodType]:
         """Get all redemption method types, optionally filtered by active status."""
@@ -355,7 +362,7 @@ class AppFacade:
 
     def delete_redemption_method_type(self, type_id: int) -> None:
         """Delete redemption method type."""
-        self.redemption_method_type_service.type_repo.delete(type_id)
+        self.redemption_method_type_service.delete_type(type_id)
     
     def get_card(self, card_id: int) -> Optional[Card]:
         """Get card by ID."""
@@ -416,7 +423,7 @@ class AppFacade:
 
     def delete_game_type(self, type_id: int) -> None:
         """Delete game type."""
-        self.game_type_service.type_repo.delete(type_id)
+        self.game_type_service.delete_type(type_id)
 
     def get_game(self, game_id: int) -> Optional[Game]:
         """Get game by ID."""
@@ -438,7 +445,7 @@ class AppFacade:
 
     def delete_game(self, game_id: int) -> None:
         """Delete game."""
-        self.game_service.game_repo.delete(game_id)
+        self.game_service.delete_game(game_id)
     
     # ==========================================================================
     # Purchase Operations
@@ -648,10 +655,24 @@ class AppFacade:
         except Exception:
             pass
 
+        # Recalculate game RTP aggregates for all games
+        games_recalculated = 0
+        try:
+            games = self.game_repo.get_all()
+            for game in games:
+                try:
+                    self.game_session_service.recalculate_game_rtp_full(game.id)
+                    games_recalculated += 1
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
         return {
             "fifo": fifo_result,
             "pairs": len(pairs),
             "session_pairs_recalculated": sessions_recalculated,
+            "games_rtp_recalculated": games_recalculated,
         }
     
     def delete_purchase(self, purchase_id: int) -> None:
@@ -1011,6 +1032,44 @@ class AppFacade:
                 boundary_date,
                 boundary_time,
             )
+    
+    def delete_redemptions_bulk(self, redemption_ids: List[int]) -> None:
+        """Delete multiple redemptions efficiently in a batch.
+        
+        Args:
+            redemption_ids: List of redemption IDs to delete
+        """
+        if not redemption_ids:
+            return
+        
+        # Collect affected pairs for recalculation
+        affected_pairs = set()
+        redemptions_data = []
+        
+        for redemption_id in redemption_ids:
+            redemption = self.redemption_repo.get_by_id(redemption_id)
+            if redemption:
+                redemptions_data.append(redemption)
+                affected_pairs.add((redemption.user_id, redemption.site_id))
+        
+        # Delete all redemptions in bulk
+        self.redemption_service.delete_redemptions_bulk(redemption_ids)
+        
+        # Recalculate once per affected pair
+        for user_id, site_id in affected_pairs:
+            # Find earliest boundary date among deleted redemptions for this pair
+            pair_redemptions = [r for r in redemptions_data if r.user_id == user_id and r.site_id == site_id]
+            if pair_redemptions:
+                earliest = min(pair_redemptions, key=lambda r: (r.redemption_date, r.redemption_time))
+                boundary_date, boundary_time = self._containing_boundary(
+                    site_id, user_id, earliest.redemption_date, earliest.redemption_time
+                )
+                self.recalculation_service.rebuild_fifo_for_pair_from(
+                    user_id, site_id, boundary_date.isoformat(), boundary_time
+                )
+                self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                    user_id, site_id, boundary_date, boundary_time
+                )
             self.game_session_event_link_service.rebuild_links_for_pair_from(
                 redemption.site_id,
                 redemption.user_id,
@@ -1193,6 +1252,36 @@ class AppFacade:
                 session.user_id,
                 boundary_date.isoformat(),
                 boundary_time,
+            )
+
+    def delete_game_sessions_bulk(self, session_ids: List[int]) -> None:
+        """Delete multiple game sessions efficiently."""
+        if not session_ids:
+            return
+        
+        # Fetch all sessions first to track affected pairs
+        sessions = [self.game_session_repo.get_by_id(sid) for sid in session_ids if sid]
+        
+        # Group by (site, user) for rebuild
+        affected_pairs = set()
+        earliest_dates = {}
+        for session in sessions:
+            if session:
+                pair = (session.site_id, session.user_id)
+                affected_pairs.add(pair)
+                current = earliest_dates.get(pair)
+                if current is None or (session.session_date, session.session_time) < current:
+                    earliest_dates[pair] = (session.session_date, session.session_time)
+        
+        # Bulk delete
+        self.game_session_service.delete_sessions_bulk(session_ids)
+        
+        # Rebuild once per affected pair
+        for site_id, user_id in affected_pairs:
+            date, time = earliest_dates[(site_id, user_id)]
+            boundary_date, boundary_time = self._containing_boundary(site_id, user_id, date, time)
+            self.game_session_event_link_service.rebuild_links_for_pair_from(
+                site_id, user_id, boundary_date.isoformat(), boundary_time
             )
 
     def recalculate_game_rtp(self, game_id: int) -> None:

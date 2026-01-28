@@ -50,6 +50,25 @@ class SiteService:
         """Activate site"""
         return self.update_site(site_id, is_active=True)
     
+    def delete_site(self, site_id: int) -> None:
+        """Hard delete site (use with caution - prefer deactivate_site)"""
+        site = self.site_repo.get_by_id(site_id)
+        if not site:
+            raise ValueError(f"Site {site_id} not found")
+        
+        # Note: Cascade delete behavior is handled at database level
+        # via foreign key constraints
+        try:
+            self.site_repo.delete(site_id)
+        except Exception as e:
+            if "FOREIGN KEY constraint failed" in str(e):
+                raise ValueError(
+                    f"Cannot delete site '{site.name}' because it has related records. "
+                    f"Purchases, redemptions, or game sessions still reference this site. "
+                    f"Consider deactivating instead of deleting."
+                ) from e
+            raise
+    
     def list_active_sites(self) -> List[Site]:
         """Get all active sites"""
         return self.site_repo.get_active()

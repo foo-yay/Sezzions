@@ -55,6 +55,24 @@ class GameService:
         """Activate game"""
         return self.update_game(game_id, is_active=True)
     
+    def delete_game(self, game_id: int) -> None:
+        """Hard delete game (cascades to game_rtp_aggregates)"""
+        game = self.game_repo.get_by_id(game_id)
+        if not game:
+            raise ValueError(f"Game {game_id} not found")
+        
+        # Note: Will cascade delete to game_rtp_aggregates via ON DELETE CASCADE
+        # Game sessions will prevent deletion via foreign key constraint if any exist
+        try:
+            self.game_repo.delete(game_id)
+        except Exception as e:
+            if "FOREIGN KEY constraint failed" in str(e):
+                raise ValueError(
+                    f"Cannot delete game '{game.name}' because game sessions still reference it. "
+                    f"Consider deactivating the game instead of deleting."
+                ) from e
+            raise
+    
     def list_active_games(self, game_type_id: Optional[int] = None) -> List[Game]:
         """Get active games, optionally filtered by type"""
         if game_type_id:

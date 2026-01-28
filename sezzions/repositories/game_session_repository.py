@@ -15,11 +15,15 @@ class GameSessionRepository:
     
     def _row_to_model(self, row) -> GameSession:
         """Convert database row to GameSession model"""
-        def safe_decimal(value):
-            return Decimal(value) if value is not None else None
+        def safe_decimal(value, default="0.00"):
+            if value is None:
+                return Decimal(default) if default is not None else None
+            return Decimal(value)
 
         def row_value(key, default=None):
-            return row[key] if key in row.keys() else default
+            val = row[key] if key in row.keys() else default
+            # If value exists but is None, use default
+            return val if val is not None else default
         
         return GameSession(
             id=row["id"],
@@ -31,12 +35,12 @@ class GameSessionRepository:
             end_time=row_value("end_time"),
             session_time=row["session_time"] or "00:00:00",
             starting_balance=Decimal(row["starting_balance"]),
-            ending_balance=Decimal(row["ending_balance"]),
-            starting_redeemable=Decimal(row_value("starting_redeemable", "0.00")),
-            ending_redeemable=Decimal(row_value("ending_redeemable", "0.00")),
-            purchases_during=Decimal(row["purchases_during"]),
-            redemptions_during=Decimal(row["redemptions_during"]),
-            wager_amount=Decimal(row_value("wager_amount", "0.00")),
+            ending_balance=safe_decimal(row_value("ending_balance"), "0.00"),
+            starting_redeemable=safe_decimal(row_value("starting_redeemable"), "0.00"),
+            ending_redeemable=safe_decimal(row_value("ending_redeemable"), "0.00"),
+            purchases_during=safe_decimal(row_value("purchases_during"), "0.00"),
+            redemptions_during=safe_decimal(row_value("redemptions_during"), "0.00"),
+            wager_amount=safe_decimal(row_value("wager_amount"), "0.00"),
             rtp=row_value("rtp"),
             expected_start_total=safe_decimal(row_value("expected_start_total")),
             expected_start_redeemable=safe_decimal(row_value("expected_start_redeemable")),
