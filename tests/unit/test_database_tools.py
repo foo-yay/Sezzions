@@ -40,6 +40,43 @@ class SimpleDB:
     def rollback(self):
         self.conn.rollback()
     
+    def log_audit(self, action: str, table_name: str, record_id=None, details=None, user_name=None):
+        """Log audit entry (test stub)."""
+        pass
+    
+    def fetch_all(self, query, params=None):
+        """DatabaseManager-compatible fetch_all."""
+        cursor = self.cursor()
+        if params:
+            cursor.execute(query, params)
+        else:
+            cursor.execute(query)
+        return cursor.fetchall()
+    
+    def fetch_one(self, query, params=None):
+        """DatabaseManager-compatible fetch_one."""
+        cursor = self.cursor()
+        if params:
+            cursor.execute(query, params)
+        else:
+            cursor.execute(query)
+        return cursor.fetchone()
+    
+    def execute_no_commit(self, query, params=None):
+        """DatabaseManager-compatible execute_no_commit."""
+        cursor = self.cursor()
+        if params:
+            cursor.execute(query, params)
+        else:
+            cursor.execute(query)
+        return cursor
+    
+    def executemany_no_commit(self, query, params_list):
+        """DatabaseManager-compatible executemany_no_commit."""
+        cursor = self.cursor()
+        cursor.executemany(query, params_list)
+        return cursor
+    
     def close(self):
         self.conn.close()
     

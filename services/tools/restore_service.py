@@ -118,13 +118,12 @@ class RestoreService:
             current_tables = self._get_table_list()
             
             # Disable foreign keys
-            db = self._get_cursor()
-            db.execute_no_commit("PRAGMA foreign_keys = OFF")
+            self.db.execute_no_commit("PRAGMA foreign_keys = OFF")
             
             # Drop all current tables
             for table in current_tables:
                 try:
-                    db.execute_no_commit(f"DROP TABLE IF EXISTS {table}")
+                    self.db.execute_no_commit(f"DROP TABLE IF EXISTS {table}")
                 except Exception as e:
                     # Continue dropping other tables
                     pass
@@ -140,7 +139,7 @@ class RestoreService:
             
             # Recreate tables from backup schema
             for schema in schemas:
-                db.execute_no_commit(schema)
+                self.db.execute_no_commit(schema)
             
             # Get list of tables from backup
             backup_cursor.execute("""
@@ -169,11 +168,11 @@ class RestoreService:
                     insert_sql = f"INSERT INTO {table_name} ({column_names}) VALUES ({placeholders})"
                     
                     params_list = [tuple([record[col] for col in columns]) for record in records]
-                    db.executemany_no_commit(insert_sql, params_list)
+                    self.db.executemany_no_commit(insert_sql, params_list)
                     total_restored += len(records)
             
             # Re-enable foreign keys
-            db.execute_no_commit("PRAGMA foreign_keys = ON")
+            self.db.execute_no_commit("PRAGMA foreign_keys = ON")
             
             # Commit all changes
             self._commit()
@@ -325,10 +324,8 @@ class RestoreService:
         """
         
         # Insert records into current database
-        db = self._get_cursor()
-        
         # Get count before merge
-        before_count = db.fetch_one(f"SELECT COUNT(*) as count FROM {table_name}")['count']
+        before_count = self.db.fetch_one(f"SELECT COUNT(*) as count FROM {table_name}")['count']
         
         # Batch insert all records
         params_list = []
@@ -337,10 +334,10 @@ class RestoreService:
             params_list.append(values)
         
         if params_list:
-            db.executemany_no_commit(insert_sql, params_list)
+            self.db.executemany_no_commit(insert_sql, params_list)
         
         # Get count after merge
-        after_count = db.fetch_one(f"SELECT COUNT(*) as count FROM {table_name}")['count']
+        after_count = self.db.fetch_one(f"SELECT COUNT(*) as count FROM {table_name}")['count']
         inserted_count = after_count - before_count
         
         self._commit()
@@ -374,8 +371,7 @@ class RestoreService:
     
     def _get_table_list(self) -> List[str]:
         """Get list of tables in current database."""
-        db = self._get_cursor()
-        tables_result = db.fetch_all("""
+        tables_result = self.db.fetch_all("""
             SELECT name FROM sqlite_master 
             WHERE type='table' AND name NOT LIKE 'sqlite_%'
         """)
@@ -384,8 +380,7 @@ class RestoreService:
     def _get_database_path(self) -> Optional[str]:
         """Get path to current database file."""
         try:
-            db = self._get_cursor()
-            result = db.fetch_one("PRAGMA database_list")
+            result = self.db.fetch_one("PRAGMA database_list")
             if result and 'file' in result:
                 return result['file']  # Database file path
             return None
