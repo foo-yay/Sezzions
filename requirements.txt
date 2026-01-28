@@ -1,14 +1,24 @@
-# Casino Tracker Dependencies
+# Core Framework
+PySide6>=6.6.0
 
-# Calendar date picker widget
-tkcalendar>=1.6.1
+# Database
+psycopg2-binary>=2.9.9
+sqlalchemy>=2.0.23
+alembic>=1.13.1
 
-# Charts and visualization (legacy - being replaced by QtCharts)
-matplotlib>=3.5.0
+# Data Validation
+pydantic>=2.5.0
 
-# Qt UI (new UI path) - includes QtCharts
-PySide6>=6.5.0
+# Testing
+pytest>=7.4.3
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
 
-# Note: tkinter comes with Python by default
-# QtCharts is included with PySide6 installation
-# All other dependencies are Python standard library
+# Development Tools
+black>=23.12.1
+mypy>=1.7.1
+ruff>=0.1.8
+
+# Utilities
+python-dateutil>=2.8.2
+matplotlib>=3.8.2
