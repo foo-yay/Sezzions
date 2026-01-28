@@ -12,6 +12,38 @@ Rules:
 ## 2026-01-28
 
 ```yaml
+id: 2026-01-28-13
+type: fix
+areas: [tools, ui, settings, repository]
+summary: "Post-PR improvements (Issue #2 follow-up): fixed settings persistence bugs (MainWindow reload pattern, signal blocking), UI polish (spacing, separator removal), repository hygiene (removed 139 .pyc files, added .gitignore), and service bug fixes."
+files_changed:
+  - ui/main_window.py
+  - ui/tabs/tools_tab.py
+  - ui/settings.py
+  - services/tools/reset_service.py
+  - services/tools/restore_service.py
+  - ui/tools_dialogs.py
+  - .gitignore
+```
+
+Notes:
+- **Problem Discovered**: User testing revealed settings persistence bugs—backup directory, auto-backup checkbox state, and frequency spinner weren't saving across app restarts
+- **Root Cause**: Two interacting issues:
+  1. `QSpinBox.setValue()` triggered `valueChanged` signal during load, causing premature saves with incomplete state
+  2. `MainWindow.closeEvent()` created fresh Settings instance with stale data, overwrote automatic_backup config when saving window geometry
+- **Signal Blocking Fix**: Block signals before setValue(), set all widgets while blocked, unblock after—prevents premature signal emission during initialization
+- **MainWindow Reload Pattern**: Added `self.settings.settings = self.settings._load_settings()` in closeEvent() before saving geometry—ensures latest settings from disk are loaded before partial update
+- **Explicit Disk Sync**: Added flush() and fsync() to Settings.save()—forces OS to write buffers immediately, prevents data loss on crash
+- **Attribute Init**: Added `self.backup_dir = ''` in __init__—ensures attribute always exists, simplified conditional logic
+- **UI Polish**: Removed vertical separator, added spacing (15px between dir/buttons, 20px before checkbox)—cleaner visual hierarchy
+- **Repository Hygiene**: Created .gitignore (Python/IDE/OS exclusions), untracked 139 .pyc files—prevents future cache pollution
+- **Service Fixes**: reset_service.py, restore_service.py fixed to use DatabaseManager API correctly (fetch_all/fetch_one/execute_no_commit), tools_dialogs.py added missing imports and fixed font rendering
+- **Testing**: Manual verification of settings persistence, signal blocking, reload pattern, git status
+- **Design Insight**: Qt signals fire during setValue() even if widget not visible; Settings() creates new instance each call, loads from disk; multiple components sharing settings file must reload before partial updates
+
+Refs: Issue #2, PR #3
+
+```yaml
 id: 2026-01-28-12
 type: feature
 areas: [tools, database, ui, testing]

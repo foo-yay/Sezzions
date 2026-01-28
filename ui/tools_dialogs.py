@@ -3,7 +3,8 @@ Progress dialogs for Tools operations
 """
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-    QProgressBar, QPushButton, QTextEdit, QDialogButtonBox
+    QProgressBar, QPushButton, QTextEdit, QDialogButtonBox,
+    QGroupBox, QCheckBox, QLineEdit
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -528,7 +529,7 @@ class ResetDialog(QDialog):
         
         summary_text = QLabel(self._format_table_summary())
         summary_text.setWordWrap(True)
-        summary_text.setStyleSheet("font-family: monospace; font-size: 10pt;")
+        summary_text.setStyleSheet("font-family: 'Courier New', Courier, monospace; font-size: 10pt;")
         summary_layout.addWidget(summary_text)
         
         summary_group.setLayout(summary_layout)

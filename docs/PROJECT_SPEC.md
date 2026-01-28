@@ -148,9 +148,20 @@ Tools are part of “production readiness”:
 - Audit log can be preserved during reset operations (keep_audit_log flag)
 - Backup can optionally exclude audit log for privacy
 
+**Settings Persistence Architecture:**
+- Settings stored in `settings.json` with nested structure (e.g., `automatic_backup` object)
+- Each `Settings()` instantiation loads fresh from disk—no singleton pattern currently
+- **Critical Pattern**: Components that partially update settings.json must reload from disk first
+  - Example: `MainWindow.closeEvent()` reloads settings before saving window geometry to avoid overwriting other components' changes (e.g., ToolsTab's automatic_backup config)
+  - Pattern: `self.settings.settings = self.settings._load_settings()` before partial update
+- **Signal Management**: Qt widgets emit signals during `setValue()` even during initialization
+  - Pattern: Block signals before loading values, unblock after all widgets set
+  - Example: `ToolsTab._load_automatic_backup_settings()` blocks spinbox/checkbox signals during load to prevent premature saves
+- **Disk Sync**: Settings.save() uses `flush()` and `fsync()` to force OS buffer writes, preventing data loss on crash
+
 **UI Integration:**
 - Tools tab provides unified interface for all database operations
-- Manual backup: directory picker, "Backup Now" button, status display with file size
+- Manual backup: directory picker, "Backup Now" button, status display with file size, last backup timestamp
 - Restore: dialog with mode selection (Replace/Merge All/Merge Selected), safety warnings
 - Reset: dialog with table counts, preserve setup data checkbox, typed confirmation
 - Automatic backup: enable toggle, directory selection, frequency spinner (1-168 hrs), status label (color-coded), test button, last backup timestamp display
