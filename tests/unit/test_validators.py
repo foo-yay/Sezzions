@@ -4,12 +4,12 @@ import pytest
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sezzions.services.tools.validators import (
+from services.tools.validators import (
     PurchaseValidator,
     RedemptionValidator,
     GameSessionValidator,
 )
-from sezzions.services.tools.dtos import ValidationContext, ValidationSeverity
+from services.tools.dtos import ValidationContext, ValidationSeverity
 
 
 class TestPurchaseValidator:

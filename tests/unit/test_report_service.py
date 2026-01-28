@@ -161,7 +161,8 @@ def test_get_tax_report(test_db, sample_user, sample_site, purchase_repo, redemp
         site_id=sample_site.id,
         amount=Decimal("80.00"),
         redemption_date=date(2026, 1, 5),
-        apply_fifo=True
+        apply_fifo=True,
+        more_remaining=True
     )
     
     report_service = ReportService(test_db)
@@ -188,7 +189,8 @@ def test_get_tax_report_with_filters(test_db, sample_user, sample_site, purchase
         site_id=sample_site.id,
         amount=Decimal("50.00"),
         redemption_date=date(2026, 1, 5),
-        apply_fifo=True
+        apply_fifo=True,
+        more_remaining=True
     )
     
     report_service = ReportService(test_db)

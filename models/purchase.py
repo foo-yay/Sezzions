@@ -53,6 +53,11 @@ class Purchase:
                 setattr(self, field_name, Decimal(str(value)))
             if getattr(self, field_name) < 0:
                 raise ValueError(f"{field_name.replace('_', ' ').title()} cannot be negative")
+
+        # If sc_received wasn't provided, default it to amount.
+        # This matches common usage where purchase amount == SC received.
+        if self.sc_received == Decimal("0.00"):
+            self.sc_received = self.amount
         
         # Validate purchase_date
         if isinstance(self.purchase_date, str):
@@ -69,8 +74,8 @@ class Purchase:
         # Validate remaining_amount
         if self.remaining_amount < 0:
             raise ValueError("Remaining amount cannot be negative")
-        if self.remaining_amount > self.sc_received:
-            raise ValueError("Remaining amount cannot exceed SC received")
+        if self.remaining_amount > self.amount:
+            raise ValueError("Remaining amount cannot exceed purchase amount")
     
     @property
     def consumed_amount(self) -> Decimal:

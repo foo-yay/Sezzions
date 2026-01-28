@@ -5,9 +5,9 @@
 ### 1. Install Dependencies
 
 ```bash
-cd sezzions/
-python3 -m venv venv
-source venv/bin/activate  # On macOS/Linux
+cd ./
+python3 -m venv .venv
+source .venv/bin/activate  # On macOS/Linux
 # venv\Scripts\activate  # On Windows
 
 pip install --upgrade pip
@@ -32,7 +32,7 @@ This will:
 pytest
 
 # Run with coverage
-pytest --cov=sezzions --cov-report=html
+pytest --cov=. --cov-report=html
 
 # View coverage report
 open htmlcov/index.html
@@ -82,7 +82,7 @@ Create the Site and Card domains following the same pattern:
 3. `services/card_service.py` - Card service
 4. `tests/unit/test_card_*.py` - Tests
 
-See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for full specifications.
+See **[docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md)** for the current consolidated spec.
 
 ---
 
@@ -91,16 +91,16 @@ See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for full specifications.
 ```bash
 # 1. Make changes to code
 # 2. Format code
-black sezzions/
+black .
 
 # 3. Lint
-ruff check sezzions/
+ruff check .
 
 # 4. Run tests
 pytest
 
 # 5. Check coverage
-pytest --cov=sezzions --cov-report=term-missing
+pytest --cov=. --cov-report=term-missing
 ```
 
 ---
@@ -140,7 +140,8 @@ pytest -s
 ## Need Help?
 
 Refer to documentation:
-- **[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)** - Overall plan
-- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** - OOP patterns
-- **[docs/DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md)** - Schema details
-- **[docs/MIGRATION_PHASES.md](docs/MIGRATION_PHASES.md)** - Timeline
+- **[docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md)** - Master spec (recreate Sezzions from scratch)
+- **[docs/INDEX.md](docs/INDEX.md)** - Docs index
+- **[docs/status/STATUS.md](docs/status/STATUS.md)** - Rolling project status
+- **[docs/status/CHANGELOG.md](docs/status/CHANGELOG.md)** - Chronological changelog
+- **[docs/TODO.md](docs/TODO.md)** - Single-source TODO

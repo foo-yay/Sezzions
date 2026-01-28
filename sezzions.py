@@ -85,7 +85,7 @@ def main():
     # Use a stable path so launching from different CWDs doesn't create a new empty DB.
     db_path = os.environ.get("SEZZIONS_DB_PATH")
     if not db_path:
-        project_root = Path(__file__).resolve().parent.parent
+        project_root = Path(__file__).resolve().parent
         db_path = str(project_root / "sezzions.db")
 
     facade = AppFacade(db_path)

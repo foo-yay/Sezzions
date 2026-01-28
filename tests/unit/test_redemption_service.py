@@ -40,7 +40,8 @@ def test_create_redemption_with_fifo(redemption_service, purchase_repo, sample_u
         site_id=sample_site.id,
         amount=Decimal("80.00"),
         redemption_date=date(2026, 1, 15),
-        apply_fifo=True
+        apply_fifo=True,
+        more_remaining=True
     )
     
     assert redemption.cost_basis == Decimal("80.00")
@@ -66,7 +67,8 @@ def test_create_redemption_fifo_updates_purchases(
         site_id=sample_site.id,
         amount=Decimal("60.00"),
         redemption_date=date(2026, 1, 15),
-        apply_fifo=True
+        apply_fifo=True,
+        more_remaining=True
     )
     
     # Verify purchase consumed

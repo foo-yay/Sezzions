@@ -3,16 +3,15 @@
 Database Schema Validation Script
 
 Compares implemented schema in repositories/database.py against 
-specification in docs/DATABASE_DESIGN.md
-
-Reference: IMPLEMENTATION_PLAN.md → DATABASE_DESIGN.md
+specification in docs/PROJECT_SPEC.md
 """
 
 import sqlite3
 import sys
+import os
 from pathlib import Path
 
-# Expected tables from DATABASE_DESIGN.md
+# Expected tables from docs/PROJECT_SPEC.md
 EXPECTED_TABLES = {
     'schema_version': {
         'columns': ['version', 'applied_at'],
@@ -101,7 +100,7 @@ def get_actual_tables(db_path: str) -> dict:
 
 def validate_schema(db_path: str) -> tuple[bool, list[str], list[str]]:
     """
-    Validate database schema against DATABASE_DESIGN.md spec
+    Validate database schema against docs/PROJECT_SPEC.md
     
     Returns:
         (is_valid, missing_tables, missing_columns)
@@ -113,7 +112,7 @@ def validate_schema(db_path: str) -> tuple[bool, list[str], list[str]]:
     print("\n" + "="*80)
     print("DATABASE SCHEMA VALIDATION REPORT")
     print("="*80)
-    print(f"\nReference: docs/DATABASE_DESIGN.md")
+    print(f"\nReference: docs/PROJECT_SPEC.md")
     print(f"Database: {db_path}\n")
     
     # Check each expected table
@@ -160,7 +159,7 @@ def validate_schema(db_path: str) -> tuple[bool, list[str], list[str]]:
     is_valid = len(missing_tables) == 0 and len(missing_columns) == 0
     
     if is_valid:
-        print("\n✅ Schema is VALID and matches DATABASE_DESIGN.md")
+        print("\n✅ Schema is VALID and matches docs/PROJECT_SPEC.md")
     else:
         print("\n❌ Schema is INVALID - missing components detected")
         print("\nAction Required:")
@@ -175,13 +174,17 @@ def validate_schema(db_path: str) -> tuple[bool, list[str], list[str]]:
 
 
 if __name__ == "__main__":
-    db_path = "sezzions.db"
+    repo_root = Path(__file__).resolve().parents[1]
+    default_db_path = repo_root / "sezzions.db"
+    db_path = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("SEZZIONS_DB_PATH", str(default_db_path))
+    db_path_obj = Path(db_path)
     
-    if not Path(db_path).exists():
-        print(f"❌ Database not found: {db_path}")
-        print("Run the app once to create the database, then run this script again.")
+    if not db_path_obj.exists():
+        print(f"❌ Database not found: {db_path_obj}")
+        print("Run the app once to create the database, or pass a DB path:")
+        print("  python3 tools/validate_schema.py /path/to/sezzions.db")
         sys.exit(1)
     
-    is_valid, missing_tables, missing_columns = validate_schema(db_path)
+    is_valid, missing_tables, missing_columns = validate_schema(str(db_path_obj))
     
     sys.exit(0 if is_valid else 1)

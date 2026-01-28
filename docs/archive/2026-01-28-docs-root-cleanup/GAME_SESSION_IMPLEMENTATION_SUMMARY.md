@@ -205,10 +205,10 @@ session = game_session_service.create_session(...)
 
 ## References
 
-- **Full Changelog**: `sezzions/docs/GAME_SESSION_PL_FIX_CHANGELOG.md`
+- **Full Changelog**: `docs/GAME_SESSION_PL_FIX_CHANGELOG.md`
 - **Legacy Algorithm**: `business_logic.py` lines 1100-1200
-- **Accounting Logic**: `sezzions/docs/ACCOUNTING_LOGIC.md` lines 350-450
-- **Implementation Plan**: `sezzions/IMPLEMENTATION_PLAN.md` line 118
+- **Accounting Logic**: `docs/ACCOUNTING_LOGIC.md` lines 350-450
+- **Implementation Plan (archived)**: `docs/archive/IMPLEMENTATION_PLAN.md` (see also `docs/PROJECT_SPEC.md`)
 
 ---
 

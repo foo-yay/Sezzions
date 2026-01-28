@@ -1,136 +1,16 @@
 """Unit tests for RecalculationService."""
 
 import pytest
-import sqlite3
 from decimal import Decimal
-from datetime import datetime
 
 from services.recalculation_service import RecalculationService, RebuildResult
 from repositories.database import DatabaseManager
 
 
-class DB:
-    """Minimal test database wrapper."""
-    
-    def __init__(self, db_path=':memory:'):
-        self._connection = sqlite3.connect(db_path)
-        self._connection.row_factory = sqlite3.Row
-        self._create_schema()
-    
-    def fetch_all(self, query, params=None):
-        cursor = self._connection.cursor()
-        if params:
-            cursor.execute(query, params)
-        else:
-            cursor.execute(query)
-        return cursor.fetchall()
-    
-    def _create_schema(self):
-        """Create minimal schema for testing."""
-        cursor = self._connection.cursor()
-        
-        # Users
-        cursor.execute("""
-            CREATE TABLE users (
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL
-            )
-        """)
-        
-        # Sites
-        cursor.execute("""
-            CREATE TABLE sites (
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL
-            )
-        """)
-        
-        # Purchases
-        cursor.execute("""
-            CREATE TABLE purchases (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                site_id INTEGER NOT NULL,
-                amount REAL NOT NULL,
-                purchase_date TEXT NOT NULL,
-                purchase_time TEXT,
-                remaining_amount REAL,
-                updated_at TEXT,
-                FOREIGN KEY (user_id) REFERENCES users(id),
-                FOREIGN KEY (site_id) REFERENCES sites(id)
-            )
-        """)
-        
-        # Redemptions
-        cursor.execute("""
-            CREATE TABLE redemptions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                site_id INTEGER NOT NULL,
-                amount REAL NOT NULL,
-                redemption_date TEXT NOT NULL,
-                redemption_time TEXT,
-                is_free_sc INTEGER DEFAULT 0,
-                more_remaining INTEGER DEFAULT 1,
-                notes TEXT,
-                FOREIGN KEY (user_id) REFERENCES users(id),
-                FOREIGN KEY (site_id) REFERENCES sites(id)
-            )
-        """)
-        
-        # Redemption allocations
-        cursor.execute("""
-            CREATE TABLE redemption_allocations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                redemption_id INTEGER NOT NULL,
-                purchase_id INTEGER NOT NULL,
-                allocated_amount REAL NOT NULL,
-                FOREIGN KEY (redemption_id) REFERENCES redemptions(id),
-                FOREIGN KEY (purchase_id) REFERENCES purchases(id)
-            )
-        """)
-        
-        # Realized transactions
-        cursor.execute("""
-            CREATE TABLE realized_transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                redemption_date TEXT NOT NULL,
-                site_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                redemption_id INTEGER NOT NULL,
-                cost_basis REAL NOT NULL,
-                payout REAL NOT NULL,
-                net_pl REAL NOT NULL,
-                FOREIGN KEY (site_id) REFERENCES sites(id),
-                FOREIGN KEY (user_id) REFERENCES users(id),
-                FOREIGN KEY (redemption_id) REFERENCES redemptions(id)
-            )
-        """)
-        
-        # Game sessions (minimal)
-        cursor.execute("""
-            CREATE TABLE game_sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                site_id INTEGER NOT NULL,
-                start_date TEXT NOT NULL,
-                end_date TEXT,
-                result REAL DEFAULT 0,
-                FOREIGN KEY (user_id) REFERENCES users(id),
-                FOREIGN KEY (site_id) REFERENCES sites(id)
-            )
-        """)
-        
-        self._connection.commit()
-    
-    def close(self):
-        self._connection.close()
-
-
 @pytest.fixture
 def test_db():
     """Create test database."""
-    db = DB()
+    db = DatabaseManager(':memory:')
     
     # Add test data
     cursor = db._connection.cursor()
@@ -161,7 +41,7 @@ class TestIterPairs:
     def test_iter_pairs_from_purchases(self, test_db, service):
         """Test pairs from purchases."""
         cursor = test_db._connection.cursor()
-        cursor.execute("INSERT INTO purchases (user_id, site_id, amount, purchase_date) VALUES (1, 1, 100.0, '2024-01-01')")
+        cursor.execute("INSERT INTO purchases (user_id, site_id, amount, purchase_date, remaining_amount) VALUES (1, 1, 100.0, '2024-01-01', 100.0)")
         test_db._connection.commit()
         
         pairs = service.iter_pairs()
@@ -179,8 +59,8 @@ class TestIterPairs:
     def test_iter_pairs_multiple(self, test_db, service):
         """Test multiple pairs."""
         cursor = test_db._connection.cursor()
-        cursor.execute("INSERT INTO purchases (user_id, site_id, amount, purchase_date) VALUES (1, 1, 100.0, '2024-01-01')")
-        cursor.execute("INSERT INTO purchases (user_id, site_id, amount, purchase_date) VALUES (2, 2, 50.0, '2024-01-02')")
+        cursor.execute("INSERT INTO purchases (user_id, site_id, amount, purchase_date, remaining_amount) VALUES (1, 1, 100.0, '2024-01-01', 100.0)")
+        cursor.execute("INSERT INTO purchases (user_id, site_id, amount, purchase_date, remaining_amount) VALUES (2, 2, 50.0, '2024-01-02', 50.0)")
         cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date) VALUES (1, 2, 25.0, '2024-01-03')")
         test_db._connection.commit()
         
@@ -207,13 +87,13 @@ class TestRebuildFIFOForPair:
         
         # Redeem $50
         cursor.execute("""
-            INSERT INTO redemptions (user_id, site_id, amount, redemption_date)
-            VALUES (1, 1, 50.0, '2024-01-02')
+            INSERT INTO redemptions (user_id, site_id, amount, redemption_date, more_remaining)
+            VALUES (1, 1, 50.0, '2024-01-02', 1)
         """)
         test_db._connection.commit()
         
         # Rebuild
-        result = service.rebuild_fifo_for_pair(1, 1)
+        result = service._rebuild_fifo_for_pair(1, 1)
         
         assert result.pairs_processed == 1
         assert result.redemptions_processed == 1
@@ -251,11 +131,11 @@ class TestRebuildFIFOForPair:
         purchase2_id = cursor.lastrowid
         
         # Redeem $120 (should allocate $100 from first, $20 from second)
-        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date) VALUES (1, 1, 120.0, '2024-01-05')")
+        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date, more_remaining) VALUES (1, 1, 120.0, '2024-01-05', 1)")
         test_db._connection.commit()
         
         # Rebuild
-        result = service.rebuild_fifo_for_pair(1, 1)
+        result = service._rebuild_fifo_for_pair(1, 1)
         
         assert result.allocations_written == 2
         
@@ -279,10 +159,10 @@ class TestRebuildFIFOForPair:
         cursor = test_db._connection.cursor()
         
         cursor.execute("INSERT INTO purchases (user_id, site_id, amount, purchase_date, remaining_amount) VALUES (1, 1, 100.0, '2024-01-01', 100.0)")
-        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date, is_free_sc) VALUES (1, 1, 50.0, '2024-01-02', 1)")
+        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date, is_free_sc, more_remaining) VALUES (1, 1, 50.0, '2024-01-02', 1, 1)")
         test_db._connection.commit()
         
-        result = service.rebuild_fifo_for_pair(1, 1)
+        result = service._rebuild_fifo_for_pair(1, 1)
         
         # No allocations for free SC
         assert result.allocations_written == 0
@@ -309,7 +189,7 @@ class TestRebuildFIFOForPair:
         """)
         test_db._connection.commit()
         
-        result = service.rebuild_fifo_for_pair(1, 1)
+        result = service._rebuild_fifo_for_pair(1, 1)
         
         # No allocations for zero payout
         assert result.allocations_written == 0
@@ -331,16 +211,16 @@ class TestRebuildFIFOAll:
         
         # User 1, Site 1
         cursor.execute("INSERT INTO purchases (user_id, site_id, amount, purchase_date, remaining_amount) VALUES (1, 1, 100.0, '2024-01-01', 100.0)")
-        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date) VALUES (1, 1, 50.0, '2024-01-02')")
+        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date, more_remaining) VALUES (1, 1, 50.0, '2024-01-02', 1)")
         
         # User 2, Site 1
         cursor.execute("INSERT INTO purchases (user_id, site_id, amount, purchase_date, remaining_amount) VALUES (2, 1, 75.0, '2024-01-03', 75.0)")
-        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date) VALUES (2, 1, 25.0, '2024-01-04')")
+        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date, more_remaining) VALUES (2, 1, 25.0, '2024-01-04', 1)")
         
         test_db._connection.commit()
         
         # Rebuild all
-        result = service.rebuild_fifo_all()
+        result = service.rebuild_all()
         
         assert result.pairs_processed == 2
         assert result.redemptions_processed == 2
@@ -359,14 +239,14 @@ class TestProgressTracking:
         """Test progress callback for single pair."""
         cursor = test_db._connection.cursor()
         cursor.execute("INSERT INTO purchases (user_id, site_id, amount, purchase_date, remaining_amount) VALUES (1, 1, 100.0, '2024-01-01', 100.0)")
-        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date) VALUES (1, 1, 50.0, '2024-01-02')")
+        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date, more_remaining) VALUES (1, 1, 50.0, '2024-01-02', 1)")
         test_db._connection.commit()
         
         progress_calls = []
         def track_progress(current, total, message):
             progress_calls.append((current, total, message))
         
-        service.rebuild_fifo_for_pair(1, 1, progress_callback=track_progress)
+        service._rebuild_fifo_for_pair(1, 1, progress_callback=track_progress)
         
         assert len(progress_calls) == 2
         assert progress_calls[0] == (0, 1, "Rebuilding FIFO for user 1, site 1")
@@ -383,9 +263,10 @@ class TestProgressTracking:
         def track_progress(current, total, message):
             progress_calls.append((current, total, message))
         
-        service.rebuild_fifo_all(progress_callback=track_progress)
+        service.rebuild_all(progress_callback=track_progress)
         
         # Should have progress updates for both pairs
         assert len(progress_calls) >= 2
-        assert any("Processing pair 1/2" in msg for _, _, msg in progress_calls)
-        assert any("Processing pair 2/2" in msg for _, _, msg in progress_calls)
+        messages = [msg for _, _, msg in progress_calls]
+        assert any("[1/2]" in msg for msg in messages)
+        assert any("[2/2]" in msg for msg in messages)

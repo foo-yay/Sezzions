@@ -1,0 +1,72 @@
+name: "Feature request"
+description: "Propose a change or new capability"
+labels: ["type:feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing a feature.
+
+        Sezzions prioritizes correctness and reproducibility:
+        - Business semantics should be documented in `docs/PROJECT_SPEC.md`
+        - Noteworthy changes should be recorded in `docs/status/CHANGELOG.md`
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What problem are we solving?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should we build/change?
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What’s in-scope vs out-of-scope?
+      placeholder: |
+        In-scope:
+        - …
+        Out-of-scope:
+        - …
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How do we know it’s done (testable outcomes)?
+      placeholder: |
+        - Given … when … then …
+        - …
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - UI
+        - Services
+        - Database/Repositories
+        - Tools
+        - Docs
+        - Tests
+
+  - type: checkboxes
+    id: notes
+    attributes:
+      label: Notes
+      options:
+        - label: This change likely requires updating `docs/PROJECT_SPEC.md`.
+          required: false
+        - label: This change likely requires adding/updating scenario-based tests.
+          required: false

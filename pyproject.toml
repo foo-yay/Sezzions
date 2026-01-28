@@ -1,6 +1,12 @@
 [tool.black]
 line-length = 100
 target-version = ['py311']
+extend-exclude = '''
+^/\.LEGACY/
+|^/htmlcov/
+|^/\.pytest_cache/
+|^/__pycache__/
+'''
 
 [tool.mypy]
 python_version = "3.11"
@@ -11,3 +17,9 @@ disallow_untyped_defs = false
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+exclude = [
+	".LEGACY",
+	"htmlcov",
+	".pytest_cache",
+	"__pycache__",
+]

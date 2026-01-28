@@ -1,21 +1,21 @@
 """Tests for Tools DTOs and schemas."""
 
 import pytest
-from sezzions.services.tools.dtos import (
+from services.tools.dtos import (
     ValidationError,
     ValidationSeverity,
     ImportPreview,
     ImportResult,
     ValidationContext,
 )
-from sezzions.services.tools.schemas import (
+from services.tools.schemas import (
     get_schema,
     get_all_schemas,
     get_exportable_schemas,
     PURCHASE_SCHEMA,
     USER_SCHEMA,
 )
-from sezzions.services.tools.enums import FieldType, PostImportHook
+from services.tools.enums import FieldType, PostImportHook
 
 
 class TestValidationError:
@@ -146,7 +146,7 @@ class TestSchemas:
         """Test retrieving all schemas."""
         schemas = get_all_schemas()
         
-        assert len(schemas) == 9  # 9 entity types
+        assert len(schemas) == 10  # 10 entity types
         assert any(s.table_name == 'purchases' for s in schemas)
         assert any(s.table_name == 'users' for s in schemas)
     
@@ -155,7 +155,7 @@ class TestSchemas:
         schemas = get_exportable_schemas()
         
         # All schemas should be exportable by default
-        assert len(schemas) == 9
+        assert len(schemas) == 10
     
     def test_purchase_schema_fields(self):
         """Test purchase schema has required fields."""

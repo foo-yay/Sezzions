@@ -498,7 +498,7 @@ def _from_bool(self, value):
 
 1. **Initialize Alembic:**
 ```bash
-cd sezzions/
+cd ./
 alembic init migrations
 ```
 

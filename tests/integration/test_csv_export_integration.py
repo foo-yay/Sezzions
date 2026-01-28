@@ -29,6 +29,18 @@ class SimpleDB:
     
     def cursor(self):
         return self.conn.cursor()
+
+    def fetch_all(self, query, params=None):
+        """ForeignKeyResolver compatibility."""
+        cursor = self.conn.cursor()
+        cursor.execute(query, params or ())
+        return cursor.fetchall()
+
+    def fetch_one(self, query, params=None):
+        """ForeignKeyResolver compatibility."""
+        cursor = self.conn.cursor()
+        cursor.execute(query, params or ())
+        return cursor.fetchone()
     
     def execute(self, query, params=None):
         """Execute a query and return cursor."""
@@ -90,6 +102,7 @@ class SimpleDB:
                 starting_sc_balance REAL,
                 cashback_earned REAL DEFAULT 0.00,
                 purchase_time TEXT NOT NULL,
+                remaining_amount REAL,
                 notes TEXT,
                 is_active INTEGER DEFAULT 1,
                 FOREIGN KEY (site_id) REFERENCES sites(id),

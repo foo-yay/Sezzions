@@ -229,12 +229,12 @@ Total Backend:                179 tests (100% passing)
    - Modified execute_import() to track affected IDs
    - Populate affected IDs in ImportResult
 
-4. `sezzions/docs/todo.md`
+4. `docs/todo.md`
    - Added Phase 4 progress section
    - Marked tasks 1-5 as complete
    - Task 6 marked as pending
 
-5. `sezzions/docs/TOOLS_IMPLEMENTATION_PLAN.md`
+5. `docs/TOOLS_IMPLEMENTATION_PLAN.md`
    - Updated status to "Phase 4 Implementation Complete (5/6 tasks)"
    - Added Implementation Status Summary section
    - Documented all completed phases

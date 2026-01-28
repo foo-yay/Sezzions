@@ -1,210 +1,91 @@
-# Session App - OOP Backend + Qt UI
+# Sezzions
 
-## Overview
-Complete casino sweepstakes tracker with OOP backend (259 tests, 97.45% coverage) and modern PySide6 UI. Tracks purchases, redemptions, and game sessions with FIFO cost basis and taxable P/L calculations.
+Casino sweepstakes tracker with a PySide6 desktop UI and an accounting-focused backend (purchases, redemptions, FIFO basis, and session/tax reporting).
 
-## Current Status
+This repository is consolidated: **Sezzions is the primary app**. Legacy code is quarantined in `.LEGACY/`.
 
-### ✅ Completed
-- **OOP Backend**: All 9 domains implemented with comprehensive tests
-- **Qt Application**: Standalone PySide6 app with theme system
-- **Primary Tabs**:
-  - 💰 Purchases - Track coin purchases with FIFO consumption
-  - 💵 Redemptions - Cashouts with cost basis calculation
-  - 🎮 Game Sessions - Gameplay tracking with taxable P/L
-- **Setup Tab** (container with sub-tabs):
-  - 👤 Users - Player accounts
-  - 🏢 Sites - Casino sites with SC:Dollar rates
-  - 💳 Cards - Payment methods
+## Quick Start (macOS/Linux)
 
-### 📝 Pending
-- Daily Sessions tab (aggregate by day)
-- Unrealized tab (current balances)
-- Realized tab (completed transactions)
-- Reports tab (tax reports, analytics)
-- Setup sub-tabs: Redemption Methods, Games, Game Types
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 
-## Architecture
-
-### Three-Layer Pattern
-```
-Models (Domain Objects)
-    ↓
-Repositories (Data Access)
-    ↓
-Services (Business Logic)
+pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
-### Database
-- SQLite with `DatabaseManager` class
-- PostgreSQL-ready design (TEXT storage for Decimal values)
-- Row factory for dict-like access
-- Foreign key constraints enabled
+Run the app:
 
-## Implemented Domains
-
-### Phase 1: Simple CRUD (134 tests)
-- **User** - Player accounts
-- **Site** - Casino sites with SC:Dollar ratios
-- **Card** - Payment methods
-- **RedemptionMethod** - Cash-out methods
-- **GameType** - Game categories
-- **Game** - Individual games with RTP tracking
-
-### Phase 2: Purchases (38 tests)
-- **Purchase** - Coin purchases with FIFO tracking
-- `remaining_amount` field tracks unconsumed balance
-- Edit restrictions when consumed
-
-### Phase 3: Redemptions & FIFO (23 tests)
-- **Redemption** - Ca- **Redemption** - Ca- **Redemption** - Ca- **Redemption** - Ca- **Redemption** - Ca- **Redemption** - Ca- **Redemption** - Ca- **Redemption** - Ca- **Redemption** - Ca-xable_profit`
-
-### P### P### P### P#sions (36 te### P### P###Session** - Play sessions with P/L tracking
-- Calculates: `(redemptions + ending) - (starting + purchases)`
-- Recalculation methods for data consistency
-
-### Phase 5: Reports & Tools (11 tests)
-- **ReportService** - Aggregation and analytics
-  - User/Site summaries
-  - Tax reports (FIFO cost basis, gains/losses)
-  - Session P/L analytics (win rate, best/worst)
-- **ValidationService** - Data integrity checks
-  - FIFO allocation validation
-  - Session P/L verification
-  - Data summary counts
-
-## Usage Examples
-
-### Creating a Purchase
-```python
-from repositories.database import Databasefrom repositories.database import Databasefrom rport PurchaseRepository
-from services.purchase_service import PurchaseService
-from decimal import Decimal
-from datetime import date
-
-db = DatabaseManager('sezzions.db')
-purchase_repo = PurchaseRepository(db)
-purchase_service = PurchaseService(purchase_repo)
-
-purchase = purchase_service.create_purchase(
-    user_id=1,
-    site_id=1,
-    a    a    a    a    a    a    a    a    a    a    a    a    a    a    a    a    a    a    with FIFO
-```python
-from repositories.redemption_repository import RedemptionRepository
-from services.fifo_service import FIFOService
-from services.redemption_service import RedemptionService
-
-redemption_repo = RedemptionRepository(db)
-fifo_service = FIFOService(purchasefifo_service = FIFOService(purchasefifo_serve(redemption_repo, fifo_service)
-
-redemption = redemption_service.create_redemption(
-    user_id=1,
-    site_id=1    site_id=1    site_80.00"),
-    redemptio    re=date.today(),
-    apply_fifo=True  # Automatically calculates cost basis
-)
-
-print(f"Cost Basis: {redemption.cost_basis}")
-print(f"Taxable Profit: {redemption.taxable_profit}")
+```bash
+python3 sezzions.py
 ```
 
-### Generating Reports
-```python
-from services.report_service import ReportService
+## Database Location
 
-report_service = ReportService(db)
+By default, the app uses `./sezzions.db` (repo root).
 
-# User summary
-summary = report_service.get_user_summary(user_id=1)
-print(f"Total Purchases: {summary.total_purchases}")
-print(f"Total P/L: {summary.total_profit_loss}")
-print(f"Available Balance: {summary.available_balance}")
+Override with an environment variable:
 
-# Tax report
-tax_report = report_service.get_tax_report(
-    user_id=1,
-    start_date=date(2026, 1, 1),
-    end_date=date(2026, 12, 31)
-)
-print(f"Totprint(f"Totprint(f"Totprint(f"Totprint(f"Totprint(f"
-### Va### Va### Va### Va### Va### Va### Va### Vrvices.validation_service import ValidationService
-
-validation_service = ValidationService(db)
-
-# Validate FIFO allocations
-result = validation_service.validate_all(user_id=1, site_id=1)
-
-if result["is_valid"]:
-    print("All validations passed!")
-else:
-    print(f"Errors found: {result['errors']}")
-    print(f"Warnings: {result['warnings']}")
+```bash
+SEZZIONS_DB_PATH=/path/to/your.db python3 sezzions.py
 ```
 
-## Running Tests## Running Tests## Running Tests## Running Tests## R   # Run all tests
-pytest --copy                   # With coverage report
-pytest tests/unit/test_fifo_service.py -v  # Specific test file
+## Tests
+
+```bash
+pytest
 ```
 
-**Current Status: 242 tests, 92.83% coverage**
+Coverage (optional):
 
-## Key Design Patterns
+```bash
+pytest --cov=. --cov-report=html
+open htmlcov/index.html
+```
 
-### Repository Pattern
-All repositories follow the same structure:
-- `__init__(self, db_manager)` - Inject DatabaseManager
-- `_row_to_model(row)` - Conve- `_row_to_model(row)` - Conve- `_row_tod)` - Single record lookup
-- `get_all()` - All records
-- `create(model)` - Insert new - `create(model)` - Insert new - `create(model)` - Insert new )` - Remove record
+## Repo Layout (High Level)
 
-### Service Pattern
-Services contain business logic:
-- Validation rules
-- Cross-domain operations
-- Calculated fields
-- Edit restrictions
+- `sezzions.py`: primary application entrypoint
+- `app_facade.py`: app-level wiring between UI and services
+- `models/`, `repositories/`, `services/`: core backend layers
+- `ui/`: PySide6 UI
+- `tools/`: offline/maintenance tools
+- `.LEGACY/`: frozen legacy snapshot (not maintained)
 
-### Database A### Database A### Database A### Database A### Database A### D(qu### Databas)` - Single ### Database A### Database A### Darams)` - ### Database A### Database A### Database A#Inse### Database A### Database A### D Money Handling
-- All amounts use `Decimal` type
-- Stored as TEXT in database
-- Converted to/from Decimal in repositories
-- Use `CAST(field AS REAL)` for SQL n- Use `CAST(field AS REAL)` for SQL nting Rules
+## Documentation
 
-### FIFO (First#In, ### FIFO (First#In, ### FIFO (First#In, ### Ffirst
-2. `remaining_amount`2. `remaining_amou bala2. `remaining_amount`2. `remaining_amou baer once consumed
-4. Cost basis = sum of allocated purchase4. Cost basis = sum of allocated purchase4. Cost basis = sum of allocated purchase4. Cost basis= starting_balance + purchases4. Cost basis = sum of allocated purchase4. Cost basis = sum of allocated purchase4. Cost basis = sum of alloctio4. Cost basis = su: Cannot modify amount, site, or user if `consumed > 0`
-- **Redemptions**: Cannot modify amount, site, user, or date if FIFO allocated
-- **Sessions**: Can always recalculate P/L from stored values
+- [GETTING_STARTED.md](GETTING_STARTED.md)
+- [docs/INDEX.md](docs/INDEX.md)
+- [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md)
+- [docs/status/STATUS.md](docs/status/STATUS.md)
+- [docs/status/CHANGELOG.md](docs/status/CHANGELOG.md)
 
-## Integration with Legacy Code
+## Contribution Workflow (Humans + AI)
 
-The OOP backend is designed to coexist with the legacy `session2.py` code:
+This repo uses a strict workflow to prevent documentation sprawl and keep changes reproducible.
 
-1. **Shared Database**: Both systems use the same SQLite database
-2. **Compatible Schema**: Table structures match legacy expectations
-3. **Gradual Migration**: Can migrate feature-by-feature
-4. **Validation**: Use `ValidationService` to verify d4. **Validation**: Use `ValidationService` to verify d4. **Validace business_logic.py calls** with Service calls
-2. **Use Services in GUI event handlers** instead of direct DB access
-3. **Keep table_helpers.py** for UI rendering (compatible with Service outputs)
-4. **Update session2.py** to use OOP services gradually
-5. **Run ValidationService** after major operations to ensure integrity
+If you are the “project owner” assigning work:
+- Prefer **GitHub Issues** for tracking work (bugs, features, chores).
+- If you’re working offline or want a lightweight queue, you can use **[docs/TODO.md](docs/TODO.md)** as an optional mirror.
 
-## Testing Strategy
+If you are implementing work (human or AI):
+1. Start from a GitHub Issue (preferred) or **[docs/TODO.md](docs/TODO.md)** (offline mirror).
+2. Implement in code following layering rules (UI → services → repositories).
+3. Update/add tests to match intended semantics.
+4. Update **[docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md)** when behavior/architecture/workflows change.
+5. Add a noteworthy entry to **[docs/status/CHANGELOG.md](docs/status/CHANGELOG.md)**.
+6. Open a Pull Request and request owner review.
+7. After approval/merge, close the Issue (and only then mark/remove any related TODO item).
 
-- **Unit Tests**: Each model, repository, and service
-- **In-Memory Database**: Tests use `:memory:` for isolation
-- **Fixtures**: Reusable test data in `conftest.py`
-- **Coverage Target**: 90% minimum (currently 92.83%)
-- **Critical Path**: FIFO calculations have extensive test coverage
+Governance reference: **[docs/adr/0001-docs-governance.md](docs/adr/0001-docs-governance.md)**.
 
-## Performance Considerations
+### Branching & PR Policy
 
-- DatabaseManager maintains single connection
-- Queries use indexes on foreign keys
-- Bulk operations should use transactions
-- Consider connection pooling for concurrent access
+- Use the default branch (typically `main`) as the stable integration branch.
+- For any non-trivial change, work on a feature branch:
+	- Naming: `issue-<id>-<short-slug>` (preferred), or `bug/<slug>`, `feature/<slug>`, `chore/<slug>`.
+	- Make small, coherent commits as you go.
+	- Open a PR early (draft is fine) so CI runs and review can start.
+- Merge to the default branch via PR after CI is green and the owner approves.
+- Avoid rewriting published history (no force-push) unless explicitly coordinating a cleanup.
 
-## Future Enhancements
-
-- **RedemptionAllocation** link t- **RedemptionAllocation** link t- **RedemptionAllocation** link t- **RedemptionAllocation** link t- **RedemptionAllocation** link t- **RedemptionAllocation- **CSV Imp- **RedemptionAllocation** link t- **RedemptionAllocation** link t- igration** scripts for legacy data

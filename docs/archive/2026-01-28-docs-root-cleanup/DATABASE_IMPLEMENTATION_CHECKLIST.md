@@ -1,6 +1,6 @@
 # Database Implementation Checklist
 
-**Reference:** IMPLEMENTATION_PLAN.md → DATABASE_DESIGN.md  
+**Reference:** docs/PROJECT_SPEC.md → DATABASE_DESIGN.md  
 **Created:** 2026-01-16  
 **Status:** In Progress
 
@@ -99,7 +99,7 @@
 ## Validation Checklist
 
 ### Pre-Implementation (Should Have Been Done)
-- [ ] ❌ Read IMPLEMENTATION_PLAN.md before any code
+- [ ] ❌ Read docs/PROJECT_SPEC.md before any code
 - [ ] ❌ Read DATABASE_DESIGN.md completely before creating schema
 - [ ] ❌ Created checklist from DATABASE_DESIGN.md BEFORE implementation
 - [ ] ❌ Validated each table against spec during implementation
@@ -161,7 +161,7 @@
 
 ### Run Validation Script
 ```bash
-cd sezzions/
+cd ./
 python3 validate_schema.py
 ```
 
@@ -191,7 +191,7 @@ PRAGMA foreign_key_list(table_name);
 4. **Assumed memory** instead of systematically referencing docs
 
 ### Corrective Actions
-1. **ALWAYS start with IMPLEMENTATION_PLAN.md** → follow references
+1. **ALWAYS start with docs/PROJECT_SPEC.md** → follow references
 2. **Create checklist FIRST** from design docs
 3. **Implement complete layers** (all tables, all indexes) before moving to next layer
 4. **Validate against spec** after each major component
@@ -199,7 +199,7 @@ PRAGMA foreign_key_list(table_name);
 
 ### New Workflow (Mandatory)
 ```
-1. Read IMPLEMENTATION_PLAN.md → identify phase/feature
+1. Read docs/PROJECT_SPEC.md → identify phase/feature
 2. Follow doc references → read complete specs
 3. Create implementation checklist → from specs
 4. Implement systematically → check off list items

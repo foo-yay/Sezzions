@@ -258,7 +258,3 @@ If issues are found:
 1. All 6 test scenarios pass
 2. No errors in console during testing
 3. Dormant SC displays correctly for all edge cases
-4. Reactivation happens automatically on session start
-5. Database status transitions work correctly
-6. UI is intuitive and helpful (tooltips, formatting)
-7. Legacy behavior fully replicated in OOP app

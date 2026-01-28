@@ -117,8 +117,8 @@ All of these services can now rely on guaranteed atomic operations that will nev
 
 ## Related Files
 
-- Implementation: [sezzions/repositories/bulk_tools_repository.py](sezzions/repositories/bulk_tools_repository.py)
-- Tests: [sezzions/tests/unit/test_bulk_tools_repository.py](sezzions/tests/unit/test_bulk_tools_repository.py)
-- DB Primitives: [sezzions/repositories/database.py](sezzions/repositories/database.py) (transaction methods)
-- DB Tests: [sezzions/tests/unit/test_database_transactions.py](sezzions/tests/unit/test_database_transactions.py)
-- Implementation Plan: [sezzions/docs/TOOLS_IMPLEMENTATION_PLAN.md](sezzions/docs/TOOLS_IMPLEMENTATION_PLAN.md)
+- Implementation: [repositories/bulk_tools_repository.py](repositories/bulk_tools_repository.py)
+- Tests: [tests/unit/test_bulk_tools_repository.py](tests/unit/test_bulk_tools_repository.py)
+- DB Primitives: [repositories/database.py](repositories/database.py) (transaction methods)
+- DB Tests: [tests/unit/test_database_transactions.py](tests/unit/test_database_transactions.py)
+- Implementation Plan: [docs/TOOLS_IMPLEMENTATION_PLAN.md](docs/TOOLS_IMPLEMENTATION_PLAN.md)

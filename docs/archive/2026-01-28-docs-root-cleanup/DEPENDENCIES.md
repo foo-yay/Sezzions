@@ -226,7 +226,7 @@ matplotlib>=3.8.2
 
 **Installation:**
 ```bash
-cd sezzions/
+cd ./
 pip install -r requirements.txt
 ```
 
@@ -306,16 +306,16 @@ Given the requirement to support both SQLite and PostgreSQL without code changes
 ### Code Quality Pipeline
 ```bash
 # Format code
-black sezzions/
+black .
 
 # Lint code
-ruff check sezzions/
+ruff check .
 
 # Type check
-mypy sezzions/
+mypy .
 
 # Run tests with coverage
-pytest --cov=sezzions --cov-report=html tests/
+pytest --cov=. --cov-report=html tests/
 
 # Coverage report location: htmlcov/index.html
 ```

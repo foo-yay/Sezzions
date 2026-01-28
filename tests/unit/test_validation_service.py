@@ -23,7 +23,8 @@ def test_validate_fifo_allocations_valid(test_db, sample_user, sample_site, purc
         site_id=sample_site.id,
         amount=Decimal("50.00"),
         redemption_date=date(2026, 1, 5),
-        apply_fifo=True
+        apply_fifo=True,
+        more_remaining=True
     )
     
     validation_service = ValidationService(test_db)
@@ -139,7 +140,8 @@ def test_validate_all(test_db, sample_user, sample_site, purchase_repo, redempti
         site_id=sample_site.id,
         amount=Decimal("50.00"),
         redemption_date=date(2026, 1, 5),
-        apply_fifo=True
+        apply_fifo=True,
+        more_remaining=True
     )
     
     session = game_session_service.create_session(

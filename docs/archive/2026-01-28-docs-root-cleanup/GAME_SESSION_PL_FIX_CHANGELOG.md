@@ -316,9 +316,9 @@ Net Taxable P/L: ((0 + 10) * 1.0) - 25 = $10 - $25 = -$15
 ## Lessons Learned
 
 ### What Went Wrong
-1. **Didn't re-read requirements** - Agent skipped reading IMPLEMENTATION_PLAN.md before coding
+1. **Didn't re-read requirements** - Agent skipped reading docs/archive/IMPLEMENTATION_PLAN.md (now superseded by docs/PROJECT_SPEC.md)
 2. **Oversimplified complex logic** - Assumed simple formula would work for complex tax domain
-3. **Ignored own documentation** - IMPLEMENTATION_PLAN.md line 118 clearly stated the correct formula
+3. **Ignored own documentation** - docs/archive/IMPLEMENTATION_PLAN.md clearly stated the correct formula
 4. **Rushed to implement** - Focused on "building next tab" without understanding the domain
 
 ### Best Practices Going Forward
@@ -335,7 +335,7 @@ Net Taxable P/L: ((0 + 10) * 1.0) - 25 = $10 - $25 = -$15
 
 - **Legacy Implementation**: business_logic.py lines 1100-1200
 - **Algorithm Documentation**: ACCOUNTING_LOGIC.md lines 350-450
-- **Implementation Plan**: IMPLEMENTATION_PLAN.md line 118 (marked CRITICAL)
+- **Implementation Plan (archived)**: docs/archive/IMPLEMENTATION_PLAN.md (marked CRITICAL)
 - **Session Management**: business_logic.py SessionManager class
 - **FIFO Logic**: business_logic.py FIFOCalculator class
 

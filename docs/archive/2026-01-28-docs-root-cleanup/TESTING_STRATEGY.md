@@ -179,39 +179,38 @@ def test_fifo_matches_legacy():
 ## Test Structure
 
 ```
-sezzions/
-└── tests/
-    ├── __init__.py
-    ├── conftest.py                  # pytest fixtures
-    ├── test_data/
-    │   ├── test_purchases.csv
-    │   ├── test_redemptions.csv
-    │   └── test_sessions.csv
-    ├── unit/
-    │   ├── test_models.py
-    │   ├── test_repositories/
-    │   │   ├── test_user_repository.py
-    │   │   ├── test_purchase_repository.py
-    │   │   └── ...
-    │   └── test_services/
-    │       ├── test_user_service.py
-    │       ├── test_fifo_service.py
-    │       └── ...
-    ├── integration/
-    │   ├── test_purchase_workflow.py
-    │   ├── test_redemption_workflow.py
-    │   └── test_session_workflow.py
-    └── verification/
-        ├── test_fifo_accuracy.py
-        ├── test_session_pl_accuracy.py
-        └── test_rebuild_accuracy.py
+tests/
+├── __init__.py
+├── conftest.py                  # pytest fixtures
+├── test_data/
+│   ├── test_purchases.csv
+│   ├── test_redemptions.csv
+│   └── test_sessions.csv
+├── unit/
+│   ├── test_models.py
+│   ├── test_repositories/
+│   │   ├── test_user_repository.py
+│   │   ├── test_purchase_repository.py
+│   │   └── ...
+│   └── test_services/
+│       ├── test_user_service.py
+│       ├── test_fifo_service.py
+│       └── ...
+├── integration/
+│   ├── test_purchase_workflow.py
+│   ├── test_redemption_workflow.py
+│   └── test_session_workflow.py
+└── verification/
+    ├── test_fifo_accuracy.py
+    ├── test_session_pl_accuracy.py
+    └── test_rebuild_accuracy.py
 ```
 
 ---
 
 ## pytest Configuration
 
-**File:** `sezzions/pytest.ini`
+**File:** `pytest.ini`
 
 ```ini
 [pytest]
@@ -221,7 +220,7 @@ python_classes = Test*
 python_functions = test_*
 addopts = 
     --verbose
-    --cov=sezzions
+    --cov=.
     --cov-report=html
     --cov-report=term-missing
     --cov-fail-under=90
@@ -471,7 +470,7 @@ def test_rebuild_matches_incremental(session_service, test_db):
 
 ### Run All Tests
 ```bash
-cd sezzions/
+cd ./
 pytest
 ```
 
@@ -487,7 +486,7 @@ pytest tests/verification/
 
 ### Run with Coverage Report
 ```bash
-pytest --cov=sezzions --cov-report=html
+pytest --cov=. --cov-report=html
 # Open htmlcov/index.html in browser
 ```
 
@@ -525,7 +524,7 @@ jobs:
     
     - name: Run tests with coverage
       run: |
-        pytest --cov=sezzions --cov-fail-under=90
+                pytest --cov=. --cov-fail-under=90
     
     - name: Upload coverage
       uses: codecov/codecov-action@v2

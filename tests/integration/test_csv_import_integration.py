@@ -52,6 +52,7 @@ def db_conn():
             purchase_time TEXT,
             amount REAL NOT NULL,
             sc_received REAL NOT NULL,
+            remaining_amount REAL,
             card_id INTEGER,
             cashback_earned REAL,
             starting_sc_balance REAL,
@@ -225,8 +226,8 @@ class TestCSVImportWorkflow:
         # Insert existing record
         db.execute("""
             INSERT INTO purchases 
-            (user_id, site_id, purchase_date, purchase_time, amount, sc_received)
-            VALUES (1, 1, '2024-01-15', '10:30:00', 100.00, 100.00)
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount, cashback_earned)
+            VALUES (1, 1, '2024-01-15', '10:30:00', 100.00, 100.00, 100.00, 0.00)
         """)
         db.commit()
         

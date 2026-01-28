@@ -1,7 +1,6 @@
 """Integration tests for RecalculationService."""
 
 import pytest
-import sqlite3
 from decimal import Decimal
 
 from services.recalculation_service import RecalculationService
@@ -12,90 +11,11 @@ class DB:
     """Integration test database with full schema."""
     
     def __init__(self, db_path=':memory:'):
-        self._connection = sqlite3.connect(db_path)
-        self._connection.row_factory = sqlite3.Row
-        self._create_schema()
+        self._db = DatabaseManager(db_path)
+        self._connection = self._db._connection
     
     def fetch_all(self, query, params=None):
-        cursor = self._connection.cursor()
-        if params:
-            cursor.execute(query, params)
-        else:
-            cursor.execute(query)
-        return cursor.fetchall()
-    
-    def _create_schema(self):
-        """Create full integration test schema."""
-        cursor = self._connection.cursor()
-        
-        # Setup tables
-        cursor.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
-        cursor.execute("CREATE TABLE sites (id INTEGER PRIMARY KEY, name TEXT)")
-        cursor.execute("CREATE TABLE cards (id INTEGER PRIMARY KEY, name TEXT, site_id INTEGER)")
-        
-        # Transaction tables
-        cursor.execute("""
-            CREATE TABLE purchases (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                site_id INTEGER NOT NULL,
-                card_id INTEGER,
-                amount REAL NOT NULL,
-                purchase_date TEXT NOT NULL,
-                purchase_time TEXT,
-                remaining_amount REAL,
-                updated_at TEXT
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE redemptions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                site_id INTEGER NOT NULL,
-                amount REAL NOT NULL,
-                redemption_date TEXT NOT NULL,
-                redemption_time TEXT,
-                is_free_sc INTEGER DEFAULT 0,
-                more_remaining INTEGER DEFAULT 1,
-                notes TEXT
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE redemption_allocations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                redemption_id INTEGER NOT NULL,
-                purchase_id INTEGER NOT NULL,
-                allocated_amount REAL NOT NULL
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE realized_transactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                redemption_date TEXT NOT NULL,
-                site_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                redemption_id INTEGER NOT NULL,
-                cost_basis REAL NOT NULL,
-                payout REAL NOT NULL,
-                net_pl REAL NOT NULL
-            )
-        """)
-        
-        cursor.execute("""
-            CREATE TABLE game_sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                site_id INTEGER NOT NULL,
-                start_date TEXT NOT NULL,
-                end_date TEXT,
-                result REAL DEFAULT 0
-            )
-        """)
-        
-        self._connection.commit()
+        return self._db.fetch_all(query, params or ())
     
     def populate_scenario_1(self):
         """
@@ -113,12 +33,12 @@ class DB:
             VALUES (1, 1, 100.0, '2024-01-01', 100.0)
         """)
         cursor.execute("""
-            INSERT INTO redemptions (user_id, site_id, amount, redemption_date)
-            VALUES (1, 1, 50.0, '2024-01-02')
+            INSERT INTO redemptions (user_id, site_id, amount, redemption_date, more_remaining)
+            VALUES (1, 1, 50.0, '2024-01-02', 1)
         """)
         cursor.execute("""
-            INSERT INTO redemptions (user_id, site_id, amount, redemption_date)
-            VALUES (1, 1, 30.0, '2024-01-03')
+            INSERT INTO redemptions (user_id, site_id, amount, redemption_date, more_remaining)
+            VALUES (1, 1, 30.0, '2024-01-03', 1)
         """)
         self._connection.commit()
     
@@ -137,20 +57,20 @@ class DB:
         
         # User 1, Site 1
         cursor.execute("INSERT INTO purchases (user_id, site_id, amount, purchase_date, remaining_amount) VALUES (1, 1, 100.0, '2024-01-01', 100.0)")
-        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date) VALUES (1, 1, 50.0, '2024-01-02')")
+        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date, more_remaining) VALUES (1, 1, 50.0, '2024-01-02', 1)")
         
         # User 1, Site 2
         cursor.execute("INSERT INTO purchases (user_id, site_id, amount, purchase_date, remaining_amount) VALUES (1, 2, 75.0, '2024-01-03', 75.0)")
-        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date) VALUES (1, 2, 25.0, '2024-01-04')")
+        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date, more_remaining) VALUES (1, 2, 25.0, '2024-01-04', 1)")
         
         # User 2, Site 1
         cursor.execute("INSERT INTO purchases (user_id, site_id, amount, purchase_date, remaining_amount) VALUES (2, 1, 50.0, '2024-01-05', 50.0)")
-        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date) VALUES (2, 1, 20.0, '2024-01-06')")
+        cursor.execute("INSERT INTO redemptions (user_id, site_id, amount, redemption_date, more_remaining) VALUES (2, 1, 20.0, '2024-01-06', 1)")
         
         self._connection.commit()
     
     def close(self):
-        self._connection.close()
+        self._db.close()
 
 
 @pytest.fixture
@@ -176,7 +96,7 @@ class TestCompleteLifecycle:
         test_db.populate_scenario_1()
         
         # Rebuild
-        result = service.rebuild_fifo_for_pair(1, 1)
+        result = service._rebuild_fifo_for_pair(1, 1)
         
         # Verify results
         assert result.pairs_processed == 1
@@ -216,7 +136,7 @@ class TestCompleteLifecycle:
         test_db.populate_scenario_2()
         
         # Rebuild all
-        result = service.rebuild_fifo_all()
+        result = service.rebuild_all()
         
         # Should process 3 pairs
         assert result.pairs_processed == 3
@@ -319,16 +239,16 @@ class TestProgressTracking:
         def track_progress(current, total, message):
             progress_calls.append((current, total, message))
         
-        service.rebuild_fifo_all(progress_callback=track_progress)
+        service.rebuild_all(progress_callback=track_progress)
         
         # Should have progress updates for 3 pairs
         assert len(progress_calls) >= 3
         
         # Check progress messages
         messages = [msg for _, _, msg in progress_calls]
-        assert any("pair 1/3" in msg for msg in messages)
-        assert any("pair 2/3" in msg for msg in messages)
-        assert any("pair 3/3" in msg for msg in messages)
+        assert any("[1/3]" in msg for msg in messages)
+        assert any("[2/3]" in msg for msg in messages)
+        assert any("[3/3]" in msg for msg in messages)
     
     def test_progress_tracking_after_import(self, test_db, service):
         """Test progress callback during rebuild_after_import."""
@@ -372,7 +292,7 @@ class TestGetStats:
         assert stats_before['realized_transactions'] == 0
         
         # Rebuild
-        service.rebuild_fifo_for_pair(1, 1)
+        service._rebuild_fifo_for_pair(1, 1)
         
         # After rebuild
         stats_after = service.get_stats()
@@ -391,7 +311,7 @@ class TestIdempotency:
         test_db.populate_scenario_1()
         
         # First rebuild
-        result1 = service.rebuild_fifo_for_pair(1, 1)
+        result1 = service._rebuild_fifo_for_pair(1, 1)
         cursor = test_db._connection.cursor()
         cursor.execute("SELECT * FROM realized_transactions ORDER BY id")
         realized1 = cursor.fetchall()
@@ -399,7 +319,7 @@ class TestIdempotency:
         remaining1 = cursor.fetchone()['remaining_amount']
         
         # Second rebuild
-        result2 = service.rebuild_fifo_for_pair(1, 1)
+        result2 = service._rebuild_fifo_for_pair(1, 1)
         cursor.execute("SELECT * FROM realized_transactions ORDER BY id")
         realized2 = cursor.fetchall()
         cursor.execute("SELECT remaining_amount FROM purchases")
