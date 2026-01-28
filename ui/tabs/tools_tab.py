@@ -190,29 +190,91 @@ class ToolsTab(QWidget):
         return group
         
     def _create_database_group(self) -> QGroupBox:
-        """Create the database tools section (placeholder)"""
+        """Create the database tools section"""
         group = QGroupBox("Database Tools")
         layout = QVBoxLayout(group)
         
         desc_label = QLabel(
             "Backup, restore, and reset database. "
-            "Database tools coming soon."
+            "Always create a backup before restore or reset operations."
         )
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("color: #666;")
+        desc_label.setStyleSheet("color: #666; margin-bottom: 10px;")
         layout.addWidget(desc_label)
         
-        # Placeholder buttons (disabled)
+        # Manual backup section
+        backup_layout = QHBoxLayout()
+        backup_layout.setSpacing(10)
+        
+        # Backup directory label and path display
+        backup_dir_label = QLabel("Backup directory:")
+        backup_layout.addWidget(backup_dir_label)
+        
+        self.backup_dir_display = QLabel("(Not set)")
+        self.backup_dir_display.setStyleSheet("color: #666; font-style: italic;")
+        backup_layout.addWidget(self.backup_dir_display, 1)
+        
+        # Select directory button
+        select_dir_btn = QPushButton("Choose...")
+        select_dir_btn.setMaximumWidth(100)
+        select_dir_btn.clicked.connect(self._on_select_backup_directory)
+        backup_layout.addWidget(select_dir_btn)
+        
+        # Backup Now button
+        self.backup_now_btn = QPushButton("Backup Now")
+        self.backup_now_btn.setMinimumHeight(35)
+        self.backup_now_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #28a745;
+                color: white;
+                font-weight: bold;
+                border-radius: 4px;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+        """)
+        self.backup_now_btn.setEnabled(False)
+        self.backup_now_btn.clicked.connect(self._on_backup_now)
+        backup_layout.addWidget(self.backup_now_btn)
+        
+        layout.addLayout(backup_layout)
+        
+        # Backup status label
+        self.backup_status_label = QLabel("")
+        self.backup_status_label.setStyleSheet("color: #666; font-size: 11px; margin-top: 5px;")
+        layout.addWidget(self.backup_status_label)
+        
+        # Restore/Reset buttons
         btn_layout = QHBoxLayout()
-        backup_btn = QPushButton("Backup Now")
-        backup_btn.setEnabled(False)
-        restore_btn = QPushButton("Restore...")
-        restore_btn.setEnabled(False)
-        reset_btn = QPushButton("Reset Database")
-        reset_btn.setEnabled(False)
-        btn_layout.addWidget(backup_btn)
+        btn_layout.setSpacing(10)
+        
+        restore_btn = QPushButton("Restore from Backup...")
+        restore_btn.setMinimumHeight(35)
+        restore_btn.clicked.connect(self._on_restore_database)
         btn_layout.addWidget(restore_btn)
+        
+        reset_btn = QPushButton("Reset Database...")
+        reset_btn.setMinimumHeight(35)
+        reset_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #dc3545;
+                color: white;
+                border-radius: 4px;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #c82333;
+            }
+        """)
+        reset_btn.clicked.connect(self._on_reset_database)
         btn_layout.addWidget(reset_btn)
+        
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
         
@@ -816,6 +878,111 @@ class ToolsTab(QWidget):
                 "Template Error",
                 f"Failed to create template ZIP:\n\n{str(e)}"
             )
+    
+    # ========================================================================
+    # Database Tools Handlers
+    # ========================================================================
+    
+    def _on_select_backup_directory(self):
+        """Handle backup directory selection"""
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "Select Backup Directory",
+            "",
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        
+        if directory:
+            self.backup_dir = directory
+            # Display abbreviated path if too long
+            display_path = directory
+            if len(display_path) > 50:
+                display_path = "..." + display_path[-47:]
+            self.backup_dir_display.setText(display_path)
+            self.backup_dir_display.setStyleSheet("color: #000;")
+            self.backup_now_btn.setEnabled(True)
+            self.backup_status_label.setText("")
+    
+    def _on_backup_now(self):
+        """Handle manual backup"""
+        if not hasattr(self, 'backup_dir') or not self.backup_dir:
+            QMessageBox.warning(
+                self,
+                "No Directory Selected",
+                "Please select a backup directory first."
+            )
+            return
+        
+        try:
+            from services.tools import BackupService
+            from datetime import datetime
+            
+            # Create timestamped backup filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"sezzions_backup_{timestamp}.db"
+            backup_path = os.path.join(self.backup_dir, backup_filename)
+            
+            # Create backup service
+            backup_service = BackupService(self.facade.db)
+            result = backup_service.backup_database(backup_path)
+            
+            if result.success:
+                size_mb = result.size_bytes / (1024 * 1024)
+                self.backup_status_label.setText(
+                    f"✓ Backup created: {backup_filename} ({size_mb:.2f} MB)"
+                )
+                self.backup_status_label.setStyleSheet("color: #28a745; font-size: 11px; margin-top: 5px;")
+                
+                QMessageBox.information(
+                    self,
+                    "Backup Complete",
+                    f"Database backed up successfully:\n\n{backup_path}\n\nSize: {size_mb:.2f} MB"
+                )
+            else:
+                self.backup_status_label.setText(f"✗ Backup failed")
+                self.backup_status_label.setStyleSheet("color: #dc3545; font-size: 11px; margin-top: 5px;")
+                
+                QMessageBox.critical(
+                    self,
+                    "Backup Failed",
+                    f"Failed to create backup:\n\n{result.error}"
+                )
+        
+        except Exception as e:
+            self.backup_status_label.setText(f"✗ Backup error")
+            self.backup_status_label.setStyleSheet("color: #dc3545; font-size: 11px; margin-top: 5px;")
+            
+            QMessageBox.critical(
+                self,
+                "Backup Error",
+                f"An error occurred:\n\n{str(e)}"
+            )
+    
+    def _on_restore_database(self):
+        """Handle database restore"""
+        # Coming in next implementation phase
+        QMessageBox.information(
+            self,
+            "Restore Database",
+            "Restore functionality coming soon.\n\n"
+            "This will allow you to restore from a backup file with:\n"
+            "• Merge mode (import without deleting existing data)\n"
+            "• Replace mode (full database replacement)\n"
+            "• Validation and duplicate detection"
+        )
+    
+    def _on_reset_database(self):
+        """Handle database reset"""
+        # Coming in next implementation phase
+        QMessageBox.information(
+            self,
+            "Reset Database",
+            "Reset functionality coming soon.\n\n"
+            "This will allow you to:\n"
+            "• Clear all transactional data\n"
+            "• Optionally preserve setup data (users, sites, cards, etc.)\n"
+            "• Reset derived calculations"
+        )
     
     # ========================================================================
     # Post-Import Recalculation
