@@ -2,31 +2,41 @@
 
 **Document Version:** 1.2  
 **Date:** January 27, 2026 (Updated: January 28, 2026)  
-**Status:** Phase 4 Complete, Phases 2-3 Pending
+**Status:** Phase 4 Complete; Phase 2 (CSV) functional; Phase 3 backend complete (UI pending)
 
 ---
 
 ## Implementation Status Summary
 
-### ⏳ Phase 1: Foundation (PARTIALLY COMPLETE)
-- ❌ Schema definitions for CSV import/export (not yet implemented)
-- ✅ Validation framework exists (ValidationService)
-- ❌ DTOs for Tools (ImportResult, ValidationError, etc.) - not yet created
-- ❌ Settings storage strategy needs documentation
+### ✅ Phase 1: Foundation (COMPLETE)
+- ✅ Tools DTOs, enums, schemas: `services/tools/dtos.py`, `services/tools/enums.py`, `services/tools/schemas.py`
+- ✅ FK resolution + CSV parsing utilities: `services/tools/fk_resolver.py`, `services/tools/csv_utils.py`
+- ✅ Validation framework + entity validators: `services/tools/validators/*`
+- ✅ Schema registry covers: purchases, redemptions, game_sessions, users, sites, cards, redemption_methods, redemption_method_types, game_types, games
+- ⏳ Settings storage strategy documentation: still needs a clear “JSON vs DB settings table” ownership list
 
-### ⏳ Phase 2: CSV Import/Export (NOT STARTED)
-- ❌ CSVImportService (not implemented)
-- ❌ CSVExportService (not implemented)
-- ❌ Template generation (not implemented)
-- ❌ Import preview dialog (not implemented)
-- 📝 **Note:** UI currently shows "coming soon" placeholder
+### ✅ Phase 2: CSV Import/Export (FUNCTIONALLY COMPLETE; OPTIONAL POLISH)
+- ✅ Backend import/export: `services/tools/csv_import_service.py`, `services/tools/csv_export_service.py`
+- ✅ Templates generated from schema definitions
+- ✅ UI integrated in Tools tab:
+    - Import preview dialog (adds/updates/conflicts/duplicates/errors)
+    - Import execute with conflict strategy (skip vs overwrite)
+    - Export single entity, Export All (ZIP), Template download (single + ZIP)
+- ⏳ Optional polish:
+    - Run import/export in a background worker for very large files (avoid UI blocking)
+    - Add progress reporting for long exports/imports (if needed)
 
-### ⏳ Phase 3: Database Tools (NOT STARTED)
-- ❌ BackupService (not implemented)
-- ❌ Restore with REPLACE/MERGE modes (not implemented)
-- ❌ Database reset functionality (not implemented)
-- ❌ Auto-backup scheduling (not implemented)
-- 📝 **Note:** UI currently shows "coming soon" placeholder
+### ✅ Phase 3: Database Tools (BACKEND COMPLETE; UI PENDING)
+- ✅ Backend services exist and are tested:
+    - `services/tools/backup_service.py`
+    - `services/tools/restore_service.py`
+    - `services/tools/reset_service.py`
+- ✅ Transaction-safe bulk ops support exists via `repositories/bulk_tools_repository.py`
+- ⏳ UI wiring pending in Tools tab:
+    - Enable “Backup Now”, “Restore…”, “Reset Database”
+    - Add dialogs for restore mode (REPLACE / MERGE_ALL / MERGE_SELECTED) and reset scope (keep setup data, keep audit log)
+    - Handle REPLACE restore safely (close/reopen DB + full UI refresh)
+    - Consider adding “Backup folder” setting and “Backup due” reminders (ties into Notifications)
 
 ### ✅ Phase 4: Recalculation Engine (6/6 COMPLETE)
 **Backend (COMPLETE - 20 tests):**
@@ -60,13 +70,19 @@
 
 **Completion Date:** January 28, 2026
 
-### 🔜 Next: Phase 2 - CSV Import/Export (Prioritized)
-**Why Phase 2 before Phase 5:**
-- Core Tools functionality (CSV import/export) currently shows "coming soon" in UI
-- Users need import/export before notification system
-- Logical dependency: notifications should notify about real operations (imports/backups)
+### 🔜 Next: Phase 3 UI + Phase 5 Notifications
+**Why Phase 3 UI next:**
+- Backup/restore/reset are implemented in the backend but not exposed in the UI yet.
+- This unlocks safe experimentation, rapid recovery, and enables “prompt backup before destructive deletes”.
 
-**After Phase 2:** Phase 3 (Database Tools), then Phase 5 (Notifications)
+**After Phase 3 UI:** Phase 5 (Notifications), then Audit Log UI (if desired).
+
+### ✅/⏳ What’s Left (Functional)
+- ⏳ Tools → Database Tools UI (backup/restore/reset) + worker-thread execution
+- ⏳ “Backup-before-destructive-ops” prompting (sessions/redemptions/purchases deletes) once backups are exposed
+- ⏳ Notification system (backup due reminders + badge/panel)
+- ⏳ Audit logging integration (record CRUD/import/reset/restore events) + viewer/export UI
+- ⏳ (Optional) CSV import/export background workers + progress for huge datasets
 
 ---
 

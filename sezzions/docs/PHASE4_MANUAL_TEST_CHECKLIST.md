@@ -29,8 +29,8 @@ All backend components verified:
 - [X] Verify Tools tab opens and displays content
 - [X] **Expected:** Tab opens with 3 sections visible:
   - Recalculation section (with buttons)
-  - CSV Import/Export section (placeholder)
-  - Database Tools section (placeholder)
+  - CSV Import/Export section (functional)
+  - Database Tools section (UI wiring pending)
 
 **Notes:**
 ________________________________________
@@ -210,7 +210,7 @@ ________________________________________
 
 ### Test Suite 7: Post-Import Prompt (Future Test)
 
-**Status:** CSV Import UI not yet built. This test will be relevant in Phase 5.
+**Status:** CSV Import UI exists. This test is now relevant.
 
 #### Test 7.1: Import Purchases → Prompt ⬜ (SKIP FOR NOW)
 - [ ] Import purchases CSV
@@ -221,7 +221,38 @@ ________________________________________
 - [ ] Recalculation proceeds
 - [ ] All tabs refresh
 
-**Notes:** Will test in Phase 5 when CSV Import UI complete
+**Notes:** Run after validating CSV import preview + execute flow.
+
+---
+
+## 🧾 Test Suite 8: CSV Import/Export UI (Now Implemented)
+
+#### Test 8.1: Download Template ⬜
+- [ ] Tools → CSV Import/Export → Download Template…
+- [ ] Choose "Purchases" and save
+- [ ] **Expected:** CSV headers match schema; file saves successfully
+
+#### Test 8.2: Import Preview Blocks Errors ⬜
+- [ ] Create a CSV with a known validation error (e.g., negative purchase Amount)
+- [ ] Import CSV… → select entity → choose file
+- [ ] **Expected:** Preview shows Errors tab and "Proceed" is disabled
+
+#### Test 8.3: Import Preview Conflict Resolution ⬜
+- [ ] Import a CSV that conflicts with an existing record (same unique key, different value)
+- [ ] **Expected:** Conflicts tab appears
+- [ ] **Expected:** Skip vs Overwrite options are mutually exclusive
+
+#### Test 8.4: Export Single Entity ⬜
+- [ ] Export CSV… → choose "Purchases" → save
+- [ ] **Expected:** File saves; FK columns exported as names (User Name, Site Name, etc.)
+
+#### Test 8.5: Export All (ZIP) ⬜
+- [ ] Export CSV… → choose "All entity types" → save ZIP
+- [ ] **Expected:** ZIP contains one CSV per entity type
+
+#### Test 8.6: Template ZIP ⬜
+- [ ] Download Template… → choose "All templates" → save ZIP
+- [ ] **Expected:** ZIP contains one template per entity type
 
 ---
 

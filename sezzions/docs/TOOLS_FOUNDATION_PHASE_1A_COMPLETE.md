@@ -40,7 +40,7 @@ Standard enumerations:
 ### 3. CSV Schema Definitions
 **File:** `services/tools/schemas.py`
 
-Complete schema definitions for all 9 entity types:
+Complete schema definitions for all supported entity types:
 
 **Transaction Entities:**
 1. **Purchases** - User, Site, Date/Time, Amount, SC, Card (FK), Notes
@@ -51,9 +51,10 @@ Complete schema definitions for all 9 entity types:
 4. **Users** - Name (unique), Email, Active flag, Notes
 5. **Sites** - Name (unique), URL, SC Rate, Active flag, Notes
 6. **Cards** - Name + User (composite unique), Last 4, Cashback Rate, Active, Notes
-7. **Redemption Methods** - Name (unique), Type, User (optional), Active, Notes
-8. **Game Types** - Name (unique), Active, Notes
-9. **Games** - Name + Game Type (composite unique), RTP, Active, Notes
+7. **Redemption Methods** - Name + User (composite unique), Type, Active, Notes
+8. **Redemption Method Types** - Name (unique), Active, Notes
+9. **Game Types** - Name (unique), Active, Notes
+10. **Games** - Name + Game Type (composite unique), RTP, Active, Notes
 
 **Schema Structure:**
 ```python
@@ -90,9 +91,9 @@ class EntitySchema:
 - Unique name constraints prevent ambiguity
 
 **Unique Constraints (Per Plan Section 2.4.1):**
-- **Global uniqueness:** Users, Sites, Redemption Methods, Game Types
-- **Composite uniqueness:** Cards (name + user), Games (name + game type)
-- Prevents FK resolution ambiguity in CSV imports
+- **Global uniqueness:** Users, Sites, Redemption Method Types, Game Types
+- **Composite uniqueness:** Cards (name + user), Redemption Methods (name + user), Games (name + game type)
+- Prevents FK resolution ambiguity in CSV imports while supporting multi-user duplication where appropriate
 
 ### 4. Comprehensive Tests
 **File:** `tests/unit/test_tools_schemas.py`
@@ -156,17 +157,9 @@ Per the [Implementation Plan](TOOLS_IMPLEMENTATION_PLAN.md#phase-1-foundation-we
 **Remaining Phase 1 Tasks:**
 1. ✅ Implement DTOs (COMPLETE)
 2. ✅ Implement schema definitions (COMPLETE)
-3. ⏭️ **Implement validation framework base classes** (Section 2.3)
-   - `BaseValidator` abstract class
-   - Entity-specific validators (PurchaseValidator, RedemptionValidator, etc.)
-   - Field-level, record-level, batch-level validation
-4. ⏭️ **Settings storage split** (Section 2.4 & Appendix B)
-   - Document which settings go in JSON vs DB
-   - Update settings service if needed
-5. ⏭️ **Unique naming constraint migrations** (Section 2.4.1)
-   - Add unique constraints to setup tables
-   - Preflight check for duplicates
-   - Remediation UX for conflicts
+3. ✅ Validation framework base classes + validators (implemented in Phase 1B)
+4. ⏳ Settings storage split documentation (still recommended)
+5. ✅ Unique naming constraints + schema uniqueness rules (implemented; continue to validate migrations as schema evolves)
 
 ## Files Changed
 

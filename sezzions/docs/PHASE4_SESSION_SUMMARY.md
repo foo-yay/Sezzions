@@ -2,7 +2,7 @@
 
 **Date:** January 28, 2026  
 **Session Duration:** ~4 hours  
-**Status:** 5/6 Tasks Complete, Ready for Testing
+**Status:** Recalculation UI + worker integration implemented; continue manual verification
 
 ---
 
@@ -169,19 +169,13 @@ Phase 4 Backend: Recalc        20 tests ✅
 Total Backend:                179 tests (100% passing)
 ```
 
-### UI Integration: ⏳ PENDING
-- Task 6: End-to-end testing required
-- See `docs/PHASE4_TESTING_GUIDE.md` for comprehensive test scenarios
-- 9 test suites covering:
-  - Basic recalculation UI
-  - Background worker functionality
-  - Cancellation behavior
-  - Post-import prompts
-  - Integration testing
-  - Performance testing
-  - Edge cases
-  - Result accuracy
-  - Regression testing
+### UI Integration: ⏳ IN PROGRESS
+- Core recalculation flows have been exercised (Tools tab, menu delegation, scoped recalculation).
+- Remaining manual verification should focus on:
+   - Cancellation behavior on larger datasets
+   - Empty-database behavior (0 pairs) completing immediately
+   - Post-import prompt behavior via a real CSV import run
+   - Responsiveness while progress dialog is open
 
 ---
 

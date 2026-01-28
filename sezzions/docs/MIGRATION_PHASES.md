@@ -10,6 +10,21 @@ This document defines the **phased implementation timeline** for migrating from 
 
 ---
 
+## Current Status Snapshot (2026-01-28)
+
+This file was the original timeline. The Sezzions codebase has progressed beyond parts of this schedule.
+
+- ✅ Phases 0–4: Core domains + FIFO + sessions + recalculation engine are implemented with extensive tests.
+- ✅ Tools foundation + CSV import/export backend are implemented; Tools tab includes a functional CSV import/export UI.
+- ✅ Database tools backend (backup/restore/reset) is implemented and tested.
+- ⏳ Remaining “Tools” work is primarily **UI wiring + operational polish**:
+    - Tools → Database Tools UI (enable backup/restore/reset)
+    - Notifications (backup due reminders) and optionally Audit Log viewer/export
+
+If you want a single source of truth for Tools status, see `docs/TOOLS_IMPLEMENTATION_PLAN.md`.
+
+---
+
 ## Phase Summary
 
 | Phase | Duration | Focus | Milestone |

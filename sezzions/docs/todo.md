@@ -17,11 +17,11 @@
 - [ ] Phase 5: Notification System (next after Phase 4 testing)
 - [ ] Legacy app's redeemable check isn't detecting a problem when I enter 0.42 SC on an expected 0.41 redeemable.  is there a threshhold?  It recognizes it if I put 0.92
 - [ ] Prompt the user to back-up the database before deleting Sessions or items that could cascade.
-- [X] Delete Game and Game Type have issues with foreign keys.
+
 - [ ] Session P/L looks accurate, but basis/consumption does not
 - [ ] Get consistency between Starting SC and Post-Purchase SC as well as displaying it on the table.
 - [ ] Purchase balance checks are showing off by the amount of the purchase on the new app.
-- [ ] Finish updating the Tools tab using TOOLS_IMPLEMENTATION_PLAN.md - left off at Phase 4 manual UI testing.
+- [ ] Finish updating the Tools tab using TOOLS_IMPLEMENTATION_PLAN.md
 - [ ] Edge case for editing purchases:
 a Buy $200/205 205 starting SC Stake
 b Buy $300/300 505 starting SC Stake
@@ -35,12 +35,13 @@ b Buy $300/300 505 starting SC Stake
 c Buy $100/100 605 starting SC Stake
 - [ ] When submitting a redemption, next to the "Amount" field, show the total redeemable balance, and the total SC balance for the site/user pair as of the last purchase/sesssion/redemption/etc. (the most recenlty available balance) like "125.00 R / 150.00 T" with a "?" helper button to click on next to it explaining what they are. --> alternatively, add a realtime balance check like we have in Purchases/Sessions to give a "Go/No-Go" based on the redemption amount the user types in.
 - [ ] Add a "?" helper button to explain what the "Processed" checkbox is on the redemption dialog (it's just an internal accounting flag with no impact on anything)
-- [ ] Redemption methods can't have unique names.  Some might be the same, but they are assigned independently to Method Types and users so they should still be unique in that sense.  But multiple useres could have a "USAA Checking" account, so we need to allow that and account for it in ALL of our logic (CSV, CRUD, etc.).
+
 
 
 
 ## Completed Items
-- [X] Scenario:  1 SC starting redeemable on Stake.  Buy in 2500 for 2506.25.  Gamble and end with 2500.89.  It's showing -0.11 loss because it's counting the 1 SC as part of the loss, but since I never session'd that 1 SC to begin with, it shouldn't be counted. (Fixed on the OOP app)
+- [X] Delete Game and Game Type have issues with foreign keys.
+- [X] Redemption methods can't have unique names.  Some might be the same, but they are assigned independently to Method Types and users so they should still be unique in that sense.  But multiple useres could have a "USAA Checking" account, so we need to allow that and account for it in ALL of our logic (CSV, CRUD, etc.).- [X] Scenario:  1 SC starting redeemable on Stake.  Buy in 2500 for 2506.25.  Gamble and end with 2500.89.  It's showing -0.11 loss because it's counting the 1 SC as part of the loss, but since I never session'd that 1 SC to begin with, it shouldn't be counted. (Fixed on the OOP app)
 - [X] Prevent or warn from deleting sessions that have affiliated redemptions -> warn instead of blcok in case of data entry errors that the user is trying to fix.  Ensure recalculation (scoped or full) can fix the issues after the user has made changes.  We need to prevent lawless deletion of sessions when redemptions exist because it creates validation errors where Redemptions exist with unsessioned basis and could create tax reporting problems (user has redemptions but no sessions to justify the P/L).
 - [X] Implement controls preventing Redemption of Unsessioned SC, prevent $0 redemptions.
 - [X] Need to account for multi-day closed sessions on the day they close, not the day they start.

@@ -1,8 +1,8 @@
 # CSV Import/Export Service - Phase 2 Implementation Status
 
-**Date:** 2026-01-27  
-**Phase:** 2 - CSV Import/Export Service (CSV Import Complete)  
-**Status:** ✅ **100% Complete** - All tests passing, ready for CSV Export implementation
+**Date:** 2026-01-27 (Updated: 2026-01-28)  
+**Phase:** 2 - CSV Import/Export Service  
+**Status:** ✅ **COMPLETE** (backend) + ✅ **FUNCTIONAL UI INTEGRATION** (Tools tab)
 
 ---
 
@@ -96,25 +96,26 @@ All 4 outstanding issues have been fixed:
 
 ---
 
-## Next Steps (High Priority)
+## Current State (Reality Check)
 
-### 1. Fix Integration Tests (1-2 hours)
-- [ ] Add `__post_init__` to ImportPreview for default empty lists
-- [ ] Fix duplicate detection logic in `_find_existing_match()`
-- [ ] Improve validation error messages (negative amount → "must be positive" not "required")
-- [ ] Verify chronological sorting test
+### Backend
+- ✅ CSV parse utilities, FK resolver, validators, schema registry
+- ✅ Import preview + execute with duplicate/conflict handling
+- ✅ Export CSV + template generation (single + bulk flows)
+- ✅ Tests passing (see in-repo test suites)
 
-### 2. Add CSV Export Service (2-3 hours)
-- [ ] Export existing records to CSV
-- [ ] Use schema's export_formatter for custom formatting
-- [ ] FK ID → name reverse lookup using FKResolver
-- [ ] Export templates (empty CSV with headers)
+### UI (Tools Tab)
+- ✅ Import CSV flow wired:
+   - pick entity → choose file → preview dialog → execute import
+   - conflict strategy selection (skip vs overwrite)
+- ✅ Export CSV wired (single entity + export-all ZIP)
+- ✅ Template download wired (single entity + all-templates ZIP)
+- ✅ Post-import prompt is available for accounting entities
 
-### 3. Integration with UI (Future)
-- [ ] Connect CSV Import Service to Tools tab UI
-- [ ] Preview dialog showing conflicts/warnings
-- [ ] Progress bar for large imports
-- [ ] Post-import hooks (trigger recalculation if needed)
+## Remaining / Optional Polish
+- ⏳ Background-thread execution for very large imports/exports (avoid UI blocking)
+- ⏳ Progress UI for long-running exports/imports (if real datasets require it)
+- ⏳ UX polish: filter/export options per entity (scoped exports) if desired
 
 ---
 
