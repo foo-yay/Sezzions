@@ -53,6 +53,10 @@ class ToolsTab(QWidget):
         db_group = self._create_database_group()
         layout.addWidget(db_group)
         
+        # Automatic Backup Section
+        auto_backup_group = self._create_automatic_backup_group()
+        layout.addWidget(auto_backup_group)
+        
         layout.addStretch()
         
     def _create_recalculation_group(self) -> QGroupBox:
@@ -1186,3 +1190,281 @@ class ToolsTab(QWidget):
         
         # Show progress dialog
         progress_dialog.exec()
+    
+    # ========================================================================
+    # Automatic Backup Management
+    # ========================================================================
+    
+    def _create_automatic_backup_group(self):
+        """Create automatic backup configuration section"""
+        from PySide6.QtWidgets import QGroupBox, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox, QSpinBox, QPushButton
+        from PySide6.QtCore import QTimer
+        
+        group = QGroupBox("Automatic Backups")
+        layout = QVBoxLayout()
+        
+        # Enable/disable toggle
+        enable_layout = QHBoxLayout()
+        self.auto_backup_enabled_checkbox = QCheckBox("Enable automatic backups")
+        self.auto_backup_enabled_checkbox.toggled.connect(self._on_auto_backup_toggle)
+        enable_layout.addWidget(self.auto_backup_enabled_checkbox)
+        enable_layout.addStretch()
+        layout.addLayout(enable_layout)
+        
+        # Directory selection
+        dir_layout = QHBoxLayout()
+        dir_layout.addWidget(QLabel("Backup directory:"))
+        self.auto_backup_directory_label = QLabel("(Not configured)")
+        self.auto_backup_directory_label.setStyleSheet("color: #666; font-style: italic;")
+        dir_layout.addWidget(self.auto_backup_directory_label, 1)
+        
+        self.auto_backup_directory_btn = QPushButton("Choose Directory...")
+        self.auto_backup_directory_btn.clicked.connect(self._on_select_auto_backup_directory)
+        dir_layout.addWidget(self.auto_backup_directory_btn)
+        layout.addLayout(dir_layout)
+        
+        # Frequency setting
+        freq_layout = QHBoxLayout()
+        freq_layout.addWidget(QLabel("Backup every:"))
+        self.auto_backup_frequency_spinbox = QSpinBox()
+        self.auto_backup_frequency_spinbox.setRange(1, 168)  # 1 hour to 1 week
+        self.auto_backup_frequency_spinbox.setValue(24)
+        self.auto_backup_frequency_spinbox.setSuffix(" hours")
+        self.auto_backup_frequency_spinbox.valueChanged.connect(self._on_auto_backup_frequency_changed)
+        freq_layout.addWidget(self.auto_backup_frequency_spinbox)
+        freq_layout.addStretch()
+        layout.addLayout(freq_layout)
+        
+        # Status display
+        self.auto_backup_status_label = QLabel("Automatic backups are disabled.")
+        self.auto_backup_status_label.setStyleSheet("color: #666; font-style: italic; padding: 10px;")
+        layout.addWidget(self.auto_backup_status_label)
+        
+        # Test backup button
+        test_layout = QHBoxLayout()
+        test_layout.addStretch()
+        self.auto_backup_test_btn = QPushButton("Test Backup Now")
+        self.auto_backup_test_btn.setEnabled(False)
+        self.auto_backup_test_btn.clicked.connect(self._on_test_auto_backup)
+        test_layout.addWidget(self.auto_backup_test_btn)
+        layout.addLayout(test_layout)
+        
+        group.setLayout(layout)
+        
+        # Timer for checking backup schedule (check every 5 minutes)
+        self.backup_check_timer = QTimer(self)
+        self.backup_check_timer.timeout.connect(self._check_automatic_backup)
+        self.backup_check_timer.setInterval(5 * 60 * 1000)  # 5 minutes in milliseconds
+        
+        # Load saved settings
+        self._load_automatic_backup_settings()
+        
+        return group
+    
+    def _load_automatic_backup_settings(self):
+        """Load automatic backup settings from JSON"""
+        from ui.settings import Settings
+        settings = Settings()
+        config = settings.get_automatic_backup_config()
+        
+        # Apply settings to UI
+        self.auto_backup_enabled_checkbox.setChecked(config.get('enabled', False))
+        directory = config.get('directory', '')
+        if directory:
+            self.auto_backup_directory_label.setText(directory)
+            self.auto_backup_directory_label.setStyleSheet("color: #000;")
+        
+        self.auto_backup_frequency_spinbox.setValue(config.get('frequency_hours', 24))
+        
+        # Update status display
+        self._update_auto_backup_status()
+        
+        # Start timer if enabled
+        if config.get('enabled', False) and directory:
+            self.backup_check_timer.start()
+    
+    def _save_automatic_backup_settings(self):
+        """Save automatic backup settings to JSON"""
+        from ui.settings import Settings
+        
+        settings = Settings()
+        config = settings.get_automatic_backup_config()
+        
+        # Update config
+        config['enabled'] = self.auto_backup_enabled_checkbox.isChecked()
+        config['directory'] = self.auto_backup_directory_label.text() if self.auto_backup_directory_label.text() != "(Not configured)" else ''
+        config['frequency_hours'] = self.auto_backup_frequency_spinbox.value()
+        
+        settings.set_automatic_backup_config(config)
+    
+    def _on_auto_backup_toggle(self, checked):
+        """Handle automatic backup enable/disable"""
+        # Enable/disable controls
+        self.auto_backup_directory_btn.setEnabled(checked)
+        self.auto_backup_frequency_spinbox.setEnabled(checked)
+        
+        directory = self.auto_backup_directory_label.text()
+        has_directory = directory and directory != "(Not configured)"
+        self.auto_backup_test_btn.setEnabled(checked and has_directory)
+        
+        # Start/stop timer
+        if checked and has_directory:
+            self.backup_check_timer.start()
+        else:
+            self.backup_check_timer.stop()
+        
+        self._save_automatic_backup_settings()
+        self._update_auto_backup_status()
+    
+    def _on_select_auto_backup_directory(self):
+        """Handle automatic backup directory selection"""
+        from PySide6.QtWidgets import QFileDialog
+        directory = QFileDialog.getExistingDirectory(self, "Select Backup Directory")
+        if directory:
+            self.auto_backup_directory_label.setText(directory)
+            self.auto_backup_directory_label.setStyleSheet("color: #000;")
+            
+            enabled = self.auto_backup_enabled_checkbox.isChecked()
+            self.auto_backup_test_btn.setEnabled(enabled)
+            
+            if enabled:
+                self.backup_check_timer.start()
+            
+            self._save_automatic_backup_settings()
+            self._update_auto_backup_status()
+    
+    def _on_auto_backup_frequency_changed(self, value):
+        """Handle frequency change"""
+        self._save_automatic_backup_settings()
+        self._update_auto_backup_status()
+    
+    def _update_auto_backup_status(self):
+        """Update the status label with current configuration"""
+        from ui.settings import Settings
+        from datetime import datetime
+        
+        settings = Settings()
+        config = settings.get_automatic_backup_config()
+        
+        enabled = config.get('enabled', False)
+        directory = config.get('directory', '')
+        frequency = config.get('frequency_hours', 24)
+        last_backup = config.get('last_backup_time')
+        
+        if not enabled:
+            self.auto_backup_status_label.setText("Automatic backups are disabled.")
+            self.auto_backup_status_label.setStyleSheet("color: #666; font-style: italic; padding: 10px;")
+        elif not directory:
+            self.auto_backup_status_label.setText("⚠️ No backup directory configured.")
+            self.auto_backup_status_label.setStyleSheet("color: #ff6b00; font-weight: bold; padding: 10px;")
+        else:
+            if last_backup:
+                try:
+                    last_time = datetime.fromisoformat(last_backup)
+                    time_str = last_time.strftime('%Y-%m-%d %H:%M:%S')
+                    status = f"✓ Last backup: {time_str}\nNext backup in ~{frequency} hours"
+                    self.auto_backup_status_label.setStyleSheet("color: #28a745; padding: 10px;")
+                except:
+                    status = f"✓ Automatic backups enabled (every {frequency} hours)\nNo backups yet"
+                    self.auto_backup_status_label.setStyleSheet("color: #0078d4; padding: 10px;")
+            else:
+                status = f"✓ Automatic backups enabled (every {frequency} hours)\nNo backups yet"
+                self.auto_backup_status_label.setStyleSheet("color: #0078d4; padding: 10px;")
+            self.auto_backup_status_label.setText(status)
+    
+    def _check_automatic_backup(self):
+        """Check if it's time to run an automatic backup"""
+        from ui.settings import Settings
+        from datetime import datetime, timedelta
+        
+        settings = Settings()
+        config = settings.get_automatic_backup_config()
+        
+        if not config.get('enabled', False):
+            return
+        
+        directory = config.get('directory', '')
+        if not directory:
+            return
+        
+        frequency_hours = config.get('frequency_hours', 24)
+        last_backup_str = config.get('last_backup_time')
+        
+        should_backup = False
+        if not last_backup_str:
+            # Never backed up - do it now
+            should_backup = True
+        else:
+            try:
+                last_backup = datetime.fromisoformat(last_backup_str)
+                next_backup = last_backup + timedelta(hours=frequency_hours)
+                should_backup = datetime.now() >= next_backup
+            except:
+                # Invalid timestamp - backup now
+                should_backup = True
+        
+        if should_backup:
+            self._perform_automatic_backup()
+    
+    def _perform_automatic_backup(self):
+        """Perform an automatic backup"""
+        from services.tools.backup_service import BackupService
+        from ui.settings import Settings
+        from datetime import datetime
+        import os
+        
+        settings = Settings()
+        config = settings.get_automatic_backup_config()
+        directory = config.get('directory', '')
+        
+        if not directory:
+            return
+        
+        # Perform backup
+        backup_service = BackupService(self.facade.db)
+        result = backup_service.backup_with_timestamp(directory, prefix="auto_backup")
+        
+        if result.success:
+            # Update last backup time
+            config['last_backup_time'] = datetime.now().isoformat()
+            settings.set_automatic_backup_config(config)
+            self._update_auto_backup_status()
+            
+            # Log success (non-blocking)
+            filename = os.path.basename(result.backup_path)
+            size_mb = result.size_bytes / (1024 * 1024)
+            print(f"[Auto-Backup] Created: {filename} ({size_mb:.2f} MB)")
+        else:
+            # Log error but don't block UI
+            print(f"[Auto-Backup] Failed: {result.error}")
+    
+    def _on_test_auto_backup(self):
+        """Manually trigger an automatic backup for testing"""
+        from PySide6.QtWidgets import QMessageBox
+        import os
+        
+        self._perform_automatic_backup()
+        
+        # Show user-friendly confirmation
+        from ui.settings import Settings
+        settings = Settings()
+        config = settings.get_automatic_backup_config()
+        directory = config.get('directory', '')
+        
+        if directory and os.path.exists(directory):
+            files = [f for f in os.listdir(directory) if f.startswith('auto_backup_') and f.endswith('.db')]
+            if files:
+                latest = sorted(files)[-1]
+                QMessageBox.information(
+                    self,
+                    "Test Backup Complete",
+                    f"✓ Test backup created successfully!\n\nFile: {latest}\n\n"
+                    f"Automatic backups will continue running every {config.get('frequency_hours', 24)} hours."
+                )
+                return
+        
+        QMessageBox.warning(
+            self,
+            "Test Backup Failed",
+            "Could not create test backup. Check the directory path and permissions."
+        )

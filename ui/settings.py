@@ -33,6 +33,12 @@ class Settings:
             'window_width': 1400,
             'window_height': 900,
             'last_tab': 0,
+            'automatic_backup': {
+                'enabled': False,
+                'directory': '',
+                'frequency_hours': 24,
+                'last_backup_time': None
+            }
         }
     
     def save(self):
@@ -59,3 +65,12 @@ class Settings:
     def set_theme(self, theme_name: str):
         """Set theme"""
         self.set('theme', theme_name)
+    
+    def get_automatic_backup_config(self) -> Dict[str, Any]:
+        """Get automatic backup configuration"""
+        default_config = self._default_settings()['automatic_backup']
+        return self.get('automatic_backup', default_config)
+    
+    def set_automatic_backup_config(self, config: Dict[str, Any]):
+        """Set automatic backup configuration"""
+        self.set('automatic_backup', config)
