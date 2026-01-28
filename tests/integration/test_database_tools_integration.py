@@ -40,6 +40,11 @@ class DB:
     def rollback(self):
         self.conn.rollback()
     
+    def log_audit(self, action: str, table_name: str, record_id=None, details=None, user_name=None):
+        """Log audit entry (test stub - does nothing)."""
+        # Stub implementation for testing - could write to audit_log if needed
+        pass
+    
     def close(self):
         self.conn.close()
     
