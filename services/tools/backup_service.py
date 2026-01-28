@@ -90,6 +90,13 @@ class BackupService:
                 # Get backup file size
                 size_bytes = backup_path_obj.stat().st_size
                 
+                # Log audit trail
+                self.db.log_audit(
+                    action='BACKUP',
+                    table_name='database',
+                    details=f"Backup created: {backup_path} ({size_bytes:,} bytes)"
+                )
+                
                 return BackupResult(
                     success=True,
                     backup_path=str(backup_path),

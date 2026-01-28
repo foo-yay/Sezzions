@@ -915,6 +915,25 @@ class DatabaseManager:
             self.commit()
             self._notify_change()
     
+    def log_audit(self, action: str, table_name: str, record_id: Optional[int] = None, 
+                  details: Optional[str] = None, user_name: Optional[str] = None):
+        """
+        Log an audit trail entry.
+        
+        Args:
+            action: Action type (BACKUP, RESTORE, RESET, INSERT, UPDATE, DELETE, etc.)
+            table_name: Table or entity affected
+            record_id: Optional record ID
+            details: Optional details text
+            user_name: Optional user name (defaults to 'system')
+        """
+        cursor = self._connection.cursor()
+        cursor.execute(
+            'INSERT INTO audit_log (action, table_name, record_id, details, user_name) VALUES (?, ?, ?, ?, ?)',
+            (action, table_name, record_id, details, user_name or 'system')
+        )
+        self._connection.commit()
+    
     def close(self):
         """Close database connection"""
         if self._connection:

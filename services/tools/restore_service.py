@@ -138,6 +138,13 @@ class RestoreService:
                 # Clean up temp backup
                 Path(temp_backup).unlink()
                 
+                # Log audit trail
+                self.db.log_audit(
+                    action='RESTORE_REPLACE',
+                    table_name='database',
+                    details=f"Full database replacement from {backup_path}"
+                )
+                
                 return RestoreResult(
                     success=True,
                     records_restored=None,  # Unknown for full replace
@@ -293,6 +300,14 @@ class RestoreService:
                 inserted_count += 1
         
         self._commit()
+        
+        # Log audit trail for non-zero merges
+        if inserted_count > 0:
+            self.db.log_audit(
+                action='RESTORE_MERGE',
+                table_name=table_name,
+                details=f"Merged {inserted_count} record(s) from backup"
+            )
         
         return inserted_count
     

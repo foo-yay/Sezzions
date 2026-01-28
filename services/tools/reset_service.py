@@ -125,6 +125,18 @@ class ResetService:
             # Commit changes
             self._commit()
             
+            # Log audit trail
+            action_type = 'RESET_PARTIAL' if keep_setup_data else 'RESET_FULL'
+            table_summary = ', '.join([f"{t}" for t in tables_affected[:5]])
+            if len(tables_affected) > 5:
+                table_summary += f", +{len(tables_affected)-5} more"
+            
+            self.db.log_audit(
+                action=action_type,
+                table_name='database',
+                details=f"Reset {len(tables_affected)} table(s): {table_summary}. Total records: {total_deleted}"
+            )
+            
             if errors:
                 return ResetResult(
                     success=False,
