@@ -37,6 +37,9 @@ Key rule: UI must not talk to the database directly.
 - Run the app via `python3 sezzions.py` (repo root)
 - The app uses `./sezzions.db` by default, or `SEZZIONS_DB_PATH` override.
 
+### Repo Workflow (Source of Truth)
+The development workflow (including PR expectations and the "Ready for Review" handoff) is defined in `AGENTS.md` and should be treated as the canonical process.
+
 ## 3) Data Model (High-Level)
 
 SQLite database. Core tables and purpose:
@@ -88,8 +91,11 @@ Main UI is a PySide6 window with primary tabs:
 - Purchases
 - Redemptions
 - Game Sessions
-- Setup (Users/Sites/Cards/etc)
-- Tools
+- Daily Sessions
+- Unrealized
+- Realized
+- Expenses
+- Setup (sub-tabs: Users, Sites, Cards, Method Types, Redemption Methods, Game Types, Games, Tools)
 
 UI rules:
 - UI calls services; no direct SQL in UI.
@@ -98,7 +104,7 @@ UI rules:
 
 ## 6) Tools (Operational)
 
-Tools are part of “production readiness”:
+Tools are accessible via Setup → Tools sub-tab and provide "production readiness" capabilities:
 - CSV import/export (schema-driven)
 - Backup/restore/reset
 - Recalculation (full and scoped)
