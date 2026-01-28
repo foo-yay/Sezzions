@@ -491,3 +491,165 @@ class RestoreDialog(QDialog):
             return RestoreMode.MERGE_ALL
         else:
             return RestoreMode.REPLACE
+
+
+class ResetDialog(QDialog):
+    """Dialog for configuring database reset operation."""
+    
+    def __init__(self, table_counts: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Reset Database")
+        self.setModal(True)
+        self.resize(600, 500)
+        self.table_counts = table_counts
+        self._setup_ui()
+        
+    def _setup_ui(self):
+        """Setup the UI components"""
+        layout = QVBoxLayout(self)
+        
+        # Critical warning message
+        warning_label = QLabel(
+            "⚠️ CRITICAL WARNING: Database Reset is Irreversible\n\n"
+            "This will permanently DELETE data from your database.\n"
+            "Create a backup before proceeding."
+        )
+        warning_label.setWordWrap(True)
+        warning_label.setStyleSheet(
+            "background-color: #f8d7da; border: 2px solid #dc3545; "
+            "border-radius: 4px; padding: 15px; color: #721c24; "
+            "font-weight: bold; font-size: 11pt;"
+        )
+        layout.addWidget(warning_label)
+        
+        # Current data summary
+        summary_group = QGroupBox("Current Database State")
+        summary_layout = QVBoxLayout()
+        
+        summary_text = QLabel(self._format_table_summary())
+        summary_text.setWordWrap(True)
+        summary_text.setStyleSheet("font-family: monospace; font-size: 10pt;")
+        summary_layout.addWidget(summary_text)
+        
+        summary_group.setLayout(summary_layout)
+        layout.addWidget(summary_group)
+        
+        # Reset options
+        options_group = QGroupBox("Reset Options")
+        options_layout = QVBoxLayout()
+        
+        # Preserve setup data checkbox
+        self.preserve_setup_checkbox = QCheckBox(
+            "Preserve setup data (users, sites, cards, game types, etc.)"
+        )
+        self.preserve_setup_checkbox.setChecked(True)  # Default to safer option
+        self.preserve_setup_checkbox.toggled.connect(self._on_preserve_changed)
+        options_layout.addWidget(self.preserve_setup_checkbox)
+        
+        preserve_help = QLabel(
+            "  ✓ Recommended for most cases\n"
+            "  • Deletes only transactional data (purchases, redemptions, sessions)\n"
+            "  • Keeps your users, sites, cards, and other setup configured"
+        )
+        preserve_help.setStyleSheet("color: #666; font-size: 9pt; margin-left: 20px;")
+        options_layout.addWidget(preserve_help)
+        
+        options_layout.addSpacing(10)
+        
+        # Full reset warning
+        self.full_reset_warning = QLabel(
+            "⚠️ FULL RESET: Will delete ALL data including users, sites, cards, etc.\n"
+            "You will need to reconfigure everything from scratch."
+        )
+        self.full_reset_warning.setWordWrap(True)
+        self.full_reset_warning.setStyleSheet(
+            "background-color: #fff3cd; border: 1px solid #ffc107; "
+            "border-radius: 4px; padding: 10px; color: #856404; font-weight: bold;"
+        )
+        self.full_reset_warning.setVisible(False)
+        options_layout.addWidget(self.full_reset_warning)
+        
+        options_group.setLayout(options_layout)
+        layout.addWidget(options_group)
+        
+        # Safety confirmation
+        confirm_group = QGroupBox("Confirmation Required")
+        confirm_layout = QVBoxLayout()
+        
+        self.confirm_checkbox = QCheckBox(
+            "I understand this will permanently delete data and cannot be undone"
+        )
+        self.confirm_checkbox.setStyleSheet("font-weight: bold; color: #dc3545;")
+        self.confirm_checkbox.toggled.connect(self._update_button_state)
+        confirm_layout.addWidget(self.confirm_checkbox)
+        
+        self.type_confirm_label = QLabel("Type DELETE to confirm:")
+        self.type_confirm_input = QLineEdit()
+        self.type_confirm_input.setPlaceholderText("Type DELETE here")
+        self.type_confirm_input.textChanged.connect(self._update_button_state)
+        confirm_layout.addWidget(self.type_confirm_label)
+        confirm_layout.addWidget(self.type_confirm_input)
+        
+        confirm_group.setLayout(confirm_layout)
+        layout.addWidget(confirm_group)
+        
+        layout.addStretch()
+        
+        # Button box
+        button_box = QDialogButtonBox()
+        self.reset_btn = button_box.addButton("Reset Database", QDialogButtonBox.AcceptRole)
+        self.reset_btn.setStyleSheet(
+            "QPushButton { background-color: #dc3545; color: white; font-weight: bold; "
+            "padding: 8px 16px; }"
+            "QPushButton:disabled { background-color: #ccc; }"
+        )
+        self.reset_btn.setEnabled(False)
+        cancel_btn = button_box.addButton("Cancel", QDialogButtonBox.RejectRole)
+        
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        
+        layout.addWidget(button_box)
+        
+    def _format_table_summary(self):
+        """Format table counts for display"""
+        if not self.table_counts:
+            return "No data in database."
+            
+        lines = []
+        total_records = 0
+        
+        # Setup tables
+        setup_count = sum(
+            count for table, count in self.table_counts.items()
+            if table in ['users', 'sites', 'cards', 'redemption_methods', 'game_types', 'games']
+        )
+        if setup_count > 0:
+            lines.append(f"Setup Data: {setup_count:,} records")
+        
+        # Transaction tables
+        transaction_count = sum(
+            count for table, count in self.table_counts.items()
+            if table in ['purchases', 'redemptions', 'game_sessions', 'daily_sessions', 'expenses']
+        )
+        if transaction_count > 0:
+            lines.append(f"Transaction Data: {transaction_count:,} records")
+        
+        total_records = sum(self.table_counts.values())
+        lines.append(f"\nTotal Records: {total_records:,}")
+        
+        return "\n".join(lines)
+        
+    def _on_preserve_changed(self, checked):
+        """Handle preserve setup data checkbox change"""
+        self.full_reset_warning.setVisible(not checked)
+        
+    def _update_button_state(self):
+        """Enable reset button only when all confirmations are complete"""
+        confirmed_checkbox = self.confirm_checkbox.isChecked()
+        confirmed_text = self.type_confirm_input.text().upper() == "DELETE"
+        self.reset_btn.setEnabled(confirmed_checkbox and confirmed_text)
+        
+    def should_preserve_setup(self):
+        """Check if setup data should be preserved"""
+        return self.preserve_setup_checkbox.isChecked()

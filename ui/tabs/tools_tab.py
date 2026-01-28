@@ -1036,16 +1036,91 @@ class ToolsTab(QWidget):
     
     def _on_reset_database(self):
         """Handle database reset"""
-        # Coming in next implementation phase
-        QMessageBox.information(
+        from PySide6.QtWidgets import QMessageBox
+        from ui.tools_dialogs import ResetDialog
+        from services.tools.reset_service import ResetService
+        from services.tools.backup_service import BackupService
+        import os
+        
+        # Get current table counts
+        reset_service = ResetService(self.facade.db)
+        table_counts = reset_service.get_table_counts()
+        
+        # Show reset dialog
+        dialog = ResetDialog(table_counts, self)
+        if dialog.exec() != dialog.Accepted:
+            return
+            
+        preserve_setup = dialog.should_preserve_setup()
+        
+        # Final confirmation
+        reset_type = "transactional data only" if preserve_setup else "ALL DATA"
+        reply = QMessageBox.warning(
             self,
-            "Reset Database",
-            "Reset functionality coming soon.\n\n"
-            "This will allow you to:\n"
-            "• Clear all transactional data\n"
-            "• Optionally preserve setup data (users, sites, cards, etc.)\n"
-            "• Reset derived calculations"
+            "Final Confirmation",
+            f"This will permanently delete {reset_type}.\n\n"
+            "Are you absolutely sure you want to proceed?\n\n"
+            "This action CANNOT be undone!",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
         )
+        
+        if reply != QMessageBox.Yes:
+            return
+            
+        # Offer to create backup first
+        if hasattr(self, 'backup_directory') and self.backup_directory:
+            backup_reply = QMessageBox.question(
+                self,
+                "Create Backup First?",
+                "Would you like to create a safety backup before resetting?\n\n"
+                "This is STRONGLY recommended.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if backup_reply == QMessageBox.Yes:
+                backup_service = BackupService(self.facade.db)
+                result = backup_service.backup_database(self.backup_directory)
+                if result.success:
+                    backup_file = os.path.basename(result.backup_path)
+                    QMessageBox.information(
+                        self,
+                        "Backup Created",
+                        f"Safety backup created: {backup_file}\n\n"
+                        "Proceeding with reset..."
+                    )
+                else:
+                    QMessageBox.critical(
+                        self,
+                        "Backup Failed",
+                        f"Could not create backup:\n{result.error}\n\n"
+                        "Reset cancelled for safety."
+                    )
+                    return
+        
+        # Perform reset
+        result = reset_service.reset_database(
+            keep_setup_data=preserve_setup,
+            keep_audit_log=True
+        )
+        
+        if result.success:
+            tables_info = "\n• ".join(result.tables_cleared) if result.tables_cleared else "None"
+            QMessageBox.information(
+                self,
+                "Reset Complete",
+                f"✓ Database reset successfully!\n\n"
+                f"Records deleted: {result.records_deleted:,}\n"
+                f"Tables cleared:\n• {tables_info}\n\n"
+                "Please restart the application to see all changes."
+            )
+        else:
+            QMessageBox.critical(
+                self,
+                "Reset Failed",
+                f"Database reset failed:\n{result.error}"
+            )
     
     # ========================================================================
     # Post-Import Recalculation
