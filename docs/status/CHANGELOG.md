@@ -12,6 +12,38 @@ Rules:
 ## 2026-01-28
 
 ```yaml
+id: 2026-01-28-12
+type: feature
+areas: [tools, database, ui, testing]
+summary: "Complete database tools implementation (Issue #2): backup/restore/reset with automatic scheduling, audit logging, and comprehensive testing."
+files_changed:
+  - ui/tabs/tools_tab.py
+  - ui/tools_dialogs.py
+  - ui/settings.py
+  - services/tools/backup_service.py
+  - services/tools/restore_service.py
+  - services/tools/reset_service.py
+  - repositories/database.py
+  - settings.json
+  - tests/integration/test_database_tools_integration.py
+  - tests/integration/test_database_tools_audit.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Manual Backup UI**: Directory selection, "Backup Now" button, timestamped files (backup_YYYYMMDD_HHMMSS.db), status display with file size
+- **Restore UI**: RestoreDialog with three modes (Replace/Merge All/Merge Selected), safety backups, file validation, confirmations
+- **Reset UI**: ResetDialog with preserve setup data option, table count preview, typed "DELETE" confirmation, optional pre-reset backup
+- **Automatic Backup**: JSON-based configuration in settings.json with enable toggle, directory selection, frequency (1-168 hrs), QTimer scheduling (5-min checks), non-blocking execution, color-coded status, test button
+- **Audit Logging**: DatabaseManager.log_audit() method, all operations log to audit_log table with action type/table/details/timestamp
+- **Testing**: 19 tests total (9 existing database tools + 10 new audit logging tests), all passing
+- **Services**: BackupService, RestoreService, ResetService use SQLite online backup API
+- **Safety Features**: Integrity checks, automatic safety backups, multiple confirmations, typed confirmations for destructive actions
+
+Refs: Issue #2
+
+```yaml
 id: 2026-01-28-01
 type: docs
 areas: [docs, workflow]
