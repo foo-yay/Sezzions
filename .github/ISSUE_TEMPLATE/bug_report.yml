@@ -19,6 +19,18 @@ body:
       required: true
 
   - type: textarea
+    id: impact
+    attributes:
+      label: Impact / scope
+      description: Who/what is affected (data correctness, UI flow, performance, etc.)?
+      placeholder: |
+        Impact:
+        - …
+
+        Scope:
+        - …
+
+  - type: textarea
     id: repro
     attributes:
       label: Steps to reproduce
@@ -79,4 +91,6 @@ body:
         - label: I’ve checked `docs/PROJECT_SPEC.md` and this is unexpected.
           required: false
         - label: I’m willing to help test a fix.
+          required: false
+        - label: This bug involves data correctness (should add/adjust a scenario-based test).
           required: false

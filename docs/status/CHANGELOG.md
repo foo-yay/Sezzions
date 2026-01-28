@@ -158,3 +158,16 @@ files_changed:
   - docs/PROJECT_SPEC.md
   - docs/status/CHANGELOG.md
 ```
+
+```yaml
+id: 2026-01-28-11
+type: docs
+areas: [github, workflow]
+summary: "Enhanced GitHub Issue templates to capture implementation/testing detail; instructed agents to draft issues using templates."
+files_changed:
+  - .github/ISSUE_TEMPLATE/feature_request.yml
+  - .github/ISSUE_TEMPLATE/bug_report.yml
+  - AGENTS.md
+  - .github/copilot-instructions.md
+  - docs/status/CHANGELOG.md
+```

@@ -24,6 +24,15 @@ body:
     attributes:
       label: Proposed solution
       description: What should we build/change?
+      placeholder: |
+        What:
+        - …
+
+        Why:
+        - …
+
+        Notes:
+        - …
     validations:
       required: true
 
@@ -39,6 +48,42 @@ body:
         - …
 
   - type: textarea
+    id: ux_fields
+    attributes:
+      label: UX / fields / checkboxes
+      description: If this touches UI, list the exact fields, checkboxes, toggles, buttons, and confirmations.
+      placeholder: |
+        Screen/Tab:
+        - …
+
+        Fields:
+        - …
+
+        Checkboxes/toggles:
+        - …
+
+        Buttons/actions:
+        - …
+
+        Warnings/confirmations:
+        - …
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation notes / strategy
+      description: Key approach, dependencies, and anything risky/important.
+      placeholder: |
+        Approach:
+        - …
+
+        Data model / migrations (if any):
+        - …
+
+        Risk areas:
+        - …
+
+  - type: textarea
     id: acceptance
     attributes:
       label: Acceptance criteria
@@ -48,6 +93,18 @@ body:
         - …
     validations:
       required: true
+
+  - type: textarea
+    id: test_plan
+    attributes:
+      label: Test plan
+      description: What tests or validation steps should be added/run?
+      placeholder: |
+        Automated tests:
+        - …
+
+        Manual verification:
+        - …
 
   - type: dropdown
     id: area
@@ -69,4 +126,8 @@ body:
         - label: This change likely requires updating `docs/PROJECT_SPEC.md`.
           required: false
         - label: This change likely requires adding/updating scenario-based tests.
+          required: false
+        - label: This change likely touches the database schema or migrations.
+          required: false
+        - label: This change includes destructive actions (must add warnings/backup prompts).
           required: false

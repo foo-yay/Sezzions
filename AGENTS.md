@@ -35,6 +35,13 @@ This file defines how humans and AI agents should work in this repository.
 6. Move completed work to "Ready for Review" and wait for owner approval.
 7. After approval/merge, close the Issue (and only then update/remove any related TODO mirror item) and ensure changelog/spec are updated.
 
+## Issues (Templates)
+
+- When creating or drafting Issues, use the repository Issue templates:
+  - Feature: `.github/ISSUE_TEMPLATE/feature_request.yml`
+  - Bug: `.github/ISSUE_TEMPLATE/bug_report.yml`
+- If an agent cannot create the Issue directly, it should still draft the Issue text to match the template sections (problem, proposal, scope, acceptance criteria, test plan, etc.) so the owner can paste it with minimal editing.
+
 ## Approval Gate (Owner Review)
 
 - Do not mark/remove TODO items as done without explicit project owner approval.

@@ -34,6 +34,14 @@ You are assisting with **Sezzions**, the standalone desktop app in this reposito
 6. Move the item to "Ready for Review" and wait for owner approval.
 7. After approval/merge, close the Issue (and only then update/remove any related TODO mirror item).
 
+## Issues (Templates)
+
+- Prefer GitHub Issues for new work items.
+- When creating or drafting Issues, use the repository templates:
+   - Feature: `.github/ISSUE_TEMPLATE/feature_request.yml`
+   - Bug: `.github/ISSUE_TEMPLATE/bug_report.yml`
+- If you cannot create the Issue directly, draft the Issue content to match the template sections so the owner can paste it with minimal editing.
+
 ## Approval Gate
 
 - Do not mark/remove TODO items as done without explicit project owner approval.
