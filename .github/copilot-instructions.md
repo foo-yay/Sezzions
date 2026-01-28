@@ -1,56 +1,55 @@
-# Copilot / AI agent instructions — Session App (Casino Tracker)
+# Copilot Instructions — Sezzions
 
-Short: help a coding agent be productive immediately in this repo.
+## Primary Goal
 
-1) Big picture
-- Primary purpose: desktop accounting for social-casino sweeps coins. Taxable events are session-based; redemptions move cash. Core accounting lives in `business_logic.py` (FIFO, basis, session reconciling) and is orchestrated from `session2.py` (UI glue, recompute triggers).
-- Data store: local SQLite database `casino_accounting.db` (see `database.py`). All code opens short-lived connections via `Database.get_connection()` (row factory -> `sqlite3.Row`). Migrations are additive and idempotent (ALTER TABLE guarded by try/except).
+You are assisting with **Sezzions**, the standalone desktop app in this repository.
 
-2) Major components & responsibilities
-- `business_logic.py`: FIFOCalculator, SessionManager — implement cost-basis, apply/reverse allocations, rebuild sessions, detect freebies. Edit here only for accounting logic changes.
-- `session2.py`: GUI event handlers, high-level orchestration, strict business-rule checks (edit/delete protections). Many critical guards live here (e.g., block changing purchase site/amount if consumed).
-- `database.py`: schema creation + migrations. Default DB path and PRAGMA-based column checks live here; keep migrations additive.
-- `gui_tabs.py`: UI widgets and tab builders. Reusable helpers (date filter, autosuggest) and where import/export buttons call backend methods.
-- `table_helpers.py`: `SearchableTreeview` and export helpers. Note data format: `set_data()` expects list of `(values, tags)`; tags are typically `(color_tag, str(id))` and code uses the tag id to map back to DB rows.
+- Primary entrypoint: `python3 sezzions.py`
+- Product code lives at repo root (`models/`, `repositories/`, `services/`, `ui/`, `tools/`).
+- Legacy code is quarantined in `.LEGACY/` and is reference-only.
 
-3) Critical developer workflows
-- Install deps: `pip install -r requirements.txt` (needs `tkcalendar`, `matplotlib`).
-- Run the app (dev): `python3 session2.py` (UI main is in this workspace; some headers reference `casino_main_app.py` historically).
-- DB lifecycle: code auto-creates and migrates DB on `Database()` init. Use the UI Tools tab for Backup / Restore / Refactor / Recalculate operations; CSV import flow is two-step (upload → then click "Process Imported Data (Purchases, Redemptions, Sessions)").
+## Rules
 
-4) Project-specific conventions & patterns
-- Dates: YYYY-MM-DD strings; Times: HH:MM:SS (many parsers accept HH:MM and append :00). Use `parse_date()` from `gui_tabs.py` when parsing user input.
-- Monetary inputs: validated via `validate_currency()` in `session2.py` (rejects >2 decimal places, negative values). Follow that formatting when constructing tests.
-- UI tables: use `SearchableTreeview.set_data([(values, tags), ...])`. Tags: `(color_tag, str(id))`. Example: `refresh_purchases()` builds `tags = (tag, str(row['id']))`.
-- DB access: pattern is open conn -> cursor -> execute -> commit -> close. Many business functions intentionally open/close connections per operation to avoid long transactions.
-- Safe migrations: add columns guarded by try/except sqlite3.OperationalError — safely repeatable.
+1. Prefer minimal, surgical changes.
+2. UI must not talk to the database directly.
+3. Preserve current app behavior unless explicitly instructed to change it.
+4. For accounting changes, add or update scenario-based tests to define expected outputs.
+5. Keep docs tidy:
+   - Update canonical docs in `docs/`
+   - Decisions go in `docs/adr/`
+   - Status updates go in `docs/status/`
+   - Archive old docs in `docs/archive/`
+6. Avoid documentation sprawl:
+   - Prefer updating `docs/PROJECT_SPEC.md` over creating new docs
+   - Add a changelog entry to `docs/status/CHANGELOG.md` for noteworthy changes
+   - Prefer GitHub Issues for new work items; optionally mirror to `docs/TODO.md` for offline work
 
-5) Accounting safety rules (must preserve)
-- Do NOT change purchase `amount`, `site`, or `user` if `consumed > 0`. The guard is in `session2.save_purchase()`.
-- Edits to redemptions involve: reversing tax_session, restoring FIFO basis, then reprocessing (see `save_redemption()` + `delete_redemption()` flows). Follow that exact order when modifying logic.
-- FIFO rules: use `FIFOCalculator.calculate_cost_basis`, then `apply_allocation`; to undo use `reverse_cost_basis`.
+## Required Workflow (Humans + AI)
 
-6) Integration points & extension hooks
-- CSV import paths: `import_purchases_data`, `import_redemptions_data`, `import_sessions_data` in `session2.py` — they insert rows then expect a separate processing step that computes FIFO / tax sessions.
-- UI Tools: `process_imported_transactions`, `refactor_database`, `recalculate_everything` are entry points for large recomputations (trigger `SessionManager` methods).
-- Tests or scripts that need to exercise accounting should import `Database`, `FIFOCalculator`, `SessionManager` directly and run against a disposable SQLite path.
+1. Start from a GitHub Issue (preferred) or `docs/TODO.md` (offline mirror).
+2. Implement changes with minimal, surgical edits.
+3. Update/add tests to match intended semantics.
+4. Update `docs/PROJECT_SPEC.md` when behavior/architecture/workflows change.
+5. Add a changelog entry to `docs/status/CHANGELOG.md` for noteworthy changes.
+6. Move the item to "Ready for Review" and wait for owner approval.
+7. After approval/merge, close the Issue (and only then update/remove any related TODO mirror item).
 
-7) Quick examples (how to inspect or re-run logic)
-- Recompute all derived data for a pair: in a Python REPL
-  from database import Database
-  from business_logic import FIFOCalculator, SessionManager
-  db=Database('test.db')
-  sm=SessionManager(db, FIFOCalculator(db))
-  sm.rebuild_all_derived(site_id=1, user_id=1)
+## Approval Gate
 
-8) Files to inspect first when changing behavior
-- `business_logic.py` — accounting rules
-- `session2.py` — UI guards, import/export, orchestration
-- `database.py` — schema/migrations
-- `SESSION_APP_ENGINE_HANDOFF.md` — authoritative design notes and constraints
+- Do not mark/remove TODO items as done without explicit project owner approval.
+- Use the `docs/TODO.md` "Ready for Review" section as the handoff point.
 
-9) When in doubt
-- Preserve ordering: redemptions/purchases must be processed chronologically (code explicitly sorts by date/time during imports). Avoid changing that behavior.
-- Prefer changing `business_logic.py` for pure accounting fixes and `session2.py` only for orchestration/guarding code.
+## Ad-hoc Requests + Rollbacks
 
-Feedback: I added this file with repository-specific guidance — tell me which sections need more detail or any missing patterns to include.
+- Direct verbal requests are allowed, but must still be recorded.
+- For non-trivial work: add a TODO item in `docs/TODO.md` first.
+- Prefer: create a GitHub Issue first, then optionally mirror to `docs/TODO.md`.
+- For small/urgent work: proceed, but still update `docs/status/CHANGELOG.md` and update `docs/PROJECT_SPEC.md` if semantics/workflows changed.
+- For rollbacks: do not delete old changelog entries; add a new changelog entry describing the rollback.
+
+## Start Here
+
+- Docs index: `docs/INDEX.md`
+- Master spec: `docs/PROJECT_SPEC.md`
+- Changelog: `docs/status/CHANGELOG.md`
+- TODO: `docs/TODO.md`

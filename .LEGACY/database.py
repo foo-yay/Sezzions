@@ -1,0 +1,906 @@
+"""
+database.py - Database and migration management
+"""
+import sqlite3
+
+class Database:
+    def __init__(self, db_path="casino_accounting.db"):
+        self.db_path = db_path
+        self.init_database()
+        self.migrate_database()
+    
+    def get_connection(self):
+        """Get database connection with row factory"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+    
+    def close(self):
+        """Close database (no-op since we use connection pooling)"""
+        # Connections are closed after each operation, nothing to do here
+        pass
+    
+    def log_audit(self, action, table_name, record_id=None, details=None, user_name=None):
+        """Log an audit event"""
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO audit_log (action, table_name, record_id, details, user_name)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (action, table_name, record_id, details, user_name))
+        conn.commit()
+        conn.close()
+    
+    def log_audit_conditional(self, action, table_name, record_id=None, details=None, user_name=None):
+        """
+        Log an audit event only if audit logging is enabled and the action type is enabled.
+        This checks the settings table before logging.
+        
+        Args:
+            action: The action type (INSERT, UPDATE, DELETE, IMPORT, REFACTOR, etc.)
+            table_name: The name of the table affected
+            record_id: Optional record ID
+            details: Optional details string
+            user_name: Optional user name (if None, uses default from settings)
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # Check if audit logging is enabled
+            cursor.execute("SELECT value FROM settings WHERE key = 'audit_log_enabled'")
+            result = cursor.fetchone()
+            enabled = int(result["value"]) if result else 0
+            
+            if not enabled:
+                conn.close()
+                return
+            
+            # Check if this action type is enabled
+            cursor.execute("SELECT value FROM settings WHERE key = 'audit_log_actions'")
+            result = cursor.fetchone()
+            enabled_actions = result["value"] if result else "INSERT,UPDATE,DELETE,IMPORT,REFACTOR"
+            
+            action_list = [a.strip() for a in enabled_actions.split(",")]
+            if action not in action_list:
+                conn.close()
+                return
+            
+            # Get default user if not provided
+            if user_name is None:
+                cursor.execute("SELECT value FROM settings WHERE key = 'audit_log_default_user'")
+                result = cursor.fetchone()
+                user_name = result["value"] if result and result["value"] else None
+            
+            # Log the audit event
+            cursor.execute('''
+                INSERT INTO audit_log (action, table_name, record_id, details, user_name)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (action, table_name, record_id, details, user_name))
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            # Silently fail - don't let audit logging break the app
+            print(f"Warning: Audit log failed: {e}")
+            try:
+                conn.close()
+            except:
+                pass
+    
+    def get_schema_version(self, conn):
+        """Get current schema version"""
+        c = conn.cursor()
+        try:
+            c.execute("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
+            result = c.fetchone()
+            return result['version'] if result else 0
+        except sqlite3.OperationalError:
+            return 0
+    
+    def set_schema_version(self, conn, version):
+        """Set schema version"""
+        c = conn.cursor()
+        c.execute("INSERT INTO schema_version (version, applied_at) VALUES (?, CURRENT_TIMESTAMP)", (version,))
+    
+    def migrate_database(self):
+        """Run database migrations"""
+        conn = self.get_connection()
+        c = conn.cursor()
+        
+        # Create schema version table
+        c.execute('''CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER PRIMARY KEY, 
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+        conn.commit()
+        
+        current_version = self.get_schema_version(conn)
+        # ensure_derived_session_columns: these columns may be missing in older DBs even if schema_version advanced
+        def ensure_derived_session_columns():
+            def _add_col(table, coldef):
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {coldef}")
+                except sqlite3.OperationalError:
+                    pass
+            _add_col("game_sessions", "session_basis REAL")
+            _add_col("game_sessions", "basis_consumed REAL")
+            _add_col("game_sessions", "expected_start_total_sc REAL")
+            _add_col("game_sessions", "expected_start_redeemable_sc REAL")
+            _add_col("game_sessions", "inferred_start_total_delta REAL")
+            _add_col("game_sessions", "inferred_start_redeemable_delta REAL")
+            _add_col("game_sessions", "delta_total REAL")
+            _add_col("game_sessions", "delta_redeem REAL")
+            _add_col("game_sessions", "net_taxable_pl REAL")
+        ensure_derived_session_columns()
+        # ensure core columns that may be missing in older DBs
+        def ensure_core_columns():
+            def _add_col(table, coldef):
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {coldef}")
+                except sqlite3.OperationalError:
+                    pass
+            _add_col("sites", "sc_rate REAL DEFAULT 1.0")
+            _add_col("users", "notes TEXT")
+            _add_col("sites", "notes TEXT")
+            _add_col("cards", "notes TEXT")
+            _add_col("cards", "last_four TEXT")
+            _add_col("redemption_methods", "notes TEXT")
+            _add_col("game_types", "notes TEXT")
+            _add_col("games", "notes TEXT")
+            _add_col("purchases", "notes TEXT")
+            _add_col("purchases", "processed INTEGER DEFAULT 0")
+            _add_col("purchases", "status TEXT DEFAULT 'active'")
+            _add_col("redemptions", "more_remaining INTEGER DEFAULT 0")
+            _add_col("redemptions", "notes TEXT")
+            _add_col("realized_transactions", "notes TEXT")
+            _add_col("game_sessions", "total_taxable REAL")
+            _add_col("game_sessions", "sc_change REAL")
+            _add_col("game_sessions", "dollar_value REAL")
+            _add_col("game_sessions", "basis_bonus REAL")
+            _add_col("game_sessions", "gameplay_pnl REAL")
+            _add_col("game_sessions", "game_name TEXT")
+            _add_col("game_sessions", "wager_amount REAL")
+            _add_col("game_sessions", "rtp REAL")
+        ensure_core_columns()
+        try:
+            c.execute("UPDATE sites SET sc_rate = 1.0 WHERE sc_rate IS NULL")
+        except sqlite3.OperationalError:
+            pass
+        conn.commit()
+
+        
+        # Migration 1: Add user_id to cards
+        if current_version < 1:
+            try:
+                c.execute("SELECT user_id FROM cards LIMIT 1")
+            except sqlite3.OperationalError:
+                # Get default user or use 1
+                c.execute("SELECT id FROM users WHERE active = 1 LIMIT 1")
+                default_user = c.fetchone()
+                default_user_id = default_user['id'] if default_user else 1
+                
+                c.execute("ALTER TABLE cards ADD COLUMN user_id INTEGER")
+                c.execute("UPDATE cards SET user_id = ?", (default_user_id,))
+            
+            self.set_schema_version(conn, 1)
+            conn.commit()
+        
+        # Migration 2: Add starting_sc_balance to purchases
+        if current_version < 2:
+            try:
+                c.execute("SELECT starting_sc_balance FROM purchases LIMIT 1")
+            except sqlite3.OperationalError:
+                c.execute("ALTER TABLE purchases ADD COLUMN starting_sc_balance REAL DEFAULT 0.0")
+            
+            self.set_schema_version(conn, 2)
+            conn.commit()
+        
+        # Migration 3: Add processed flag and notes fields
+        if current_version < 3:
+            # Add processed flag to redemptions
+            try:
+                c.execute("SELECT processed FROM redemptions LIMIT 1")
+            except sqlite3.OperationalError:
+                c.execute("ALTER TABLE redemptions ADD COLUMN processed INTEGER DEFAULT 0")
+            
+            # Add notes to purchases
+            try:
+                c.execute("SELECT notes FROM purchases LIMIT 1")
+            except sqlite3.OperationalError:
+                c.execute("ALTER TABLE purchases ADD COLUMN notes TEXT")
+            
+            # Add notes to redemptions
+            try:
+                c.execute("SELECT notes FROM redemptions LIMIT 1")
+            except sqlite3.OperationalError:
+                c.execute("ALTER TABLE redemptions ADD COLUMN notes TEXT")
+            
+            # Add notes to site_sessions
+            try:
+                c.execute("SELECT notes FROM site_sessions LIMIT 1")
+            except sqlite3.OperationalError:
+                c.execute("ALTER TABLE site_sessions ADD COLUMN notes TEXT")
+            
+            self.set_schema_version(conn, 3)
+            conn.commit()
+
+        # Migration 4: Add derived session accounting columns to game_sessions
+        if current_version < 4:
+            # Add columns if missing (safe/idempotent)
+            def _add_col(table, coldef):
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {coldef}")
+                except sqlite3.OperationalError:
+                    pass  # column likely exists
+
+            _add_col("game_sessions", "session_basis REAL")
+            _add_col("game_sessions", "basis_consumed REAL")
+            _add_col("game_sessions", "expected_start_total_sc REAL")
+            _add_col("game_sessions", "expected_start_redeemable_sc REAL")
+            _add_col("game_sessions", "inferred_start_total_delta REAL")
+            _add_col("game_sessions", "inferred_start_redeemable_delta REAL")
+            _add_col("game_sessions", "delta_total REAL")
+            _add_col("game_sessions", "delta_redeem REAL")
+            _add_col("game_sessions", "net_taxable_pl REAL")
+
+            self.set_schema_version(conn, 4)
+            conn.commit()
+
+        # Migration 5: Add missing core columns used by the app
+        if current_version < 5:
+            def _add_col(table, coldef):
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {coldef}")
+                except sqlite3.OperationalError:
+                    pass
+
+            _add_col("sites", "sc_rate REAL DEFAULT 1.0")
+            _add_col("cards", "last_four TEXT")
+
+            _add_col("purchases", "notes TEXT")
+            _add_col("purchases", "processed INTEGER DEFAULT 0")
+            _add_col("purchases", "status TEXT DEFAULT 'active'")
+
+            _add_col("redemptions", "more_remaining INTEGER DEFAULT 0")
+            _add_col("redemptions", "notes TEXT")
+
+            _add_col("game_sessions", "start_time TEXT DEFAULT '00:00:00'")
+            _add_col("game_sessions", "end_date DATE")
+            _add_col("game_sessions", "end_time TEXT")
+            _add_col("game_sessions", "freebies_detected REAL")
+            _add_col("game_sessions", "status TEXT DEFAULT 'Active'")
+            _add_col("game_sessions", "notes TEXT")
+            _add_col("game_sessions", "processed INTEGER DEFAULT 0")
+            _add_col("game_sessions", "total_taxable REAL")
+            _add_col("game_sessions", "sc_change REAL")
+            _add_col("game_sessions", "dollar_value REAL")
+            _add_col("game_sessions", "basis_bonus REAL")
+            _add_col("game_sessions", "gameplay_pnl REAL")
+
+            _add_col("daily_tax_sessions", "total_other_income REAL DEFAULT 0.0")
+            _add_col("daily_tax_sessions", "total_session_pnl REAL DEFAULT 0.0")
+            _add_col("daily_tax_sessions", "net_daily_pnl REAL DEFAULT 0.0")
+            _add_col("daily_tax_sessions", "status TEXT")
+            _add_col("daily_tax_sessions", "num_game_sessions INTEGER DEFAULT 0")
+            _add_col("daily_tax_sessions", "num_other_income_items INTEGER DEFAULT 0")
+            _add_col("daily_tax_sessions", "notes TEXT")
+
+            _add_col("other_income", "notes TEXT")
+
+            try:
+                c.execute("UPDATE sites SET sc_rate = 1.0 WHERE sc_rate IS NULL")
+            except sqlite3.OperationalError:
+                pass
+
+            self.set_schema_version(conn, 5)
+            conn.commit()
+
+        # Migration 6: Add games tables and session fields
+        if current_version < 6:
+            c.execute('''CREATE TABLE IF NOT EXISTS game_types (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                active INTEGER DEFAULT 1)''')
+            c.execute('''CREATE TABLE IF NOT EXISTS games (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                game_type_id INTEGER,
+                rtp REAL,
+                notes TEXT,
+                active INTEGER DEFAULT 1,
+                FOREIGN KEY (game_type_id) REFERENCES game_types(id))''')
+
+            def _add_col(table, coldef):
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {coldef}")
+                except sqlite3.OperationalError:
+                    pass
+
+            _add_col("game_sessions", "game_name TEXT")
+            _add_col("game_sessions", "wager_amount REAL")
+            _add_col("game_sessions", "rtp REAL")
+
+            c.execute("SELECT COUNT(*) as cnt FROM game_types")
+            if c.fetchone()["cnt"] == 0:
+                for name in ("Slots", "Table Games", "Poker", "Other"):
+                    c.execute("INSERT OR IGNORE INTO game_types (name, active) VALUES (?, 1)", (name,))
+
+            self.set_schema_version(conn, 6)
+            conn.commit()
+
+        # Migration 7: Add cashback_earned column to purchases
+        if current_version < 7:
+            def _add_col(table, coldef):
+                try:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {coldef}")
+                except sqlite3.OperationalError:
+                    pass
+
+            _add_col("purchases", "cashback_earned REAL DEFAULT 0.0")
+
+            # Backfill existing purchases with calculated cashback
+            print("Backfilling cashback for existing purchases...")
+            c.execute('''
+                UPDATE purchases
+                SET cashback_earned = (
+                    SELECT p.amount * (c.cashback_rate / 100.0)
+                    FROM purchases p
+                    JOIN cards c ON p.card_id = c.id
+                    WHERE p.id = purchases.id
+                )
+            ''')
+            backfilled = c.rowcount
+            print(f"Backfilled cashback for {backfilled} purchases")
+
+            self.set_schema_version(conn, 7)
+            conn.commit()
+
+        # Migration 8: Round all cashback values to 2 decimal places
+        if current_version < 8:
+            print("Rounding cashback values to 2 decimal places...")
+            c.execute('''
+                UPDATE purchases
+                SET cashback_earned = ROUND(cashback_earned, 2)
+                WHERE cashback_earned IS NOT NULL
+            ''')
+            updated = c.rowcount
+            print(f"Rounded {updated} cashback values")
+
+            self.set_schema_version(conn, 8)
+            conn.commit()
+
+        # Migration 9: Add automatic backup settings
+        if current_version < 9:
+            # Insert default backup settings if they don't exist
+            c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_backup_enabled', '0')")
+            c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_backup_interval_days', '7')")
+            c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_backup_folder', '')")
+            c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('last_backup_date', '')")
+
+            self.set_schema_version(conn, 9)
+            conn.commit()
+
+        # Migration 10: Add theme preference
+        if current_version < 10:
+            # Insert default theme preference (light)
+            c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'light')")
+
+            self.set_schema_version(conn, 10)
+            conn.commit()
+
+        # Migration 11: Make game_type nullable in game_sessions
+        if current_version < 11:
+            # SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+            # First check if game_type is NOT NULL
+            c.execute("PRAGMA table_info(game_sessions)")
+            cols = c.fetchall()
+            game_type_col = [col for col in cols if col[1] == 'game_type']
+
+            # If game_type is NOT NULL (notnull=1), recreate the table
+            if game_type_col and game_type_col[0][3] == 1:
+                print("Making game_type nullable in game_sessions...")
+
+                # Create new table with game_type nullable
+                c.execute('''CREATE TABLE game_sessions_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_date DATE NOT NULL,
+                    start_time TEXT DEFAULT '00:00:00',
+                    end_date DATE,
+                    end_time TEXT,
+                    site_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    game_type TEXT,
+                    game_name TEXT,
+                    wager_amount REAL,
+                    rtp REAL,
+                    starting_sc_balance REAL DEFAULT 0.0,
+                    ending_sc_balance REAL,
+                    starting_redeemable_sc REAL,
+                    ending_redeemable_sc REAL,
+                    freebies_detected REAL,
+                    status TEXT DEFAULT 'Active',
+                    notes TEXT,
+                    processed INTEGER DEFAULT 0,
+                    session_basis REAL,
+                    basis_consumed REAL,
+                    expected_start_total_sc REAL,
+                    expected_start_redeemable_sc REAL,
+                    inferred_start_total_delta REAL,
+                    inferred_start_redeemable_delta REAL,
+                    delta_total REAL,
+                    delta_redeem REAL,
+                    net_taxable_pl REAL,
+                    total_taxable REAL,
+                    sc_change REAL,
+                    dollar_value REAL,
+                    basis_bonus REAL,
+                    gameplay_pnl REAL,
+                    FOREIGN KEY (site_id) REFERENCES sites(id),
+                    FOREIGN KEY (user_id) REFERENCES users(id))''')
+
+                # Copy data from old table
+                c.execute('''INSERT INTO game_sessions_new
+                    SELECT * FROM game_sessions''')
+
+                # Drop old table
+                c.execute('DROP TABLE game_sessions')
+
+                # Rename new table
+                c.execute('ALTER TABLE game_sessions_new RENAME TO game_sessions')
+
+                print("game_type is now nullable")
+
+            self.set_schema_version(conn, 11)
+            conn.commit()
+
+        # Migration 12: Add game RTP aggregates table and actual_rtp column to games
+        if current_version < 12:
+            print("Adding game RTP aggregates table...")
+            c.execute('''CREATE TABLE IF NOT EXISTS game_rtp_aggregates (
+                game_id INTEGER PRIMARY KEY REFERENCES games(id),
+                total_wager REAL DEFAULT 0,
+                total_delta REAL DEFAULT 0,
+                session_count INTEGER DEFAULT 0,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+            
+            # Add actual_rtp column to games table
+            try:
+                c.execute("ALTER TABLE games ADD COLUMN actual_rtp REAL DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
+            
+            self.set_schema_version(conn, 12)
+            conn.commit()
+
+        # Migration 13: Add game_id foreign key column to game_sessions
+        if current_version < 13:
+            print("Adding game_id column to game_sessions...")
+            try:
+                c.execute("ALTER TABLE game_sessions ADD COLUMN game_id INTEGER REFERENCES games(id)")
+            except sqlite3.OperationalError:
+                pass
+            
+            # Backfill game_id for existing sessions that have game_name
+            print("Backfilling game_id from game_name...")
+            c.execute('''
+                UPDATE game_sessions
+                SET game_id = (SELECT id FROM games WHERE games.name = game_sessions.game_name)
+                WHERE game_name IS NOT NULL AND game_id IS NULL
+            ''')
+            backfilled = c.rowcount
+            if backfilled > 0:
+                print(f"  Backfilled game_id for {backfilled} sessions")
+            
+            self.set_schema_version(conn, 13)
+            conn.commit()
+
+        if current_version < 14:
+            print("Creating game_session_event_links table...")
+            try:
+                c.execute('''
+                    CREATE TABLE IF NOT EXISTS game_session_event_links (
+                        id INTEGER PRIMARY KEY,
+                        game_session_id INTEGER NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
+                        event_type TEXT NOT NULL CHECK(event_type IN ('purchase','redemption')),
+                        event_id INTEGER NOT NULL,
+                        relation TEXT NOT NULL CHECK(relation IN ('BEFORE','DURING','AFTER','MANUAL')),
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(game_session_id, event_type, event_id, relation)
+                    )
+                ''')
+                
+                # Create indexes for efficient lookups
+                c.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_gsel_session 
+                    ON game_session_event_links(game_session_id)
+                ''')
+                c.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_gsel_event 
+                    ON game_session_event_links(event_type, event_id)
+                ''')
+                
+                print("  Created game_session_event_links table with indexes")
+            except sqlite3.OperationalError as e:
+                print(f"  Note: {e}")
+            
+            self.set_schema_version(conn, 14)
+            conn.commit()
+
+        # Migration 15: Rename tax_sessions to realized_transactions
+        if current_version < 15:
+            print("Renaming tax_sessions to realized_transactions...")
+            try:
+                # Check if old table exists and has data
+                c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tax_sessions'")
+                old_table_exists = c.fetchone() is not None
+                
+                if old_table_exists:
+                    # Check if new table exists
+                    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='realized_transactions'")
+                    new_table_exists = c.fetchone() is not None
+                    
+                    if not new_table_exists:
+                        # Create new table with correct schema
+                        c.execute('''
+                            CREATE TABLE realized_transactions (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                redemption_date DATE NOT NULL,
+                                site_id INTEGER NOT NULL,
+                                redemption_id INTEGER NOT NULL,
+                                cost_basis REAL NOT NULL,
+                                payout REAL NOT NULL,
+                                net_pl REAL NOT NULL,
+                                user_id INTEGER NOT NULL,
+                                notes TEXT,
+                                FOREIGN KEY (site_id) REFERENCES sites(id),
+                                FOREIGN KEY (redemption_id) REFERENCES redemptions(id),
+                                FOREIGN KEY (user_id) REFERENCES users(id)
+                            )
+                        ''')
+                    
+                    # Copy data (map session_date → redemption_date)
+                    c.execute('''
+                        INSERT INTO realized_transactions 
+                            (id, redemption_date, site_id, redemption_id, cost_basis, payout, net_pl, user_id, notes)
+                        SELECT 
+                            id, session_date, site_id, redemption_id, cost_basis, payout, net_pl, user_id, notes
+                        FROM tax_sessions
+                    ''')
+                    
+                    # Drop old table
+                    c.execute("DROP TABLE tax_sessions")
+                    print("  Renamed tax_sessions to realized_transactions successfully")
+                else:
+                    print("  tax_sessions table does not exist, migration skipped")
+                    
+            except sqlite3.OperationalError as e:
+                print(f"  Error during migration: {e}")
+            
+            self.set_schema_version(conn, 15)
+            conn.commit()
+
+        conn.close()
+    
+    def init_database(self):
+        """Initialize database tables"""
+        conn = self.get_connection()
+        c = conn.cursor()
+        
+        # Users table
+        c.execute('''CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            notes TEXT,
+            active INTEGER DEFAULT 1)''')
+        
+        # Sites table
+        c.execute('''CREATE TABLE IF NOT EXISTS sites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            sc_rate REAL DEFAULT 1.0,
+            notes TEXT,
+            active INTEGER DEFAULT 1)''')
+        
+        # Cards table
+        c.execute('''CREATE TABLE IF NOT EXISTS cards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            last_four TEXT,
+            cashback_rate REAL DEFAULT 0.0,
+            user_id INTEGER,
+            notes TEXT,
+            active INTEGER DEFAULT 1)''')
+        
+        # Redemption methods table
+        c.execute('''CREATE TABLE IF NOT EXISTS redemption_methods (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            method_type TEXT,
+            user_id INTEGER,
+            notes TEXT,
+            active INTEGER DEFAULT 1,
+            FOREIGN KEY (user_id) REFERENCES users(id))''')
+
+        # Game types table
+        c.execute('''CREATE TABLE IF NOT EXISTS game_types (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            notes TEXT,
+            active INTEGER DEFAULT 1)''')
+
+        # Games table
+        c.execute('''CREATE TABLE IF NOT EXISTS games (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            game_type_id INTEGER,
+            rtp REAL,
+            notes TEXT,
+            active INTEGER DEFAULT 1,
+            FOREIGN KEY (game_type_id) REFERENCES game_types(id))''')
+
+        # Seed default game types if empty
+        c.execute("SELECT COUNT(*) as cnt FROM game_types")
+        if c.fetchone()["cnt"] == 0:
+            for name in ("Slots", "Table Games", "Poker", "Other"):
+                c.execute("INSERT OR IGNORE INTO game_types (name, active) VALUES (?, 1)", (name,))
+        
+        # Purchases table
+        c.execute('''CREATE TABLE IF NOT EXISTS purchases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            purchase_date DATE NOT NULL,
+            purchase_time TEXT DEFAULT '00:00:00',
+            site_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            sc_received REAL NOT NULL,
+            starting_sc_balance REAL DEFAULT 0.0,
+            card_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            remaining_amount REAL NOT NULL,
+            notes TEXT,
+            processed INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'active',
+            FOREIGN KEY (site_id) REFERENCES sites(id),
+            FOREIGN KEY (card_id) REFERENCES cards(id),
+            FOREIGN KEY (user_id) REFERENCES users(id))''')
+        
+        # Site sessions table
+        c.execute('''CREATE TABLE IF NOT EXISTS site_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            site_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            start_date DATE NOT NULL,
+            status TEXT DEFAULT 'Active',
+            total_buyin REAL DEFAULT 0.0,
+            total_redeemed REAL DEFAULT 0.0,
+            notes TEXT,
+            FOREIGN KEY (site_id) REFERENCES sites(id),
+            FOREIGN KEY (user_id) REFERENCES users(id))''')
+        
+        # Redemptions table
+        c.execute('''CREATE TABLE IF NOT EXISTS redemptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            site_session_id INTEGER,
+            site_id INTEGER NOT NULL,
+            redemption_date DATE NOT NULL,
+            redemption_time TEXT DEFAULT '00:00:00',
+            amount REAL NOT NULL,
+            receipt_date DATE,
+            redemption_method_id INTEGER,
+            processed INTEGER DEFAULT 0,
+            is_free_sc INTEGER DEFAULT 0,
+            more_remaining INTEGER DEFAULT 0,
+            user_id INTEGER NOT NULL,
+            notes TEXT,
+            FOREIGN KEY (site_session_id) REFERENCES site_sessions(id),
+            FOREIGN KEY (site_id) REFERENCES sites(id),
+            FOREIGN KEY (redemption_method_id) REFERENCES redemption_methods(id),
+            FOREIGN KEY (user_id) REFERENCES users(id))''')
+        
+        # Realized transactions table (formerly tax_sessions)
+        c.execute('''CREATE TABLE IF NOT EXISTS realized_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            redemption_date DATE NOT NULL,
+            site_id INTEGER NOT NULL,
+            redemption_id INTEGER NOT NULL,
+            cost_basis REAL NOT NULL,
+            payout REAL NOT NULL,
+            net_pl REAL NOT NULL,
+            user_id INTEGER NOT NULL,
+            notes TEXT,
+            FOREIGN KEY (site_id) REFERENCES sites(id),
+            FOREIGN KEY (redemption_id) REFERENCES redemptions(id),
+            FOREIGN KEY (user_id) REFERENCES users(id))''')
+
+        # Redemption allocation table (links redemptions to purchases for basis tracking)
+        c.execute('''CREATE TABLE IF NOT EXISTS redemption_allocations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            redemption_id INTEGER NOT NULL,
+            purchase_id INTEGER NOT NULL,
+            allocated_amount REAL NOT NULL,
+            FOREIGN KEY (redemption_id) REFERENCES redemptions(id),
+            FOREIGN KEY (purchase_id) REFERENCES purchases(id))''')
+
+        # Realized daily notes table
+        c.execute('''CREATE TABLE IF NOT EXISTS realized_daily_notes (
+            session_date DATE PRIMARY KEY,
+            notes TEXT)''')
+
+        # Game sessions table
+        c.execute('''CREATE TABLE IF NOT EXISTS game_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_date DATE NOT NULL,
+            start_time TEXT DEFAULT '00:00:00',
+            end_date DATE,
+            end_time TEXT,
+            site_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            game_type TEXT,
+            game_name TEXT,
+            wager_amount REAL,
+            rtp REAL,
+            starting_sc_balance REAL DEFAULT 0.0,
+            ending_sc_balance REAL,
+            starting_redeemable_sc REAL,
+            ending_redeemable_sc REAL,
+            freebies_detected REAL,
+            status TEXT DEFAULT 'Active',
+            notes TEXT,
+            processed INTEGER DEFAULT 0,
+            session_basis REAL,
+            basis_consumed REAL,
+            expected_start_total_sc REAL,
+            expected_start_redeemable_sc REAL,
+            inferred_start_total_delta REAL,
+            inferred_start_redeemable_delta REAL,
+            delta_total REAL,
+            delta_redeem REAL,
+            net_taxable_pl REAL,
+            total_taxable REAL,
+            sc_change REAL,
+            dollar_value REAL,
+            basis_bonus REAL,
+            gameplay_pnl REAL,
+            FOREIGN KEY (site_id) REFERENCES sites(id),
+            FOREIGN KEY (user_id) REFERENCES users(id))''')
+
+        # Other income table
+        c.execute('''CREATE TABLE IF NOT EXISTS other_income (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date DATE NOT NULL,
+            amount REAL NOT NULL,
+            description TEXT,
+            user_id INTEGER,
+            game_session_id INTEGER,
+            notes TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (game_session_id) REFERENCES game_sessions(id))''')
+
+        # Daily tax sessions table
+        c.execute('''CREATE TABLE IF NOT EXISTS daily_tax_sessions (
+            session_date DATE NOT NULL,
+            user_id INTEGER NOT NULL,
+            total_other_income REAL DEFAULT 0.0,
+            total_session_pnl REAL DEFAULT 0.0,
+            net_daily_pnl REAL DEFAULT 0.0,
+            status TEXT,
+            num_game_sessions INTEGER DEFAULT 0,
+            num_other_income_items INTEGER DEFAULT 0,
+            notes TEXT,
+            PRIMARY KEY (session_date, user_id),
+            FOREIGN KEY (user_id) REFERENCES users(id))''')
+
+        # Settings table
+        c.execute('''CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT)''')
+
+        # Legacy SC conversion rates table (optional fallback)
+        c.execute('''CREATE TABLE IF NOT EXISTS sc_conversion_rates (
+            site_id INTEGER PRIMARY KEY,
+            rate REAL NOT NULL,
+            FOREIGN KEY (site_id) REFERENCES sites(id))''')
+        
+        # Expenses table
+        c.execute('''CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            expense_date DATE NOT NULL,
+            amount REAL NOT NULL,
+            vendor TEXT NOT NULL,
+            description TEXT,
+            category TEXT DEFAULT 'Other Expenses',
+            user_id INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id))''')
+        
+        # Audit log table
+        c.execute('''CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            action TEXT NOT NULL,
+            table_name TEXT NOT NULL,
+            record_id INTEGER,
+            details TEXT,
+            user_name TEXT)''')
+        
+        # Ensure default user exists
+        c.execute("SELECT COUNT(*) as count FROM users")
+        if c.fetchone()['count'] == 0:
+            c.execute("INSERT INTO users (name) VALUES (?)", ("Default User",))
+        
+        # Migration: Add user_id to redemption_methods if it doesn't exist
+        c.execute("PRAGMA table_info(redemption_methods)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'user_id' not in columns:
+            c.execute("ALTER TABLE redemption_methods ADD COLUMN user_id INTEGER")
+        
+        # Migration: Add method_type to redemption_methods if it doesn't exist
+        # Re-fetch columns in case user_id was just added
+        c.execute("PRAGMA table_info(redemption_methods)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'method_type' not in columns:
+            c.execute("ALTER TABLE redemption_methods ADD COLUMN method_type TEXT")
+        
+        # Migration: Add purchase_time to purchases if it doesn't exist
+        c.execute("PRAGMA table_info(purchases)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'purchase_time' not in columns:
+            c.execute("ALTER TABLE purchases ADD COLUMN purchase_time TEXT DEFAULT '00:00:00'")
+        
+        # Migration: Add redemption_time to redemptions if it doesn't exist
+        c.execute("PRAGMA table_info(redemptions)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'redemption_time' not in columns:
+            c.execute("ALTER TABLE redemptions ADD COLUMN redemption_time TEXT DEFAULT '00:00:00'")
+        
+        # Migration: Add ending_redeemable_sc to game_sessions if it doesn't exist
+        c.execute("PRAGMA table_info(game_sessions)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'ending_redeemable_sc' not in columns:
+            c.execute("ALTER TABLE game_sessions ADD COLUMN ending_redeemable_sc REAL")
+            # For existing closed sessions, set redeemable = total (assume fully played through)
+            c.execute("UPDATE game_sessions SET ending_redeemable_sc = ending_sc_balance WHERE status = 'Closed' AND ending_sc_balance IS NOT NULL")
+        
+        # Migration: Add starting_redeemable_sc to game_sessions if it doesn't exist
+        c.execute("PRAGMA table_info(game_sessions)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'starting_redeemable_sc' not in columns:
+            c.execute("ALTER TABLE game_sessions ADD COLUMN starting_redeemable_sc REAL")
+            # For existing sessions, set starting_redeemable = starting_total (assume fully unlocked)
+            c.execute("UPDATE game_sessions SET starting_redeemable_sc = starting_sc_balance WHERE starting_sc_balance IS NOT NULL")
+        
+        # Migration: Add status to purchases for dormant tracking
+        c.execute("PRAGMA table_info(purchases)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'status' not in columns:
+            c.execute("ALTER TABLE purchases ADD COLUMN status TEXT DEFAULT 'active'")
+            # All existing purchases default to 'active'
+        
+        # Migration: Drop method_type from redemptions table (not needed - get via JOIN)
+        c.execute("PRAGMA table_info(redemptions)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'method_type' in columns:
+            try:
+                c.execute("ALTER TABLE redemptions DROP COLUMN method_type")
+            except Exception as e:
+                # Older SQLite versions don't support DROP COLUMN
+                # Not critical - column will just be ignored
+                pass
+        
+        # Migration: Add fees column to redemptions table
+        c.execute("PRAGMA table_info(redemptions)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'fees' not in columns:
+            c.execute("ALTER TABLE redemptions ADD COLUMN fees REAL DEFAULT 0")
+        
+        # Migration: Add reconciliation override columns to game_sessions
+        c.execute("PRAGMA table_info(game_sessions)")
+        columns = [col[1] for col in c.fetchall()]
+        if 'session_basis_override' not in columns:
+            c.execute("ALTER TABLE game_sessions ADD COLUMN session_basis_override REAL")
+        if 'basis_consumed_override' not in columns:
+            c.execute("ALTER TABLE game_sessions ADD COLUMN basis_consumed_override REAL")
+        if 'is_reconciliation' not in columns:
+            c.execute("ALTER TABLE game_sessions ADD COLUMN is_reconciliation INTEGER DEFAULT 0")
+        
+        conn.commit()
+        conn.close()

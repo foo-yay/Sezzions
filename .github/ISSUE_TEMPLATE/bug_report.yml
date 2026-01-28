@@ -1,0 +1,82 @@
+name: "Bug report"
+description: "Report something that is broken or incorrect"
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug.
+
+        Tip: If this is a complex investigation, consider also adding a writeup under `docs/incidents/` and linking it here.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What’s wrong (one or two sentences)?
+      placeholder: "e.g., Tools tab crashes when clicking Recalculate All"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps so someone else can reproduce.
+      placeholder: |
+        1. Open app
+        2. Go to Tools
+        3. Click …
+        4. Observe …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / traceback
+      description: Paste any relevant output or traceback.
+      render: text
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Low (minor annoyance)
+        - Medium (workflow impaired)
+        - High (data incorrect / frequent crash)
+        - Critical (data loss / accounting incorrect)
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, any special setup.
+      placeholder: "macOS 14.x, Python 3.12, SEZZIONS_DB_PATH=…"
+
+  - type: checkboxes
+    id: acceptance
+    attributes:
+      label: Acceptance
+      options:
+        - label: I’ve checked `docs/PROJECT_SPEC.md` and this is unexpected.
+          required: false
+        - label: I’m willing to help test a fix.
+          required: false

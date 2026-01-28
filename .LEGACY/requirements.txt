@@ -1,0 +1,14 @@
+# Casino Tracker Dependencies
+
+# Calendar date picker widget
+tkcalendar>=1.6.1
+
+# Charts and visualization (legacy - being replaced by QtCharts)
+matplotlib>=3.5.0
+
+# Qt UI (new UI path) - includes QtCharts
+PySide6>=6.5.0
+
+# Note: tkinter comes with Python by default
+# QtCharts is included with PySide6 installation
+# All other dependencies are Python standard library

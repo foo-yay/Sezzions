@@ -1,0 +1,582 @@
+"""
+Redemption Method Types tab - Manage method types
+"""
+from datetime import date
+from PySide6 import QtWidgets, QtCore, QtGui
+from app_facade import AppFacade
+from models.redemption_method_type import RedemptionMethodType
+from ui.table_header_filters import TableHeaderFilter
+
+
+class RedemptionMethodTypesTab(QtWidgets.QWidget):
+    """Tab for managing redemption method types"""
+
+    def __init__(self, facade: AppFacade):
+        super().__init__()
+        self.facade = facade
+        self.types = []
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        header_layout = QtWidgets.QHBoxLayout()
+        title = QtWidgets.QLabel("Method Types")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+
+        self.search_edit = QtWidgets.QLineEdit()
+        self.search_edit.setPlaceholderText("Search method types...")
+        self.search_edit.setMaximumWidth(300)
+        self.search_edit.textChanged.connect(self._filter_types)
+        header_layout.addWidget(self.search_edit)
+
+        self.clear_search_btn = QtWidgets.QPushButton("Clear")
+        self.clear_search_btn.clicked.connect(self._clear_search)
+        header_layout.addWidget(self.clear_search_btn)
+
+        self.clear_filters_btn = QtWidgets.QPushButton("Clear All Filters")
+        self.clear_filters_btn.clicked.connect(self._clear_all_filters)
+        header_layout.addWidget(self.clear_filters_btn)
+        layout.addLayout(header_layout)
+
+        toolbar = QtWidgets.QHBoxLayout()
+        add_btn = QtWidgets.QPushButton("➕ Add Type")
+        add_btn.setObjectName("PrimaryButton")
+        add_btn.clicked.connect(self._add_type)
+        toolbar.addWidget(add_btn)
+
+        self.view_btn = QtWidgets.QPushButton("👁️ View")
+        self.view_btn.clicked.connect(self._view_type)
+        self.view_btn.setVisible(False)
+        toolbar.addWidget(self.view_btn)
+
+        self.edit_btn = QtWidgets.QPushButton("✏️ Edit")
+        self.edit_btn.clicked.connect(self._edit_type)
+        self.edit_btn.setVisible(False)
+        toolbar.addWidget(self.edit_btn)
+
+        self.delete_btn = QtWidgets.QPushButton("🗑️ Delete")
+        self.delete_btn.clicked.connect(self._delete_type)
+        self.delete_btn.setVisible(False)
+        toolbar.addWidget(self.delete_btn)
+
+        toolbar.addStretch()
+
+        export_btn = QtWidgets.QPushButton("📤 Export CSV")
+        export_btn.clicked.connect(self._export_csv)
+        toolbar.addWidget(export_btn)
+
+        refresh_btn = QtWidgets.QPushButton("🔄 Refresh")
+        refresh_btn.clicked.connect(self.refresh_data)
+        toolbar.addWidget(refresh_btn)
+
+        layout.addLayout(toolbar)
+
+        self.table = QtWidgets.QTableWidget()
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels(["Name", "Status", "Notes"])
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        header.setStretchLastSection(True)
+        self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QTableWidget.ExtendedSelection)
+        self.table.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
+        self.table.verticalHeader().setVisible(False)
+        self.table.itemSelectionChanged.connect(self._on_selection_changed)
+        self.table.itemDoubleClicked.connect(self._view_type)
+        layout.addWidget(self.table)
+        self.table_filter = TableHeaderFilter(self.table, refresh_callback=self.refresh_data)
+
+        self.refresh_data()
+
+    def refresh_data(self):
+        self.types = self.facade.get_all_redemption_method_types(active_only=False)
+        self._populate_table()
+
+    def _populate_table(self):
+        search_text = self.search_edit.text().lower()
+        if search_text:
+            filtered = [t for t in self.types
+                        if search_text in t.name.lower()
+                        or (t.notes and search_text in t.notes.lower())]
+        else:
+            filtered = self.types
+
+        self.table.setRowCount(len(filtered))
+
+        for row, method_type in enumerate(filtered):
+            name_item = QtWidgets.QTableWidgetItem(method_type.name)
+            name_item.setData(QtCore.Qt.UserRole, method_type.id)
+            self.table.setItem(row, 0, name_item)
+
+            status = "Active" if method_type.is_active else "Inactive"
+            status_item = QtWidgets.QTableWidgetItem(status)
+            if not method_type.is_active:
+                status_item.setForeground(QtGui.QColor("#999"))
+            self.table.setItem(row, 1, status_item)
+
+            notes = (method_type.notes or "")[:100]
+            self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(notes))
+
+        # Column sizing handled by header resize mode
+        self.table_filter.apply_filters()
+
+    def _filter_types(self):
+        self._populate_table()
+
+    def _clear_search(self):
+        self.search_edit.clear()
+        self.table.clearSelection()
+        self._on_selection_changed()
+        self._populate_table()
+
+    def _clear_all_filters(self):
+        self.search_edit.clear()
+        self.table.clearSelection()
+        self._on_selection_changed()
+        if hasattr(self, "table_filter"):
+            self.table_filter.clear_all_filters()
+        self._populate_table()
+
+    def _on_selection_changed(self):
+        selected_rows = self.table.selectionModel().selectedRows()
+        has_selection = bool(selected_rows)
+        self.view_btn.setVisible(len(selected_rows) == 1)
+        self.edit_btn.setVisible(len(selected_rows) == 1)
+        self.delete_btn.setVisible(has_selection)
+
+    def _get_selected_type_id(self):
+        ids = self._get_selected_type_ids()
+        return ids[0] if ids else None
+
+    def _get_selected_type_ids(self):
+        ids = []
+        for row in self.table.selectionModel().selectedRows():
+            item = self.table.item(row.row(), 0)
+            if item is not None:
+                value = item.data(QtCore.Qt.UserRole)
+                if value is not None:
+                    ids.append(value)
+        return ids
+
+    def _add_type(self):
+        dialog = RedemptionMethodTypeDialog(self.facade, self)
+        if dialog.exec():
+            try:
+                method_type = self.facade.create_redemption_method_type(
+                    name=dialog.name_edit.text(),
+                    notes=dialog.notes_edit.toPlainText() or None
+                )
+                self.refresh_data()
+                QtWidgets.QMessageBox.information(
+                    self, "Success", f"Type '{method_type.name}' created"
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(
+                    self, "Error", f"Failed to create type:\n{str(e)}"
+                )
+
+    def _edit_type(self):
+        type_id = self._get_selected_type_id()
+        if not type_id:
+            return
+
+        method_type = self.facade.get_redemption_method_type(type_id)
+        if not method_type:
+            return
+
+        dialog = RedemptionMethodTypeDialog(self.facade, self, method_type)
+        if dialog.exec():
+            try:
+                updated = self.facade.update_redemption_method_type(
+                    type_id,
+                    name=dialog.name_edit.text(),
+                    notes=dialog.notes_edit.toPlainText() or None,
+                    is_active=dialog.active_check.isChecked()
+                )
+                self.refresh_data()
+                QtWidgets.QMessageBox.information(
+                    self, "Success", f"Type '{updated.name}' updated"
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(
+                    self, "Error", f"Failed to update type:\n{str(e)}"
+                )
+
+    def _delete_type(self):
+        type_ids = self._get_selected_type_ids()
+        if not type_ids:
+            return
+
+        method_types = []
+        for type_id in type_ids:
+            method_type = self.facade.get_redemption_method_type(type_id)
+            if method_type:
+                method_types.append(method_type)
+
+        if not method_types:
+            return
+
+        if len(method_types) == 1:
+            prompt = f"Delete method type '{method_types[0].name}'?\n\nThis cannot be undone."
+        else:
+            prompt = f"Delete {len(method_types)} method types?\n\nThis cannot be undone."
+
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Delete",
+            prompt,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            try:
+                for method_type in method_types:
+                    self.facade.delete_redemption_method_type(method_type.id)
+                self.refresh_data()
+                QtWidgets.QMessageBox.information(self, "Success", "Type(s) deleted")
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(
+                    self, "Error", f"Failed to delete type(s):\n{str(e)}"
+                )
+
+    def _export_csv(self):
+        if self.table.rowCount() == 0:
+            QtWidgets.QMessageBox.information(self, "Export", "No data to export")
+            return
+
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Export Method Types",
+            f"redemption_method_types_{date.today().isoformat()}.csv",
+            "CSV Files (*.csv)"
+        )
+
+        if filename:
+            try:
+                import csv
+                with open(filename, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    headers = [self.table.horizontalHeaderItem(c).text() for c in range(self.table.columnCount())]
+                    writer.writerow(headers)
+                    for row in range(self.table.rowCount()):
+                        if self.table.isRowHidden(row):
+                            continue
+                        row_values = []
+                        for col in range(self.table.columnCount()):
+                            item = self.table.item(row, col)
+                            row_values.append(item.text() if item else "")
+                        writer.writerow(row_values)
+
+                QtWidgets.QMessageBox.information(
+                    self, "Export Complete",
+                    f"Exported method types to:\n{filename}"
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self, "Export Error", f"Failed to export:\n{str(e)}"
+                )
+
+    def _view_type(self):
+        type_id = self._get_selected_type_id()
+        if not type_id:
+            return
+        method_type = self.facade.get_redemption_method_type(type_id)
+        if not method_type:
+            return
+        
+        dialog = RedemptionMethodTypeViewDialog(
+            method_type,
+            parent=self,
+            on_edit=self._edit_type,
+            on_delete=self._delete_type,
+        )
+        dialog.exec()
+        self.refresh_data()
+
+
+class RedemptionMethodTypeDialog(QtWidgets.QDialog):
+    """Dialog for adding/editing redemption method types"""
+
+    def __init__(self, facade: AppFacade, parent=None, method_type: RedemptionMethodType = None):
+        super().__init__(parent)
+        self.facade = facade
+        self.method_type = method_type
+        self.setWindowTitle("Edit Method Type" if method_type else "Add Method Type")
+        self.setMinimumSize(400, 320)
+        
+        # Main layout
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(16)
+        
+        # Section header
+        header = QtWidgets.QLabel("📋 Method Type Details")
+        header.setObjectName("SectionHeader")
+        main_layout.addWidget(header)
+        
+        # Main section
+        main_section = QtWidgets.QWidget()
+        main_section.setObjectName("SectionBackground")
+        main_grid = QtWidgets.QGridLayout(main_section)
+        main_grid.setContentsMargins(12, 12, 12, 12)
+        main_grid.setHorizontalSpacing(20)
+        main_grid.setVerticalSpacing(10)
+        main_grid.setColumnStretch(0, 0)  # Label column doesn't stretch
+        
+        # Active checkbox - row 0 (alone)
+        active_label = QtWidgets.QLabel("Active:")
+        active_label.setObjectName("FieldLabel")
+        active_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.active_check = QtWidgets.QCheckBox()
+        self.active_check.setChecked(method_type.is_active if method_type else True)
+        main_grid.addWidget(active_label, 0, 0)
+        main_grid.addWidget(self.active_check, 0, 1, alignment=QtCore.Qt.AlignLeft)
+        
+        # Name (required) - fixed at 250px
+        name_label = QtWidgets.QLabel("Name:")
+        name_label.setObjectName("FieldLabel")
+        name_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.name_edit = QtWidgets.QLineEdit()
+        self.name_edit.setPlaceholderText("Required")
+        self.name_edit.setFixedWidth(250)
+        if method_type:
+            self.name_edit.setText(method_type.name)
+        main_grid.addWidget(name_label, 1, 0)
+        main_grid.addWidget(self.name_edit, 1, 1, alignment=QtCore.Qt.AlignLeft)
+        
+        main_layout.addWidget(main_section)
+        
+        # Notes section (collapsible)
+        self.notes_collapsed = True
+        self.notes_toggle = QtWidgets.QPushButton("📝 Add Notes...")
+        self.notes_toggle.setObjectName("SectionHeader")
+        self.notes_toggle.setCursor(QtCore.Qt.PointingHandCursor)
+        self.notes_toggle.setFlat(True)
+        self.notes_toggle.clicked.connect(self._toggle_notes)
+        main_layout.addWidget(self.notes_toggle)
+        
+        self.notes_section = QtWidgets.QWidget()
+        self.notes_section.setObjectName("SectionBackground")
+        notes_layout = QtWidgets.QVBoxLayout(self.notes_section)
+        notes_layout.setContentsMargins(12, 12, 12, 12)
+        self.notes_edit = QtWidgets.QPlainTextEdit()
+        self.notes_edit.setPlaceholderText("Optional...")
+        self.notes_edit.setFixedHeight(80)
+        if method_type and method_type.notes:
+            self.notes_edit.setPlainText(method_type.notes)
+        notes_layout.addWidget(self.notes_edit)
+        self.notes_section.setVisible(False)
+        main_layout.addWidget(self.notes_section)
+        
+        # Expand notes if editing and notes exist
+        if method_type and method_type.notes:
+            self._toggle_notes()
+        
+        # Stretch
+        main_layout.addStretch(1)
+        
+        # Buttons
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        
+        cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+        
+        self.save_btn = QtWidgets.QPushButton("💾 Save")
+        self.save_btn.setObjectName("PrimaryButton")
+        self.save_btn.clicked.connect(self._validate_and_accept)
+        btn_row.addWidget(self.save_btn)
+        
+        main_layout.addLayout(btn_row)
+        
+        # Validation
+        self.name_edit.textChanged.connect(self._validate_inline)
+        self._validate_inline()
+        
+        # Tab order
+        self.setTabOrder(self.name_edit, self.active_check)
+        self.setTabOrder(self.active_check, self.notes_edit)
+        self.setTabOrder(self.notes_edit, self.save_btn)
+    
+    def _toggle_notes(self):
+        """Toggle notes section visibility"""
+        self.notes_collapsed = not self.notes_collapsed
+        self.notes_section.setVisible(not self.notes_collapsed)
+        if self.notes_collapsed:
+            self.notes_toggle.setText("📝 Add Notes...")
+            self.setMinimumHeight(320)
+            self.setMaximumHeight(320)
+            self.resize(self.width(), 320)
+        else:
+            self.notes_toggle.setText("📝 Hide Notes")
+            self.setMinimumHeight(400)
+            self.setMaximumHeight(16777215)
+            self.resize(self.width(), 400)
+    
+    def _set_invalid(self, widget, message):
+        widget.setProperty("invalid", True)
+        widget.setToolTip(message)
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+    
+    def _set_valid(self, widget):
+        widget.setProperty("invalid", False)
+        widget.setToolTip("")
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+    
+    def _validate_inline(self) -> bool:
+        """Validate all fields and return True if valid"""
+        valid = True
+        
+        if not self.name_edit.text().strip():
+            self._set_invalid(self.name_edit, "Name is required.")
+            valid = False
+        else:
+            self._set_valid(self.name_edit)
+        
+        self.save_btn.setEnabled(valid)
+        return valid
+    
+    def _validate_and_accept(self):
+        """Final validation before accepting"""
+        if not self._validate_inline():
+            QtWidgets.QMessageBox.warning(
+                self, "Validation Error", "Please correct the highlighted fields."
+            )
+            return
+        self.accept()
+
+
+class RedemptionMethodTypeViewDialog(QtWidgets.QDialog):
+    """Dialog for viewing redemption method type details"""
+    
+    def __init__(self, method_type: RedemptionMethodType, parent=None, on_edit=None, on_delete=None):
+        super().__init__(parent)
+        self.method_type = method_type
+        self._on_edit = on_edit
+        self._on_delete = on_delete
+        self.setWindowTitle("View Method Type")
+        self.setMinimumSize(500, 280)
+        
+        # Main layout
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(12)
+        
+        # Method Type details section header
+        details_header = QtWidgets.QLabel("📋 Method Type Details")
+        details_header.setObjectName("SectionHeader")
+        main_layout.addWidget(details_header)
+        
+        # Method Type details section
+        details_section = QtWidgets.QWidget()
+        details_section.setObjectName("SectionBackground")
+        details_layout = QtWidgets.QVBoxLayout(details_section)
+        details_layout.setContentsMargins(12, 12, 12, 12)
+        details_layout.setSpacing(6)
+        
+        # Single-column layout (simple entity)
+        grid = QtWidgets.QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(6)
+        grid.setColumnStretch(1, 1)
+        
+        name_lbl = QtWidgets.QLabel("Name:")
+        name_lbl.setStyleSheet("color: palette(mid);")
+        name_val = self._make_selectable_label(method_type.name)
+        grid.addWidget(name_lbl, 0, 0, QtCore.Qt.AlignRight)
+        grid.addWidget(name_val, 0, 1)
+        
+        status_lbl = QtWidgets.QLabel("Status:")
+        status_lbl.setStyleSheet("color: palette(mid);")
+        status_val = self._make_selectable_label("Active" if method_type.is_active else "Inactive")
+        grid.addWidget(status_lbl, 1, 0, QtCore.Qt.AlignRight)
+        grid.addWidget(status_val, 1, 1)
+        
+        details_layout.addLayout(grid)
+        main_layout.addWidget(details_section)
+        
+        # Notes section header
+        notes_header = QtWidgets.QLabel("📝 Notes")
+        notes_header.setObjectName("SectionHeader")
+        main_layout.addWidget(notes_header)
+        
+        # Notes section
+        notes_section = QtWidgets.QWidget()
+        notes_section.setObjectName("SectionBackground")
+        notes_layout = QtWidgets.QVBoxLayout(notes_section)
+        notes_layout.setContentsMargins(12, 12, 12, 12)
+        notes_layout.setSpacing(6)
+        
+        if method_type.notes:
+            notes_display = QtWidgets.QTextEdit()
+            notes_display.setReadOnly(True)
+            notes_display.setPlainText(method_type.notes)
+            notes_display.setMaximumHeight(80)
+            notes_display.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+            notes_layout.addWidget(notes_display)
+        else:
+            notes_empty = QtWidgets.QLabel("—")
+            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_layout.addWidget(notes_empty)
+        main_layout.addWidget(notes_section)
+        
+        # Stretch
+        main_layout.addStretch(1)
+        
+        # Buttons
+        btn_row = QtWidgets.QHBoxLayout()
+        
+        if self._on_delete:
+            delete_btn = QtWidgets.QPushButton("🗑️ Delete")
+            delete_btn.clicked.connect(self._handle_delete)
+            btn_row.addWidget(delete_btn)
+        
+        btn_row.addStretch(1)
+        
+        if self._on_edit:
+            edit_btn = QtWidgets.QPushButton("✏️ Edit")
+            edit_btn.clicked.connect(self._handle_edit)
+            btn_row.addWidget(edit_btn)
+        
+        close_btn = QtWidgets.QPushButton("✖️ Close")
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        
+        main_layout.addLayout(btn_row)
+    
+    def _create_section(self, title):
+        """Create a section with header"""
+        header = QtWidgets.QLabel(title)
+        header.setObjectName("SectionHeader")
+        
+        section = QtWidgets.QWidget()
+        section.setObjectName("SectionBackground")
+        layout = QtWidgets.QVBoxLayout(section)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(6)
+        
+        return section, layout
+    
+    def _make_selectable_label(self, text):
+        """Create selectable text label"""
+        label = QtWidgets.QLabel(text)
+        label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        label.setCursor(QtCore.Qt.IBeamCursor)
+        return label
+    
+    def _handle_edit(self):
+        """Close dialog before triggering edit callback"""
+        self.accept()
+        if self._on_edit:
+            self._on_edit()
+    
+    def _handle_delete(self):
+        """Close dialog before triggering delete callback"""
+        self.accept()
+        if self._on_delete:
+            self._on_delete()

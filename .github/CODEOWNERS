@@ -1,0 +1,9 @@
+# CODEOWNERS
+#
+# This file tells GitHub who should be requested to review changes to matching paths.
+# It becomes enforceable when branch protection rules require CODEOWNERS review.
+#
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: require owner review for anything
+* @foo-yay
