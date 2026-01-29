@@ -4,7 +4,7 @@ Progress dialogs for Tools operations
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
     QProgressBar, QPushButton, QTextEdit, QDialogButtonBox,
-    QGroupBox, QCheckBox, QLineEdit, QComboBox, QStackedWidget, QWidget, QScrollArea, QSizePolicy
+    QGroupBox, QCheckBox, QLineEdit, QComboBox, QStackedWidget, QWidget, QScrollArea, QSizePolicy, QLayout
 )
 from PySide6.QtCore import Qt, Signal, QTimer, QSize
 from PySide6.QtGui import QFontMetrics
@@ -318,10 +318,9 @@ class RestoreDialog(QDialog):
         self.setMinimumWidth(640)
         self.setSizeGripEnabled(False)
         self.backup_path: str | None = None
-        self._is_updating_size = False
         self._setup_ui()
         # Defer initial sizing until after the dialog is laid out.
-        QTimer.singleShot(0, self._update_dialog_size)
+        QTimer.singleShot(0, self.adjustSize)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -335,6 +334,8 @@ class RestoreDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
+        # Standardize sizing: the dialog always fits its content.
+        layout.setSizeConstraint(QLayout.SetFixedSize)
         
         # Warning message
         warning_label = QLabel(
@@ -564,7 +565,7 @@ class RestoreDialog(QDialog):
             self.backup_path = file_path
             self._set_backup_file_display(file_path)
             self._update_restore_button_state()
-            QTimer.singleShot(0, self._update_dialog_size)
+            QTimer.singleShot(0, self.adjustSize)
 
     def _set_backup_file_display(self, file_path: str | None):
         """Set backup file display with elided (middle) path and tooltip."""
@@ -595,31 +596,7 @@ class RestoreDialog(QDialog):
             self.mode_stack.setCurrentIndex(0)
 
         self._update_restore_button_state()
-        QTimer.singleShot(0, self._update_dialog_size)
-
-    def _update_dialog_size(self):
-        """Keep dialog compact and expand only as needed."""
-        # Relax any previous fixed height before recomputing; otherwise the dialog can
-        # get "stuck" at the previous page's height (e.g., switching away from MERGE_SELECTED).
-        self.setMinimumHeight(0)
-        self.setMaximumHeight(16777215)
-
-        # Force the details area to match the current page (Qt otherwise tends to
-        # reserve the max height across all pages).
-        current = self.mode_stack.currentWidget()
-        if current is not None:
-            current.adjustSize()
-            self.mode_stack.setFixedHeight(max(0, current.sizeHint().height()))
-        else:
-            self.mode_stack.setFixedHeight(0)
-
-        self.mode_stack.updateGeometry()
-        self.layout().activate()
-        self.adjustSize()
-
-        # Snap to the content-driven height after the stack updates.
-        self.resize(self.width(), self.sizeHint().height())
-        self.setFixedHeight(self.sizeHint().height())
+        QTimer.singleShot(0, self.adjustSize)
 
     def _update_restore_button_state(self):
         """Enable Restore only when inputs are valid."""
