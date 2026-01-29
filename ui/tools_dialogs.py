@@ -422,15 +422,18 @@ class RestoreDialog(QDialog):
 
         # Page 0: placeholder
         placeholder_page = QWidget()
+        placeholder_page.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         placeholder_layout = QVBoxLayout(placeholder_page)
         placeholder_hint = QLabel("Select a restore mode to see details.")
         placeholder_hint.setObjectName("HelperText")
         placeholder_layout.addWidget(placeholder_hint)
+        placeholder_layout.addStretch()
         placeholder_layout.setContentsMargins(0, 0, 0, 0)
         self.mode_stack.addWidget(placeholder_page)
 
         # Page 1: MERGE_ALL
         merge_page = QWidget()
+        merge_page.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         merge_layout = QVBoxLayout(merge_page)
         merge_desc = QLabel(
             "• Imports data from backup and merges with existing records\n"
@@ -440,11 +443,13 @@ class RestoreDialog(QDialog):
         merge_desc.setObjectName("HelperText")
         merge_desc.setWordWrap(True)
         merge_layout.addWidget(merge_desc)
+        merge_layout.addStretch()
         merge_layout.setContentsMargins(0, 0, 0, 0)
         self.mode_stack.addWidget(merge_page)
 
         # Page 2: MERGE_SELECTED
         merge_selected_page = QWidget()
+        merge_selected_page.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         merge_selected_layout = QVBoxLayout(merge_selected_page)
         merge_selected_desc = QLabel(
             "• Select specific tables to merge from backup\n"
@@ -520,6 +525,7 @@ class RestoreDialog(QDialog):
 
         # Page 3: REPLACE
         replace_page = QWidget()
+        replace_page.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         replace_layout = QVBoxLayout(replace_page)
         replace_desc = QLabel(
             "• Replaces entire database with backup\n"
@@ -529,6 +535,7 @@ class RestoreDialog(QDialog):
         replace_desc.setStyleSheet("color: #dc3545; font-size: 10pt; font-weight: bold;")
         replace_desc.setWordWrap(True)
         replace_layout.addWidget(replace_desc)
+        replace_layout.addStretch()
         replace_layout.setContentsMargins(0, 0, 0, 0)
         self.mode_stack.addWidget(replace_page)
 
