@@ -1040,6 +1040,16 @@ class ToolsTab(QWidget):
             self._active_progress_dialog.setWindowModality(Qt.WindowModal)
             self._active_progress_dialog.setMinimumDuration(0)
             self._active_progress_dialog.setCancelButton(None)  # Disable cancel to prevent premature closure
+            
+            # Make dialog non-interactive to prevent event loop issues when clicked
+            from PySide6.QtCore import Qt
+            self._active_progress_dialog.setWindowFlags(
+                Qt.Window | 
+                Qt.WindowTitleHint | 
+                Qt.CustomizeWindowHint |
+                Qt.WindowStaysOnTopHint
+            )
+            self._active_progress_dialog.setEnabled(False)  # Completely disable interaction
             self._active_progress_dialog.show()
             
             # Connect signals
