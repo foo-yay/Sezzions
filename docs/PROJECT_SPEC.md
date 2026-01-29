@@ -108,7 +108,31 @@ Tools are accessible via Setup → Tools sub-tab and provide "production readine
 - CSV import/export (schema-driven)
 - Backup/restore/reset
 - Recalculation (full and scoped)
+
 ### 6.1 Database Tools (Backup/Restore/Reset)
+
+**Architecture:**
+- All database tools operations (backup/restore/reset) execute in background workers off the UI thread
+- Workers create independent database connections for SQLite thread safety
+- Exclusive operation lock prevents concurrent destructive operations
+- Progress dialogs provide user feedback during long-running operations
+- Data-changed signal emitted after operations for future cross-tab refresh support
+
+**Worker-Based Execution:**
+- `DatabaseBackupWorker`: Creates backup in background thread with own DB connection
+- `DatabaseRestoreWorker`: Restores database in background thread with own DB connection
+- `DatabaseResetWorker`: Resets database in background thread with own DB connection
+- All workers use `QRunnable` pattern with `WorkerSignals` for progress/completion/error
+- Workers receive `db_path` (not connection object) to create thread-local connections
+- AppFacade provides worker factory methods with exclusive lock management
+
+**Exclusive Operation Lock:**
+- AppFacade manages `_tools_lock` (threading.Lock) and `_tools_operation_active` flag
+- `acquire_tools_lock()` returns True if lock acquired, False if operation already active
+- `release_tools_lock()` releases lock after operation completes
+- UI checks `is_tools_operation_active()` before starting new operations
+- User sees warning: "Another database tools operation is currently running"
+- Prevents data corruption from concurrent backup/restore/reset operations
 
 **Backup Operations:**
 - Manual backup: User selects directory, creates timestamped backup files
@@ -117,35 +141,44 @@ Tools are accessible via Setup → Tools sub-tab and provide "production readine
 - Uses SQLite online backup API for consistency
 - Optional audit log exclusion during backup
 - Settings stored in `settings.json` under `automatic_backup` key
+- Runs in background worker with progress dialog
 
 **Restore Operations:**
 - **Replace Mode**: Full database replacement (destructive, requires confirmation)
   - Closes connection, replaces file, reopens connection
   - UI must handle connection lifecycle
   - Use case: Complete rollback to backup state
+  - Creates pre-restore safety backup automatically
+  - Runs in background worker with progress dialog
 - **Merge All Mode**: Non-destructive merge of all tables from backup
   - Uses `INSERT OR IGNORE` to skip duplicates based on primary keys
   - Preserves existing data not in backup
   - Use case: Combining data from multiple sources
+  - Runs in background worker with progress dialog
 - **Merge Selected Mode**: Selective table restoration
   - User specifies exact tables to merge
   - Same INSERT OR IGNORE strategy
   - Use case: Restore specific data only (e.g., purchases)
+  - Runs in background worker with progress dialog
 - All modes include pre-restore backup integrity verification
 - Safety features: automatic backups before destructive operations, confirmation dialogs
+- UI remains responsive during restore (worker-based execution)
 
 **Reset Operations:**
 - **Full Reset**: Clears all data including setup tables (users, sites, cards, etc.)
   - Multiple confirmation steps including typing "DELETE"
   - Optional pre-reset backup prompt
+  - Runs in background worker with progress dialog
 - **Partial Reset** (Preserve Setup Data): Clears only transaction tables
   - Preserves: users, sites, cards, redemption_methods, game_types, games
   - Clears: purchases, redemptions, game_sessions, daily_sessions, expenses
   - Use case: Start fresh transactions while keeping configuration
+  - Runs in background worker with progress dialog
 - **Table-Specific Reset**: Reset individual tables
 - Resets autoincrement counters via sqlite_sequence
 - Foreign keys temporarily disabled during reset for safe deletion
 - Preview mode: shows table counts and records to be deleted without modifying data
+- UI remains responsive during reset (worker-based execution)
 
 **Audit Logging:**
 - All backup/restore/reset operations log to `audit_log` table

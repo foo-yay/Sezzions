@@ -145,45 +145,113 @@ class CSVImportWorker(QRunnable):
             self.signals.error.emit(error_msg)
 
 
-class BackupWorker(QRunnable):
-    """Background worker for database backup operations"""
+class DatabaseBackupWorker(QRunnable):
+    """Background worker for database backup operations
     
-    def __init__(self, backup_service, backup_path: Optional[str] = None):
+    Creates its own database connection for SQLite thread safety.
+    """
+    
+    def __init__(self, db_path: str, backup_path: str, include_audit_log: bool = True):
         super().__init__()
-        self.backup_service = backup_service
+        self.db_path = db_path
         self.backup_path = backup_path
+        self.include_audit_log = include_audit_log
         self.signals = WorkerSignals()
         
     @Slot()
     def run(self):
         """Execute the backup operation"""
         try:
-            result = self.backup_service.backup_database(backup_path=self.backup_path)
+            # Create database connection in this thread (SQLite thread safety)
+            from repositories.database import DatabaseManager
+            from services.tools.backup_service import BackupService
+            
+            db = DatabaseManager(self.db_path)
+            backup_service = BackupService(db)
+            
+            result = backup_service.backup_database(
+                backup_path=self.backup_path,
+                include_audit_log=self.include_audit_log
+            )
+            
             self.signals.finished.emit(result)
+            
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}\n\n{traceback.format_exc()}"
             self.signals.error.emit(error_msg)
 
 
-class RestoreWorker(QRunnable):
-    """Background worker for database restore operations"""
+class DatabaseRestoreWorker(QRunnable):
+    """Background worker for database restore operations
     
-    def __init__(self, restore_service, backup_path: str, restore_mode: str = "REPLACE"):
+    Creates its own database connection for SQLite thread safety.
+    """
+    
+    def __init__(self, db_path: str, backup_path: str, restore_mode, tables: Optional[List[str]] = None):
         super().__init__()
-        self.restore_service = restore_service
+        self.db_path = db_path
         self.backup_path = backup_path
         self.restore_mode = restore_mode
+        self.tables = tables
         self.signals = WorkerSignals()
         
     @Slot()
     def run(self):
         """Execute the restore operation"""
         try:
-            result = self.restore_service.restore_database(
+            # Create database connection in this thread (SQLite thread safety)
+            from repositories.database import DatabaseManager
+            from services.tools.restore_service import RestoreService
+            
+            db = DatabaseManager(self.db_path)
+            restore_service = RestoreService(db)
+            
+            result = restore_service.restore_database(
                 backup_path=self.backup_path,
-                restore_mode=self.restore_mode
+                mode=self.restore_mode,
+                tables=self.tables
             )
+            
             self.signals.finished.emit(result)
+            
+        except Exception as e:
+            error_msg = f"{type(e).__name__}: {str(e)}\n\n{traceback.format_exc()}"
+            self.signals.error.emit(error_msg)
+
+
+class DatabaseResetWorker(QRunnable):
+    """Background worker for database reset operations
+    
+    Creates its own database connection for SQLite thread safety.
+    """
+    
+    def __init__(self, db_path: str, keep_setup_data: bool = False, keep_audit_log: bool = False, tables_to_reset: Optional[List[str]] = None):
+        super().__init__()
+        self.db_path = db_path
+        self.keep_setup_data = keep_setup_data
+        self.keep_audit_log = keep_audit_log
+        self.tables_to_reset = tables_to_reset
+        self.signals = WorkerSignals()
+        
+    @Slot()
+    def run(self):
+        """Execute the reset operation"""
+        try:
+            # Create database connection in this thread (SQLite thread safety)
+            from repositories.database import DatabaseManager
+            from services.tools.reset_service import ResetService
+            
+            db = DatabaseManager(self.db_path)
+            reset_service = ResetService(db)
+            
+            result = reset_service.reset_database(
+                keep_setup_data=self.keep_setup_data,
+                keep_audit_log=self.keep_audit_log,
+                tables_to_reset=self.tables_to_reset
+            )
+            
+            self.signals.finished.emit(result)
+            
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}\n\n{traceback.format_exc()}"
             self.signals.error.emit(error_msg)

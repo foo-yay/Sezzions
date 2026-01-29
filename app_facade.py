@@ -7,6 +7,7 @@ all backend services while maintaining backward compatibility during migration.
 from decimal import Decimal
 from datetime import date, datetime
 from typing import Optional, List, Dict, Any, Tuple
+import threading
 
 from repositories.database import DatabaseManager
 from repositories.user_repository import UserRepository
@@ -77,6 +78,11 @@ class AppFacade:
         """
         # Initialize database manager
         self.db = DatabaseManager(db_path)
+        self.db_path = db_path  # Store db_path for workers
+        
+        # Exclusive tools operation lock (prevents concurrent destructive operations)
+        self._tools_lock = threading.Lock()
+        self._tools_operation_active = False
         
         # Initialize repositories
         self.user_repo = UserRepository(self.db)
@@ -1540,5 +1546,104 @@ class AppFacade:
 
     def delete_expense(self, expense_id: int) -> None:
         self.expense_service.delete_expense(expense_id)
+    
+    def get_data_summary(self) -> Dict[str, int]:
         """Get counts of all records in system."""
         return self.validation_service.get_data_summary()
+    
+    # ==========================================================================
+    # Database Tools - Exclusive Operations (Backup/Restore/Reset)
+    # ==========================================================================
+    
+    def acquire_tools_lock(self) -> bool:
+        """
+        Attempt to acquire exclusive tools operation lock.
+        
+        Returns:
+            True if lock acquired, False if another operation is active
+        """
+        with self._tools_lock:
+            if self._tools_operation_active:
+                return False
+            self._tools_operation_active = True
+            return True
+    
+    def release_tools_lock(self) -> None:
+        """Release exclusive tools operation lock."""
+        with self._tools_lock:
+            self._tools_operation_active = False
+    
+    def is_tools_operation_active(self) -> bool:
+        """Check if a tools operation is currently running."""
+        with self._tools_lock:
+            return self._tools_operation_active
+    
+    def create_backup_worker(self, backup_path: str, include_audit_log: bool = True):
+        """
+        Create a backup worker for background execution.
+        
+        Worker creates its own DB connection for thread safety.
+        
+        Args:
+            backup_path: Destination file path for backup
+            include_audit_log: Whether to include audit_log table
+        
+        Returns:
+            DatabaseBackupWorker instance ready to be started
+        
+        Example:
+            if facade.acquire_tools_lock():
+                worker = facade.create_backup_worker(backup_path)
+                worker.signals.finished.connect(lambda: facade.release_tools_lock())
+                QThreadPool.globalInstance().start(worker)
+        """
+        from ui.tools_workers import DatabaseBackupWorker
+        return DatabaseBackupWorker(self.db_path, backup_path, include_audit_log)
+    
+    def create_restore_worker(self, backup_path: str, restore_mode, tables: Optional[List[str]] = None):
+        """
+        Create a restore worker for background execution.
+        
+        Worker creates its own DB connection for thread safety.
+        
+        Args:
+            backup_path: Path to backup file
+            restore_mode: RestoreMode enum value
+            tables: List of tables to restore (for MERGE_SELECTED mode)
+        
+        Returns:
+            DatabaseRestoreWorker instance ready to be started
+        
+        Example:
+            if facade.acquire_tools_lock():
+                from services.tools.enums import RestoreMode
+                worker = facade.create_restore_worker(backup_path, RestoreMode.REPLACE)
+                worker.signals.finished.connect(lambda: facade.release_tools_lock())
+                QThreadPool.globalInstance().start(worker)
+        """
+        from ui.tools_workers import DatabaseRestoreWorker
+        return DatabaseRestoreWorker(self.db_path, backup_path, restore_mode, tables)
+    
+    def create_reset_worker(self, keep_setup_data: bool = False, keep_audit_log: bool = False, 
+                           tables_to_reset: Optional[List[str]] = None):
+        """
+        Create a reset worker for background execution.
+        
+        Worker creates its own DB connection for thread safety.
+        
+        Args:
+            keep_setup_data: If True, preserve reference/setup tables
+            keep_audit_log: If True, preserve audit_log table
+            tables_to_reset: Specific tables to reset
+        
+        Returns:
+            DatabaseResetWorker instance ready to be started
+        
+        Example:
+            if facade.acquire_tools_lock():
+                worker = facade.create_reset_worker(keep_setup_data=True)
+                worker.signals.finished.connect(lambda: facade.release_tools_lock())
+                QThreadPool.globalInstance().start(worker)
+        """
+        from ui.tools_workers import DatabaseResetWorker
+        return DatabaseResetWorker(self.db_path, keep_setup_data, keep_audit_log, tables_to_reset)

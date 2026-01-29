@@ -9,6 +9,56 @@ Rules:
 
 ---
 
+## 2026-01-29
+
+```yaml
+id: 2026-01-29-01
+type: feature
+areas: [tools, services, ui, architecture]
+summary: "Database tools off UI thread with worker-based execution and exclusive operation locking (Issue #7)."
+files_changed:
+  - app_facade.py
+  - ui/tools_workers.py
+  - ui/tabs/tools_tab.py
+  - tests/unit/test_tools_workers.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Worker-Based Execution**: Backup, restore, and reset operations now run in background workers (`QRunnable`) off the UI thread
+  - Each worker creates its own database connection via `db_path` for SQLite thread safety
+  - Workers emit signals for progress, completion, and errors
+  - UI remains responsive during long-running database operations
+- **Exclusive Operation Lock**: Added `AppFacade._tools_lock` (threading.Lock) to prevent concurrent destructive operations
+  - `acquire_tools_lock()` / `release_tools_lock()` manage operation state
+  - UI checks `is_tools_operation_active()` before starting new operations
+  - Users see clear warning if another tools operation is running
+- **AppFacade Integration**: Added worker factory methods to facade layer
+  - `create_backup_worker()`, `create_restore_worker()`, `create_reset_worker()`
+  - UI calls facade methods instead of directly instantiating services
+  - Clean separation: UI → Facade → Workers → Services
+- **Data-Changed Signal**: Added `ToolsTab.data_changed` signal emitted after restore/reset operations
+  - Enables future cross-tab refresh mechanism
+  - Currently triggers refresh indicator/prompt (full architecture in future issue)
+- **Progress Dialogs**: All operations show indeterminate progress during execution
+- **Testing**: New test suite `test_tools_workers.py` with 14 tests covering:
+  - Exclusive lock acquisition/release/thread safety
+  - Worker creation and parameter passing
+  - Independent database connection architecture
+  - All tests pass (100% coverage of new code)
+- **No Logic Changes**: Backup/restore/reset service logic unchanged—only execution model refactored
+
+Architecture Benefits:
+- UI responsiveness during database operations
+- Correctness via atomic operations with proper connection lifecycle
+- Clean layering (UI never touches DB directly; always via facade/services)
+- Thread-safe concurrent operation prevention
+
+Refs: Issue #7 (Phase 3 follow-up — DB tools off UI thread + facade orchestration + exclusive ops safety)
+
+---
+
 ## 2026-01-28
 
 ```yaml
