@@ -1034,25 +1034,24 @@ class ToolsTab(QWidget):
             # Create worker
             worker = self.facade.create_backup_worker(backup_path)
             
-            # Create a simple modal dialog with just a label (more reliable than QProgressDialog)
+            # Create a simple NON-MODAL dialog (modal blocks event processing!)
             from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel
             from PySide6.QtCore import QCoreApplication
             
             self._active_progress_dialog = QDialog(self)
             self._active_progress_dialog.setWindowTitle("Backup")
-            self._active_progress_dialog.setModal(True)
+            self._active_progress_dialog.setModal(False)  # NON-MODAL allows signals through!
             self._active_progress_dialog.setWindowFlags(
                 Qt.Dialog | 
                 Qt.CustomizeWindowHint | 
-                Qt.WindowTitleHint
+                Qt.WindowTitleHint |
+                Qt.WindowStaysOnTopHint
             )
             layout = QVBoxLayout()
             label = QLabel("Creating database backup...\n\nPlease wait.")
             label.setMinimumWidth(300)
             layout.addWidget(label)
             self._active_progress_dialog.setLayout(layout)
-            
-            # Don't show the dialog yet - connect signals first
             
             
             # Connect signals
@@ -1136,13 +1135,12 @@ class ToolsTab(QWidget):
             
             print("[UI] Signals connected, starting worker...")
             
-            # Start worker
-            self.thread_pool.start(worker)
-            
-            # Show dialog AFTER starting worker so signals can be processed
+            # Show dialog and start worker
             self._active_progress_dialog.show()
             self._active_progress_dialog.raise_()
             self._active_progress_dialog.activateWindow()
+            
+            self.thread_pool.start(worker)
             
             print("[UI] Worker started, dialog shown")
         
