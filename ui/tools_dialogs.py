@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QCheckBox, QLineEdit, QComboBox, QStackedWidget, QWidget, QScrollArea
 )
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFontMetrics
 
 
 class ProgressDialog(QDialog):
@@ -298,15 +299,24 @@ class RestoreDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Restore Database")
         self.setModal(True)
-        self.resize(600, 520)
+        self.setMinimumWidth(640)
+        self.setSizeGripEnabled(False)
         self.backup_path: str | None = None
         self._setup_ui()
+        self._update_dialog_size()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "backup_path_display"):
+            self._set_backup_file_display(self.backup_path)
         
     def _setup_ui(self):
         """Setup the UI components"""
         from services.tools.enums import RestoreMode
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
         
         # Warning message
         warning_label = QLabel(
@@ -319,27 +329,58 @@ class RestoreDialog(QDialog):
             "border-radius: 4px; padding: 10px; color: #856404; font-weight: bold;"
         )
         layout.addWidget(warning_label)
-        
-        # Backup file selection
-        file_group = QGroupBox("Backup File")
-        file_layout = QVBoxLayout()
-        
+
+        # Backup file selection (global section styling)
+        backup_container = QWidget()
+        backup_container_layout = QVBoxLayout(backup_container)
+        backup_container_layout.setContentsMargins(0, 0, 0, 0)
+        backup_container_layout.setSpacing(6)
+
+        backup_header = QLabel("📦 Backup File")
+        backup_header.setObjectName("SectionHeader")
+        backup_container_layout.addWidget(backup_header)
+
+        backup_section = QWidget()
+        backup_section.setObjectName("SectionBackground")
+        backup_section_layout = QVBoxLayout(backup_section)
+        backup_section_layout.setContentsMargins(12, 12, 12, 12)
+        backup_section_layout.setSpacing(8)
+
         file_select_layout = QHBoxLayout()
-        self.file_path_label = QLabel("(No file selected)")
-        self.file_path_label.setStyleSheet("color: #666; font-style: italic;")
-        file_select_layout.addWidget(self.file_path_label, 1)
-        
-        select_btn = QPushButton("Choose Backup File...")
+        file_select_layout.setContentsMargins(0, 0, 0, 0)
+        file_select_layout.setSpacing(8)
+
+        self.backup_path_display = QLabel("Not set")
+        self.backup_path_display.setObjectName("InfoField")
+        self.backup_path_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.backup_path_display.setToolTip("Select a backup file")
+        self.backup_path_display.setMinimumWidth(360)
+        file_select_layout.addWidget(self.backup_path_display, 1)
+
+        select_btn = QPushButton("📂 Browse")
+        select_btn.setObjectName("PrimaryButton")
         select_btn.clicked.connect(self._on_select_file)
         file_select_layout.addWidget(select_btn)
-        
-        file_layout.addLayout(file_select_layout)
-        file_group.setLayout(file_layout)
-        layout.addWidget(file_group)
 
-        # Restore mode selection (compact)
-        mode_group = QGroupBox("Restore Mode")
-        mode_layout = QVBoxLayout()
+        backup_section_layout.addLayout(file_select_layout)
+        backup_container_layout.addWidget(backup_section)
+        layout.addWidget(backup_container)
+
+        # Restore mode selection (compact + global section styling)
+        mode_container = QWidget()
+        mode_container_layout = QVBoxLayout(mode_container)
+        mode_container_layout.setContentsMargins(0, 0, 0, 0)
+        mode_container_layout.setSpacing(6)
+
+        mode_header = QLabel("♻️ Restore Mode")
+        mode_header.setObjectName("SectionHeader")
+        mode_container_layout.addWidget(mode_header)
+
+        mode_section = QWidget()
+        mode_section.setObjectName("SectionBackground")
+        mode_layout = QVBoxLayout(mode_section)
+        mode_layout.setContentsMargins(12, 12, 12, 12)
+        mode_layout.setSpacing(10)
 
         self.mode_combo = QComboBox()
         self.mode_combo.addItem("Select restore mode…", None)
@@ -364,9 +405,9 @@ class RestoreDialog(QDialog):
         placeholder_page = QWidget()
         placeholder_layout = QVBoxLayout(placeholder_page)
         placeholder_hint = QLabel("Select a restore mode to see details.")
-        placeholder_hint.setStyleSheet("color: #666;")
+        placeholder_hint.setObjectName("HelperText")
         placeholder_layout.addWidget(placeholder_hint)
-        placeholder_layout.addStretch()
+        placeholder_layout.setContentsMargins(0, 0, 0, 0)
         self.mode_stack.addWidget(placeholder_page)
 
         # Page 1: MERGE_ALL
@@ -377,10 +418,10 @@ class RestoreDialog(QDialog):
             "• Validates data and detects duplicates (same as CSV import)\n"
             "• Safe — does not delete existing data"
         )
-        merge_desc.setStyleSheet("color: #666; font-size: 10pt;")
+        merge_desc.setObjectName("HelperText")
         merge_desc.setWordWrap(True)
         merge_layout.addWidget(merge_desc)
-        merge_layout.addStretch()
+        merge_layout.setContentsMargins(0, 0, 0, 0)
         self.mode_stack.addWidget(merge_page)
 
         # Page 2: MERGE_SELECTED
@@ -391,7 +432,7 @@ class RestoreDialog(QDialog):
             "• Fine-grained control over what data to restore\n"
             "• Validates foreign key constraints"
         )
-        merge_selected_desc.setStyleSheet("color: #666; font-size: 10pt;")
+        merge_selected_desc.setObjectName("HelperText")
         merge_selected_desc.setWordWrap(True)
         merge_selected_layout.addWidget(merge_selected_desc)
 
@@ -432,10 +473,12 @@ class RestoreDialog(QDialog):
 
         columns_container = QWidget()
         columns_container.setLayout(columns_layout)
+        columns_container.setStyleSheet("background: transparent;")
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; } QScrollArea > QWidget > QWidget { background: transparent; }")
         scroll.setWidget(columns_container)
         scroll.setMinimumHeight(200)
         scroll.setMaximumHeight(260)
@@ -443,9 +486,9 @@ class RestoreDialog(QDialog):
 
         select_buttons_layout = QHBoxLayout()
         select_buttons_layout.addStretch()
-        select_all_btn = QPushButton("Select All")
+        select_all_btn = QPushButton("✅ Select All")
         select_all_btn.clicked.connect(self._select_all_tables)
-        deselect_all_btn = QPushButton("Deselect All")
+        deselect_all_btn = QPushButton("🚫 Deselect All")
         deselect_all_btn.clicked.connect(self._deselect_all_tables)
         select_buttons_layout.addWidget(select_all_btn)
         select_buttons_layout.addWidget(deselect_all_btn)
@@ -453,7 +496,7 @@ class RestoreDialog(QDialog):
 
         table_selection_group.setLayout(table_selection_group_layout)
         merge_selected_layout.addWidget(table_selection_group)
-        merge_selected_layout.addStretch()
+        merge_selected_layout.setContentsMargins(0, 0, 0, 0)
         self.mode_stack.addWidget(merge_selected_page)
 
         # Page 3: REPLACE
@@ -467,20 +510,21 @@ class RestoreDialog(QDialog):
         replace_desc.setStyleSheet("color: #dc3545; font-size: 10pt; font-weight: bold;")
         replace_desc.setWordWrap(True)
         replace_layout.addWidget(replace_desc)
-        replace_layout.addStretch()
+        replace_layout.setContentsMargins(0, 0, 0, 0)
         self.mode_stack.addWidget(replace_page)
 
         mode_layout.addWidget(self.mode_stack)
-        mode_group.setLayout(mode_layout)
-        layout.addWidget(mode_group)
+        mode_container_layout.addWidget(mode_section)
+        layout.addWidget(mode_container)
         
         layout.addStretch()
         
         # Button box
         button_box = QDialogButtonBox()
-        self.restore_btn = button_box.addButton("Restore", QDialogButtonBox.AcceptRole)
+        self.restore_btn = button_box.addButton("✅ Restore", QDialogButtonBox.AcceptRole)
+        self.restore_btn.setObjectName("SuccessButton")
         self.restore_btn.setEnabled(False)
-        cancel_btn = button_box.addButton("Cancel", QDialogButtonBox.RejectRole)
+        cancel_btn = button_box.addButton("❌ Cancel", QDialogButtonBox.RejectRole)
         
         button_box.accepted.connect(self._on_restore_clicked)
         button_box.rejected.connect(self.reject)
@@ -499,13 +543,23 @@ class RestoreDialog(QDialog):
         
         if file_path:
             self.backup_path = file_path
-            # Show abbreviated path
-            display_path = file_path
-            if len(display_path) > 60:
-                display_path = "..." + display_path[-57:]
-            self.file_path_label.setText(display_path)
-            self.file_path_label.setStyleSheet("color: #000;")
+            self._set_backup_file_display(file_path)
             self._update_restore_button_state()
+            self._update_dialog_size()
+
+    def _set_backup_file_display(self, file_path: str | None):
+        """Set backup file display with elided (middle) path and tooltip."""
+        file_path = file_path or ""
+        if not file_path:
+            self.backup_path_display.setText("Not set")
+            self.backup_path_display.setToolTip("Select a backup file")
+            return
+
+        self.backup_path_display.setToolTip(file_path)
+        metrics = QFontMetrics(self.backup_path_display.font())
+        width = max(160, self.backup_path_display.width() - 16)
+        elided = metrics.elidedText(file_path, Qt.ElideMiddle, width)
+        self.backup_path_display.setText(elided)
 
     def _on_mode_combo_changed(self, _index: int):
         """Handle restore mode selection change."""
@@ -522,6 +576,12 @@ class RestoreDialog(QDialog):
             self.mode_stack.setCurrentIndex(0)
 
         self._update_restore_button_state()
+        self._update_dialog_size()
+
+    def _update_dialog_size(self):
+        """Keep dialog compact and expand only as needed."""
+        self.layout().activate()
+        self.adjustSize()
 
     def _update_restore_button_state(self):
         """Enable Restore only when inputs are valid."""
