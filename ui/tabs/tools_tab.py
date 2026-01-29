@@ -2,7 +2,7 @@
 Tools Tab - Recalculation, CSV Import/Export, Database Tools, Audit
 """
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QMessageBox, QFileDialog,
     QComboBox, QCompleter, QListView, QDialog, QLineEdit,
     QCheckBox, QSpinBox, QSizePolicy
@@ -57,7 +57,15 @@ class ToolsTab(QWidget):
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         header_layout.addWidget(title)
         header_layout.addStretch()
+
+        # Match the header row height/position of tabs like Games/Users (which include search controls)
+        header_spacer = QWidget()
+        header_spacer.setFixedSize(300, 32)
+        header_layout.addWidget(header_spacer)
         layout.addLayout(header_layout)
+
+        # Match the small visual gap those tabs naturally get from their toolbar rows
+        layout.addSpacing(4)
         
         # Recalculation Section
         recalc_group = self._create_recalculation_group()
@@ -237,42 +245,36 @@ class ToolsTab(QWidget):
         
         layout.addSpacing(6)
 
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(12)
-        grid.setVerticalSpacing(10)
-        grid.setColumnStretch(0, 0)
-        grid.setColumnStretch(1, 1)
+        # Two simple rows (no grid/columns)
+        # Row 1: Backup Location:, backup field, Browse
+        backup_row_layout = QHBoxLayout()
+        backup_row_layout.setContentsMargins(0, 0, 0, 0)
+        backup_row_layout.setSpacing(8)
 
-        # Row 1: Backup Location (label | field + browse)
         backup_label = QLabel("Backup Location:")
         backup_label.setObjectName("FieldLabel")
-        backup_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        grid.addWidget(backup_label, 0, 0)
-
-        backup_row = QHBoxLayout()
-        backup_row.setContentsMargins(0, 0, 0, 0)
-        backup_row.setSpacing(8)
+        backup_row_layout.addWidget(backup_label)
 
         self.backup_dir_input = QLabel("Not set")
         self.backup_dir_input.setObjectName("InfoField")
         self.backup_dir_input.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.backup_dir_input.setToolTip("Select a backup directory")
         self.backup_dir_input.setFixedWidth(325)
-        backup_row.addWidget(self.backup_dir_input)
+        backup_row_layout.addWidget(self.backup_dir_input)
 
         browse_btn = QPushButton("📁 Browse")
+        browse_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         browse_btn.clicked.connect(self._on_select_backup_directory)
-        backup_row.addWidget(browse_btn)
-
-        backup_row.addStretch(1)
+        backup_row_layout.addWidget(browse_btn)
 
         backup_row_widget = QWidget()
-        backup_row_widget.setLayout(backup_row)
-        grid.addWidget(backup_row_widget, 0, 1)
-        
-        # Row 2: actions (blank | action row)
+        backup_row_widget.setLayout(backup_row_layout)
+        backup_row_widget.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+        layout.addWidget(backup_row_widget, 0, Qt.AlignLeft)
+
+        # Row 2: Backup Now, Restore, Reset, auto-backup controls (all left-justified; compact sizing)
         actions_layout = QHBoxLayout()
+        actions_layout.setContentsMargins(0, 0, 0, 0)
         actions_layout.setSpacing(8)
         
         # Backup Now button
@@ -311,12 +313,10 @@ class ToolsTab(QWidget):
         self.auto_backup_frequency_spinbox.valueChanged.connect(self._on_auto_backup_frequency_changed)
         actions_layout.addWidget(self.auto_backup_frequency_spinbox)
 
-
         actions_widget = QWidget()
         actions_widget.setLayout(actions_layout)
-        grid.addWidget(actions_widget, 1, 1)
-
-        layout.addLayout(grid)
+        actions_widget.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+        layout.addWidget(actions_widget, 0, Qt.AlignLeft)
 
         # Last backup status (subtle)
         self.last_backup_label = QLabel("Last backup: —")
