@@ -398,9 +398,82 @@ class RestoreDialog(QDialog):
         
         mode_layout.addWidget(self.replace_radio)
         mode_layout.addWidget(replace_desc)
+        mode_layout.addSpacing(10)
+        
+        # Merge Selected mode (selective)
+        self.merge_selected_radio = QPushButton()
+        self.merge_selected_radio.setCheckable(True)
+        self.merge_selected_radio.setText("Merge Selected (Choose specific tables)")
+        self.merge_selected_radio.setStyleSheet("""
+            QPushButton {
+                text-align: left;
+                padding: 10px;
+                border: 2px solid #ccc;
+                border-radius: 4px;
+                background-color: white;
+            }
+            QPushButton:checked {
+                border-color: #28a745;
+                background-color: #d4edda;
+            }
+        """)
+        self.merge_selected_radio.clicked.connect(lambda: self._on_mode_changed(self.merge_selected_radio))
+        
+        merge_selected_desc = QLabel(
+            "  • Select specific tables to merge from backup\n"
+            "  • Fine-grained control over what data to restore\n"
+            "  • Validates foreign key constraints"
+        )
+        merge_selected_desc.setStyleSheet("color: #666; font-size: 10pt; margin-left: 20px;")
+        
+        mode_layout.addWidget(self.merge_selected_radio)
+        mode_layout.addWidget(merge_selected_desc)
         
         mode_group.setLayout(mode_layout)
         layout.addWidget(mode_group)
+        
+        # Table selection widget (for MERGE_SELECTED mode)
+        self.table_selection_group = QGroupBox("Select Tables to Merge")
+        self.table_selection_group.setVisible(False)
+        table_sel_layout = QVBoxLayout()
+        
+        # Setup tables group
+        setup_label = QLabel("Setup Tables:")
+        setup_label.setStyleSheet("font-weight: bold; margin-top: 5px;")
+        table_sel_layout.addWidget(setup_label)
+        
+        self.table_checkboxes = {}
+        setup_tables = ['users', 'sites', 'cards', 'game_types', 'games', 'redemption_methods']
+        for table in setup_tables:
+            cb = QCheckBox(table.replace('_', ' ').title())
+            cb.setProperty('table_name', table)
+            table_sel_layout.addWidget(cb)
+            self.table_checkboxes[table] = cb
+        
+        # Transaction tables group
+        trans_label = QLabel("Transaction Tables:")
+        trans_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        table_sel_layout.addWidget(trans_label)
+        
+        transaction_tables = ['purchases', 'redemptions', 'game_sessions', 'daily_sessions', 'expenses', 'realized_transactions']
+        for table in transaction_tables:
+            cb = QCheckBox(table.replace('_', ' ').title())
+            cb.setProperty('table_name', table)
+            table_sel_layout.addWidget(cb)
+            self.table_checkboxes[table] = cb
+        
+        # Select/Deselect all buttons
+        select_buttons_layout = QHBoxLayout()
+        select_all_btn = QPushButton("Select All")
+        select_all_btn.clicked.connect(self._select_all_tables)
+        deselect_all_btn = QPushButton("Deselect All")
+        deselect_all_btn.clicked.connect(self._deselect_all_tables)
+        select_buttons_layout.addWidget(select_all_btn)
+        select_buttons_layout.addWidget(deselect_all_btn)
+        table_sel_layout.addLayout(select_buttons_layout)
+        
+        self.table_selection_group.setLayout(table_sel_layout)
+        layout.addWidget(self.table_selection_group)
         
         # Confirmation checkbox (for replace mode)
         self.confirm_checkbox = QLabel()
@@ -448,20 +521,43 @@ class RestoreDialog(QDialog):
         if clicked_button == self.merge_radio:
             self.merge_radio.setChecked(True)
             self.replace_radio.setChecked(False)
+            self.merge_selected_radio.setChecked(False)
             self.confirm_checkbox.setVisible(False)
-        else:
+            self.table_selection_group.setVisible(False)
+        elif clicked_button == self.replace_radio:
             self.merge_radio.setChecked(False)
             self.replace_radio.setChecked(True)
+            self.merge_selected_radio.setChecked(False)
+            self.table_selection_group.setVisible(False)
             self.confirm_checkbox.setVisible(True)
             self.confirm_checkbox.setText(
                 "⚠️ WARNING: This will permanently delete all existing data. "
                 "A safety backup will be created automatically."
             )
+        else:  # merge_selected_radio
+            self.merge_radio.setChecked(False)
+            self.replace_radio.setChecked(False)
+            self.merge_selected_radio.setChecked(True)
+            self.confirm_checkbox.setVisible(False)
+            self.table_selection_group.setVisible(True)
             
     def _on_restore_clicked(self):
         """Handle restore button click"""
         if not self.backup_path:
             return
+        
+        # Validate MERGE_SELECTED mode has at least one table selected
+        if self.merge_selected_radio.isChecked():
+            selected_tables = self.get_selected_tables()
+            if not selected_tables:
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self,
+                    "No Tables Selected",
+                    "Please select at least one table to merge.",
+                    QMessageBox.Ok
+                )
+                return
             
         # Additional confirmation for replace mode
         if self.replace_radio.isChecked():
@@ -484,12 +580,28 @@ class RestoreDialog(QDialog):
                 return
                 
         self.accept()
+    
+    def _select_all_tables(self):
+        """Select all table checkboxes"""
+        for cb in self.table_checkboxes.values():
+            cb.setChecked(True)
+    
+    def _deselect_all_tables(self):
+        """Deselect all table checkboxes"""
+        for cb in self.table_checkboxes.values():
+            cb.setChecked(False)
+    
+    def get_selected_tables(self):
+        """Get list of selected table names (for MERGE_SELECTED mode)"""
+        return [name for name, cb in self.table_checkboxes.items() if cb.isChecked()]
         
     def get_restore_mode(self):
         """Get selected restore mode"""
         from services.tools.enums import RestoreMode
         if self.merge_radio.isChecked():
             return RestoreMode.MERGE_ALL
+        elif self.merge_selected_radio.isChecked():
+            return RestoreMode.MERGE_SELECTED
         else:
             return RestoreMode.REPLACE
 
