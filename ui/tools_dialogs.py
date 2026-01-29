@@ -6,8 +6,24 @@ from PySide6.QtWidgets import (
     QProgressBar, QPushButton, QTextEdit, QDialogButtonBox,
     QGroupBox, QCheckBox, QLineEdit, QComboBox, QStackedWidget, QWidget, QScrollArea, QSizePolicy
 )
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, Signal, QTimer, QSize
 from PySide6.QtGui import QFontMetrics
+
+
+class _AdaptiveStackedWidget(QStackedWidget):
+    """A QStackedWidget that sizes itself to the current page.
+
+    Qt's default QStackedWidget sizeHint tends to reflect the largest page, which
+    causes dialogs to stay tall after visiting a larger page.
+    """
+
+    def sizeHint(self) -> QSize:  # type: ignore[override]
+        current = self.currentWidget()
+        return current.sizeHint() if current is not None else super().sizeHint()
+
+    def minimumSizeHint(self) -> QSize:  # type: ignore[override]
+        current = self.currentWidget()
+        return current.minimumSizeHint() if current is not None else super().minimumSizeHint()
 
 
 class ProgressDialog(QDialog):
@@ -399,7 +415,7 @@ class RestoreDialog(QDialog):
         self.mode_combo.currentIndexChanged.connect(self._on_mode_combo_changed)
         mode_layout.addWidget(self.mode_combo)
 
-        self.mode_stack = QStackedWidget()
+        self.mode_stack = _AdaptiveStackedWidget()
 
         # Page 0: placeholder
         placeholder_page = QWidget()
@@ -529,7 +545,7 @@ class RestoreDialog(QDialog):
         
         layout.addWidget(button_box)
 
-        # Ensure the stack doesn't reserve space for the largest page.
+        # Ensure the stack doesn't reserve extra vertical space.
         self.mode_stack.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         
     def _on_select_file(self):
@@ -586,15 +602,12 @@ class RestoreDialog(QDialog):
         self.setMinimumHeight(0)
         self.setMaximumHeight(16777215)
 
-        # Make the stacked details area match the current page's height.
-        current = self.mode_stack.currentWidget()
-        if current is not None:
-            self.mode_stack.setFixedHeight(max(0, current.sizeHint().height()))
-
+        self.mode_stack.updateGeometry()
         self.layout().activate()
         self.adjustSize()
 
-        # Force the window to be tight to content (and re-tighten on mode changes).
+        # Snap to the content-driven height after the stack updates.
+        self.resize(self.width(), self.sizeHint().height())
         self.setFixedHeight(self.sizeHint().height())
 
     def _update_restore_button_state(self):
