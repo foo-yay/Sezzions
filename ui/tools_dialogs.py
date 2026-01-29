@@ -4,7 +4,7 @@ Progress dialogs for Tools operations
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
     QProgressBar, QPushButton, QTextEdit, QDialogButtonBox,
-    QGroupBox, QCheckBox, QLineEdit, QComboBox, QStackedWidget, QWidget, QScrollArea
+    QGroupBox, QCheckBox, QLineEdit, QComboBox, QStackedWidget, QWidget, QScrollArea, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFontMetrics
@@ -336,7 +336,7 @@ class RestoreDialog(QDialog):
         backup_container_layout.setContentsMargins(0, 0, 0, 0)
         backup_container_layout.setSpacing(6)
 
-        backup_header = QLabel("📦 Backup File")
+        backup_header = QLabel("💾 Backup File")
         backup_header.setObjectName("SectionHeader")
         backup_container_layout.addWidget(backup_header)
 
@@ -358,7 +358,6 @@ class RestoreDialog(QDialog):
         file_select_layout.addWidget(self.backup_path_display, 1)
 
         select_btn = QPushButton("📂 Browse")
-        select_btn.setObjectName("PrimaryButton")
         select_btn.clicked.connect(self._on_select_file)
         file_select_layout.addWidget(select_btn)
 
@@ -480,8 +479,8 @@ class RestoreDialog(QDialog):
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setStyleSheet("QScrollArea { background: transparent; } QScrollArea > QWidget > QWidget { background: transparent; }")
         scroll.setWidget(columns_container)
-        scroll.setMinimumHeight(200)
-        scroll.setMaximumHeight(260)
+        scroll.setMinimumHeight(160)
+        scroll.setMaximumHeight(220)
         table_selection_group_layout.addWidget(scroll)
 
         select_buttons_layout = QHBoxLayout()
@@ -517,19 +516,20 @@ class RestoreDialog(QDialog):
         mode_container_layout.addWidget(mode_section)
         layout.addWidget(mode_container)
         
-        layout.addStretch()
-        
         # Button box
         button_box = QDialogButtonBox()
-        self.restore_btn = button_box.addButton("✅ Restore", QDialogButtonBox.AcceptRole)
-        self.restore_btn.setObjectName("SuccessButton")
+        self.restore_btn = button_box.addButton("♻️ Restore", QDialogButtonBox.AcceptRole)
+        self.restore_btn.setObjectName("PrimaryButton")
         self.restore_btn.setEnabled(False)
-        cancel_btn = button_box.addButton("❌ Cancel", QDialogButtonBox.RejectRole)
+        cancel_btn = button_box.addButton("✖️ Cancel", QDialogButtonBox.RejectRole)
         
         button_box.accepted.connect(self._on_restore_clicked)
         button_box.rejected.connect(self.reject)
         
         layout.addWidget(button_box)
+
+        # Ensure the stack doesn't reserve space for the largest page.
+        self.mode_stack.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         
     def _on_select_file(self):
         """Handle backup file selection"""
@@ -580,8 +580,16 @@ class RestoreDialog(QDialog):
 
     def _update_dialog_size(self):
         """Keep dialog compact and expand only as needed."""
+        # Make the stacked details area match the current page's height.
+        current = self.mode_stack.currentWidget()
+        if current is not None:
+            self.mode_stack.setFixedHeight(max(0, current.sizeHint().height()))
+
         self.layout().activate()
         self.adjustSize()
+
+        # Force the window to be tight to content (and re-tighten on mode changes).
+        self.setFixedHeight(self.sizeHint().height())
 
     def _update_restore_button_state(self):
         """Enable Restore only when inputs are valid."""
