@@ -81,7 +81,7 @@ class ToolsTab(QWidget):
         container_layout.setSpacing(6)
         
         # Section header
-        header = QLabel("Data Recalculation")
+        header = QLabel("🧮 Data Recalculation")
         header.setObjectName("SectionHeader")
         container_layout.addWidget(header)
         
@@ -165,7 +165,7 @@ class ToolsTab(QWidget):
         container_layout.setSpacing(6)
         
         # Section header
-        header = QLabel("CSV Import/Export")
+        header = QLabel("📄 CSV Import/Export")
         header.setObjectName("SectionHeader")
         container_layout.addWidget(header)
         
@@ -218,7 +218,7 @@ class ToolsTab(QWidget):
         container_layout.setSpacing(6)
         
         # Section header
-        header = QLabel("Database Tools")
+        header = QLabel("🗄️ Database Tools")
         header.setObjectName("SectionHeader")
         container_layout.addWidget(header)
         
@@ -241,30 +241,39 @@ class ToolsTab(QWidget):
 
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(10)
+        grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(10)
         grid.setColumnStretch(0, 0)
         grid.setColumnStretch(1, 1)
-        grid.setColumnStretch(2, 0)
 
-        # Backup location row
+        # Row 1: Backup Location (label | field + browse)
         backup_label = QLabel("Backup Location")
         backup_label.setObjectName("FieldLabel")
-        backup_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        backup_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         grid.addWidget(backup_label, 0, 0)
+
+        backup_row = QHBoxLayout()
+        backup_row.setContentsMargins(0, 0, 0, 0)
+        backup_row.setSpacing(8)
 
         self.backup_dir_input = QLabel("Not set")
         self.backup_dir_input.setObjectName("InfoField")
         self.backup_dir_input.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.backup_dir_input.setToolTip("Select a backup directory")
-        self.backup_dir_input.setFixedWidth(520)
-        grid.addWidget(self.backup_dir_input, 0, 1)
+        self.backup_dir_input.setFixedWidth(325)
+        backup_row.addWidget(self.backup_dir_input)
 
         browse_btn = QPushButton("📁 Browse")
         browse_btn.clicked.connect(self._on_select_backup_directory)
-        grid.addWidget(browse_btn, 0, 2)
+        backup_row.addWidget(browse_btn)
+
+        backup_row.addStretch(1)
+
+        backup_row_widget = QWidget()
+        backup_row_widget.setLayout(backup_row)
+        grid.addWidget(backup_row_widget, 0, 1)
         
-        # Action row (left actions + right auto-backup controls)
+        # Row 2: actions (blank | action row)
         actions_layout = QHBoxLayout()
         actions_layout.setSpacing(8)
         
@@ -302,9 +311,12 @@ class ToolsTab(QWidget):
         self.auto_backup_frequency_spinbox.valueChanged.connect(self._on_auto_backup_frequency_changed)
         actions_layout.addWidget(self.auto_backup_frequency_spinbox)
 
+        left_blank = QLabel("")
+        grid.addWidget(left_blank, 1, 0)
+
         actions_widget = QWidget()
         actions_widget.setLayout(actions_layout)
-        grid.addWidget(actions_widget, 1, 1, 1, 2)
+        grid.addWidget(actions_widget, 1, 1)
 
         layout.addLayout(grid)
 
