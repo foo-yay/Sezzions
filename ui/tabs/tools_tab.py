@@ -1038,10 +1038,20 @@ class ToolsTab(QWidget):
             
             # Connect signals
             def on_finished(result):
+                print(f"[UI] on_finished called with success={result.success}")
+                
+                # Close progress dialog first
                 if self._active_progress_dialog:
                     self._active_progress_dialog.close()
                     self._active_progress_dialog = None
+                
+                # Process pending events to ensure dialog is fully closed
+                from PySide6.QtCore import QCoreApplication
+                QCoreApplication.processEvents()
+                
+                # Release lock
                 self.facade.release_tools_lock()
+                print("[UI] Lock released")
                 
                 if result.success:
                     size_mb = result.size_bytes / (1024 * 1024)
@@ -1056,12 +1066,15 @@ class ToolsTab(QWidget):
                     # Update last backup display
                     self._update_last_backup_display()
                     
+                    print("[UI] Showing success message")
                     QMessageBox.information(
                         self,
                         "Backup Complete",
                         f"Database backed up successfully:\n\n{backup_path}\n\nSize: {size_mb:.2f} MB"
                     )
+                    print("[UI] Success message closed")
                 else:
+                    print(f"[UI] Showing error message: {result.error}")
                     QMessageBox.critical(
                         self,
                         "Backup Failed",
@@ -1069,10 +1082,20 @@ class ToolsTab(QWidget):
                     )
             
             def on_error(error_msg):
+                print(f"[UI] on_error called: {error_msg}")
+                
+                # Close progress dialog first
                 if self._active_progress_dialog:
                     self._active_progress_dialog.close()
                     self._active_progress_dialog = None
+                
+                # Process pending events to ensure dialog is fully closed
+                from PySide6.QtCore import QCoreApplication
+                QCoreApplication.processEvents()
+                
+                # Release lock
                 self.facade.release_tools_lock()
+                
                 QMessageBox.critical(
                     self,
                     "Backup Error",
