@@ -2,7 +2,7 @@
 Tools Tab - Recalculation, CSV Import/Export, Database Tools, Audit
 """
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
+    QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QMessageBox, QFileDialog,
     QComboBox, QCompleter, QListView, QDialog, QLineEdit,
     QCheckBox, QSpinBox
@@ -44,6 +44,17 @@ class ToolsTab(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(16)
         
+        # Page header
+        page_title = QLabel("🔧 Tools")
+        page_title.setObjectName("PageTitle")
+        layout.addWidget(page_title)
+        
+        page_subtitle = QLabel("Recalculation, CSV import/export, and database management tools.")
+        page_subtitle.setObjectName("HelperText")
+        layout.addWidget(page_subtitle)
+        
+        layout.addSpacing(8)
+        
         # Recalculation Section
         recalc_group = self._create_recalculation_group()
         layout.addWidget(recalc_group)
@@ -58,11 +69,24 @@ class ToolsTab(QWidget):
         
         layout.addStretch()
         
-    def _create_recalculation_group(self) -> QGroupBox:
+    def _create_recalculation_group(self) -> QWidget:
         """Create the recalculation section"""
-        group = QGroupBox("Data Recalculation")
-        layout = QVBoxLayout(group)
-        layout.setSpacing(12)
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(8)
+        
+        # Section header
+        header = QLabel("🧮 Data Recalculation")
+        header.setObjectName("SectionHeader")
+        container_layout.addWidget(header)
+        
+        # Section background
+        section = QWidget()
+        section.setObjectName("SectionBackground")
+        layout = QVBoxLayout(section)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
         
         # Description
         desc_label = QLabel(
@@ -70,10 +94,10 @@ class ToolsTab(QWidget):
             "This should be run after importing data or correcting errors."
         )
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("color: #666; font-style: italic;")
+        desc_label.setObjectName("HelperText")
         layout.addWidget(desc_label)
         
-        layout.addSpacing(8)
+        layout.addSpacing(4)
         
         # Recalculate Everything button
         recalc_all_btn = QPushButton("Recalculate Everything")
@@ -82,13 +106,13 @@ class ToolsTab(QWidget):
         recalc_all_btn.clicked.connect(self._on_recalculate_all)
         layout.addWidget(recalc_all_btn)
         
-        
-        layout.addSpacing(8)
+        layout.addSpacing(4)
         
         # Scoped recalculation section
         scoped_layout = QHBoxLayout()
         scoped_layout.setSpacing(8)
         scoped_label = QLabel("Recalculate specific user/site:")
+        scoped_label.setObjectName("FieldLabel")
         scoped_layout.addWidget(scoped_label)
         
         # User selector with autocomplete
@@ -109,38 +133,51 @@ class ToolsTab(QWidget):
         
         # Scoped recalculate button
         recalc_scoped_btn = QPushButton("Recalculate Pair")
-        recalc_scoped_btn.setMinimumHeight(32)
         recalc_scoped_btn.clicked.connect(self._on_recalculate_scoped)
         scoped_layout.addWidget(recalc_scoped_btn)
         
         scoped_layout.addStretch()
         layout.addLayout(scoped_layout)
         
-        layout.addSpacing(8)
+        layout.addSpacing(4)
         
         # Statistics display
         self.stats_label = QLabel("")
-        self.stats_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.stats_label.setObjectName("HelperText")
         layout.addWidget(self.stats_label)
         self._update_stats()
         
-        return group
+        container_layout.addWidget(section)
+        return container
         
-    def _create_csv_group(self) -> QGroupBox:
+    def _create_csv_group(self) -> QWidget:
         """Create the CSV import/export section."""
-        group = QGroupBox("CSV Import/Export")
-        layout = QVBoxLayout(group)
-        layout.setSpacing(12)
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(8)
+        
+        # Section header
+        header = QLabel("📄 CSV Import/Export")
+        header.setObjectName("SectionHeader")
+        container_layout.addWidget(header)
+        
+        # Section background
+        section = QWidget()
+        section.setObjectName("SectionBackground")
+        layout = QVBoxLayout(section)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
         
         desc_label = QLabel(
             "Import and export data as CSV files. "
             "Import validates data and shows preview before committing."
         )
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("color: #666; font-style: italic;")
+        desc_label.setObjectName("HelperText")
         layout.addWidget(desc_label)
         
-        layout.addSpacing(8)
+        layout.addSpacing(4)
         
         # Buttons
         btn_layout = QHBoxLayout()
@@ -166,31 +203,46 @@ class ToolsTab(QWidget):
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
         
-        return group
+        container_layout.addWidget(section)
+        return container
         
-    def _create_database_group(self) -> QGroupBox:
+    def _create_database_group(self) -> QWidget:
         """Create unified database tools section with streamlined backup controls"""
         from PySide6.QtCore import QTimer
         
-        group = QGroupBox("Database Tools")
-        layout = QVBoxLayout(group)
-        layout.setSpacing(12)
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(8)
+        
+        # Section header
+        header = QLabel("🗄️ Database Tools")
+        header.setObjectName("SectionHeader")
+        container_layout.addWidget(header)
+        
+        # Section background
+        section = QWidget()
+        section.setObjectName("SectionBackground")
+        layout = QVBoxLayout(section)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
         
         desc_label = QLabel(
             "Backup, restore, and reset database. "
             "Always create a backup before restore or reset operations."
         )
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("color: #666; font-style: italic;")
+        desc_label.setObjectName("HelperText")
         layout.addWidget(desc_label)
         
-        layout.addSpacing(8)
+        layout.addSpacing(4)
         
         # Backup directory section (shared by manual and automatic)
         dir_layout = QHBoxLayout()
         dir_layout.setSpacing(8)
         
         dir_label = QLabel("Backup directory:")
+        dir_label.setObjectName("FieldLabel")
         dir_layout.addWidget(dir_label)
         
         # Directory input
@@ -201,12 +253,11 @@ class ToolsTab(QWidget):
         
         # Browse button
         browse_btn = QPushButton("Browse...")
-        browse_btn.setMinimumHeight(32)
         browse_btn.clicked.connect(self._on_select_backup_directory)
         dir_layout.addWidget(browse_btn)
         
         layout.addLayout(dir_layout)
-        layout.addSpacing(12)
+        layout.addSpacing(8)
         
         # Action buttons row with automatic backup controls
         actions_layout = QHBoxLayout()
@@ -255,11 +306,11 @@ class ToolsTab(QWidget):
         actions_layout.addStretch()
         layout.addLayout(actions_layout)
         
-        layout.addSpacing(8)
+        layout.addSpacing(4)
         
         # Last backup status (below action buttons)
         self.last_backup_label = QLabel("No backups yet")
-        self.last_backup_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.last_backup_label.setObjectName("HelperText")
         layout.addWidget(self.last_backup_label)
         
         # Timer for checking backup schedule (check every 5 minutes)
@@ -270,7 +321,8 @@ class ToolsTab(QWidget):
         # Load saved settings
         self._load_automatic_backup_settings()
         
-        return group
+        container_layout.addWidget(section)
+        return container
         
     def _load_users(self):
         """Load users into combo box"""

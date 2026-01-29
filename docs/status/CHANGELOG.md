@@ -12,6 +12,29 @@ Rules:
 ## 2026-01-28
 
 ```yaml
+id: 2026-01-28-15
+type: refactor
+areas: [ui, tools, themes]
+summary: "Tools tab visual polish: Added page header, replaced QGroupBox with SectionBackground cards, standardized spacing/styling to match app design language."
+files_changed:
+  - ui/themes.py
+  - ui/tabs/tools_tab.py
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Page Header**: Added "🔧 Tools" title + subtitle at top of page for visual hierarchy
+- **Section Styling**: Replaced `QGroupBox` sections with theme-consistent `SectionHeader` + `SectionBackground` pattern (rounded cards with proper spacing)
+- **Typography**: Replaced inline `color: #666` styles with `HelperText` objectName for proper dark theme support
+- **Button Styles**: Added missing `SuccessButton` (green) and `DangerButton` (red) to theme; added `PageTitle` style for consistent headers
+- **Spacing/Alignment**: Standardized margins (12px), spacing (10px), and field sizing to match other tabs (e.g., redemptions dialog)
+- **Emojis**: Added section emojis: 🧮 Data Recalculation, 📄 CSV Import/Export, 🗄️ Database Tools
+- **No Logic Changes**: All business logic, service calls, handlers, and threading behavior unchanged—pure UI refactor
+- **Testing**: All 433 tests pass; manual verification confirms Tools operations work identically
+
+Refs: Issue #5 follow-up (visual polish)
+
+```yaml
 id: 2026-01-28-14
 type: refactor
 areas: [ui, tools]
