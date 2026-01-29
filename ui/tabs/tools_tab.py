@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QMessageBox, QFileDialog,
     QComboBox, QCompleter, QListView, QDialog, QLineEdit,
-    QCheckBox, QSpinBox
+    QCheckBox, QSpinBox, QSizePolicy
 )
 from PySide6.QtCore import QThreadPool, Qt
 from PySide6.QtGui import QFontMetrics
@@ -103,19 +103,7 @@ class ToolsTab(QWidget):
 
         layout.addSpacing(6)
 
-        # Primary action (compact)
-        primary_row = QHBoxLayout()
-        primary_row.setSpacing(8)
-        recalc_all_btn = QPushButton("🔄 Recalculate Everything")
-        recalc_all_btn.setMinimumWidth(240)
-        recalc_all_btn.clicked.connect(self._on_recalculate_all)
-        primary_row.addWidget(recalc_all_btn)
-        primary_row.addStretch(1)
-        layout.addLayout(primary_row)
-
-        layout.addSpacing(6)
-        
-        # Advanced row
+        # Row 1: scoped recalculation
         scoped_layout = QHBoxLayout()
         scoped_layout.setSpacing(8)
         scoped_label = QLabel("Recalculate for:")
@@ -147,6 +135,16 @@ class ToolsTab(QWidget):
         layout.addLayout(scoped_layout)
         
         layout.addSpacing(6)
+
+        # Row 2: full recalculation (size-to-content)
+        primary_row = QHBoxLayout()
+        primary_row.setSpacing(8)
+        recalc_all_btn = QPushButton("🔄 Recalculate Everything")
+        recalc_all_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        recalc_all_btn.clicked.connect(self._on_recalculate_all)
+        primary_row.addWidget(recalc_all_btn)
+        primary_row.addStretch(1)
+        layout.addLayout(primary_row)
         
         # Statistics display
         self.stats_label = QLabel("")
@@ -247,7 +245,7 @@ class ToolsTab(QWidget):
         grid.setColumnStretch(1, 1)
 
         # Row 1: Backup Location (label | field + browse)
-        backup_label = QLabel("Backup Location")
+        backup_label = QLabel("Backup Location:")
         backup_label.setObjectName("FieldLabel")
         backup_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         grid.addWidget(backup_label, 0, 0)
@@ -279,17 +277,20 @@ class ToolsTab(QWidget):
         
         # Backup Now button
         self.backup_now_btn = QPushButton("💾 Backup Now")
+        self.backup_now_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         self.backup_now_btn.setEnabled(False)
         self.backup_now_btn.clicked.connect(self._on_backup_now)
         actions_layout.addWidget(self.backup_now_btn)
         
         # Restore button
         restore_btn = QPushButton("♻️ Restore")
+        restore_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         restore_btn.clicked.connect(self._on_restore_database)
         actions_layout.addWidget(restore_btn)
         
         # Reset button
         reset_btn = QPushButton("🗑️ Reset")
+        reset_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         reset_btn.setObjectName("DangerButton")
         reset_btn.clicked.connect(self._on_reset_database)
         actions_layout.addWidget(reset_btn)
@@ -305,7 +306,7 @@ class ToolsTab(QWidget):
         self.auto_backup_frequency_spinbox.setRange(1, 30)  # 1 to 30 days
         self.auto_backup_frequency_spinbox.setValue(1)
         self.auto_backup_frequency_spinbox.setSuffix(" day(s)")
-        self.auto_backup_frequency_spinbox.setMinimumWidth(110)
+        self.auto_backup_frequency_spinbox.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         self.auto_backup_frequency_spinbox.setEnabled(False)
         self.auto_backup_frequency_spinbox.valueChanged.connect(self._on_auto_backup_frequency_changed)
         actions_layout.addWidget(self.auto_backup_frequency_spinbox)
