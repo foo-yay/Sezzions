@@ -596,7 +596,17 @@ class RestoreDialog(QDialog):
             self.mode_stack.setCurrentIndex(0)
 
         self._update_restore_button_state()
-        QTimer.singleShot(0, self.adjustSize)
+        # Force Qt to recalculate the dialog size to fit the new page
+        QTimer.singleShot(0, self._resize_to_content)
+    
+    def _resize_to_content(self):
+        """Resize dialog to fit current content."""
+        # Tell the stacked widget to update its size hint
+        self.mode_stack.updateGeometry()
+        # Tell the layout to recalculate
+        self.layout().activate()
+        # Resize the dialog
+        self.adjustSize()
 
     def _update_restore_button_state(self):
         """Enable Restore only when inputs are valid."""
