@@ -70,6 +70,29 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Create menu bar
         self._create_menu_bar()
+
+        # Passive indicator for Tools maintenance operations (backup/restore/reset).
+        # Uses a small indeterminate progress bar + label in the status bar.
+        self._tools_busy_label = QtWidgets.QLabel("Database maintenance in progress…")
+        self._tools_busy_label.setVisible(False)
+        self._tools_busy_progress = QtWidgets.QProgressBar()
+        self._tools_busy_progress.setTextVisible(False)
+        self._tools_busy_progress.setFixedWidth(120)
+        self._tools_busy_progress.setRange(0, 0)  # indeterminate
+        self._tools_busy_progress.setVisible(False)
+
+        status = self.statusBar()
+        status.setSizeGripEnabled(False)
+        status.addPermanentWidget(self._tools_busy_label)
+        status.addPermanentWidget(self._tools_busy_progress)
+
+        self._tools_busy_timer = QtCore.QTimer(self)
+        self._tools_busy_timer.setInterval(250)
+        self._tools_busy_timer.timeout.connect(self._update_tools_busy_indicator)
+        self._tools_busy_timer.start()
+
+        # Initial state
+        self._update_tools_busy_indicator()
         
         # Apply saved theme
         self._apply_theme(self.settings.get_theme())
@@ -238,6 +261,18 @@ class MainWindow(QtWidgets.QMainWindow):
             self.setup_tab.sub_tabs.setCurrentWidget(self.setup_tab.tools_tab)
         except Exception:
             pass
+
+    def _update_tools_busy_indicator(self):
+        """Show/hide passive busy indicator when tools operations are active."""
+        try:
+            active = bool(self.facade.is_tools_operation_active())
+        except Exception:
+            active = False
+
+        if self._tools_busy_label is not None:
+            self._tools_busy_label.setVisible(active)
+        if self._tools_busy_progress is not None:
+            self._tools_busy_progress.setVisible(active)
         
         # Help menu
         help_menu = menubar.addMenu("&Help")

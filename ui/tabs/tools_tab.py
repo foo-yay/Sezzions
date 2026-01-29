@@ -43,6 +43,7 @@ class ToolsTab(QWidget):
         self.thread_pool = QThreadPool.globalInstance()
         self._active_progress_dialog = None  # Store active progress dialog to prevent GC
         self._active_tools_worker = None  # Strong ref to active QRunnable to prevent GC
+        self._background_tools_workers = []  # Strong refs for non-UI (auto) background workers
         self._setup_ui()
 
     def resizeEvent(self, event):
@@ -1787,7 +1788,6 @@ class ToolsTab(QWidget):
     
     def _perform_automatic_backup(self):
         """Perform an automatic backup"""
-        from services.tools.backup_service import BackupService
         from ui.settings import Settings
         from datetime import datetime
         import os
@@ -1798,22 +1798,57 @@ class ToolsTab(QWidget):
         
         if not directory:
             return
-        
-        # Perform backup
-        backup_service = BackupService(self.facade.db)
-        result = backup_service.backup_with_timestamp(directory, prefix="auto_backup")
-        
-        if result.success:
-            # Update last backup time
-            config['last_backup_time'] = datetime.now().isoformat()
-            settings.set_automatic_backup_config(config)
-            self._update_last_backup_display()
-            
-            # Log success (non-blocking)
-            filename = os.path.basename(result.backup_path)
-            size_mb = result.size_bytes / (1024 * 1024)
-            print(f"[Auto-Backup] Created: {filename} ({size_mb:.2f} MB)")
-        else:
-            # Log error but don't block UI
-            print(f"[Auto-Backup] Failed: {result.error}")
+
+        # If a tools operation is already active, skip this cycle.
+        # (We don't want auto backup competing with restore/reset.)
+        if self.facade.is_tools_operation_active():
+            print("[Auto-Backup] Skipped (tools operation already active)")
+            return
+
+        # Acquire exclusive lock so UI writes are blocked while the snapshot is taken.
+        if not self.facade.acquire_tools_lock():
+            print("[Auto-Backup] Skipped (could not acquire tools lock)")
+            return
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = os.path.join(directory, f"auto_backup_{timestamp}.db")
+
+        worker = self.facade.create_backup_worker(backup_path, include_audit_log=True)
+        try:
+            worker.setAutoDelete(False)
+        except Exception:
+            pass
+
+        # Keep a strong ref until it finishes; auto backups have no modal dialog to anchor lifetime.
+        self._background_tools_workers.append(worker)
+
+        def _cleanup_worker(w):
+            try:
+                self._background_tools_workers.remove(w)
+            except ValueError:
+                pass
+
+        def on_finished(result):
+            self.facade.release_tools_lock()
+            _cleanup_worker(worker)
+
+            if result.success:
+                config['last_backup_time'] = datetime.now().isoformat()
+                settings.set_automatic_backup_config(config)
+                self._update_last_backup_display()
+
+                filename = os.path.basename(result.backup_path)
+                size_mb = result.size_bytes / (1024 * 1024)
+                print(f"[Auto-Backup] Created: {filename} ({size_mb:.2f} MB)")
+            else:
+                print(f"[Auto-Backup] Failed: {result.error}")
+
+        def on_error(error_msg):
+            self.facade.release_tools_lock()
+            _cleanup_worker(worker)
+            print(f"[Auto-Backup] Error: {error_msg}")
+
+        worker.signals.finished.connect(on_finished, Qt.QueuedConnection)
+        worker.signals.error.connect(on_error, Qt.QueuedConnection)
+        self.thread_pool.start(worker)
     

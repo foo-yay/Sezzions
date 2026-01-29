@@ -108,6 +108,23 @@ Notes:
 
 ---
 
+```yaml
+id: 2026-01-29-04
+type: fix
+areas: [tools, ui]
+summary: "Run automatic backups in background and add passive in-app busy indicator during tools operations."
+files_changed:
+  - ui/main_window.py
+  - ui/tabs/tools_tab.py
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Auto-Backup Worker**: Automatic backups now use the same background `DatabaseBackupWorker` path (no UI-thread blocking).
+- **Passive Indicator**: Main window shows a small indeterminate progress indicator + text while any tools operation is active.
+
+---
+
 ## 2026-01-28
 
 ```yaml
