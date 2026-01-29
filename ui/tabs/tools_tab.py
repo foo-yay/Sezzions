@@ -988,7 +988,11 @@ class ToolsTab(QWidget):
     
     def _on_backup_now(self):
         """Handle manual backup"""
+        # Disable button immediately to prevent double-clicks
+        self.backup_now_btn.setEnabled(False)
+        
         if not hasattr(self, 'backup_dir') or not self.backup_dir:
+            self.backup_now_btn.setEnabled(True)
             QMessageBox.warning(
                 self,
                 "No Directory Selected",
@@ -998,6 +1002,7 @@ class ToolsTab(QWidget):
         
         # Check if another tools operation is running
         if self.facade.is_tools_operation_active():
+            self.backup_now_btn.setEnabled(True)
             QMessageBox.warning(
                 self,
                 "Operation in Progress",
@@ -1018,6 +1023,7 @@ class ToolsTab(QWidget):
             
             # Acquire exclusive lock
             if not self.facade.acquire_tools_lock():
+                self.backup_now_btn.setEnabled(True)
                 QMessageBox.warning(
                     self,
                     "Lock Failed",
@@ -1045,9 +1051,10 @@ class ToolsTab(QWidget):
                     self._active_progress_dialog.close()
                     self._active_progress_dialog = None
                 
-                # Release lock immediately
+                # Release lock and re-enable button immediately
                 self.facade.release_tools_lock()
-                print("[UI] Lock released")
+                self.backup_now_btn.setEnabled(True)
+                print("[UI] Lock released, button re-enabled")
                 
                 # Defer message box to next event loop iteration
                 # This ensures the progress dialog is fully closed first
@@ -1092,8 +1099,9 @@ class ToolsTab(QWidget):
                     self._active_progress_dialog.close()
                     self._active_progress_dialog = None
                 
-                # Release lock immediately
+                # Release lock and re-enable button immediately
                 self.facade.release_tools_lock()
+                self.backup_now_btn.setEnabled(True)
                 
                 # Defer message box to next event loop iteration
                 from PySide6.QtCore import QTimer
@@ -1118,6 +1126,7 @@ class ToolsTab(QWidget):
                 self._active_progress_dialog.close()
                 self._active_progress_dialog = None
             self.facade.release_tools_lock()
+            self.backup_now_btn.setEnabled(True)
             QMessageBox.critical(
                 self,
                 "Backup Error",
