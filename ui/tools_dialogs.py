@@ -334,8 +334,6 @@ class RestoreDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
-        # Standardize sizing: the dialog always fits its content.
-        layout.setSizeConstraint(QLayout.SetFixedSize)
         
         # Warning message
         warning_label = QLabel(
@@ -554,9 +552,6 @@ class RestoreDialog(QDialog):
         button_box.rejected.connect(self.reject)
         
         layout.addWidget(button_box)
-
-        # Ensure the stack doesn't reserve extra vertical space.
-        self.mode_stack.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         
     def _on_select_file(self):
         """Handle backup file selection"""
@@ -608,12 +603,32 @@ class RestoreDialog(QDialog):
     
     def _resize_to_content(self):
         """Resize dialog to fit current content."""
-        # Tell the stacked widget to update its size hint
-        self.mode_stack.updateGeometry()
-        # Tell the layout to recalculate
-        self.layout().activate()
-        # Resize the dialog
-        self.adjustSize()
+        # Clear any height locks
+        self.setMinimumHeight(0)
+        self.setMaximumHeight(16777215)
+        
+        # Calculate the exact height needed:
+        # - layout margins (top + bottom)
+        # - warning label height
+        # - spacing between widgets
+        # - backup section height  
+        # - mode section height (with current page)
+        # - button box height
+        
+        layout_margins = self.layout().contentsMargins()
+        total_height = layout_margins.top() + layout_margins.bottom()
+        
+        # Add each widget's height plus spacing
+        for i in range(self.layout().count()):
+            item = self.layout().itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                total_height += widget.sizeHint().height()
+                if i < self.layout().count() - 1:
+                    total_height += self.layout().spacing()
+        
+        # Set the calculated height
+        self.resize(self.width(), total_height)
 
     def _update_restore_button_state(self):
         """Enable Restore only when inputs are valid."""
