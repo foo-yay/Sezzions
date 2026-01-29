@@ -159,6 +159,12 @@ Notes:
 - **Validation**: Restore action is disabled until a backup is chosen and a mode is selected; Merge Selected additionally requires at least one table chosen.
 - **Table Picker Layout**: Merge Selected uses a two-column table picker (Setup vs Transactions) to keep the dialog compact.
 - **Testing**: Added integration coverage for MERGE_SELECTED table selection semantics and failure cases.
+- **Dialog Sizing Solution**: Replaced QStackedWidget with show/hide pattern for reliable dynamic height adjustment
+  - **Problem**: QStackedWidget's `sizeHint()` tends to reflect the largest page, causing dialogs to stay tall after visiting a larger page
+  - **Solution**: Each mode detail widget added directly to layout and shown/hidden based on selection
+  - **Pattern**: Hide all widgets → show selected → `layout.activate()` → `adjustSize()` → explicit resize
+  - **Result**: Dialog height correctly shrinks/grows to match visible content across all mode switches
+  - Standard Qt best practice for dynamic dialog content where size varies significantly between options
 
 Refs: Issue #8, PR #13
 

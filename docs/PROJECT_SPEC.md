@@ -204,6 +204,11 @@ Tools are accessible via Setup → Tools sub-tab and provide "production readine
 - Restore: compact mode selection via combo box with progressive disclosure of mode-specific details
   - Restore action is disabled until a backup is selected and a restore mode is chosen
   - Merge Selected shows a two-column table picker (Setup vs Transactions) and requires at least one table selected
+  - Dialog sizing: Uses show/hide pattern instead of QStackedWidget for reliable dynamic height adjustment
+    - Each mode's detail widget is added directly to layout and shown/hidden based on selection
+    - Hidden widgets don't contribute to layout size calculations
+    - Standard Qt pattern: hide all widgets → show selected widget → `layout.activate()` → `adjustSize()` → explicit resize
+    - Avoids QStackedWidget's tendency to reserve space for largest page
 - Reset: dialog with table counts, preserve setup data checkbox, typed confirmation
 - Automatic backup: enable toggle, directory selection, frequency spinner (1-168 hrs), status label (color-coded), test button, last backup timestamp display
 Helpful maintenance scripts:
