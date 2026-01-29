@@ -75,6 +75,50 @@ See [docs/adr/0001-docs-governance.md](docs/adr/0001-docs-governance.md).
 - Do not change core accounting logic just to satisfy an old test expectation.
 - For accounting changes: add a small, explicit “golden scenario” test first.
 
+## Agent Execution Standard (Test-First + Usability + Pitfalls)
+
+This section exists to reduce post-PR troubleshooting (runtime issues, UI regressions, and cascading bugs).
+When assigned an Issue, agents must follow these standards.
+
+### 1) Red → Green → Review (Mandatory)
+
+1. Convert the Issue acceptance criteria into automated tests.
+2. Run the tests and confirm at least one fails for the intended reason (feature not implemented yet).
+3. Implement minimal, surgical changes until tests pass.
+4. Re-run the full suite and confirm **100% pass**.
+5. Only then open/update the PR.
+
+### 2) Torture-Test Matrix (Required for each Issue)
+
+Before writing production code, document (in the PR description or issue notes) a short matrix and implement tests for it:
+
+- Happy path(s)
+- At least 2 edge cases
+- At least 1 failure-injection case proving rollback/invariants
+- Explicit invariants (what must not change)
+
+Example (data tools / restore-like issues):
+- “Only selected tables change”
+- “Atomic rollback on any failure”
+- “Audit log entries created for affected tables”
+
+### 3) Headless Usability Smoke Tests (If UI is touched)
+
+If an Issue touches UI flows, dialogs, menus, or threading/lifetime behavior:
+
+- Add/update a headless smoke test that boots a `QApplication`, instantiates `MainWindow(AppFacade(...))`, processes events briefly, and exits cleanly.
+- Prefer `QT_QPA_PLATFORM=offscreen` (or equivalent) so tests can run in CI/headless.
+
+Goal: catch startup and wiring regressions early (missing menu actions, signal/slot mismatches, dialog lifetime issues).
+
+### 4) Pitfalls / Follow-ups (No scope creep)
+
+After implementation is complete and tests are green:
+
+- Perform a brief “pitfalls scan”: what could break later, what is confusing, what risks remain.
+- Do **not** fix items outside the Issue scope.
+- Record follow-ups as new GitHub Issues (preferred) and optionally mirror into `docs/TODO.md`.
+
 ## Legacy Rule
 
 - Avoid editing `.LEGACY/` unless explicitly requested.
