@@ -2,12 +2,13 @@
 Tools Tab - Recalculation, CSV Import/Export, Database Tools, Audit
 """
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QMessageBox, QFileDialog,
     QComboBox, QCompleter, QListView, QDialog, QLineEdit,
     QCheckBox, QSpinBox
 )
 from PySide6.QtCore import QThreadPool, Qt
+from PySide6.QtGui import QFontMetrics
 from typing import Optional
 import os
 from datetime import datetime
@@ -37,23 +38,26 @@ class ToolsTab(QWidget):
         self.backup_dir = ''  # Initialize backup directory attribute
         self.thread_pool = QThreadPool.globalInstance()
         self._setup_ui()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "backup_dir_input") and hasattr(self, "backup_dir"):
+            # Re-elide on resize so the display remains compact.
+            self._set_backup_location_display(self.backup_dir)
         
     def _setup_ui(self):
         """Setup the UI components"""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(16)
-        
-        # Page header
-        page_title = QLabel("🔧 Tools")
-        page_title.setObjectName("PageTitle")
-        layout.addWidget(page_title)
-        
-        page_subtitle = QLabel("Recalculation, CSV import/export, and database management tools.")
-        page_subtitle.setObjectName("HelperText")
-        layout.addWidget(page_subtitle)
-        
-        layout.addSpacing(8)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+
+        # Header (match other Setup sub-tabs)
+        header_layout = QHBoxLayout()
+        title = QLabel("Tools")
+        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        header_layout.addWidget(title)
+        header_layout.addStretch()
+        layout.addLayout(header_layout)
         
         # Recalculation Section
         recalc_group = self._create_recalculation_group()
@@ -74,10 +78,10 @@ class ToolsTab(QWidget):
         container = QWidget()
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(8)
+        container_layout.setSpacing(6)
         
         # Section header
-        header = QLabel("🧮 Data Recalculation")
+        header = QLabel("Data Recalculation")
         header.setObjectName("SectionHeader")
         container_layout.addWidget(header)
         
@@ -96,29 +100,32 @@ class ToolsTab(QWidget):
         desc_label.setWordWrap(True)
         desc_label.setObjectName("HelperText")
         layout.addWidget(desc_label)
-        
-        layout.addSpacing(4)
-        
-        # Recalculate Everything button
-        recalc_all_btn = QPushButton("Recalculate Everything")
-        recalc_all_btn.setMinimumHeight(36)
-        recalc_all_btn.setObjectName("PrimaryButton")
+
+        layout.addSpacing(6)
+
+        # Primary action (compact)
+        primary_row = QHBoxLayout()
+        primary_row.setSpacing(8)
+        recalc_all_btn = QPushButton("🔄 Recalculate Everything")
+        recalc_all_btn.setMinimumWidth(240)
         recalc_all_btn.clicked.connect(self._on_recalculate_all)
-        layout.addWidget(recalc_all_btn)
+        primary_row.addWidget(recalc_all_btn)
+        primary_row.addStretch(1)
+        layout.addLayout(primary_row)
+
+        layout.addSpacing(6)
         
-        layout.addSpacing(4)
-        
-        # Scoped recalculation section
+        # Advanced row
         scoped_layout = QHBoxLayout()
         scoped_layout.setSpacing(8)
-        scoped_label = QLabel("Recalculate specific user/site:")
+        scoped_label = QLabel("Recalculate for:")
         scoped_label.setObjectName("FieldLabel")
         scoped_layout.addWidget(scoped_label)
         
         # User selector with autocomplete
         self.user_combo = QComboBox()
         self.user_combo.setEditable(True)
-        self.user_combo.setMinimumWidth(150)
+        self.user_combo.setMinimumWidth(200)
         self.user_combo.lineEdit().setPlaceholderText("All Users")
         self._load_users()
         scoped_layout.addWidget(self.user_combo)
@@ -126,20 +133,20 @@ class ToolsTab(QWidget):
         # Site selector with autocomplete
         self.site_combo = QComboBox()
         self.site_combo.setEditable(True)
-        self.site_combo.setMinimumWidth(150)
+        self.site_combo.setMinimumWidth(200)
         self.site_combo.lineEdit().setPlaceholderText("All Sites")
         self._load_sites()
         scoped_layout.addWidget(self.site_combo)
         
         # Scoped recalculate button
-        recalc_scoped_btn = QPushButton("Recalculate Pair")
+        recalc_scoped_btn = QPushButton("🎯 Recalculate Pair")
         recalc_scoped_btn.clicked.connect(self._on_recalculate_scoped)
         scoped_layout.addWidget(recalc_scoped_btn)
         
         scoped_layout.addStretch()
         layout.addLayout(scoped_layout)
         
-        layout.addSpacing(4)
+        layout.addSpacing(6)
         
         # Statistics display
         self.stats_label = QLabel("")
@@ -155,10 +162,10 @@ class ToolsTab(QWidget):
         container = QWidget()
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(8)
+        container_layout.setSpacing(6)
         
         # Section header
-        header = QLabel("📄 CSV Import/Export")
+        header = QLabel("CSV Import/Export")
         header.setObjectName("SectionHeader")
         container_layout.addWidget(header)
         
@@ -176,27 +183,22 @@ class ToolsTab(QWidget):
         desc_label.setWordWrap(True)
         desc_label.setObjectName("HelperText")
         layout.addWidget(desc_label)
-        
-        layout.addSpacing(4)
+
+        layout.addSpacing(6)
         
         # Buttons
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(8)
         
-        import_btn = QPushButton("Import CSV...")
-        import_btn.setMinimumHeight(36)
-        import_btn.setObjectName("PrimaryButton")
+        import_btn = QPushButton("📥 Import CSV")
         import_btn.clicked.connect(self._on_import_csv)
         btn_layout.addWidget(import_btn)
         
-        export_btn = QPushButton("Export CSV...")
-        export_btn.setMinimumHeight(36)
-        export_btn.setObjectName("SuccessButton")
+        export_btn = QPushButton("📤 Export CSV")
         export_btn.clicked.connect(self._on_export_csv)
         btn_layout.addWidget(export_btn)
         
-        download_template_btn = QPushButton("Download Template...")
-        download_template_btn.setMinimumHeight(36)
+        download_template_btn = QPushButton("📄 Download Template")
         download_template_btn.clicked.connect(self._on_download_template)
         btn_layout.addWidget(download_template_btn)
         
@@ -213,10 +215,10 @@ class ToolsTab(QWidget):
         container = QWidget()
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(8)
+        container_layout.setSpacing(6)
         
         # Section header
-        header = QLabel("🗄️ Database Tools")
+        header = QLabel("Database Tools")
         header.setObjectName("SectionHeader")
         container_layout.addWidget(header)
         
@@ -235,58 +237,55 @@ class ToolsTab(QWidget):
         desc_label.setObjectName("HelperText")
         layout.addWidget(desc_label)
         
-        layout.addSpacing(4)
-        
-        # Backup directory section (shared by manual and automatic)
-        dir_layout = QHBoxLayout()
-        dir_layout.setSpacing(8)
-        
-        dir_label = QLabel("Backup directory:")
-        dir_label.setObjectName("FieldLabel")
-        dir_layout.addWidget(dir_label)
-        
-        # Directory input
-        self.backup_dir_input = QLineEdit()
-        self.backup_dir_input.setPlaceholderText("Select backup directory...")
-        self.backup_dir_input.setReadOnly(True)
-        dir_layout.addWidget(self.backup_dir_input, 1)
-        
-        # Browse button
-        browse_btn = QPushButton("Browse...")
+        layout.addSpacing(6)
+
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(10)
+        grid.setColumnStretch(0, 0)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(2, 0)
+
+        # Backup location row
+        backup_label = QLabel("Backup Location")
+        backup_label.setObjectName("FieldLabel")
+        backup_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(backup_label, 0, 0)
+
+        self.backup_dir_input = QLabel("Not set")
+        self.backup_dir_input.setObjectName("InfoField")
+        self.backup_dir_input.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.backup_dir_input.setToolTip("Select a backup directory")
+        self.backup_dir_input.setFixedWidth(520)
+        grid.addWidget(self.backup_dir_input, 0, 1)
+
+        browse_btn = QPushButton("📁 Browse")
         browse_btn.clicked.connect(self._on_select_backup_directory)
-        dir_layout.addWidget(browse_btn)
+        grid.addWidget(browse_btn, 0, 2)
         
-        layout.addLayout(dir_layout)
-        layout.addSpacing(8)
-        
-        # Action buttons row with automatic backup controls
+        # Action row (left actions + right auto-backup controls)
         actions_layout = QHBoxLayout()
         actions_layout.setSpacing(8)
         
         # Backup Now button
-        self.backup_now_btn = QPushButton("Backup Now")
-        self.backup_now_btn.setMinimumHeight(36)
-        self.backup_now_btn.setObjectName("SuccessButton")
+        self.backup_now_btn = QPushButton("💾 Backup Now")
         self.backup_now_btn.setEnabled(False)
         self.backup_now_btn.clicked.connect(self._on_backup_now)
         actions_layout.addWidget(self.backup_now_btn)
         
         # Restore button
-        restore_btn = QPushButton("Restore...")
-        restore_btn.setMinimumHeight(36)
-        restore_btn.setObjectName("PrimaryButton")
+        restore_btn = QPushButton("♻️ Restore")
         restore_btn.clicked.connect(self._on_restore_database)
         actions_layout.addWidget(restore_btn)
         
         # Reset button
-        reset_btn = QPushButton("Reset...")
-        reset_btn.setMinimumHeight(36)
+        reset_btn = QPushButton("🗑️ Reset")
         reset_btn.setObjectName("DangerButton")
         reset_btn.clicked.connect(self._on_reset_database)
         actions_layout.addWidget(reset_btn)
-        
-        # Add spacing before automatic backup controls
-        actions_layout.addSpacing(16)
+
+        actions_layout.addStretch(1)
         
         # Automatic backup checkbox
         self.auto_backup_enabled_checkbox = QCheckBox("Auto backup every")
@@ -298,18 +297,19 @@ class ToolsTab(QWidget):
         self.auto_backup_frequency_spinbox.setRange(1, 30)  # 1 to 30 days
         self.auto_backup_frequency_spinbox.setValue(1)
         self.auto_backup_frequency_spinbox.setSuffix(" day(s)")
-        self.auto_backup_frequency_spinbox.setMinimumWidth(100)
+        self.auto_backup_frequency_spinbox.setMinimumWidth(110)
         self.auto_backup_frequency_spinbox.setEnabled(False)
         self.auto_backup_frequency_spinbox.valueChanged.connect(self._on_auto_backup_frequency_changed)
         actions_layout.addWidget(self.auto_backup_frequency_spinbox)
-        
-        actions_layout.addStretch()
-        layout.addLayout(actions_layout)
-        
-        layout.addSpacing(4)
-        
-        # Last backup status (below action buttons)
-        self.last_backup_label = QLabel("No backups yet")
+
+        actions_widget = QWidget()
+        actions_widget.setLayout(actions_layout)
+        grid.addWidget(actions_widget, 1, 1, 1, 2)
+
+        layout.addLayout(grid)
+
+        # Last backup status (subtle)
+        self.last_backup_label = QLabel("Last backup: —")
         self.last_backup_label.setObjectName("HelperText")
         layout.addWidget(self.last_backup_label)
         
@@ -323,6 +323,20 @@ class ToolsTab(QWidget):
         
         container_layout.addWidget(section)
         return container
+
+    def _set_backup_location_display(self, directory: str):
+        """Set backup location display with elided (middle) path and tooltip."""
+        directory = directory or ""
+        if not directory:
+            self.backup_dir_input.setText("Not set")
+            self.backup_dir_input.setToolTip("Select a backup directory")
+            return
+
+        self.backup_dir_input.setToolTip(directory)
+        metrics = QFontMetrics(self.backup_dir_input.font())
+        width = max(120, self.backup_dir_input.width() - 16)
+        elided = metrics.elidedText(directory, Qt.ElideMiddle, width)
+        self.backup_dir_input.setText(elided)
         
     def _load_users(self):
         """Load users into combo box"""
@@ -938,7 +952,7 @@ class ToolsTab(QWidget):
         
         if directory:
             self.backup_dir = directory
-            self.backup_dir_input.setText(directory)
+            self._set_backup_location_display(directory)
             self.backup_now_btn.setEnabled(True)
             
             # Save to settings (shared with automatic backup)
@@ -1259,7 +1273,7 @@ class ToolsTab(QWidget):
         
         directory = config.get('directory', '')
         if directory:
-            self.backup_dir_input.setText(directory)
+            self._set_backup_location_display(directory)
             self.backup_dir = directory
             self.backup_now_btn.setEnabled(True)
         
@@ -1327,13 +1341,10 @@ class ToolsTab(QWidget):
                 last_time = datetime.fromisoformat(last_backup_str)
                 time_str = last_time.strftime('%Y-%m-%d %H:%M')
                 self.last_backup_label.setText(f"Last backup: {time_str}")
-                self.last_backup_label.setStyleSheet("color: #28a745; font-size: 11px; margin: 8px 0 5px 0;")
             except:
-                self.last_backup_label.setText("No backups yet")
-                self.last_backup_label.setStyleSheet("color: #666; font-size: 11px; margin: 8px 0 5px 0;")
+                self.last_backup_label.setText("Last backup: —")
         else:
-            self.last_backup_label.setText("No backups yet")
-            self.last_backup_label.setStyleSheet("color: #666; font-size: 11px; margin: 8px 0 5px 0;")
+            self.last_backup_label.setText("Last backup: —")
     
     def _check_automatic_backup(self):
         """Check if it's time to run an automatic backup"""

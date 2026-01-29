@@ -15,7 +15,7 @@ Rules:
 id: 2026-01-28-15
 type: refactor
 areas: [ui, tools, themes]
-summary: "Tools tab visual polish: Added page header, replaced QGroupBox with SectionBackground cards, standardized spacing/styling to match app design language."
+summary: "Tools tab visual polish: align Tools with Setup tab styling, use SectionBackground cards, and standardize spacing/buttons." 
 files_changed:
   - ui/themes.py
   - ui/tabs/tools_tab.py
@@ -23,12 +23,11 @@ files_changed:
 ```
 
 Notes:
-- **Page Header**: Added "🔧 Tools" title + subtitle at top of page for visual hierarchy
-- **Section Styling**: Replaced `QGroupBox` sections with theme-consistent `SectionHeader` + `SectionBackground` pattern (rounded cards with proper spacing)
+- **Page Header**: Tools matches other Setup sub-tabs (simple title, no blurb)
+- **Section Styling**: Uses theme-consistent `SectionHeader` + `SectionBackground` cards (rounded, higher-contrast)
 - **Typography**: Replaced inline `color: #666` styles with `HelperText` objectName for proper dark theme support
-- **Button Styles**: Added missing `SuccessButton` (green) and `DangerButton` (red) to theme; added `PageTitle` style for consistent headers
-- **Spacing/Alignment**: Standardized margins (12px), spacing (10px), and field sizing to match other tabs (e.g., redemptions dialog)
-- **Emojis**: Added section emojis: 🧮 Data Recalculation, 📄 CSV Import/Export, 🗄️ Database Tools
+- **Button Styles**: Standardized Tools buttons (emoji + no ellipses); only Reset remains red (`DangerButton`)
+- **Spacing/Alignment**: Compact 3-card layout with primary + advanced actions; backup location display is elided with tooltip
 - **No Logic Changes**: All business logic, service calls, handlers, and threading behavior unchanged—pure UI refactor
 - **Testing**: All 433 tests pass; manual verification confirms Tools operations work identically
 

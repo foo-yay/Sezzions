@@ -332,8 +332,8 @@ class Theme:
             
             /* Dialog Section Styles */
             QWidget#SectionBackground {{
-                background: {surface2};
-                border: 1px solid rgba(0, 0, 0, 0.12);
+                background: {surface};
+                border: 1px solid {border};
                 border-radius: 8px;
                 padding: 12px;
             }}
