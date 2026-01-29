@@ -4,26 +4,10 @@ Progress dialogs for Tools operations
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
     QProgressBar, QPushButton, QTextEdit, QDialogButtonBox,
-    QGroupBox, QCheckBox, QLineEdit, QComboBox, QStackedWidget, QWidget, QScrollArea, QSizePolicy, QLayout
+    QGroupBox, QCheckBox, QLineEdit, QComboBox, QWidget, QScrollArea, QSizePolicy
 )
-from PySide6.QtCore import Qt, Signal, QTimer, QSize
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QFontMetrics
-
-
-class _AdaptiveStackedWidget(QStackedWidget):
-    """A QStackedWidget that sizes itself to the current page.
-
-    Qt's default QStackedWidget sizeHint tends to reflect the largest page, which
-    causes dialogs to stay tall after visiting a larger page.
-    """
-
-    def sizeHint(self) -> QSize:  # type: ignore[override]
-        current = self.currentWidget()
-        return current.sizeHint() if current is not None else super().sizeHint()
-
-    def minimumSizeHint(self) -> QSize:  # type: ignore[override]
-        current = self.currentWidget()
-        return current.minimumSizeHint() if current is not None else super().minimumSizeHint()
 
 
 class ProgressDialog(QDialog):
@@ -416,21 +400,20 @@ class RestoreDialog(QDialog):
         self.mode_combo.currentIndexChanged.connect(self._on_mode_combo_changed)
         mode_layout.addWidget(self.mode_combo)
 
-        self.mode_stack = _AdaptiveStackedWidget()
-
+        # Create all mode detail widgets (will show/hide based on selection)
         # Page 0: placeholder
-        placeholder_page = QWidget()
-        placeholder_layout = QVBoxLayout(placeholder_page)
+        self.placeholder_widget = QWidget()
+        placeholder_layout = QVBoxLayout(self.placeholder_widget)
         placeholder_hint = QLabel("Select a restore mode to see details.")
         placeholder_hint.setObjectName("HelperText")
         placeholder_layout.addWidget(placeholder_hint)
         placeholder_layout.addStretch()
         placeholder_layout.setContentsMargins(0, 0, 0, 0)
-        self.mode_stack.addWidget(placeholder_page)
+        mode_layout.addWidget(self.placeholder_widget)
 
         # Page 1: MERGE_ALL
-        merge_page = QWidget()
-        merge_layout = QVBoxLayout(merge_page)
+        self.merge_widget = QWidget()
+        merge_layout = QVBoxLayout(self.merge_widget)
         merge_desc = QLabel(
             "• Imports data from backup and merges with existing records\n"
             "• Validates data and detects duplicates (same as CSV import)\n"
@@ -441,11 +424,12 @@ class RestoreDialog(QDialog):
         merge_layout.addWidget(merge_desc)
         merge_layout.addStretch()
         merge_layout.setContentsMargins(0, 0, 0, 0)
-        self.mode_stack.addWidget(merge_page)
+        self.merge_widget.setVisible(False)
+        mode_layout.addWidget(self.merge_widget)
 
         # Page 2: MERGE_SELECTED
-        merge_selected_page = QWidget()
-        merge_selected_layout = QVBoxLayout(merge_selected_page)
+        self.merge_selected_widget = QWidget()
+        merge_selected_layout = QVBoxLayout(self.merge_selected_widget)
         merge_selected_desc = QLabel(
             "• Select specific tables to merge from backup\n"
             "• Fine-grained control over what data to restore\n"
@@ -515,11 +499,12 @@ class RestoreDialog(QDialog):
         table_selection_group.setLayout(table_selection_group_layout)
         merge_selected_layout.addWidget(table_selection_group)
         merge_selected_layout.setContentsMargins(0, 0, 0, 0)
-        self.mode_stack.addWidget(merge_selected_page)
+        self.merge_selected_widget.setVisible(False)
+        mode_layout.addWidget(self.merge_selected_widget)
 
         # Page 3: REPLACE
-        replace_page = QWidget()
-        replace_layout = QVBoxLayout(replace_page)
+        self.replace_widget = QWidget()
+        replace_layout = QVBoxLayout(self.replace_widget)
         replace_desc = QLabel(
             "• Replaces entire database with backup\n"
             "• ⚠️ DESTRUCTIVE — all current data will be lost\n"
@@ -530,9 +515,9 @@ class RestoreDialog(QDialog):
         replace_layout.addWidget(replace_desc)
         replace_layout.addStretch()
         replace_layout.setContentsMargins(0, 0, 0, 0)
-        self.mode_stack.addWidget(replace_page)
+        self.replace_widget.setVisible(False)
+        mode_layout.addWidget(self.replace_widget)
 
-        mode_layout.addWidget(self.mode_stack)
         mode_container_layout.addWidget(mode_section)
         layout.addWidget(mode_container)
         
@@ -582,44 +567,41 @@ class RestoreDialog(QDialog):
         """Handle restore mode selection change."""
         from services.tools.enums import RestoreMode
 
+        # Hide all mode detail widgets
+        self.placeholder_widget.setVisible(False)
+        self.merge_widget.setVisible(False)
+        self.merge_selected_widget.setVisible(False)
+        self.replace_widget.setVisible(False)
+
+        # Show the appropriate widget based on mode
         mode = self.get_restore_mode()
         if mode == RestoreMode.MERGE_ALL:
-            self.mode_stack.setCurrentIndex(1)
+            self.merge_widget.setVisible(True)
         elif mode == RestoreMode.MERGE_SELECTED:
-            self.mode_stack.setCurrentIndex(2)
+            self.merge_selected_widget.setVisible(True)
         elif mode == RestoreMode.REPLACE:
-            self.mode_stack.setCurrentIndex(3)
+            self.replace_widget.setVisible(True)
         else:
-            self.mode_stack.setCurrentIndex(0)
+            self.placeholder_widget.setVisible(True)
 
         self._update_restore_button_state()
-        # Force Qt to recalculate the dialog size to fit the new page
+        # Resize dialog to fit new content
         QTimer.singleShot(0, self._resize_to_content)
     
     def _resize_to_content(self):
         """Resize dialog to fit current content."""
-        # Get the current page's actual height requirement
-        current_page = self.mode_stack.currentWidget()
-        if current_page is None:
-            return
-        
-        # Remove all height locks on dialog
+        # Clear any height constraints
         self.setMinimumHeight(0)
         self.setMaximumHeight(16777215)
         
-        # Force the stacked widget to be exactly the height of the current page
-        page_height = current_page.sizeHint().height()
-        self.mode_stack.setFixedHeight(page_height)
-        
-        # Force layout to recompute with new stacked widget size
+        # Force layout to recalculate with visible widgets
         self.layout().activate()
         
-        # Resize dialog to new size hint
+        # Resize dialog to new size
         self.adjustSize()
         
-        # Explicitly set the new height (keep width stable)
-        new_height = self.sizeHint().height()
-        self.resize(self.width(), new_height)
+        # Keep width stable, use new height
+        self.resize(self.width(), self.sizeHint().height())
 
     def _update_restore_button_state(self):
         """Enable Restore only when inputs are valid."""
