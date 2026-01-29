@@ -148,12 +148,13 @@ class CSVImportWorker(QRunnable):
 class DatabaseBackupWorker(QRunnable):
     """Background worker for database backup operations
     
-    Note: Backup uses the existing database connection (SQLite backup API requires it).
+    Note: Creates a new read-only connection to the database for thread safety.
+    SQLite allows multiple readers, so this won't block the main app.
     """
     
-    def __init__(self, db_connection, backup_path: str, include_audit_log: bool = True):
+    def __init__(self, db_path: str, backup_path: str, include_audit_log: bool = True):
         super().__init__()
-        self.db_connection = db_connection
+        self.db_path = db_path
         self.backup_path = backup_path
         self.include_audit_log = include_audit_log
         self.signals = WorkerSignals()
@@ -162,21 +163,58 @@ class DatabaseBackupWorker(QRunnable):
     def run(self):
         """Execute the backup operation"""
         try:
-            from services.tools.backup_service import BackupService
+            # Create a new read-only connection in this thread (SQLite thread safety)
+            # This won't block the main app since SQLite allows multiple readers
+            import sqlite3
+            from pathlib import Path
             
-            # Use existing connection (SQLite backup API requires the live connection)
-            backup_service = BackupService(self.db_connection)
+            # Open source database in read-only mode
+            src_path = Path(self.db_path)
+            src_conn = sqlite3.connect(f'file:{src_path}?mode=ro', uri=True)
             
-            result = backup_service.backup_database(
-                backup_path=self.backup_path,
-                include_audit_log=self.include_audit_log
-            )
+            # Create destination database
+            dest_conn = sqlite3.connect(self.backup_path)
             
-            self.signals.finished.emit(result)
+            try:
+                # Perform the backup using SQLite's online backup API
+                src_conn.backup(dest_conn)
+                
+                # Optionally exclude audit log
+                if not self.include_audit_log:
+                    dest_cursor = dest_conn.cursor()
+                    dest_cursor.execute("DELETE FROM audit_log")
+                    dest_conn.commit()
+                
+                dest_conn.close()
+                src_conn.close()
+                
+                # Get backup file size
+                backup_size = Path(self.backup_path).stat().st_size
+                
+                # Return success result
+                from services.tools.dtos import BackupResult
+                result = BackupResult(
+                    success=True,
+                    backup_path=self.backup_path,
+                    size_bytes=backup_size
+                )
+                
+                self.signals.finished.emit(result)
+                
+            except Exception as e:
+                dest_conn.close()
+                src_conn.close()
+                # Clean up failed backup file
+                backup_file = Path(self.backup_path)
+                if backup_file.exists():
+                    backup_file.unlink()
+                raise e
             
         except Exception as e:
-            error_msg = f"{type(e).__name__}: {str(e)}\n\n{traceback.format_exc()}"
-            self.signals.error.emit(error_msg)
+            from services.tools.dtos import BackupResult
+            error_msg = f"Backup failed: {str(e)}"
+            result = BackupResult(success=False, error=error_msg)
+            self.signals.finished.emit(result)
 
 
 class DatabaseRestoreWorker(QRunnable):

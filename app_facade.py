@@ -1582,7 +1582,7 @@ class AppFacade:
         """
         Create a backup worker for background execution.
         
-        Note: Backup worker uses the existing DB connection (SQLite backup API requires it).
+        Note: Backup worker creates a read-only connection for thread safety.
         
         Args:
             backup_path: Destination file path for backup
@@ -1598,7 +1598,7 @@ class AppFacade:
                 QThreadPool.globalInstance().start(worker)
         """
         from ui.tools_workers import DatabaseBackupWorker
-        return DatabaseBackupWorker(self.db, backup_path, include_audit_log)
+        return DatabaseBackupWorker(self.db_path, backup_path, include_audit_log)
     
     def create_restore_worker(self, backup_path: str, restore_mode, tables: Optional[List[str]] = None):
         """
