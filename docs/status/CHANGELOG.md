@@ -141,6 +141,29 @@ Notes:
 
 ---
 
+```yaml
+id: 2026-01-29-06
+type: feature
+areas: [tools, ui, tests]
+summary: "Complete Merge Selected restore UX (Issue #8): compact Restore dialog, table selection, and integration tests."
+files_changed:
+  - ui/tools_dialogs.py
+  - ui/tabs/tools_tab.py
+  - tests/integration/test_merge_selected_restore.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Restore Dialog UX**: Restore mode selection moved to a combo box with a mode-specific details panel (progressive disclosure).
+- **Validation**: Restore action is disabled until a backup is chosen and a mode is selected; Merge Selected additionally requires at least one table chosen.
+- **Table Picker Layout**: Merge Selected uses a two-column table picker (Setup vs Transactions) to keep the dialog compact.
+- **Testing**: Added integration coverage for MERGE_SELECTED table selection semantics and failure cases.
+
+Refs: Issue #8, PR #13
+
+---
+
 ## 2026-01-28
 
 ```yaml
