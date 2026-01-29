@@ -76,32 +76,31 @@ class TestExclusiveOperationLock:
 
 
 class TestDatabaseBackupWorker:
-    """Test DatabaseBackupWorker creates its own connection."""
+    """Test DatabaseBackupWorker uses existing connection."""
     
-    def test_worker_uses_db_path(self, tmp_path):
-        """Worker receives db_path and can create its own connection."""
-        db_path = str(tmp_path / "test.db")
+    def test_worker_uses_db_connection(self, tmp_path):
+        """Worker receives db_connection (not db_path) for SQLite backup API."""
         backup_path = str(tmp_path / "backup.db")
         
         # Create a simple database
         from repositories.database import DatabaseManager
-        db = DatabaseManager(db_path)
-        db.close()
+        db = DatabaseManager(":memory:")
         
-        # Create worker with db_path (not db connection)
-        worker = DatabaseBackupWorker(db_path, backup_path, include_audit_log=True)
+        # Create worker with db_connection (not db_path)
+        worker = DatabaseBackupWorker(db, backup_path, include_audit_log=True)
         
-        # Worker should store db_path
-        assert worker.db_path == db_path
+        # Worker should store db_connection
+        assert worker.db_connection == db
         assert worker.backup_path == backup_path
         assert worker.include_audit_log is True
     
-    def test_worker_has_signals(self, tmp_path):
+    def test_worker_has_signals(self):
         """Worker has WorkerSignals for communication."""
-        db_path = str(tmp_path / "test.db")
-        backup_path = str(tmp_path / "backup.db")
+        from repositories.database import DatabaseManager
+        db = DatabaseManager(":memory:")
+        backup_path = "/tmp/backup.db"
         
-        worker = DatabaseBackupWorker(db_path, backup_path)
+        worker = DatabaseBackupWorker(db, backup_path)
         
         # Check signals exist
         assert hasattr(worker.signals, 'finished')
@@ -175,7 +174,7 @@ class TestAppFacadeWorkerCreation:
         worker = facade.create_backup_worker(backup_path, include_audit_log=False)
         
         assert isinstance(worker, DatabaseBackupWorker)
-        assert worker.db_path == facade.db_path
+        assert worker.db_connection == facade.db
         assert worker.backup_path == backup_path
         assert worker.include_audit_log is False
     
@@ -204,35 +203,49 @@ class TestAppFacadeWorkerCreation:
 
 
 class TestWorkerIndependence:
-    """Test that workers create independent database connections."""
+    """Test that workers handle database connections appropriately."""
     
-    def test_backup_worker_creates_own_connection(self, tmp_path):
-        """Backup worker creates its own DatabaseManager instance."""
-        db_path = str(tmp_path / "test.db")
-        backup_path = str(tmp_path / "backup.db")
-        
-        # Create initial database
+    def test_backup_worker_uses_existing_connection(self):
+        """Backup worker uses the existing DatabaseManager instance."""
         from repositories.database import DatabaseManager
-        db = DatabaseManager(db_path)
-        db.close()
+        db = DatabaseManager(":memory:")
+        backup_path = "/tmp/backup.db"
         
-        # Create worker - should not fail even though original connection is closed
-        worker = DatabaseBackupWorker(db_path, backup_path)
+        # Create worker - uses existing connection
+        worker = DatabaseBackupWorker(db, backup_path)
         
-        # Worker should be able to create its own connection in run()
-        # (We can't actually run it in a test without Qt event loop, 
-        # but we verify it has the path it needs)
+        # Worker should use the same connection object
+        assert worker.db_connection == db
+    
+    def test_restore_worker_creates_own_connection(self, tmp_path):
+        """Restore worker creates its own DatabaseManager instance."""
+        db_path = str(tmp_path / "test.db")
+        
+        worker = DatabaseRestoreWorker(db_path, str(tmp_path / "backup.db"), RestoreMode.REPLACE)
+        
+        # Worker has db_path for creating connection
         assert worker.db_path == db_path
     
-    def test_workers_do_not_share_connections(self, tmp_path):
-        """Multiple workers can be created without sharing connections."""
+    def test_reset_worker_creates_own_connection(self, tmp_path):
+        """Reset worker creates its own DatabaseManager instance."""
         db_path = str(tmp_path / "test.db")
         
-        worker1 = DatabaseBackupWorker(db_path, str(tmp_path / "backup1.db"))
-        worker2 = DatabaseBackupWorker(db_path, str(tmp_path / "backup2.db"))
+        worker = DatabaseResetWorker(db_path, keep_setup_data=True)
         
-        # Workers have same db_path but will create separate connections
-        assert worker1.db_path == worker2.db_path
+        # Worker has db_path for creating connection
+        assert worker.db_path == db_path
+    
+    def test_workers_do_not_share_connections(self):
+        """Multiple workers can be created without sharing connections."""
+        from repositories.database import DatabaseManager
+        db1 = DatabaseManager(":memory:")
+        db2 = DatabaseManager(":memory:")
+        
+        worker1 = DatabaseBackupWorker(db1, "/tmp/backup1.db")
+        worker2 = DatabaseBackupWorker(db2, "/tmp/backup2.db")
+        
+        # Workers use different connection objects
+        assert worker1.db_connection != worker2.db_connection
         assert worker1.backup_path != worker2.backup_path
         
         # They are separate objects

@@ -148,12 +148,12 @@ class CSVImportWorker(QRunnable):
 class DatabaseBackupWorker(QRunnable):
     """Background worker for database backup operations
     
-    Creates its own database connection for SQLite thread safety.
+    Note: Backup uses the existing database connection (SQLite backup API requires it).
     """
     
-    def __init__(self, db_path: str, backup_path: str, include_audit_log: bool = True):
+    def __init__(self, db_connection, backup_path: str, include_audit_log: bool = True):
         super().__init__()
-        self.db_path = db_path
+        self.db_connection = db_connection
         self.backup_path = backup_path
         self.include_audit_log = include_audit_log
         self.signals = WorkerSignals()
@@ -162,12 +162,10 @@ class DatabaseBackupWorker(QRunnable):
     def run(self):
         """Execute the backup operation"""
         try:
-            # Create database connection in this thread (SQLite thread safety)
-            from repositories.database import DatabaseManager
             from services.tools.backup_service import BackupService
             
-            db = DatabaseManager(self.db_path)
-            backup_service = BackupService(db)
+            # Use existing connection (SQLite backup API requires the live connection)
+            backup_service = BackupService(self.db_connection)
             
             result = backup_service.backup_database(
                 backup_path=self.backup_path,
@@ -198,6 +196,7 @@ class DatabaseRestoreWorker(QRunnable):
     @Slot()
     def run(self):
         """Execute the restore operation"""
+        db = None
         try:
             # Create database connection in this thread (SQLite thread safety)
             from repositories.database import DatabaseManager
@@ -216,6 +215,14 @@ class DatabaseRestoreWorker(QRunnable):
             
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}\n\n{traceback.format_exc()}"
+            self.signals.error.emit(error_msg)
+        finally:
+            # Close database connection
+            if db is not None:
+                try:
+                    db.close()
+                except Exception:
+                    pass
             self.signals.error.emit(error_msg)
 
 
@@ -236,6 +243,7 @@ class DatabaseResetWorker(QRunnable):
     @Slot()
     def run(self):
         """Execute the reset operation"""
+        db = None
         try:
             # Create database connection in this thread (SQLite thread safety)
             from repositories.database import DatabaseManager
@@ -254,4 +262,12 @@ class DatabaseResetWorker(QRunnable):
             
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}\n\n{traceback.format_exc()}"
+            self.signals.error.emit(error_msg)
+        finally:
+            # Close database connection
+            if db is not None:
+                try:
+                    db.close()
+                except Exception:
+                    pass
             self.signals.error.emit(error_msg)
