@@ -201,7 +201,7 @@ class SitesTab(QtWidgets.QWidget):
                 )
                 self.refresh_data()
                 QtWidgets.QMessageBox.information(
-                    self, "Success", f"Site '{site.name}' created"
+                    self.window() or self, "Success", f"Site '{site.name}' created"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(

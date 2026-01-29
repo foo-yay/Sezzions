@@ -70,6 +70,29 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Create menu bar
         self._create_menu_bar()
+
+        # Passive indicator for Tools maintenance operations (backup/restore/reset).
+        # Uses a small indeterminate progress bar + label in the status bar.
+        self._tools_busy_label = QtWidgets.QLabel("Database maintenance in progress…")
+        self._tools_busy_label.setVisible(False)
+        self._tools_busy_progress = QtWidgets.QProgressBar()
+        self._tools_busy_progress.setTextVisible(False)
+        self._tools_busy_progress.setFixedWidth(120)
+        self._tools_busy_progress.setRange(0, 0)  # indeterminate
+        self._tools_busy_progress.setVisible(False)
+
+        status = self.statusBar()
+        status.setSizeGripEnabled(False)
+        status.addPermanentWidget(self._tools_busy_label)
+        status.addPermanentWidget(self._tools_busy_progress)
+
+        self._tools_busy_timer = QtCore.QTimer(self)
+        self._tools_busy_timer.setInterval(250)
+        self._tools_busy_timer.timeout.connect(self._update_tools_busy_indicator)
+        self._tools_busy_timer.start()
+
+        # Initial state
+        self._update_tools_busy_indicator()
         
         # Apply saved theme
         self._apply_theme(self.settings.get_theme())
@@ -133,6 +156,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tab_bar.addTab("⚙️ Setup")
         self.stack.addWidget(self.setup_tab)
         self._tab_index["setup"] = self.tab_bar.count() - 1
+
+        # Backward-compat convenience: Tools now lives under Setup.
+        self.tools_tab = self.setup_tab.tools_tab
 
     def open_purchase(self, purchase_id: int):
         self.tab_bar.setCurrentIndex(self._tab_index.get("purchases", 0))
@@ -225,15 +251,51 @@ class MainWindow(QtWidgets.QMainWindow):
         tools_menu.addSeparator()
         
         open_tools_action = QtGui.QAction("Open &Tools Tab", self)
-        open_tools_action.triggered.connect(lambda: self.tab_bar.setCurrentIndex(self._tab_index.get("tools", 8)))
+        open_tools_action.triggered.connect(self.open_tools_tab)
         tools_menu.addAction(open_tools_action)
-        
+
         # Help menu
         help_menu = menubar.addMenu("&Help")
-        
+
+        help_action = QtGui.QAction("Sezzions &Help…", self)
+        # Keep this in the Help menu (non-standard), so the Help menu is never empty.
+        try:
+            help_action.setMenuRole(QtGui.QAction.NoRole)
+        except Exception:
+            pass
+        help_action.triggered.connect(self._show_help)
+        help_menu.addAction(help_action)
+
+        help_menu.addSeparator()
+
         about_action = QtGui.QAction("&About", self)
+        # On macOS this may be promoted to the application menu automatically.
+        try:
+            about_action.setMenuRole(QtGui.QAction.AboutRole)
+        except Exception:
+            pass
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
+
+    def open_tools_tab(self):
+        """Navigate to Setup → Tools."""
+        self.tab_bar.setCurrentIndex(self._tab_index.get("setup", 0))
+        try:
+            self.setup_tab.sub_tabs.setCurrentWidget(self.setup_tab.tools_tab)
+        except Exception:
+            pass
+
+    def _update_tools_busy_indicator(self):
+        """Show/hide passive busy indicator when tools operations are active."""
+        try:
+            active = bool(self.facade.is_tools_operation_active())
+        except Exception:
+            active = False
+
+        if self._tools_busy_label is not None:
+            self._tools_busy_label.setVisible(active)
+        if self._tools_busy_progress is not None:
+            self._tools_busy_progress.setVisible(active)
     
     def _refresh_all(self):
         """Refresh all tabs"""
@@ -253,9 +315,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.unrealized_tab,
             self.realized_tab,
             self.setup_tab,
-            self.tools_tab,
         ):
-            if hasattr(widget, "refresh_data"):
+            if hasattr(widget, "refresh_all"):
+                widget.refresh_all()
+            elif hasattr(widget, "refresh_data"):
                 widget.refresh_data()
             elif hasattr(widget, "load_data"):
                 widget.load_data()
@@ -309,8 +372,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _recalculate_everything(self):
         """Delegate to Tools tab for recalculation"""
-        # Switch to Tools tab and trigger recalculation
-        self.tab_bar.setCurrentIndex(self._tab_index.get("tools", 8))
+        # Navigate to Setup → Tools and trigger recalculation.
+        self.open_tools_tab()
         # Use QTimer to ensure tab is visible before triggering
         QtCore.QTimer.singleShot(100, self.tools_tab._on_recalculate_all)
     
@@ -334,4 +397,13 @@ class MainWindow(QtWidgets.QMainWindow):
             "<p>Casino Session Tracker with FIFO Cost Basis Accounting</p>"
             "<p>Version 2.0 - OOP Backend</p>"
             "<p>© 2026 Carolina Edge Gaming</p>"
+        )
+
+    def _show_help(self):
+        QtWidgets.QMessageBox.information(
+            self,
+            "Sezzions Help",
+            "Help is limited in this build.\n\n"
+            "- Database tools live in Setup → Tools\n"
+            "- While database maintenance runs, the status bar shows a busy indicator",
         )

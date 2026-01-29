@@ -6,6 +6,10 @@ import sqlite3
 from typing import Optional, List, Dict, Any, Iterator, Sequence
 
 
+class DatabaseWritesBlockedError(RuntimeError):
+    """Raised when a write is attempted while writes are blocked."""
+
+
 class DatabaseManager:
     """Manages database connections for SQLite (PostgreSQL support coming later)"""
     
@@ -14,8 +18,34 @@ class DatabaseManager:
         self.db_type = "sqlite"
         self._connection = None
         self._change_listeners = []
+        self._writes_blocked = False
         self._init_sqlite()
         self._create_tables()
+
+    def set_writes_blocked(self, blocked: bool) -> None:
+        """Enable/disable write blocking for this DatabaseManager instance.
+
+        Intended for UI-facing connections: when database maintenance (restore/reset)
+        is running in a background worker, we keep the UI responsive but prevent
+        user-driven writes from committing against a potentially changing dataset.
+        """
+        self._writes_blocked = bool(blocked)
+
+    def writes_blocked(self) -> bool:
+        return self._writes_blocked
+
+    def _assert_writes_allowed(self, query: str) -> None:
+        if not self._writes_blocked:
+            return
+
+        q = (query or "").lstrip().upper()
+        # Allow typical read-only statements.
+        if q.startswith("SELECT") or q.startswith("WITH") or q.startswith("EXPLAIN"):
+            return
+
+        raise DatabaseWritesBlockedError(
+            "Database maintenance is in progress; writes are temporarily disabled."
+        )
     
     def _init_sqlite(self):
         """Initialize SQLite database"""
@@ -853,17 +883,20 @@ class DatabaseManager:
         This exists to support atomic bulk operations that manage their own
         transaction boundary (e.g., Tools CSV import, reset, merge/restore).
         """
+        self._assert_writes_allowed(query)
         cursor = self._connection.cursor()
         cursor.execute(query, params)
         return cursor.lastrowid
 
     def executemany_no_commit(self, query: str, params_seq: Sequence[tuple]) -> None:
         """Execute many statements without committing."""
+        self._assert_writes_allowed(query)
         cursor = self._connection.cursor()
         cursor.executemany(query, params_seq)
     
     def execute(self, query: str, params: tuple = ()) -> int:
         """Execute query and return last insert ID"""
+        self._assert_writes_allowed(query)
         cursor = self._connection.cursor()
         cursor.execute(query, params)
         self._connection.commit()
@@ -884,6 +917,14 @@ class DatabaseManager:
                 callback()
             except Exception:
                 continue
+
+    def notify_change(self):
+        """Public hook to signal that underlying DB contents changed.
+
+        Used when changes are made via external connections (e.g., restore/reset workers)
+        so UI listeners can refresh.
+        """
+        self._notify_change()
     
     def begin_transaction(self):
         """Begin transaction"""
@@ -927,6 +968,7 @@ class DatabaseManager:
             details: Optional details text
             user_name: Optional user name (defaults to 'system')
         """
+        self._assert_writes_allowed("INSERT")
         cursor = self._connection.cursor()
         cursor.execute(
             'INSERT INTO audit_log (action, table_name, record_id, details, user_name) VALUES (?, ?, ?, ?, ?)',

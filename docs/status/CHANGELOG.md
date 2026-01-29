@@ -9,6 +9,138 @@ Rules:
 
 ---
 
+## 2026-01-29
+
+```yaml
+id: 2026-01-29-01
+type: feature
+areas: [tools, services, ui, architecture]
+summary: "Database tools off UI thread with worker-based execution and exclusive operation locking (Issue #7)."
+files_changed:
+  - app_facade.py
+  - ui/tools_workers.py
+  - ui/tabs/tools_tab.py
+  - tests/unit/test_tools_workers.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Worker-Based Execution**: Backup, restore, and reset operations now run in background workers (`QRunnable`) off the UI thread
+  - Each worker creates its own database connection via `db_path` for SQLite thread safety
+  - Workers emit signals for progress, completion, and errors
+  - UI remains responsive during long-running database operations
+- **Exclusive Operation Lock**: Added `AppFacade._tools_lock` (threading.Lock) to prevent concurrent destructive operations
+  - `acquire_tools_lock()` / `release_tools_lock()` manage operation state
+  - UI checks `is_tools_operation_active()` before starting new operations
+  - Users see clear warning if another tools operation is running
+- **AppFacade Integration**: Added worker factory methods to facade layer
+  - `create_backup_worker()`, `create_restore_worker()`, `create_reset_worker()`
+  - UI calls facade methods instead of directly instantiating services
+  - Clean separation: UI → Facade → Workers → Services
+- **Data-Changed Signal**: Added `ToolsTab.data_changed` signal emitted after restore/reset operations
+  - Enables future cross-tab refresh mechanism
+  - Currently triggers refresh indicator/prompt (full architecture in future issue)
+- **Progress Dialogs**: All operations show indeterminate progress during execution
+- **Restore Atomicity**: Merge restore modes now commit once (all-or-nothing) to avoid partial merges on failure
+- **Safety Backups**: Pre-restore and pre-reset safety backups run via background worker (no UI-thread blocking)
+- **Maintenance Read-Only Mode**: While a tools operation is active, UI-driven DB writes are blocked (prevents adding/deleting records mid-restore/reset)
+- **Testing**: New test suite `test_tools_workers.py` with 14 tests covering:
+  - Exclusive lock acquisition/release/thread safety
+  - Worker creation and parameter passing
+  - Independent database connection architecture
+  - All tests pass (100% coverage of new code)
+- **No Logic Changes**: Backup/restore/reset service logic unchanged—only execution model refactored
+
+Architecture Benefits:
+- UI responsiveness during database operations
+- Correctness via atomic operations with proper connection lifecycle
+- Clean layering (UI never touches DB directly; always via facade/services)
+- Thread-safe concurrent operation prevention
+
+Refs: Issue #7 (Phase 3 follow-up — DB tools off UI thread + facade orchestration + exclusive ops safety)
+
+```yaml
+id: 2026-01-29-02
+type: fix
+areas: [tools, ui]
+summary: "Fix DB reset progress dialog crash; prevent Reset worker from emitting spurious errors; stabilize Setup success popups on macOS."
+files_changed:
+  - ui/tabs/tools_tab.py
+  - ui/tools_workers.py
+  - ui/tabs/users_tab.py
+  - ui/tabs/sites_tab.py
+  - ui/tabs/cards_tab.py
+  - ui/tabs/redemption_methods_tab.py
+  - ui/tabs/redemption_method_types_tab.py
+  - ui/tabs/game_types_tab.py
+  - ui/tabs/games_tab.py
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Reset Crash**: `Reset` flow now uses `ProgressDialog.update_progress(...)` instead of calling nonexistent `setLabelText/setRange` on `RecalculationProgressDialog`.
+- **Worker Correctness**: `DatabaseResetWorker` no longer emits an error signal unconditionally in `finally` (which could cause false error dialogs or raise `UnboundLocalError`).
+- **Restore UX**: Restore now uses the same worker-lifetime safeguards as Backup (strong `QRunnable` reference, `setAutoDelete(False)`, queued signal delivery) so the progress dialog reliably closes on completion.
+- **Setup Auto-Refresh**: Setup sub-tabs refresh automatically after Tools restore/reset via `ToolsTab.data_changed` → `SetupTab.refresh_all`.
+- **Setup Popups**: “Created” success message boxes in Setup sub-tabs now parent to the top-level window (`self.window() or self`) to avoid odd oversized/blank dialog presentation on macOS.
+- **Stray Header Popups**: Header filter menus now require a real header mouse press before acting on release, reducing accidental off-screen popups after dismissing modal dialogs.
+- **Debug Aid**: Added optional popup tracing via `SEZZIONS_DEBUG_POPUPS=1` to log which widget is being shown (class/flags/stack) when the remaining popup appears.
+- **Main Window**: Fixed stale references to a removed top-level `tools_tab`; Tools menu now navigates to Setup → Tools and refresh-all covers Setup correctly.
+
+---
+
+```yaml
+id: 2026-01-29-03
+type: fix
+areas: [tools, services, tests]
+summary: "Fix MERGE_ALL restore failing on empty DB due to foreign key ordering (post-reset)."
+files_changed:
+  - services/tools/restore_service.py
+  - tests/integration/test_database_tools_integration.py
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **FK-Safe Merge**: Merge restores temporarily disable FK enforcement during the atomic merge, then run `PRAGMA foreign_key_check` before commit.
+- **Better Failure Mode**: If FK violations remain after a merge (e.g., MERGE_SELECTED without parent/setup data), the restore fails with a clearer error and rolls back.
+- **Regression Test**: Added an integration test for backup → full reset (setup wiped) → MERGE_ALL restore.
+
+---
+
+```yaml
+id: 2026-01-29-04
+type: fix
+areas: [tools, ui]
+summary: "Run automatic backups in background and add passive in-app busy indicator during tools operations."
+files_changed:
+  - ui/main_window.py
+  - ui/tabs/tools_tab.py
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Auto-Backup Worker**: Automatic backups now use the same background `DatabaseBackupWorker` path (no UI-thread blocking).
+- **Passive Indicator**: Main window shows a small indeterminate progress indicator + text while any tools operation is active.
+
+---
+
+```yaml
+id: 2026-01-29-05
+type: fix
+areas: [ui]
+summary: "Fix macOS Help menu visibility and make Tools → Recalculate navigate to Setup → Tools reliably."
+files_changed:
+  - ui/main_window.py
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Help Menu**: Added a non-About Help action so the Help menu remains visible on macOS (Qt can move About into the application menu).
+- **Recalculate Navigation**: Recalculate menu action now uses the same Setup → Tools navigation path as other Tools menu entries.
+
+---
+
 ## 2026-01-28
 
 ```yaml

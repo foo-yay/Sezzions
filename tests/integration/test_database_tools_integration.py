@@ -21,6 +21,7 @@ class DB:
     def __init__(self, db_path=':memory:'):
         self.conn = sqlite3.connect(db_path)
         self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA foreign_keys = ON")
         self._create_schema()
     
     def cursor(self):
@@ -398,6 +399,37 @@ class TestBackupResetRestoreWorkflow:
         # 5. Verify data restored
         counts_restored = reset_service.get_table_counts()
         assert counts_restored['users'] == 2
+        assert counts_restored['purchases'] == 2
+        assert counts_restored['game_sessions'] == 1
+
+    def test_full_reset_then_merge_all_restore(self, test_db, backup_service, reset_service, restore_service, tmp_path):
+        """Regression: merge-all restore should work after full reset (setup wiped)."""
+        # 1. Add data + backup
+        test_db.populate_test_data()
+
+        backup_path = tmp_path / "backup.db"
+        backup_result = backup_service.backup_database(str(backup_path))
+        assert backup_result.success
+
+        # 2. Full reset (including setup tables)
+        reset_result = reset_service.reset_database(keep_setup_data=False)
+        assert reset_result.success
+
+        counts_reset = reset_service.get_table_counts()
+        assert all(count == 0 for count in counts_reset.values())
+
+        # 3. Merge-all restore
+        restore_result = restore_service.restore_database(
+            str(backup_path),
+            mode=RestoreMode.MERGE_ALL
+        )
+        assert restore_result.success
+
+        # 4. Verify everything came back
+        counts_restored = reset_service.get_table_counts()
+        assert counts_restored['users'] == 2
+        assert counts_restored['sites'] == 2
+        assert counts_restored['cards'] == 1
         assert counts_restored['purchases'] == 2
         assert counts_restored['game_sessions'] == 1
 

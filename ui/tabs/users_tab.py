@@ -196,7 +196,7 @@ class UsersTab(QtWidgets.QWidget):
                 )
                 self.refresh_data()
                 QtWidgets.QMessageBox.information(
-                    self, "Success", f"User '{user.name}' created"
+                    self.window() or self, "Success", f"User '{user.name}' created"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(

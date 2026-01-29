@@ -209,7 +209,7 @@ class CardsTab(QtWidgets.QWidget):
                 )
                 self.refresh_data()
                 QtWidgets.QMessageBox.information(
-                    self, "Success", f"Card '{card.name}' created"
+                    self.window() or self, "Success", f"Card '{card.name}' created"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
