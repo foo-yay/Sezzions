@@ -41,6 +41,7 @@ class ToolsTab(QWidget):
         self.backup_dir = ''  # Initialize backup directory attribute
         self.thread_pool = QThreadPool.globalInstance()
         self._active_progress_dialog = None  # Store active progress dialog to prevent GC
+        self._active_tools_worker = None  # Strong ref to active QRunnable to prevent GC
         self._setup_ui()
 
     def resizeEvent(self, event):
@@ -1033,50 +1034,55 @@ class ToolsTab(QWidget):
             
             # Create worker
             worker = self.facade.create_backup_worker(backup_path)
+
+            # Keep worker alive; PySide QRunnable wrappers can be GC'd otherwise.
+            # Also disable auto-delete so the C++ runnable isn't deleted before queued signals are delivered.
+            try:
+                worker.setAutoDelete(False)
+            except Exception:
+                pass
+            self._active_tools_worker = worker
             
-            # Create a simple NON-MODAL dialog (modal blocks event processing!)
-            from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel
-            from PySide6.QtCore import QCoreApplication
-            
-            self._active_progress_dialog = QDialog(self)
-            self._active_progress_dialog.setWindowTitle("Backup")
-            self._active_progress_dialog.setModal(False)  # NON-MODAL allows signals through!
-            self._active_progress_dialog.setWindowFlags(
-                Qt.Dialog | 
-                Qt.CustomizeWindowHint | 
-                Qt.WindowTitleHint |
-                Qt.WindowStaysOnTopHint
+            # Progress dialog (window-modal): blocks interaction with ToolsTab but does not block the event loop.
+            self._active_progress_dialog = QProgressDialog(
+                "Creating database backup...",
+                None,
+                0,
+                0,
+                self,
             )
-            layout = QVBoxLayout()
-            label = QLabel("Creating database backup...\n\nPlease wait.")
-            label.setMinimumWidth(300)
-            layout.addWidget(label)
-            self._active_progress_dialog.setLayout(layout)
+            self._active_progress_dialog.setWindowTitle("Backup")
+            self._active_progress_dialog.setWindowModality(Qt.WindowModal)
+            self._active_progress_dialog.setMinimumDuration(0)
+            self._active_progress_dialog.setCancelButton(None)
+            self._active_progress_dialog.setValue(0)
+
+            # If the user hits Escape, Qt may treat it as cancel. That's fine: hide the dialog,
+            # but keep the operation running; the completion handler will still re-enable UI.
+            try:
+                self._active_progress_dialog.canceled.connect(self._active_progress_dialog.hide)
+            except Exception:
+                pass
             
             
             # Connect signals
             def on_finished(result):
-                print(f"[UI] on_finished called with success={result.success}")
-                
                 # Close progress dialog first
                 if self._active_progress_dialog:
                     try:
                         self._active_progress_dialog.close()
                         self._active_progress_dialog.deleteLater()
-                    except:
+                    except Exception:
                         pass
                     self._active_progress_dialog = None
-                
+
                 # Release lock and re-enable button immediately
                 self.facade.release_tools_lock()
                 self.backup_now_btn.setEnabled(True)
-                print("[UI] Lock released, button re-enabled")
-                
-                # Process events to ensure dialog cleanup completes
-                QCoreApplication.processEvents()
-                
-                # Show result immediately without QTimer (simpler and more reliable)
-                print("[UI] Showing result message")
+
+                # Drop strong ref now that we're done
+                self._active_tools_worker = None
+
                 if result.success:
                     size_mb = result.size_bytes / (1024 * 1024)
                     
@@ -1097,9 +1103,7 @@ class ToolsTab(QWidget):
                         "Backup Complete",
                         f"Database backed up successfully:\n\n{backup_path}\n\nSize: {size_mb:.2f} MB"
                     )
-                    print("[UI] Success message closed")
                 else:
-                    print(f"[UI] Showing error message: {result.error}")
                     QMessageBox.critical(
                         self,
                         "Backup Failed",
@@ -1107,22 +1111,22 @@ class ToolsTab(QWidget):
                     )
             
             def on_error(error_msg):
-                print(f"[UI] on_error called: {error_msg}")
-                
                 # Close progress dialog first
                 if self._active_progress_dialog:
                     try:
                         self._active_progress_dialog.close()
                         self._active_progress_dialog.deleteLater()
-                    except:
+                    except Exception:
                         pass
                     self._active_progress_dialog = None
-                
+
                 # Release lock and re-enable button immediately
                 self.facade.release_tools_lock()
                 self.backup_now_btn.setEnabled(True)
-                
-                # Show error immediately
+
+                # Drop strong ref now that we're done
+                self._active_tools_worker = None
+
                 QMessageBox.critical(
                     self,
                     "Backup Error",
@@ -1130,19 +1134,12 @@ class ToolsTab(QWidget):
                 )
             
             
-            worker.signals.finished.connect(on_finished)
-            worker.signals.error.connect(on_error)
-            
-            print("[UI] Signals connected, starting worker...")
-            
+            worker.signals.finished.connect(on_finished, Qt.QueuedConnection)
+            worker.signals.error.connect(on_error, Qt.QueuedConnection)
+
             # Show dialog and start worker
             self._active_progress_dialog.show()
-            self._active_progress_dialog.raise_()
-            self._active_progress_dialog.activateWindow()
-            
             self.thread_pool.start(worker)
-            
-            print("[UI] Worker started, dialog shown")
         
         except Exception as e:
             if self._active_progress_dialog:
@@ -1150,6 +1147,7 @@ class ToolsTab(QWidget):
                 self._active_progress_dialog = None
             self.facade.release_tools_lock()
             self.backup_now_btn.setEnabled(True)
+            self._active_tools_worker = None
             QMessageBox.critical(
                 self,
                 "Backup Error",
