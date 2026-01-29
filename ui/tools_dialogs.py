@@ -420,7 +420,6 @@ class RestoreDialog(QDialog):
 
         # Page 0: placeholder
         placeholder_page = QWidget()
-        placeholder_page.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         placeholder_layout = QVBoxLayout(placeholder_page)
         placeholder_hint = QLabel("Select a restore mode to see details.")
         placeholder_hint.setObjectName("HelperText")
@@ -431,7 +430,6 @@ class RestoreDialog(QDialog):
 
         # Page 1: MERGE_ALL
         merge_page = QWidget()
-        merge_page.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         merge_layout = QVBoxLayout(merge_page)
         merge_desc = QLabel(
             "• Imports data from backup and merges with existing records\n"
@@ -447,7 +445,6 @@ class RestoreDialog(QDialog):
 
         # Page 2: MERGE_SELECTED
         merge_selected_page = QWidget()
-        merge_selected_page.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         merge_selected_layout = QVBoxLayout(merge_selected_page)
         merge_selected_desc = QLabel(
             "• Select specific tables to merge from backup\n"
@@ -523,7 +520,6 @@ class RestoreDialog(QDialog):
 
         # Page 3: REPLACE
         replace_page = QWidget()
-        replace_page.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
         replace_layout = QVBoxLayout(replace_page)
         replace_desc = QLabel(
             "• Replaces entire database with backup\n"
@@ -603,32 +599,20 @@ class RestoreDialog(QDialog):
     
     def _resize_to_content(self):
         """Resize dialog to fit current content."""
-        # Clear any height locks
+        # Remove any height constraints
         self.setMinimumHeight(0)
         self.setMaximumHeight(16777215)
         
-        # Calculate the exact height needed:
-        # - layout margins (top + bottom)
-        # - warning label height
-        # - spacing between widgets
-        # - backup section height  
-        # - mode section height (with current page)
-        # - button box height
+        # Force geometry recalculation
+        self.mode_stack.updateGeometry()
+        self.layout().activate()
         
-        layout_margins = self.layout().contentsMargins()
-        total_height = layout_margins.top() + layout_margins.bottom()
+        # Use adjustSize which respects sizeHint from all widgets
+        self.adjustSize()
         
-        # Add each widget's height plus spacing
-        for i in range(self.layout().count()):
-            item = self.layout().itemAt(i)
-            if item and item.widget():
-                widget = item.widget()
-                total_height += widget.sizeHint().height()
-                if i < self.layout().count() - 1:
-                    total_height += self.layout().spacing()
-        
-        # Set the calculated height
-        self.resize(self.width(), total_height)
+        # Now lock the height to prevent unwanted expansion
+        final_height = self.height()
+        self.setFixedHeight(final_height)
 
     def _update_restore_button_state(self):
         """Enable Restore only when inputs are valid."""
