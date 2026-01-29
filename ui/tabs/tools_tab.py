@@ -58,14 +58,24 @@ class ToolsTab(QWidget):
         header_layout.addWidget(title)
         header_layout.addStretch()
 
-        # Match the header row height/position of tabs like Games/Users (which include search controls)
-        header_spacer = QWidget()
-        header_spacer.setFixedSize(300, 32)
-        header_layout.addWidget(header_spacer)
-        layout.addLayout(header_layout)
+        # These Setup sub-tabs (Users/Sites/Cards/etc.) include a search box + buttons on the right.
+        # Tools doesn't need search, but we still match the header row height/vertical alignment.
+        dummy_search = QLineEdit()
+        dummy_search.setFixedWidth(0)
+        dummy_search.setMaximumWidth(0)
+        header_layout.addWidget(dummy_search)
 
-        # Match the small visual gap those tabs naturally get from their toolbar rows
-        layout.addSpacing(4)
+        dummy_clear = QPushButton("Clear")
+        dummy_clear.setFixedWidth(0)
+        dummy_clear.setMaximumWidth(0)
+        header_layout.addWidget(dummy_clear)
+
+        dummy_clear_filters = QPushButton("Clear All Filters")
+        dummy_clear_filters.setFixedWidth(0)
+        dummy_clear_filters.setMaximumWidth(0)
+        header_layout.addWidget(dummy_clear_filters)
+
+        layout.addLayout(header_layout)
         
         # Recalculation Section
         recalc_group = self._create_recalculation_group()
