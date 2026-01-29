@@ -162,59 +162,95 @@ class DatabaseBackupWorker(QRunnable):
     @Slot()
     def run(self):
         """Execute the backup operation"""
+        import sqlite3
+        from pathlib import Path
+        from services.tools.dtos import BackupResult
+        
+        src_conn = None
+        dest_conn = None
+        
         try:
-            # Create a new read-only connection in this thread (SQLite thread safety)
-            # This won't block the main app since SQLite allows multiple readers
-            import sqlite3
-            from pathlib import Path
+            print(f"[BACKUP] Starting backup: {self.db_path} -> {self.backup_path}")
             
-            # Open source database in read-only mode
-            src_path = Path(self.db_path)
-            src_conn = sqlite3.connect(f'file:{src_path}?mode=ro', uri=True)
+            # Open source database with its own connection in this thread
+            # Use check_same_thread=False to allow SQLite operations in worker thread
+            src_path = Path(self.db_path).resolve()
+            print(f"[BACKUP] Opening source: {src_path}")
+            src_conn = sqlite3.connect(str(src_path), check_same_thread=False, timeout=30.0)
+            print("[BACKUP] Source opened")
+            
+            # Ensure backup directory exists
+            backup_path_obj = Path(self.backup_path)
+            backup_path_obj.parent.mkdir(parents=True, exist_ok=True)
             
             # Create destination database
-            dest_conn = sqlite3.connect(self.backup_path)
+            print(f"[BACKUP] Creating destination: {self.backup_path}")
+            dest_conn = sqlite3.connect(self.backup_path, timeout=30.0)
+            print("[BACKUP] Destination created")
             
-            try:
-                # Perform the backup using SQLite's online backup API
-                src_conn.backup(dest_conn)
-                
-                # Optionally exclude audit log
-                if not self.include_audit_log:
-                    dest_cursor = dest_conn.cursor()
-                    dest_cursor.execute("DELETE FROM audit_log")
-                    dest_conn.commit()
-                
-                dest_conn.close()
-                src_conn.close()
-                
-                # Get backup file size
-                backup_size = Path(self.backup_path).stat().st_size
-                
-                # Return success result
-                from services.tools.dtos import BackupResult
-                result = BackupResult(
-                    success=True,
-                    backup_path=self.backup_path,
-                    size_bytes=backup_size
-                )
-                
-                self.signals.finished.emit(result)
-                
-            except Exception as e:
-                dest_conn.close()
-                src_conn.close()
-                # Clean up failed backup file
-                backup_file = Path(self.backup_path)
-                if backup_file.exists():
-                    backup_file.unlink()
-                raise e
+            # Perform the backup using SQLite's online backup API
+            print("[BACKUP] Starting backup operation...")
+            src_conn.backup(dest_conn, pages=100, progress=self._backup_progress)
+            print("[BACKUP] Backup completed")
+            
+            # Optionally exclude audit log
+            if not self.include_audit_log:
+                print("[BACKUP] Removing audit log...")
+                dest_cursor = dest_conn.cursor()
+                dest_cursor.execute("DELETE FROM audit_log WHERE 1=1")
+                dest_conn.commit()
+                print("[BACKUP] Audit log removed")
+            
+            dest_conn.close()
+            src_conn.close()
+            print("[BACKUP] Connections closed")
+            
+            # Get backup file size
+            backup_size = backup_path_obj.stat().st_size
+            print(f"[BACKUP] Backup size: {backup_size} bytes")
+            
+            # Return success result
+            result = BackupResult(
+                success=True,
+                backup_path=self.backup_path,
+                size_bytes=backup_size
+            )
+            
+            self.signals.finished.emit(result)
+            print("[BACKUP] Success signal emitted")
             
         except Exception as e:
-            from services.tools.dtos import BackupResult
+            print(f"[BACKUP] ERROR: {type(e).__name__}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # Clean up connections
+            if dest_conn:
+                try:
+                    dest_conn.close()
+                except:
+                    pass
+            if src_conn:
+                try:
+                    src_conn.close()
+                except:
+                    pass
+            
+            # Clean up failed backup file
+            backup_file = Path(self.backup_path)
+            if backup_file.exists():
+                try:
+                    backup_file.unlink()
+                except:
+                    pass
+            
             error_msg = f"Backup failed: {str(e)}"
             result = BackupResult(success=False, error=error_msg)
             self.signals.finished.emit(result)
+    
+    def _backup_progress(self, status, remaining, total):
+        """Progress callback for backup operation"""
+        print(f"[BACKUP] Progress: {total - remaining}/{total} pages")
 
 
 class DatabaseRestoreWorker(QRunnable):
