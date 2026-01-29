@@ -112,24 +112,45 @@ class Theme:
                 min-height: 26px;
             }}
             QPushButton:hover {{ background: {surface2}; }}
+            QPushButton:disabled {{
+                background: {surface};
+                border: 1px solid {border};
+                color: {text_muted};
+            }}
+            QPushButton:hover:disabled {{ background: {surface}; }}
             QPushButton#PrimaryButton {{
                 background: {accent};
                 border: 1px solid {accent_hover};
                 color: white;
             }}
             QPushButton#PrimaryButton:hover {{ background: {accent_hover}; }}
+            QPushButton#PrimaryButton:disabled {{
+                background: {border};
+                border: 1px solid {border};
+                color: {text_muted};
+            }}
             QPushButton#SuccessButton {{
                 background: #28a745;
                 border: 1px solid #218838;
                 color: white;
             }}
             QPushButton#SuccessButton:hover {{ background: #218838; }}
+            QPushButton#SuccessButton:disabled {{
+                background: {border};
+                border: 1px solid {border};
+                color: {text_muted};
+            }}
             QPushButton#DangerButton {{
                 background: #dc3545;
                 border: 1px solid #c82333;
                 color: white;
             }}
             QPushButton#DangerButton:hover {{ background: #c82333; }}
+            QPushButton#DangerButton:disabled {{
+                background: {border};
+                border: 1px solid {border};
+                color: {text_muted};
+            }}
             QPushButton#MiniButton {{
                 padding: 4px 10px;
                 min-height: 20px;

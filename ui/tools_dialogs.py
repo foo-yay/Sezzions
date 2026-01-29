@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QProgressBar, QPushButton, QTextEdit, QDialogButtonBox,
     QGroupBox, QCheckBox, QLineEdit, QComboBox, QStackedWidget, QWidget, QScrollArea, QSizePolicy
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QFontMetrics
 
 
@@ -324,6 +324,7 @@ class RestoreDialog(QDialog):
             "It is strongly recommended to create a backup first."
         )
         warning_label.setWordWrap(True)
+        warning_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         warning_label.setStyleSheet(
             "background-color: #fff3cd; border: 1px solid #ffc107; "
             "border-radius: 4px; padding: 10px; color: #856404; font-weight: bold;"
@@ -545,7 +546,7 @@ class RestoreDialog(QDialog):
             self.backup_path = file_path
             self._set_backup_file_display(file_path)
             self._update_restore_button_state()
-            self._update_dialog_size()
+            QTimer.singleShot(0, self._update_dialog_size)
 
     def _set_backup_file_display(self, file_path: str | None):
         """Set backup file display with elided (middle) path and tooltip."""
@@ -576,10 +577,15 @@ class RestoreDialog(QDialog):
             self.mode_stack.setCurrentIndex(0)
 
         self._update_restore_button_state()
-        self._update_dialog_size()
+        QTimer.singleShot(0, self._update_dialog_size)
 
     def _update_dialog_size(self):
         """Keep dialog compact and expand only as needed."""
+        # Relax any previous fixed height before recomputing; otherwise the dialog can
+        # get "stuck" at the previous page's height (e.g., switching away from MERGE_SELECTED).
+        self.setMinimumHeight(0)
+        self.setMaximumHeight(16777215)
+
         # Make the stacked details area match the current page's height.
         current = self.mode_stack.currentWidget()
         if current is not None:
