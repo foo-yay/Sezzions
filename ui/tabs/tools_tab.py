@@ -40,6 +40,7 @@ class ToolsTab(QWidget):
         self.facade = app_facade
         self.backup_dir = ''  # Initialize backup directory attribute
         self.thread_pool = QThreadPool.globalInstance()
+        self._active_progress_dialog = None  # Store active progress dialog to prevent GC
         self._setup_ui()
 
     def resizeEvent(self, event):
@@ -1027,16 +1028,19 @@ class ToolsTab(QWidget):
             # Create worker
             worker = self.facade.create_backup_worker(backup_path)
             
-            # Create progress dialog
-            progress_dialog = QProgressDialog("Creating database backup...", "Cancel", 0, 0, self)
-            progress_dialog.setWindowTitle("Backup")
-            progress_dialog.setWindowModality(Qt.WindowModal)
-            progress_dialog.setMinimumDuration(0)
-            progress_dialog.show()
+            # Create progress dialog and store as instance variable
+            self._active_progress_dialog = QProgressDialog("Creating database backup...", None, 0, 0, self)
+            self._active_progress_dialog.setWindowTitle("Backup")
+            self._active_progress_dialog.setWindowModality(Qt.WindowModal)
+            self._active_progress_dialog.setMinimumDuration(0)
+            self._active_progress_dialog.setCancelButton(None)  # Disable cancel to prevent premature closure
+            self._active_progress_dialog.show()
             
             # Connect signals
             def on_finished(result):
-                progress_dialog.close()
+                if self._active_progress_dialog:
+                    self._active_progress_dialog.close()
+                    self._active_progress_dialog = None
                 self.facade.release_tools_lock()
                 
                 if result.success:
@@ -1065,7 +1069,9 @@ class ToolsTab(QWidget):
                     )
             
             def on_error(error_msg):
-                progress_dialog.close()
+                if self._active_progress_dialog:
+                    self._active_progress_dialog.close()
+                    self._active_progress_dialog = None
                 self.facade.release_tools_lock()
                 QMessageBox.critical(
                     self,
@@ -1080,6 +1086,9 @@ class ToolsTab(QWidget):
             self.thread_pool.start(worker)
         
         except Exception as e:
+            if self._active_progress_dialog:
+                self._active_progress_dialog.close()
+                self._active_progress_dialog = None
             self.facade.release_tools_lock()
             QMessageBox.critical(
                 self,
@@ -1166,16 +1175,19 @@ class ToolsTab(QWidget):
         # Create worker
         worker = self.facade.create_restore_worker(backup_path, restore_mode)
         
-        # Create progress dialog
-        progress_dialog = QProgressDialog("Restoring database...", "Cancel", 0, 0, self)
-        progress_dialog.setWindowTitle("Restore")
-        progress_dialog.setWindowModality(Qt.WindowModal)
-        progress_dialog.setMinimumDuration(0)
-        progress_dialog.show()
+        # Create progress dialog and store as instance variable
+        self._active_progress_dialog = QProgressDialog("Restoring database...", None, 0, 0, self)
+        self._active_progress_dialog.setWindowTitle("Restore")
+        self._active_progress_dialog.setWindowModality(Qt.WindowModal)
+        self._active_progress_dialog.setMinimumDuration(0)
+        self._active_progress_dialog.setCancelButton(None)  # Disable cancel to prevent premature closure
+        self._active_progress_dialog.show()
         
         # Connect signals
         def on_finished(result):
-            progress_dialog.close()
+            if self._active_progress_dialog:
+                self._active_progress_dialog.close()
+                self._active_progress_dialog = None
             self.facade.release_tools_lock()
             
             if result.success:
@@ -1200,7 +1212,9 @@ class ToolsTab(QWidget):
                 )
         
         def on_error(error_msg):
-            progress_dialog.close()
+            if self._active_progress_dialog:
+                self._active_progress_dialog.close()
+                self._active_progress_dialog = None
             self.facade.release_tools_lock()
             QMessageBox.critical(
                 self,
