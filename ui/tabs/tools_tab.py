@@ -1008,7 +1008,7 @@ class ToolsTab(QWidget):
         try:
             from datetime import datetime
             from ui.settings import Settings
-            from ui.tools_dialogs import RecalculationProgressDialog
+            from PySide6.QtWidgets import QProgressDialog
             
             # Create timestamped backup filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1028,9 +1028,10 @@ class ToolsTab(QWidget):
             worker = self.facade.create_backup_worker(backup_path)
             
             # Create progress dialog
-            progress_dialog = RecalculationProgressDialog("Backup", self)
-            progress_dialog.setLabelText("Creating database backup...")
-            progress_dialog.setRange(0, 0)  # Indeterminate progress
+            progress_dialog = QProgressDialog("Creating database backup...", "Cancel", 0, 0, self)
+            progress_dialog.setWindowTitle("Backup")
+            progress_dialog.setWindowModality(Qt.WindowModal)
+            progress_dialog.setMinimumDuration(0)
             progress_dialog.show()
             
             # Connect signals
@@ -1088,8 +1089,8 @@ class ToolsTab(QWidget):
     
     def _on_restore_database(self):
         """Handle database restore"""
-        from PySide6.QtWidgets import QMessageBox
-        from ui.tools_dialogs import RestoreDialog, RecalculationProgressDialog
+        from PySide6.QtWidgets import QMessageBox, QProgressDialog
+        from ui.tools_dialogs import RestoreDialog
         from services.tools.backup_service import BackupService
         import os
         from datetime import datetime
@@ -1166,9 +1167,10 @@ class ToolsTab(QWidget):
         worker = self.facade.create_restore_worker(backup_path, restore_mode)
         
         # Create progress dialog
-        progress_dialog = RecalculationProgressDialog("Restore", self)
-        progress_dialog.setLabelText("Restoring database...")
-        progress_dialog.setRange(0, 0)  # Indeterminate progress
+        progress_dialog = QProgressDialog("Restoring database...", "Cancel", 0, 0, self)
+        progress_dialog.setWindowTitle("Restore")
+        progress_dialog.setWindowModality(Qt.WindowModal)
+        progress_dialog.setMinimumDuration(0)
         progress_dialog.show()
         
         # Connect signals
