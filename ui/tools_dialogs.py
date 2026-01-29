@@ -4,7 +4,7 @@ Progress dialogs for Tools operations
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
     QProgressBar, QPushButton, QTextEdit, QDialogButtonBox,
-    QGroupBox, QCheckBox, QLineEdit
+    QGroupBox, QCheckBox, QLineEdit, QComboBox, QStackedWidget, QWidget, QScrollArea
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -298,12 +298,14 @@ class RestoreDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Restore Database")
         self.setModal(True)
-        self.resize(600, 400)
-        self.backup_path = None
+        self.resize(600, 520)
+        self.backup_path: str | None = None
         self._setup_ui()
         
     def _setup_ui(self):
         """Setup the UI components"""
+        from services.tools.enums import RestoreMode
+
         layout = QVBoxLayout(self)
         
         # Warning message
@@ -334,153 +336,143 @@ class RestoreDialog(QDialog):
         file_layout.addLayout(file_select_layout)
         file_group.setLayout(file_layout)
         layout.addWidget(file_group)
-        
-        # Restore mode selection
+
+        # Restore mode selection (compact)
         mode_group = QGroupBox("Restore Mode")
         mode_layout = QVBoxLayout()
-        
-        # Merge mode (default)
-        self.merge_radio = QPushButton()
-        self.merge_radio.setCheckable(True)
-        self.merge_radio.setChecked(True)
-        self.merge_radio.setText("Merge (Import without deleting existing data)")
-        self.merge_radio.setStyleSheet("""
-            QPushButton {
-                text-align: left;
-                padding: 10px;
-                border: 2px solid #ccc;
-                border-radius: 4px;
-                background-color: white;
-            }
-            QPushButton:checked {
-                border-color: #0078d4;
-                background-color: #e7f3ff;
-            }
-        """)
-        self.merge_radio.clicked.connect(lambda: self._on_mode_changed(self.merge_radio))
-        
+
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("Select restore mode…", None)
+        self.mode_combo.addItem(
+            "Merge (Import without deleting existing data)",
+            RestoreMode.MERGE_ALL,
+        )
+        self.mode_combo.addItem(
+            "Merge Selected (Import from specific tables)",
+            RestoreMode.MERGE_SELECTED,
+        )
+        self.mode_combo.addItem(
+            "Replace (Delete and replace all existing data)",
+            RestoreMode.REPLACE,
+        )
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_combo_changed)
+        mode_layout.addWidget(self.mode_combo)
+
+        self.mode_stack = QStackedWidget()
+
+        # Page 0: placeholder
+        placeholder_page = QWidget()
+        placeholder_layout = QVBoxLayout(placeholder_page)
+        placeholder_hint = QLabel("Select a restore mode to see details.")
+        placeholder_hint.setStyleSheet("color: #666;")
+        placeholder_layout.addWidget(placeholder_hint)
+        placeholder_layout.addStretch()
+        self.mode_stack.addWidget(placeholder_page)
+
+        # Page 1: MERGE_ALL
+        merge_page = QWidget()
+        merge_layout = QVBoxLayout(merge_page)
         merge_desc = QLabel(
-            "  • Imports data from backup and merges with existing records\n"
-            "  • Validates data and detects duplicates (same as CSV import)\n"
-            "  • Safe - does not delete existing data"
+            "• Imports data from backup and merges with existing records\n"
+            "• Validates data and detects duplicates (same as CSV import)\n"
+            "• Safe — does not delete existing data"
         )
-        merge_desc.setStyleSheet("color: #666; font-size: 10pt; margin-left: 20px;")
-        
-        mode_layout.addWidget(self.merge_radio)
-        mode_layout.addWidget(merge_desc)
-        mode_layout.addSpacing(10)
-        
-        # Replace mode (destructive)
-        self.replace_radio = QPushButton()
-        self.replace_radio.setCheckable(True)
-        self.replace_radio.setText("Replace (Delete all existing data)")
-        self.replace_radio.setStyleSheet("""
-            QPushButton {
-                text-align: left;
-                padding: 10px;
-                border: 2px solid #ccc;
-                border-radius: 4px;
-                background-color: white;
-            }
-            QPushButton:checked {
-                border-color: #dc3545;
-                background-color: #f8d7da;
-            }
-        """)
-        self.replace_radio.clicked.connect(lambda: self._on_mode_changed(self.replace_radio))
-        
-        replace_desc = QLabel(
-            "  • Replaces entire database with backup\n"
-            "  • ⚠️ DESTRUCTIVE - all current data will be lost\n"
-            "  • Automatic safety backup created before replacement"
-        )
-        replace_desc.setStyleSheet("color: #dc3545; font-size: 10pt; margin-left: 20px; font-weight: bold;")
-        
-        mode_layout.addWidget(self.replace_radio)
-        mode_layout.addWidget(replace_desc)
-        mode_layout.addSpacing(10)
-        
-        # Merge Selected mode (selective)
-        self.merge_selected_radio = QPushButton()
-        self.merge_selected_radio.setCheckable(True)
-        self.merge_selected_radio.setText("Merge Selected (Choose specific tables)")
-        self.merge_selected_radio.setStyleSheet("""
-            QPushButton {
-                text-align: left;
-                padding: 10px;
-                border: 2px solid #ccc;
-                border-radius: 4px;
-                background-color: white;
-            }
-            QPushButton:checked {
-                border-color: #28a745;
-                background-color: #d4edda;
-            }
-        """)
-        self.merge_selected_radio.clicked.connect(lambda: self._on_mode_changed(self.merge_selected_radio))
-        
+        merge_desc.setStyleSheet("color: #666; font-size: 10pt;")
+        merge_desc.setWordWrap(True)
+        merge_layout.addWidget(merge_desc)
+        merge_layout.addStretch()
+        self.mode_stack.addWidget(merge_page)
+
+        # Page 2: MERGE_SELECTED
+        merge_selected_page = QWidget()
+        merge_selected_layout = QVBoxLayout(merge_selected_page)
         merge_selected_desc = QLabel(
-            "  • Select specific tables to merge from backup\n"
-            "  • Fine-grained control over what data to restore\n"
-            "  • Validates foreign key constraints"
+            "• Select specific tables to merge from backup\n"
+            "• Fine-grained control over what data to restore\n"
+            "• Validates foreign key constraints"
         )
-        merge_selected_desc.setStyleSheet("color: #666; font-size: 10pt; margin-left: 20px;")
-        
-        mode_layout.addWidget(self.merge_selected_radio)
-        mode_layout.addWidget(merge_selected_desc)
-        
-        mode_group.setLayout(mode_layout)
-        layout.addWidget(mode_group)
-        
-        # Table selection widget (for MERGE_SELECTED mode)
-        self.table_selection_group = QGroupBox("Select Tables to Merge")
-        self.table_selection_group.setVisible(False)
-        table_sel_layout = QVBoxLayout()
-        
-        # Setup tables group
-        setup_label = QLabel("Setup Tables:")
-        setup_label.setStyleSheet("font-weight: bold; margin-top: 5px;")
-        table_sel_layout.addWidget(setup_label)
-        
+        merge_selected_desc.setStyleSheet("color: #666; font-size: 10pt;")
+        merge_selected_desc.setWordWrap(True)
+        merge_selected_layout.addWidget(merge_selected_desc)
+
         self.table_checkboxes = {}
+
+        table_selection_group = QGroupBox("Select Tables to Merge")
+        table_selection_group_layout = QVBoxLayout()
+
+        columns_layout = QHBoxLayout()
+
+        # Setup tables (left column)
+        setup_group = QGroupBox("Setup")
+        setup_group_layout = QVBoxLayout()
         setup_tables = ['users', 'sites', 'cards', 'game_types', 'games', 'redemption_methods']
         for table in setup_tables:
             cb = QCheckBox(table.replace('_', ' ').title())
             cb.setProperty('table_name', table)
-            table_sel_layout.addWidget(cb)
+            cb.toggled.connect(self._update_restore_button_state)
+            setup_group_layout.addWidget(cb)
             self.table_checkboxes[table] = cb
-        
-        # Transaction tables group
-        trans_label = QLabel("Transaction Tables:")
-        trans_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
-        table_sel_layout.addWidget(trans_label)
-        
+        setup_group_layout.addStretch()
+        setup_group.setLayout(setup_group_layout)
+        columns_layout.addWidget(setup_group, 1)
+
+        # Transaction tables (right column)
+        transaction_group = QGroupBox("Transactions")
+        transaction_group_layout = QVBoxLayout()
         transaction_tables = ['purchases', 'redemptions', 'game_sessions', 'daily_sessions', 'expenses', 'realized_transactions']
         for table in transaction_tables:
             cb = QCheckBox(table.replace('_', ' ').title())
             cb.setProperty('table_name', table)
-            table_sel_layout.addWidget(cb)
+            cb.toggled.connect(self._update_restore_button_state)
+            transaction_group_layout.addWidget(cb)
             self.table_checkboxes[table] = cb
-        
-        # Select/Deselect all buttons
+        transaction_group_layout.addStretch()
+        transaction_group.setLayout(transaction_group_layout)
+        columns_layout.addWidget(transaction_group, 1)
+
+        columns_container = QWidget()
+        columns_container.setLayout(columns_layout)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setWidget(columns_container)
+        scroll.setMinimumHeight(200)
+        scroll.setMaximumHeight(260)
+        table_selection_group_layout.addWidget(scroll)
+
         select_buttons_layout = QHBoxLayout()
+        select_buttons_layout.addStretch()
         select_all_btn = QPushButton("Select All")
         select_all_btn.clicked.connect(self._select_all_tables)
         deselect_all_btn = QPushButton("Deselect All")
         deselect_all_btn.clicked.connect(self._deselect_all_tables)
         select_buttons_layout.addWidget(select_all_btn)
         select_buttons_layout.addWidget(deselect_all_btn)
-        table_sel_layout.addLayout(select_buttons_layout)
-        
-        self.table_selection_group.setLayout(table_sel_layout)
-        layout.addWidget(self.table_selection_group)
-        
-        # Confirmation checkbox (for replace mode)
-        self.confirm_checkbox = QLabel()
-        self.confirm_checkbox.setVisible(False)
-        self.confirm_checkbox.setWordWrap(True)
-        self.confirm_checkbox.setStyleSheet("color: #dc3545; font-weight: bold; margin: 10px;")
-        layout.addWidget(self.confirm_checkbox)
+        table_selection_group_layout.addLayout(select_buttons_layout)
+
+        table_selection_group.setLayout(table_selection_group_layout)
+        merge_selected_layout.addWidget(table_selection_group)
+        merge_selected_layout.addStretch()
+        self.mode_stack.addWidget(merge_selected_page)
+
+        # Page 3: REPLACE
+        replace_page = QWidget()
+        replace_layout = QVBoxLayout(replace_page)
+        replace_desc = QLabel(
+            "• Replaces entire database with backup\n"
+            "• ⚠️ DESTRUCTIVE — all current data will be lost\n"
+            "• Automatic safety backup created before replacement"
+        )
+        replace_desc.setStyleSheet("color: #dc3545; font-size: 10pt; font-weight: bold;")
+        replace_desc.setWordWrap(True)
+        replace_layout.addWidget(replace_desc)
+        replace_layout.addStretch()
+        self.mode_stack.addWidget(replace_page)
+
+        mode_layout.addWidget(self.mode_stack)
+        mode_group.setLayout(mode_layout)
+        layout.addWidget(mode_group)
         
         layout.addStretch()
         
@@ -513,41 +505,56 @@ class RestoreDialog(QDialog):
                 display_path = "..." + display_path[-57:]
             self.file_path_label.setText(display_path)
             self.file_path_label.setStyleSheet("color: #000;")
-            self.restore_btn.setEnabled(True)
-            
-    def _on_mode_changed(self, clicked_button):
-        """Handle restore mode change"""
-        # Toggle buttons (only one can be checked)
-        if clicked_button == self.merge_radio:
-            self.merge_radio.setChecked(True)
-            self.replace_radio.setChecked(False)
-            self.merge_selected_radio.setChecked(False)
-            self.confirm_checkbox.setVisible(False)
-            self.table_selection_group.setVisible(False)
-        elif clicked_button == self.replace_radio:
-            self.merge_radio.setChecked(False)
-            self.replace_radio.setChecked(True)
-            self.merge_selected_radio.setChecked(False)
-            self.table_selection_group.setVisible(False)
-            self.confirm_checkbox.setVisible(True)
-            self.confirm_checkbox.setText(
-                "⚠️ WARNING: This will permanently delete all existing data. "
-                "A safety backup will be created automatically."
-            )
-        else:  # merge_selected_radio
-            self.merge_radio.setChecked(False)
-            self.replace_radio.setChecked(False)
-            self.merge_selected_radio.setChecked(True)
-            self.confirm_checkbox.setVisible(False)
-            self.table_selection_group.setVisible(True)
+            self._update_restore_button_state()
+
+    def _on_mode_combo_changed(self, _index: int):
+        """Handle restore mode selection change."""
+        from services.tools.enums import RestoreMode
+
+        mode = self.get_restore_mode()
+        if mode == RestoreMode.MERGE_ALL:
+            self.mode_stack.setCurrentIndex(1)
+        elif mode == RestoreMode.MERGE_SELECTED:
+            self.mode_stack.setCurrentIndex(2)
+        elif mode == RestoreMode.REPLACE:
+            self.mode_stack.setCurrentIndex(3)
+        else:
+            self.mode_stack.setCurrentIndex(0)
+
+        self._update_restore_button_state()
+
+    def _update_restore_button_state(self):
+        """Enable Restore only when inputs are valid."""
+        from services.tools.enums import RestoreMode
+
+        if not self.backup_path:
+            self.restore_btn.setEnabled(False)
+            return
+
+        mode = self.get_restore_mode()
+        if mode is None:
+            self.restore_btn.setEnabled(False)
+            return
+
+        if mode == RestoreMode.MERGE_SELECTED and not self.get_selected_tables():
+            self.restore_btn.setEnabled(False)
+            return
+
+        self.restore_btn.setEnabled(True)
             
     def _on_restore_clicked(self):
         """Handle restore button click"""
         if not self.backup_path:
             return
+
+        mode = self.get_restore_mode()
+        if mode is None:
+            return
+
+        from services.tools.enums import RestoreMode
         
         # Validate MERGE_SELECTED mode has at least one table selected
-        if self.merge_selected_radio.isChecked():
+        if mode == RestoreMode.MERGE_SELECTED:
             selected_tables = self.get_selected_tables()
             if not selected_tables:
                 from PySide6.QtWidgets import QMessageBox
@@ -560,7 +567,7 @@ class RestoreDialog(QDialog):
                 return
             
         # Additional confirmation for replace mode
-        if self.replace_radio.isChecked():
+        if mode == RestoreMode.REPLACE:
             from PySide6.QtWidgets import QMessageBox
             reply = QMessageBox.warning(
                 self,
@@ -585,11 +592,13 @@ class RestoreDialog(QDialog):
         """Select all table checkboxes"""
         for cb in self.table_checkboxes.values():
             cb.setChecked(True)
+        self._update_restore_button_state()
     
     def _deselect_all_tables(self):
         """Deselect all table checkboxes"""
         for cb in self.table_checkboxes.values():
             cb.setChecked(False)
+        self._update_restore_button_state()
     
     def get_selected_tables(self):
         """Get list of selected table names (for MERGE_SELECTED mode)"""
@@ -597,13 +606,7 @@ class RestoreDialog(QDialog):
         
     def get_restore_mode(self):
         """Get selected restore mode"""
-        from services.tools.enums import RestoreMode
-        if self.merge_radio.isChecked():
-            return RestoreMode.MERGE_ALL
-        elif self.merge_selected_radio.isChecked():
-            return RestoreMode.MERGE_SELECTED
-        else:
-            return RestoreMode.REPLACE
+        return self.mode_combo.currentData()
 
 
 class ResetDialog(QDialog):
