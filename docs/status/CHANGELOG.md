@@ -125,6 +125,22 @@ Notes:
 
 ---
 
+```yaml
+id: 2026-01-29-05
+type: fix
+areas: [ui]
+summary: "Fix macOS Help menu visibility and make Tools → Recalculate navigate to Setup → Tools reliably."
+files_changed:
+  - ui/main_window.py
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Help Menu**: Added a non-About Help action so the Help menu remains visible on macOS (Qt can move About into the application menu).
+- **Recalculate Navigation**: Recalculate menu action now uses the same Setup → Tools navigation path as other Tools menu entries.
+
+---
+
 ## 2026-01-28
 
 ```yaml

@@ -254,6 +254,29 @@ class MainWindow(QtWidgets.QMainWindow):
         open_tools_action.triggered.connect(self.open_tools_tab)
         tools_menu.addAction(open_tools_action)
 
+        # Help menu
+        help_menu = menubar.addMenu("&Help")
+
+        help_action = QtGui.QAction("Sezzions &Help…", self)
+        # Keep this in the Help menu (non-standard), so the Help menu is never empty.
+        try:
+            help_action.setMenuRole(QtGui.QAction.NoRole)
+        except Exception:
+            pass
+        help_action.triggered.connect(self._show_help)
+        help_menu.addAction(help_action)
+
+        help_menu.addSeparator()
+
+        about_action = QtGui.QAction("&About", self)
+        # On macOS this may be promoted to the application menu automatically.
+        try:
+            about_action.setMenuRole(QtGui.QAction.AboutRole)
+        except Exception:
+            pass
+        about_action.triggered.connect(self._show_about)
+        help_menu.addAction(about_action)
+
     def open_tools_tab(self):
         """Navigate to Setup → Tools."""
         self.tab_bar.setCurrentIndex(self._tab_index.get("setup", 0))
@@ -273,13 +296,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self._tools_busy_label.setVisible(active)
         if self._tools_busy_progress is not None:
             self._tools_busy_progress.setVisible(active)
-        
-        # Help menu
-        help_menu = menubar.addMenu("&Help")
-        
-        about_action = QtGui.QAction("&About", self)
-        about_action.triggered.connect(self._show_about)
-        help_menu.addAction(about_action)
     
     def _refresh_all(self):
         """Refresh all tabs"""
@@ -356,8 +372,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _recalculate_everything(self):
         """Delegate to Tools tab for recalculation"""
-        # Switch to Tools tab and trigger recalculation
-        self.tab_bar.setCurrentIndex(self._tab_index.get("tools", 8))
+        # Navigate to Setup → Tools and trigger recalculation.
+        self.open_tools_tab()
         # Use QTimer to ensure tab is visible before triggering
         QtCore.QTimer.singleShot(100, self.tools_tab._on_recalculate_all)
     
@@ -381,4 +397,13 @@ class MainWindow(QtWidgets.QMainWindow):
             "<p>Casino Session Tracker with FIFO Cost Basis Accounting</p>"
             "<p>Version 2.0 - OOP Backend</p>"
             "<p>© 2026 Carolina Edge Gaming</p>"
+        )
+
+    def _show_help(self):
+        QtWidgets.QMessageBox.information(
+            self,
+            "Sezzions Help",
+            "Help is limited in this build.\n\n"
+            "- Database tools live in Setup → Tools\n"
+            "- While database maintenance runs, the status bar shows a busy indicator",
         )
