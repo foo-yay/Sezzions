@@ -499,8 +499,7 @@ class RestoreDialog(QDialog):
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setStyleSheet("QScrollArea { background: transparent; } QScrollArea > QWidget > QWidget { background: transparent; }")
         scroll.setWidget(columns_container)
-        scroll.setMinimumHeight(160)
-        scroll.setMaximumHeight(220)
+        scroll.setFixedHeight(200)
         table_selection_group_layout.addWidget(scroll)
 
         select_buttons_layout = QHBoxLayout()
@@ -599,20 +598,28 @@ class RestoreDialog(QDialog):
     
     def _resize_to_content(self):
         """Resize dialog to fit current content."""
-        # Remove any height constraints
+        # Get the current page's actual height requirement
+        current_page = self.mode_stack.currentWidget()
+        if current_page is None:
+            return
+        
+        # Remove all height locks on dialog
         self.setMinimumHeight(0)
         self.setMaximumHeight(16777215)
         
-        # Force geometry recalculation
-        self.mode_stack.updateGeometry()
+        # Force the stacked widget to be exactly the height of the current page
+        page_height = current_page.sizeHint().height()
+        self.mode_stack.setFixedHeight(page_height)
+        
+        # Force layout to recompute with new stacked widget size
         self.layout().activate()
         
-        # Use adjustSize which respects sizeHint from all widgets
+        # Resize dialog to new size hint
         self.adjustSize()
         
-        # Now lock the height to prevent unwanted expansion
-        final_height = self.height()
-        self.setFixedHeight(final_height)
+        # Explicitly set the new height (keep width stable)
+        new_height = self.sizeHint().height()
+        self.resize(self.width(), new_height)
 
     def _update_restore_button_state(self):
         """Enable Restore only when inputs are valid."""
