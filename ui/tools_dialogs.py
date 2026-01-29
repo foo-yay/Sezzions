@@ -602,6 +602,15 @@ class RestoreDialog(QDialog):
         self.setMinimumHeight(0)
         self.setMaximumHeight(16777215)
 
+        # Force the details area to match the current page (Qt otherwise tends to
+        # reserve the max height across all pages).
+        current = self.mode_stack.currentWidget()
+        if current is not None:
+            current.adjustSize()
+            self.mode_stack.setFixedHeight(max(0, current.sizeHint().height()))
+        else:
+            self.mode_stack.setFixedHeight(0)
+
         self.mode_stack.updateGeometry()
         self.layout().activate()
         self.adjustSize()
