@@ -172,7 +172,7 @@ class GameTypesTab(QtWidgets.QWidget):
                 )
                 self.refresh_data()
                 QtWidgets.QMessageBox.information(
-                    self, "Success", f"Game type '{created.name}' created"
+                    self.window() or self, "Success", f"Game type '{created.name}' created"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(

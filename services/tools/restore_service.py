@@ -109,6 +109,7 @@ class RestoreService:
         Drops all tables and recreates from backup.
         THIS IS DESTRUCTIVE - all current data is lost.
         """
+        backup_conn = None
         try:
             # Connect to backup database
             backup_conn = sqlite3.connect(backup_path)
@@ -178,6 +179,7 @@ class RestoreService:
             self._commit()
             
             backup_conn.close()
+            backup_conn = None
             
             # Log audit trail
             self.db.log_audit(
@@ -193,6 +195,24 @@ class RestoreService:
             )
             
         except Exception as e:
+            # Best-effort rollback to avoid leaving partial state
+            try:
+                self._rollback()
+            except Exception:
+                pass
+
+            # Best-effort re-enable foreign keys if we disabled them
+            try:
+                self.db.execute_no_commit("PRAGMA foreign_keys = ON")
+                self._commit()
+            except Exception:
+                pass
+
+            if backup_conn is not None:
+                try:
+                    backup_conn.close()
+                except Exception:
+                    pass
             return RestoreResult(
                 success=False,
                 error=f"Full replace failed: {str(e)}"
@@ -205,11 +225,12 @@ class RestoreService:
         Skips duplicate records (based on primary key).
         Useful for combining data from multiple sources.
         """
+        backup_conn = None
         try:
             # Attach backup database
             backup_conn = sqlite3.connect(backup_path)
             backup_conn.row_factory = sqlite3.Row
-            
+
             # Get list of tables from backup
             cursor = backup_conn.cursor()
             cursor.execute("""
@@ -217,26 +238,49 @@ class RestoreService:
                 WHERE type='table' AND name NOT LIKE 'sqlite_%'
             """)
             tables = [row[0] for row in cursor.fetchall()]
-            
+
             total_restored = 0
             tables_affected = []
-            
-            # Merge each table
-            for table_name in tables:
-                count = self._merge_table(backup_conn, table_name)
-                if count > 0:
-                    total_restored += count
-                    tables_affected.append(table_name)
-            
+
+            # Atomic merge across all tables: commit once, or rollback everything on any failure.
+            # FK-safe merge: we may insert child rows before parents depending on table order.
+            # Disable FK enforcement during the merge, then validate integrity before commit.
+            self.db.execute_no_commit("PRAGMA foreign_keys = OFF")
+            self.db.execute_no_commit("BEGIN")
+            try:
+                for table_name in tables:
+                    count = self._merge_table(backup_conn, table_name, commit=False)
+                    if count > 0:
+                        total_restored += count
+                        tables_affected.append(table_name)
+
+                self._assert_no_foreign_key_violations()
+                self._commit()
+            except Exception:
+                self._rollback()
+                raise
+            finally:
+                # Always restore FK enforcement for the connection.
+                try:
+                    self.db.execute_no_commit("PRAGMA foreign_keys = ON")
+                except Exception:
+                    pass
+
             backup_conn.close()
-            
+            backup_conn = None
+
             return RestoreResult(
                 success=True,
                 records_restored=total_restored,
                 tables_affected=tables_affected
             )
-            
+
         except Exception as e:
+            if backup_conn is not None:
+                try:
+                    backup_conn.close()
+                except Exception:
+                    pass
             return RestoreResult(
                 success=False,
                 error=f"Merge all failed: {str(e)}"
@@ -252,46 +296,77 @@ class RestoreService:
         
         Allows fine-grained control over what data to restore.
         """
+        backup_conn = None
         try:
             # Attach backup database
             backup_conn = sqlite3.connect(backup_path)
             backup_conn.row_factory = sqlite3.Row
-            
+
             total_restored = 0
             tables_affected = []
-            errors = []
-            
-            # Merge each specified table
-            for table_name in tables:
-                try:
-                    count = self._merge_table(backup_conn, table_name)
+
+            # Atomic merge across selected tables.
+            self.db.execute_no_commit("PRAGMA foreign_keys = OFF")
+            self.db.execute_no_commit("BEGIN")
+            try:
+                for table_name in tables:
+                    count = self._merge_table(backup_conn, table_name, commit=False)
                     if count > 0:
                         total_restored += count
                         tables_affected.append(table_name)
-                except Exception as e:
-                    errors.append(f"{table_name}: {str(e)}")
-            
+
+                self._assert_no_foreign_key_violations()
+                self._commit()
+            except Exception as e:
+                self._rollback()
+                raise e
+            finally:
+                try:
+                    self.db.execute_no_commit("PRAGMA foreign_keys = ON")
+                except Exception:
+                    pass
+
             backup_conn.close()
-            
-            if errors:
-                return RestoreResult(
-                    success=False,
-                    error=f"Some tables failed to restore: {'; '.join(errors)}"
-                )
-            
+            backup_conn = None
+
             return RestoreResult(
                 success=True,
                 records_restored=total_restored,
                 tables_affected=tables_affected
             )
-            
+
         except Exception as e:
+            if backup_conn is not None:
+                try:
+                    backup_conn.close()
+                except Exception:
+                    pass
             return RestoreResult(
                 success=False,
                 error=f"Selective merge failed: {str(e)}"
             )
+
+    def _assert_no_foreign_key_violations(self) -> None:
+        violations = self.db.fetch_all("PRAGMA foreign_key_check")
+        if not violations:
+            return
+
+        # Shape can be sqlite3.Row (tests) or dict-like (DatabaseManager).
+        first = violations[0]
+        try:
+            table = first['table']
+            rowid = first['rowid']
+            parent = first['parent']
+            fkid = first['fkid']
+            hint = f"First violation: table={table}, rowid={rowid}, parent={parent}, fkid={fkid}"
+        except Exception:
+            hint = "Foreign key check returned violations"
+
+        raise ValueError(
+            f"FOREIGN KEY violations detected after merge ({len(violations)} violation(s)). {hint}"
+        )
     
-    def _merge_table(self, backup_conn: sqlite3.Connection, table_name: str) -> int:
+    def _merge_table(self, backup_conn: sqlite3.Connection, table_name: str, *, commit: bool = True) -> int:
         """
         Merge single table from backup into current database.
         
@@ -340,7 +415,8 @@ class RestoreService:
         after_count = self.db.fetch_one(f"SELECT COUNT(*) as count FROM {table_name}")['count']
         inserted_count = after_count - before_count
         
-        self._commit()
+        if commit:
+            self._commit()
         
         # Log audit trail for non-zero merges
         if inserted_count > 0:
@@ -398,6 +474,11 @@ class RestoreService:
         """Commit current transaction."""
         if hasattr(self.db, 'commit'):
             self.db.commit()
+
+    def _rollback(self):
+        """Rollback current transaction."""
+        if hasattr(self.db, 'rollback'):
+            self.db.rollback()
     
     def _close_connection(self):
         """Close database connection."""

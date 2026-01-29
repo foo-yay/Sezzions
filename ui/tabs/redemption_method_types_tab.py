@@ -171,7 +171,7 @@ class RedemptionMethodTypesTab(QtWidgets.QWidget):
                 )
                 self.refresh_data()
                 QtWidgets.QMessageBox.information(
-                    self, "Success", f"Type '{method_type.name}' created"
+                    self.window() or self, "Success", f"Type '{method_type.name}' created"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(

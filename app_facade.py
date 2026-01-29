@@ -1566,12 +1566,27 @@ class AppFacade:
             if self._tools_operation_active:
                 return False
             self._tools_operation_active = True
+
+            # Put the UI-facing DB connection into read-only mode while tools run.
+            # Tools workers create their own DB connections, so this only blocks UI writes.
+            try:
+                if hasattr(self, "db") and hasattr(self.db, "set_writes_blocked"):
+                    self.db.set_writes_blocked(True)
+            except Exception:
+                pass
             return True
     
     def release_tools_lock(self) -> None:
         """Release exclusive tools operation lock."""
         with self._tools_lock:
             self._tools_operation_active = False
+
+            # Re-enable UI writes.
+            try:
+                if hasattr(self, "db") and hasattr(self.db, "set_writes_blocked"):
+                    self.db.set_writes_blocked(False)
+            except Exception:
+                pass
     
     def is_tools_operation_active(self) -> bool:
         """Check if a tools operation is currently running."""

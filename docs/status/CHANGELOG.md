@@ -42,6 +42,9 @@ Notes:
   - Enables future cross-tab refresh mechanism
   - Currently triggers refresh indicator/prompt (full architecture in future issue)
 - **Progress Dialogs**: All operations show indeterminate progress during execution
+- **Restore Atomicity**: Merge restore modes now commit once (all-or-nothing) to avoid partial merges on failure
+- **Safety Backups**: Pre-restore and pre-reset safety backups run via background worker (no UI-thread blocking)
+- **Maintenance Read-Only Mode**: While a tools operation is active, UI-driven DB writes are blocked (prevents adding/deleting records mid-restore/reset)
 - **Testing**: New test suite `test_tools_workers.py` with 14 tests covering:
   - Exclusive lock acquisition/release/thread safety
   - Worker creation and parameter passing
@@ -56,6 +59,52 @@ Architecture Benefits:
 - Thread-safe concurrent operation prevention
 
 Refs: Issue #7 (Phase 3 follow-up — DB tools off UI thread + facade orchestration + exclusive ops safety)
+
+```yaml
+id: 2026-01-29-02
+type: fix
+areas: [tools, ui]
+summary: "Fix DB reset progress dialog crash; prevent Reset worker from emitting spurious errors; stabilize Setup success popups on macOS."
+files_changed:
+  - ui/tabs/tools_tab.py
+  - ui/tools_workers.py
+  - ui/tabs/users_tab.py
+  - ui/tabs/sites_tab.py
+  - ui/tabs/cards_tab.py
+  - ui/tabs/redemption_methods_tab.py
+  - ui/tabs/redemption_method_types_tab.py
+  - ui/tabs/game_types_tab.py
+  - ui/tabs/games_tab.py
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Reset Crash**: `Reset` flow now uses `ProgressDialog.update_progress(...)` instead of calling nonexistent `setLabelText/setRange` on `RecalculationProgressDialog`.
+- **Worker Correctness**: `DatabaseResetWorker` no longer emits an error signal unconditionally in `finally` (which could cause false error dialogs or raise `UnboundLocalError`).
+- **Restore UX**: Restore now uses the same worker-lifetime safeguards as Backup (strong `QRunnable` reference, `setAutoDelete(False)`, queued signal delivery) so the progress dialog reliably closes on completion.
+- **Setup Auto-Refresh**: Setup sub-tabs refresh automatically after Tools restore/reset via `ToolsTab.data_changed` → `SetupTab.refresh_all`.
+- **Setup Popups**: “Created” success message boxes in Setup sub-tabs now parent to the top-level window (`self.window() or self`) to avoid odd oversized/blank dialog presentation on macOS.
+- **Stray Header Popups**: Header filter menus now require a real header mouse press before acting on release, reducing accidental off-screen popups after dismissing modal dialogs.
+- **Debug Aid**: Added optional popup tracing via `SEZZIONS_DEBUG_POPUPS=1` to log which widget is being shown (class/flags/stack) when the remaining popup appears.
+- **Main Window**: Fixed stale references to a removed top-level `tools_tab`; Tools menu now navigates to Setup → Tools and refresh-all covers Setup correctly.
+
+---
+
+```yaml
+id: 2026-01-29-03
+type: fix
+areas: [tools, services, tests]
+summary: "Fix MERGE_ALL restore failing on empty DB due to foreign key ordering (post-reset)."
+files_changed:
+  - services/tools/restore_service.py
+  - tests/integration/test_database_tools_integration.py
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **FK-Safe Merge**: Merge restores temporarily disable FK enforcement during the atomic merge, then run `PRAGMA foreign_key_check` before commit.
+- **Better Failure Mode**: If FK violations remain after a merge (e.g., MERGE_SELECTED without parent/setup data), the restore fails with a clearer error and rolls back.
+- **Regression Test**: Added an integration test for backup → full reset (setup wiped) → MERGE_ALL restore.
 
 ---
 

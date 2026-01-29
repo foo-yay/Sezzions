@@ -17,6 +17,7 @@ import tempfile
 
 from ui.tools_workers import RecalculationWorker
 from ui.tools_dialogs import (
+    ProgressDialog,
     RecalculationProgressDialog,
     RecalculationResultDialog,
     PostImportPromptDialog
@@ -589,7 +590,10 @@ class ToolsTab(QWidget):
         result_dialog.exec()
         
         # Notify listeners (refresh UI tables)
-        self.facade.db._notify_change()
+        if hasattr(self.facade, "db") and hasattr(self.facade.db, "notify_change"):
+            self.facade.db.notify_change()
+        elif hasattr(self.facade, "db") and hasattr(self.facade.db, "_notify_change"):
+            self.facade.db._notify_change()
         
     def _on_recalculation_error(self, error: str, progress_dialog: RecalculationProgressDialog):
         """Handle recalculation error"""
@@ -669,6 +673,14 @@ class ToolsTab(QWidget):
             # Show result
             result_dialog = ImportResultDialog(result, self)
             result_dialog.exec()
+
+            # Notify listeners so main tabs refresh (purchases/redemptions/etc.)
+            if result.success and result.total_processed > 0:
+                self.data_changed.emit()
+                if hasattr(self.facade, "db") and hasattr(self.facade.db, "notify_change"):
+                    self.facade.db.notify_change()
+                elif hasattr(self.facade, "db") and hasattr(self.facade.db, "_notify_change"):
+                    self.facade.db._notify_change()
             
             # If successful and affects accounting data, prompt for recalculation
             if result.success and result.total_processed > 0:
@@ -1158,7 +1170,6 @@ class ToolsTab(QWidget):
         """Handle database restore"""
         from PySide6.QtWidgets import QMessageBox, QProgressDialog
         from ui.tools_dialogs import RestoreDialog
-        from services.tools.backup_service import BackupService
         import os
         from datetime import datetime
         
@@ -1189,39 +1200,7 @@ class ToolsTab(QWidget):
             )
             return
             
-        # For replace mode, create safety backup first
-        if restore_mode.name == "REPLACE":
-            backup_service = BackupService(self.facade.db)
-            
-            # Get backup directory from last backup
-            if hasattr(self, 'backup_dir') and self.backup_dir:
-                backup_dir = self.backup_dir
-            else:
-                backup_dir = os.path.dirname(backup_path)
-            
-            # Generate timestamped filename for safety backup
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            safety_backup_path = os.path.join(backup_dir, f"pre_restore_backup_{timestamp}.db")
-                
-            result = backup_service.backup_database(safety_backup_path)
-            if not result.success:
-                QMessageBox.critical(
-                    self,
-                    "Backup Failed",
-                    f"Could not create safety backup before restore:\n{result.error}\n\n"
-                    "Restore operation cancelled for safety."
-                )
-                return
-                
-            safety_backup_file = os.path.basename(result.backup_path)
-            QMessageBox.information(
-                self,
-                "Safety Backup Created",
-                f"Safety backup created: {safety_backup_file}\n\n"
-                "Proceeding with database replacement..."
-            )
-        
-        # Acquire exclusive lock
+        # Acquire exclusive lock (held for the whole operation sequence)
         if not self.facade.acquire_tools_lock():
             QMessageBox.warning(
                 self,
@@ -1229,69 +1208,187 @@ class ToolsTab(QWidget):
                 "Could not acquire exclusive lock for restore operation."
             )
             return
-        
-        # Create worker
-        worker = self.facade.create_restore_worker(backup_path, restore_mode)
-        
-        # Create progress dialog and store as instance variable
-        self._active_progress_dialog = QProgressDialog("Restoring database...", None, 0, 0, self)
-        self._active_progress_dialog.setWindowTitle("Restore")
-        self._active_progress_dialog.setWindowModality(Qt.WindowModal)
-        self._active_progress_dialog.setMinimumDuration(0)
-        self._active_progress_dialog.setCancelButton(None)  # Disable cancel to prevent premature closure
-        self._active_progress_dialog.show()
-        
-        # Connect signals
-        def on_finished(result):
-            if self._active_progress_dialog:
-                self._active_progress_dialog.close()
-                self._active_progress_dialog = None
-            self.facade.release_tools_lock()
-            
-            if result.success:
-                tables_info = f"\n• ".join(result.tables_affected) if result.tables_affected else "All tables"
-                QMessageBox.information(
-                    self,
-                    "Restore Complete",
-                    f"✓ Database restored successfully!\n\n"
-                    f"Mode: {restore_mode.name.replace('_', ' ').title()}\n"
-                    f"Records restored: {result.records_restored:,}\n"
-                    f"Tables affected:\n• {tables_info}\n\n"
-                    "Please restart the application to see all changes."
-                )
-                # Emit data changed signal (for future cross-tab refresh)
-                if hasattr(self, 'data_changed'):
+
+        def start_restore_worker():
+            # Create worker
+            worker = self.facade.create_restore_worker(backup_path, restore_mode)
+
+            # Keep worker alive; PySide QRunnable wrappers can be GC'd otherwise.
+            # Also disable auto-delete so the C++ runnable isn't deleted before queued signals are delivered.
+            try:
+                worker.setAutoDelete(False)
+            except Exception:
+                pass
+            self._active_tools_worker = worker
+
+            # Create progress dialog and store as instance variable
+            self._active_progress_dialog = QProgressDialog("Restoring database...", None, 0, 0, self)
+            self._active_progress_dialog.setWindowTitle("Restore")
+            self._active_progress_dialog.setWindowModality(Qt.WindowModal)
+            self._active_progress_dialog.setMinimumDuration(0)
+            self._active_progress_dialog.setCancelButton(None)  # Disable cancel to prevent premature closure
+            # If the user hits Escape, Qt may treat it as cancel. Hide the dialog,
+            # but keep the operation running; completion handler will still clean up.
+            try:
+                self._active_progress_dialog.canceled.connect(self._active_progress_dialog.hide)
+            except Exception:
+                pass
+            self._active_progress_dialog.show()
+
+            # Connect signals
+            def on_finished(result):
+                if self._active_progress_dialog:
+                    try:
+                        self._active_progress_dialog.close()
+                        self._active_progress_dialog.deleteLater()
+                    except Exception:
+                        pass
+                    self._active_progress_dialog = None
+                self.facade.release_tools_lock()
+
+                # Drop strong ref now that we're done
+                self._active_tools_worker = None
+
+                if result.success:
+                    tables_info = f"\n• ".join(result.tables_affected) if result.tables_affected else "All tables"
+                    QMessageBox.information(
+                        self,
+                        "Restore Complete",
+                        f"✓ Database restored successfully!\n\n"
+                        f"Mode: {restore_mode.name.replace('_', ' ').title()}\n"
+                        f"Records restored: {result.records_restored:,}\n"
+                        f"Tables affected:\n• {tables_info}\n\n"
+                        "Please restart the application to see all changes."
+                    )
                     self.data_changed.emit()
-            else:
+
+                    # Notify global DB listeners (MainWindow refresh)
+                    if hasattr(self.facade, "db") and hasattr(self.facade.db, "notify_change"):
+                        self.facade.db.notify_change()
+                    elif hasattr(self.facade, "db") and hasattr(self.facade.db, "_notify_change"):
+                        self.facade.db._notify_change()
+                else:
+                    QMessageBox.critical(
+                        self,
+                        "Restore Failed",
+                        f"Database restore failed:\n{result.error}"
+                    )
+
+            def on_error(error_msg):
+                if self._active_progress_dialog:
+                    try:
+                        self._active_progress_dialog.close()
+                        self._active_progress_dialog.deleteLater()
+                    except Exception:
+                        pass
+                    self._active_progress_dialog = None
+                self.facade.release_tools_lock()
+
+                # Drop strong ref now that we're done
+                self._active_tools_worker = None
                 QMessageBox.critical(
                     self,
-                    "Restore Failed",
-                    f"Database restore failed:\n{result.error}"
+                    "Restore Error",
+                    f"An error occurred:\n\n{error_msg}"
                 )
-        
-        def on_error(error_msg):
-            if self._active_progress_dialog:
-                self._active_progress_dialog.close()
-                self._active_progress_dialog = None
-            self.facade.release_tools_lock()
-            QMessageBox.critical(
-                self,
-                "Restore Error",
-                f"An error occurred:\n\n{error_msg}"
-            )
-        
-        worker.signals.finished.connect(on_finished)
-        worker.signals.error.connect(on_error)
-        
-        # Start worker
-        self.thread_pool.start(worker)
+
+            worker.signals.finished.connect(on_finished, Qt.QueuedConnection)
+            worker.signals.error.connect(on_error, Qt.QueuedConnection)
+
+            # Start worker
+            self.thread_pool.start(worker)
+
+        # For replace mode, create safety backup in background first
+        if restore_mode.name == "REPLACE":
+            # Determine backup directory
+            if hasattr(self, 'backup_dir') and self.backup_dir:
+                backup_dir = self.backup_dir
+            else:
+                backup_dir = os.path.dirname(backup_path)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safety_backup_path = os.path.join(backup_dir, f"pre_restore_backup_{timestamp}.db")
+
+            safety_worker = self.facade.create_backup_worker(safety_backup_path, include_audit_log=True)
+            try:
+                safety_worker.setAutoDelete(False)
+            except Exception:
+                pass
+            self._active_tools_worker = safety_worker
+
+            self._active_progress_dialog = QProgressDialog("Creating safety backup...", None, 0, 0, self)
+            self._active_progress_dialog.setWindowTitle("Safety Backup")
+            self._active_progress_dialog.setWindowModality(Qt.WindowModal)
+            self._active_progress_dialog.setMinimumDuration(0)
+            self._active_progress_dialog.setCancelButton(None)
+            try:
+                self._active_progress_dialog.canceled.connect(self._active_progress_dialog.hide)
+            except Exception:
+                pass
+            self._active_progress_dialog.show()
+
+            def on_safety_finished(result):
+                if self._active_progress_dialog:
+                    try:
+                        self._active_progress_dialog.close()
+                        self._active_progress_dialog.deleteLater()
+                    except Exception:
+                        pass
+                    self._active_progress_dialog = None
+
+                # Drop strong ref to safety worker before starting restore worker
+                self._active_tools_worker = None
+
+                if not result.success:
+                    self.facade.release_tools_lock()
+                    QMessageBox.critical(
+                        self,
+                        "Backup Failed",
+                        f"Could not create safety backup before restore:\n{result.error}\n\n"
+                        "Restore operation cancelled for safety."
+                    )
+                    return
+
+                safety_backup_file = os.path.basename(result.backup_path)
+                QMessageBox.information(
+                    self,
+                    "Safety Backup Created",
+                    f"Safety backup created: {safety_backup_file}\n\n"
+                    "Proceeding with database replacement..."
+                )
+
+                start_restore_worker()
+
+            def on_safety_error(error_msg):
+                if self._active_progress_dialog:
+                    try:
+                        self._active_progress_dialog.close()
+                        self._active_progress_dialog.deleteLater()
+                    except Exception:
+                        pass
+                    self._active_progress_dialog = None
+                self._active_tools_worker = None
+                self.facade.release_tools_lock()
+                QMessageBox.critical(
+                    self,
+                    "Backup Error",
+                    f"An error occurred while creating safety backup:\n\n{error_msg}"
+                )
+
+            safety_worker.signals.finished.connect(on_safety_finished, Qt.QueuedConnection)
+            safety_worker.signals.error.connect(on_safety_error, Qt.QueuedConnection)
+            self.thread_pool.start(safety_worker)
+            return
+
+        # Non-replace modes start restore immediately
+        start_restore_worker()
+        return
     
     def _on_reset_database(self):
         """Handle database reset"""
         from PySide6.QtWidgets import QMessageBox
         from ui.tools_dialogs import ResetDialog, RecalculationProgressDialog
         from services.tools.reset_service import ResetService
-        from services.tools.backup_service import BackupService
         import os
         from datetime import datetime
         
@@ -1331,7 +1428,7 @@ class ToolsTab(QWidget):
         if reply != QMessageBox.Yes:
             return
             
-        # Offer to create backup first
+        want_safety_backup = False
         if hasattr(self, 'backup_dir') and self.backup_dir:
             backup_reply = QMessageBox.question(
                 self,
@@ -1341,30 +1438,9 @@ class ToolsTab(QWidget):
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.Yes
             )
-            
-            if backup_reply == QMessageBox.Yes:
-                backup_service = BackupService(self.facade.db)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                safety_backup_path = os.path.join(self.backup_dir, f"pre_reset_backup_{timestamp}.db")
-                result = backup_service.backup_database(safety_backup_path)
-                if result.success:
-                    backup_file = os.path.basename(result.backup_path)
-                    QMessageBox.information(
-                        self,
-                        "Backup Created",
-                        f"Safety backup created: {backup_file}\n\n"
-                        "Proceeding with reset..."
-                    )
-                else:
-                    QMessageBox.critical(
-                        self,
-                        "Backup Failed",
-                        f"Could not create backup:\n{result.error}\n\n"
-                        "Reset cancelled for safety."
-                    )
-                    return
-        
-        # Acquire exclusive lock
+            want_safety_backup = (backup_reply == QMessageBox.Yes)
+
+        # Acquire exclusive lock (held for the whole operation sequence)
         if not self.facade.acquire_tools_lock():
             QMessageBox.warning(
                 self,
@@ -1372,55 +1448,150 @@ class ToolsTab(QWidget):
                 "Could not acquire exclusive lock for reset operation."
             )
             return
-        
-        # Create worker
-        worker = self.facade.create_reset_worker(keep_setup_data=preserve_setup, keep_audit_log=True)
-        
-        # Create progress dialog
-        progress_dialog = RecalculationProgressDialog("Reset", self)
-        progress_dialog.setLabelText("Resetting database...")
-        progress_dialog.setRange(0, 0)  # Indeterminate progress
-        progress_dialog.show()
-        
-        # Connect signals
-        def on_finished(result):
-            progress_dialog.close()
-            self.facade.release_tools_lock()
-            
-            if result.success:
-                tables_info = "\n• ".join(result.tables_cleared) if result.tables_cleared else "None"
-                QMessageBox.information(
-                    self,
-                    "Reset Complete",
-                    f"✓ Database reset successfully!\n\n"
-                    f"Records deleted: {result.records_deleted:,}\n"
-                    f"Tables cleared:\n• {tables_info}\n\n"
-                    "Please restart the application to see all changes."
-                )
-                # Emit data changed signal (for future cross-tab refresh)
-                if hasattr(self, 'data_changed'):
+
+        def start_reset_worker():
+            # Create worker
+            worker = self.facade.create_reset_worker(keep_setup_data=preserve_setup, keep_audit_log=True)
+
+            # Keep worker alive; PySide QRunnable wrappers can be GC'd otherwise.
+            # Also disable auto-delete so the C++ runnable isn't deleted before queued signals are delivered.
+            try:
+                worker.setAutoDelete(False)
+            except Exception:
+                pass
+            self._active_tools_worker = worker
+
+            # Create progress dialog
+            progress_dialog = ProgressDialog("Reset", allow_cancel=False, parent=self)
+            progress_dialog.update_progress(0, 0, "Resetting database...")
+            progress_dialog.show()
+
+            # Connect signals
+            def on_finished(result):
+                progress_dialog.close()
+                self.facade.release_tools_lock()
+
+                # Drop strong ref now that we're done
+                self._active_tools_worker = None
+
+                if result.success:
+                    tables_info = "\n• ".join(result.tables_cleared) if result.tables_cleared else "None"
+                    QMessageBox.information(
+                        self,
+                        "Reset Complete",
+                        f"✓ Database reset successfully!\n\n"
+                        f"Records deleted: {result.records_deleted:,}\n"
+                        f"Tables cleared:\n• {tables_info}\n\n"
+                        "Please restart the application to see all changes."
+                    )
                     self.data_changed.emit()
-            else:
+
+                    # Notify global DB listeners (MainWindow refresh)
+                    if hasattr(self.facade, "db") and hasattr(self.facade.db, "notify_change"):
+                        self.facade.db.notify_change()
+                    elif hasattr(self.facade, "db") and hasattr(self.facade.db, "_notify_change"):
+                        self.facade.db._notify_change()
+                else:
+                    QMessageBox.critical(
+                        self,
+                        "Reset Failed",
+                        f"Database reset failed:\n{result.error}"
+                    )
+
+            def on_error(error_msg):
+                progress_dialog.close()
+                self.facade.release_tools_lock()
+
+                # Drop strong ref now that we're done
+                self._active_tools_worker = None
                 QMessageBox.critical(
                     self,
-                    "Reset Failed",
-                    f"Database reset failed:\n{result.error}"
+                    "Reset Error",
+                    f"An error occurred:\n\n{error_msg}"
                 )
-        
-        def on_error(error_msg):
-            progress_dialog.close()
-            self.facade.release_tools_lock()
-            QMessageBox.critical(
-                self,
-                "Reset Error",
-                f"An error occurred:\n\n{error_msg}"
-            )
-        
-        worker.signals.finished.connect(on_finished)
-        worker.signals.error.connect(on_error)
-        
-        # Start worker
-        self.thread_pool.start(worker)
+
+            worker.signals.finished.connect(on_finished, Qt.QueuedConnection)
+            worker.signals.error.connect(on_error, Qt.QueuedConnection)
+
+            # Start worker
+            self.thread_pool.start(worker)
+
+        if want_safety_backup and hasattr(self, 'backup_dir') and self.backup_dir:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safety_backup_path = os.path.join(self.backup_dir, f"pre_reset_backup_{timestamp}.db")
+
+            safety_worker = self.facade.create_backup_worker(safety_backup_path, include_audit_log=True)
+            try:
+                safety_worker.setAutoDelete(False)
+            except Exception:
+                pass
+            self._active_tools_worker = safety_worker
+
+            self._active_progress_dialog = QProgressDialog("Creating safety backup...", None, 0, 0, self)
+            self._active_progress_dialog.setWindowTitle("Safety Backup")
+            self._active_progress_dialog.setWindowModality(Qt.WindowModal)
+            self._active_progress_dialog.setMinimumDuration(0)
+            self._active_progress_dialog.setCancelButton(None)
+            try:
+                self._active_progress_dialog.canceled.connect(self._active_progress_dialog.hide)
+            except Exception:
+                pass
+            self._active_progress_dialog.show()
+
+            def on_safety_finished(result):
+                if self._active_progress_dialog:
+                    try:
+                        self._active_progress_dialog.close()
+                        self._active_progress_dialog.deleteLater()
+                    except Exception:
+                        pass
+                    self._active_progress_dialog = None
+
+                self._active_tools_worker = None
+
+                if not result.success:
+                    self.facade.release_tools_lock()
+                    QMessageBox.critical(
+                        self,
+                        "Backup Failed",
+                        f"Could not create backup:\n{result.error}\n\n"
+                        "Reset cancelled for safety."
+                    )
+                    return
+
+                backup_file = os.path.basename(result.backup_path)
+                QMessageBox.information(
+                    self,
+                    "Backup Created",
+                    f"Safety backup created: {backup_file}\n\n"
+                    "Proceeding with reset..."
+                )
+
+                start_reset_worker()
+
+            def on_safety_error(error_msg):
+                if self._active_progress_dialog:
+                    try:
+                        self._active_progress_dialog.close()
+                        self._active_progress_dialog.deleteLater()
+                    except Exception:
+                        pass
+                    self._active_progress_dialog = None
+                self._active_tools_worker = None
+                self.facade.release_tools_lock()
+                QMessageBox.critical(
+                    self,
+                    "Backup Error",
+                    f"An error occurred while creating safety backup:\n\n{error_msg}"
+                )
+
+            safety_worker.signals.finished.connect(on_safety_finished, Qt.QueuedConnection)
+            safety_worker.signals.error.connect(on_safety_error, Qt.QueuedConnection)
+            self.thread_pool.start(safety_worker)
+            return
+
+        start_reset_worker()
+        return
     
     # ========================================================================
     # Post-Import Recalculation

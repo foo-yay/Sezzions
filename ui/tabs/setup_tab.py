@@ -57,6 +57,10 @@ class SetupTab(QtWidgets.QWidget):
         self.game_types_tab = GameTypesTab(facade)
         self.games_tab = GamesTab(facade)
         self.tools_tab = ToolsTab(facade)
+
+        # Keep Setup data views consistent after DB restore/reset from Tools.
+        # ToolsTab emits data_changed after destructive DB operations.
+        self.tools_tab.data_changed.connect(self.refresh_all)
         
         self.sub_tabs.addTab(self.users_tab, "👤 Users")
         self.sub_tabs.addTab(self.sites_tab, "🏢 Sites")
@@ -84,3 +88,7 @@ class SetupTab(QtWidgets.QWidget):
         self.redemption_methods_tab.refresh_data()
         self.game_types_tab.refresh_data()
         self.games_tab.refresh_data()
+
+    def refresh_data(self):
+        """Alias for refresh_all (used by generic refresh flows)."""
+        self.refresh_all()

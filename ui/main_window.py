@@ -134,6 +134,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stack.addWidget(self.setup_tab)
         self._tab_index["setup"] = self.tab_bar.count() - 1
 
+        # Backward-compat convenience: Tools now lives under Setup.
+        self.tools_tab = self.setup_tab.tools_tab
+
     def open_purchase(self, purchase_id: int):
         self.tab_bar.setCurrentIndex(self._tab_index.get("purchases", 0))
         if hasattr(self.purchases_tab, "open_purchase_by_id"):
@@ -225,8 +228,16 @@ class MainWindow(QtWidgets.QMainWindow):
         tools_menu.addSeparator()
         
         open_tools_action = QtGui.QAction("Open &Tools Tab", self)
-        open_tools_action.triggered.connect(lambda: self.tab_bar.setCurrentIndex(self._tab_index.get("tools", 8)))
+        open_tools_action.triggered.connect(self.open_tools_tab)
         tools_menu.addAction(open_tools_action)
+
+    def open_tools_tab(self):
+        """Navigate to Setup → Tools."""
+        self.tab_bar.setCurrentIndex(self._tab_index.get("setup", 0))
+        try:
+            self.setup_tab.sub_tabs.setCurrentWidget(self.setup_tab.tools_tab)
+        except Exception:
+            pass
         
         # Help menu
         help_menu = menubar.addMenu("&Help")
@@ -253,9 +264,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.unrealized_tab,
             self.realized_tab,
             self.setup_tab,
-            self.tools_tab,
         ):
-            if hasattr(widget, "refresh_data"):
+            if hasattr(widget, "refresh_all"):
+                widget.refresh_all()
+            elif hasattr(widget, "refresh_data"):
                 widget.refresh_data()
             elif hasattr(widget, "load_data"):
                 widget.load_data()

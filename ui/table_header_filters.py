@@ -21,6 +21,7 @@ class TableHeaderFilter(QtCore.QObject):
         self.sort_column = None
         self.sort_order = QtCore.Qt.AscendingOrder
         self._suppress_header_menu = False
+        self._header_left_pressed = False
 
         self._base_headers = []
         for i in range(self.table.columnCount()):
@@ -39,6 +40,11 @@ class TableHeaderFilter(QtCore.QObject):
         if not shiboken6.isValid(header):
             return False
         if obj is header.viewport():
+            if event.type() == QtCore.QEvent.MouseButtonPress and event.button() == QtCore.Qt.LeftButton:
+                # Track a genuine header click. This prevents stray MouseButtonRelease events (e.g.,
+                # after dismissing modal dialogs) from unexpectedly opening the header menu.
+                self._header_left_pressed = True
+                return False
             if event.type() == QtCore.QEvent.MouseButtonDblClick and event.button() == QtCore.Qt.LeftButton:
                 pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
                 handle = header_resize_section_index(header, pos)
@@ -48,6 +54,9 @@ class TableHeaderFilter(QtCore.QObject):
                     return True
             if event.type() == QtCore.QEvent.MouseButtonRelease and event.button() == QtCore.Qt.LeftButton:
                 pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+                if not self._header_left_pressed:
+                    return False
+                self._header_left_pressed = False
                 if self._suppress_header_menu:
                     self._suppress_header_menu = False
                     return True
@@ -57,6 +66,8 @@ class TableHeaderFilter(QtCore.QObject):
                 if index >= 0:
                     self._show_header_menu(index)
                     return True
+            if event.type() in (QtCore.QEvent.Leave, QtCore.QEvent.FocusOut):
+                self._header_left_pressed = False
         return super().eventFilter(obj, event)
 
     def _show_header_menu(self, col_index: int):

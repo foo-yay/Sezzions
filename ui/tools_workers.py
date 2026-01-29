@@ -322,4 +322,3 @@ class DatabaseResetWorker(QRunnable):
                     db.close()
                 except Exception:
                     pass
-            self.signals.error.emit(error_msg)
