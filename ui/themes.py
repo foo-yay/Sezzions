@@ -118,6 +118,18 @@ class Theme:
                 color: white;
             }}
             QPushButton#PrimaryButton:hover {{ background: {accent_hover}; }}
+            QPushButton#SuccessButton {{
+                background: #28a745;
+                border: 1px solid #218838;
+                color: white;
+            }}
+            QPushButton#SuccessButton:hover {{ background: #218838; }}
+            QPushButton#DangerButton {{
+                background: #dc3545;
+                border: 1px solid #c82333;
+                color: white;
+            }}
+            QPushButton#DangerButton:hover {{ background: #c82333; }}
             QPushButton#MiniButton {{
                 padding: 4px 10px;
                 min-height: 20px;
@@ -320,8 +332,8 @@ class Theme:
             
             /* Dialog Section Styles */
             QWidget#SectionBackground {{
-                background: {surface2};
-                border: 1px solid rgba(0, 0, 0, 0.12);
+                background: {surface};
+                border: 1px solid {border};
                 border-radius: 8px;
                 padding: 12px;
             }}
@@ -336,6 +348,12 @@ class Theme:
                 border: 1px solid {border};
                 border-radius: 6px;
                 padding: 8px;
+            }}
+            QLabel#PageTitle {{
+                font-size: 18px;
+                font-weight: bold;
+                color: {text};
+                padding-bottom: 4px;
             }}
             QLabel#SectionHeader {{
                 font-size: 13px;

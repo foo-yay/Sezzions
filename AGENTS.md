@@ -32,8 +32,9 @@ This file defines how humans and AI agents should work in this repository.
 3. Update/add tests for intended semantics.
 4. Update `docs/PROJECT_SPEC.md` if behavior/architecture/workflows changed.
 5. Add a changelog entry in `docs/status/CHANGELOG.md` for noteworthy changes.
-6. Move completed work to "Ready for Review" and wait for owner approval.
-7. After approval/merge, close the Issue (and only then update/remove any related TODO mirror item) and ensure changelog/spec are updated.
+6. Commit changes to a feature branch, push, and open a PR (Draft by default unless the owner requests otherwise).
+7. Move completed work to "Ready for Review" and wait for owner approval.
+8. After approval/merge, close the Issue (and only then update/remove any related TODO mirror item) and ensure changelog/spec are updated.
 
 ## Issues (Templates)
 
@@ -46,6 +47,7 @@ This file defines how humans and AI agents should work in this repository.
 
 - Do not mark/remove TODO items as done without explicit project owner approval.
 - Use `docs/TODO.md` → "Ready for Review" as the handoff point.
+- "Ready for Review" means: PR is open (or changeset is otherwise shareable), core checks/tests are run where applicable, and it's waiting on owner review/approval.
 - During interactive troubleshooting (font tweaks, minor UI fixes, error chasing), you do not need a new TODO for each micro-adjustment; treat it as part of the same parent TODO until approved.
 
 ## Ad-hoc Requests (Allowed, But Must Be Recorded)

@@ -31,8 +31,9 @@ You are assisting with **Sezzions**, the standalone desktop app in this reposito
 3. Update/add tests to match intended semantics.
 4. Update `docs/PROJECT_SPEC.md` when behavior/architecture/workflows change.
 5. Add a changelog entry to `docs/status/CHANGELOG.md` for noteworthy changes.
-6. Move the item to "Ready for Review" and wait for owner approval.
-7. After approval/merge, close the Issue (and only then update/remove any related TODO mirror item).
+6. Commit changes to a feature branch, push, and open a PR (Draft by default unless the owner requests otherwise).
+7. Move the item to "Ready for Review" and wait for owner approval.
+8. After approval/merge, close the Issue (and only then update/remove any related TODO mirror item).
 
 ## Issues (Templates)
 
@@ -46,6 +47,7 @@ You are assisting with **Sezzions**, the standalone desktop app in this reposito
 
 - Do not mark/remove TODO items as done without explicit project owner approval.
 - Use the `docs/TODO.md` "Ready for Review" section as the handoff point.
+- "Ready for Review" means: PR is open (or changeset is otherwise shareable), relevant checks/tests have been run, and it's awaiting owner review.
 
 ## Ad-hoc Requests + Rollbacks
 

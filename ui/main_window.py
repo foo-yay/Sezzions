@@ -11,7 +11,6 @@ from ui.tabs.unrealized_tab import UnrealizedTab
 from ui.tabs.realized_tab import RealizedTab
 from ui.tabs.daily_sessions_tab import DailySessionsTab
 from ui.tabs.setup_tab import SetupTab
-from ui.tabs.tools_tab import ToolsTab
 from ui.themes import get_theme, get_theme_names
 from ui.settings import Settings
 
@@ -129,17 +128,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stack.addWidget(self.expenses_tab)
         self._tab_index["expenses"] = self.tab_bar.count() - 1
         
-        # Setup tab (contains Users/Sites/Cards/etc.)
+        # Setup tab (contains Users/Sites/Cards/etc. + Tools)
         self.setup_tab = SetupTab(self.facade)
         self.tab_bar.addTab("⚙️ Setup")
         self.stack.addWidget(self.setup_tab)
         self._tab_index["setup"] = self.tab_bar.count() - 1
-        
-        # Tools tab (recalculation, CSV import/export, backups)
-        self.tools_tab = ToolsTab(self.facade)
-        self.tab_bar.addTab("🔧 Tools")
-        self.stack.addWidget(self.tools_tab)
-        self._tab_index["tools"] = self.tab_bar.count() - 1
 
     def open_purchase(self, purchase_id: int):
         self.tab_bar.setCurrentIndex(self._tab_index.get("purchases", 0))

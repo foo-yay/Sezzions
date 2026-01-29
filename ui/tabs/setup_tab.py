@@ -10,6 +10,7 @@ from ui.tabs.redemption_methods_tab import RedemptionMethodsTab
 from ui.tabs.redemption_method_types_tab import RedemptionMethodTypesTab
 from ui.tabs.game_types_tab import GameTypesTab
 from ui.tabs.games_tab import GamesTab
+from ui.tabs.tools_tab import ToolsTab
 
 
 class SetupTab(QtWidgets.QWidget):
@@ -55,6 +56,7 @@ class SetupTab(QtWidgets.QWidget):
         self.redemption_method_types_tab = RedemptionMethodTypesTab(facade)
         self.game_types_tab = GameTypesTab(facade)
         self.games_tab = GamesTab(facade)
+        self.tools_tab = ToolsTab(facade)
         
         self.sub_tabs.addTab(self.users_tab, "👤 Users")
         self.sub_tabs.addTab(self.sites_tab, "🏢 Sites")
@@ -63,6 +65,7 @@ class SetupTab(QtWidgets.QWidget):
         self.sub_tabs.addTab(self.redemption_methods_tab, "💵 Redemption Methods")
         self.sub_tabs.addTab(self.game_types_tab, "🎯 Game Types")
         self.sub_tabs.addTab(self.games_tab, "🎮 Games")
+        self.sub_tabs.addTab(self.tools_tab, "🔧 Tools")
         
         card = QtWidgets.QFrame()
         card.setObjectName("SetupCard")

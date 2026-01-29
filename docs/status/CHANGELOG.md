@@ -12,6 +12,53 @@ Rules:
 ## 2026-01-28
 
 ```yaml
+id: 2026-01-28-15
+type: refactor
+areas: [ui, tools, themes]
+summary: "Tools tab visual polish: align Tools with Setup tab styling, use SectionBackground cards, and standardize spacing/buttons." 
+files_changed:
+  - ui/themes.py
+  - ui/tabs/tools_tab.py
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Page Header**: Tools matches other Setup sub-tabs (simple title, no blurb)
+- **Section Styling**: Uses theme-consistent `SectionHeader` + `SectionBackground` cards (rounded, higher-contrast)
+- **Typography**: Replaced inline `color: #666` styles with `HelperText` objectName for proper dark theme support
+- **Button Styles**: Standardized Tools buttons (emoji + no ellipses); only Reset remains red (`DangerButton`)
+- **Spacing/Alignment**: Compact 3-card layout with primary + advanced actions; backup location display is elided with tooltip
+- **No Logic Changes**: All business logic, service calls, handlers, and threading behavior unchanged—pure UI refactor
+- **Testing**: All 433 tests pass; manual verification confirms Tools operations work identically
+
+Refs: Issue #5 follow-up (visual polish)
+
+```yaml
+id: 2026-01-28-14
+type: refactor
+areas: [ui, tools]
+summary: "Tools UI redesign and navigation move (Issue #5): moved Tools from top-level tab to Setup sub-tab, standardized styling to match global app patterns without changing logic."
+files_changed:
+  - ui/main_window.py
+  - ui/tabs/setup_tab.py
+  - ui/tabs/tools_tab.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Navigation Change**: Tools is no longer a top-level tab; it's now accessible via Setup → Tools (as a sub-tab alongside Users/Sites/Cards/etc.)
+- **Why**: Tools is "periodic/maintenance" functionality and doesn't need prime horizontal space in the main tab bar; legacy also placed Tools within Setup
+- **UI Standardization**: Removed inline `setStyleSheet()` calls and replaced with object names (`PrimaryButton`, `SuccessButton`, `DangerButton`) for theme consistency
+- **Spacing/Layout**: Standardized margins (16px), spacing (12px/8px), button heights (36px), and group box layouts to match other tabs
+- **Typography**: Consistent description label styling (`color: #666; font-style: italic;`)
+- **No Logic Changes**: All business logic, service calls, signal handlers, and workflows remain identical—this is a pure UI refactor
+- **Settings Persistence**: "last_tab" still works (top-level tabs only; Setup sub-tab state not currently persisted, consistent with other sub-tabbed areas)
+- **Testing**: Manual verification of all Tools operations (backup/restore/reset, CSV import/export, recalculation) to confirm no regressions
+
+Refs: Issue #5
+
+```yaml
 id: 2026-01-28-13
 type: fix
 areas: [tools, ui, settings, repository]
