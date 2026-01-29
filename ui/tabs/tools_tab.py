@@ -1045,41 +1045,44 @@ class ToolsTab(QWidget):
                     self._active_progress_dialog.close()
                     self._active_progress_dialog = None
                 
-                # Process pending events to ensure dialog is fully closed
-                from PySide6.QtCore import QCoreApplication
-                QCoreApplication.processEvents()
-                
-                # Release lock
+                # Release lock immediately
                 self.facade.release_tools_lock()
                 print("[UI] Lock released")
                 
-                if result.success:
-                    size_mb = result.size_bytes / (1024 * 1024)
-                    
-                    # Save backup time to settings
-                    now = datetime.now()
-                    settings = Settings()
-                    config = settings.get_automatic_backup_config()
-                    config['last_backup_time'] = now.isoformat()
-                    settings.set_automatic_backup_config(config)
-                    
-                    # Update last backup display
-                    self._update_last_backup_display()
-                    
-                    print("[UI] Showing success message")
-                    QMessageBox.information(
-                        self,
-                        "Backup Complete",
-                        f"Database backed up successfully:\n\n{backup_path}\n\nSize: {size_mb:.2f} MB"
-                    )
-                    print("[UI] Success message closed")
-                else:
-                    print(f"[UI] Showing error message: {result.error}")
-                    QMessageBox.critical(
-                        self,
-                        "Backup Failed",
-                        f"Failed to create backup:\n\n{result.error}"
-                    )
+                # Defer message box to next event loop iteration
+                # This ensures the progress dialog is fully closed first
+                from PySide6.QtCore import QTimer
+                
+                def show_result():
+                    print("[UI] Showing result message")
+                    if result.success:
+                        size_mb = result.size_bytes / (1024 * 1024)
+                        
+                        # Save backup time to settings
+                        now = datetime.now()
+                        settings = Settings()
+                        config = settings.get_automatic_backup_config()
+                        config['last_backup_time'] = now.isoformat()
+                        settings.set_automatic_backup_config(config)
+                        
+                        # Update last backup display
+                        self._update_last_backup_display()
+                        
+                        QMessageBox.information(
+                            self,
+                            "Backup Complete",
+                            f"Database backed up successfully:\n\n{backup_path}\n\nSize: {size_mb:.2f} MB"
+                        )
+                        print("[UI] Success message closed")
+                    else:
+                        print(f"[UI] Showing error message: {result.error}")
+                        QMessageBox.critical(
+                            self,
+                            "Backup Failed",
+                            f"Failed to create backup:\n\n{result.error}"
+                        )
+                
+                QTimer.singleShot(100, show_result)
             
             def on_error(error_msg):
                 print(f"[UI] on_error called: {error_msg}")
@@ -1089,18 +1092,20 @@ class ToolsTab(QWidget):
                     self._active_progress_dialog.close()
                     self._active_progress_dialog = None
                 
-                # Process pending events to ensure dialog is fully closed
-                from PySide6.QtCore import QCoreApplication
-                QCoreApplication.processEvents()
-                
-                # Release lock
+                # Release lock immediately
                 self.facade.release_tools_lock()
                 
-                QMessageBox.critical(
-                    self,
-                    "Backup Error",
-                    f"An error occurred:\n\n{error_msg}"
-                )
+                # Defer message box to next event loop iteration
+                from PySide6.QtCore import QTimer
+                
+                def show_error():
+                    QMessageBox.critical(
+                        self,
+                        "Backup Error",
+                        f"An error occurred:\n\n{error_msg}"
+                    )
+                
+                QTimer.singleShot(100, show_error)
             
             worker.signals.finished.connect(on_finished)
             worker.signals.error.connect(on_error)
