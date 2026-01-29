@@ -294,7 +294,6 @@ class ToolsTab(QWidget):
         reset_btn.clicked.connect(self._on_reset_database)
         actions_layout.addWidget(reset_btn)
 
-        actions_layout.addStretch(1)
         
         # Automatic backup checkbox
         self.auto_backup_enabled_checkbox = QCheckBox("Auto backup every")
@@ -311,8 +310,6 @@ class ToolsTab(QWidget):
         self.auto_backup_frequency_spinbox.valueChanged.connect(self._on_auto_backup_frequency_changed)
         actions_layout.addWidget(self.auto_backup_frequency_spinbox)
 
-        left_blank = QLabel("")
-        grid.addWidget(left_blank, 1, 0)
 
         actions_widget = QWidget()
         actions_widget.setLayout(actions_layout)
