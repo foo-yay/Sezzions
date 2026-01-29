@@ -1042,7 +1042,6 @@ class ToolsTab(QWidget):
             self._active_progress_dialog.setCancelButton(None)  # Disable cancel to prevent premature closure
             
             # Make dialog non-interactive to prevent event loop issues when clicked
-            from PySide6.QtCore import Qt
             self._active_progress_dialog.setWindowFlags(
                 Qt.Window | 
                 Qt.WindowTitleHint | 
