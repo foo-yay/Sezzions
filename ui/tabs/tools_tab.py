@@ -1036,6 +1036,8 @@ class ToolsTab(QWidget):
             
             # Create a simple modal dialog with just a label (more reliable than QProgressDialog)
             from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel
+            from PySide6.QtCore import QCoreApplication
+            
             self._active_progress_dialog = QDialog(self)
             self._active_progress_dialog.setWindowTitle("Backup")
             self._active_progress_dialog.setModal(True)
@@ -1049,9 +1051,9 @@ class ToolsTab(QWidget):
             label.setMinimumWidth(300)
             layout.addWidget(label)
             self._active_progress_dialog.setLayout(layout)
-            self._active_progress_dialog.show()
-            self._active_progress_dialog.raise_()
-            self._active_progress_dialog.activateWindow()
+            
+            # Don't show the dialog yet - connect signals first
+            
             
             # Connect signals
             def on_finished(result):
@@ -1070,6 +1072,9 @@ class ToolsTab(QWidget):
                 self.facade.release_tools_lock()
                 self.backup_now_btn.setEnabled(True)
                 print("[UI] Lock released, button re-enabled")
+                
+                # Process events to ensure dialog cleanup completes
+                QCoreApplication.processEvents()
                 
                 # Show result immediately without QTimer (simpler and more reliable)
                 print("[UI] Showing result message")
@@ -1125,11 +1130,21 @@ class ToolsTab(QWidget):
                     f"An error occurred:\n\n{error_msg}"
                 )
             
+            
             worker.signals.finished.connect(on_finished)
             worker.signals.error.connect(on_error)
             
+            print("[UI] Signals connected, starting worker...")
+            
             # Start worker
             self.thread_pool.start(worker)
+            
+            # Show dialog AFTER starting worker so signals can be processed
+            self._active_progress_dialog.show()
+            self._active_progress_dialog.raise_()
+            self._active_progress_dialog.activateWindow()
+            
+            print("[UI] Worker started, dialog shown")
         
         except Exception as e:
             if self._active_progress_dialog:
