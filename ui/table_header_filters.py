@@ -40,6 +40,9 @@ class TableHeaderFilter(QtCore.QObject):
         header = self.table.horizontalHeader()
         if not shiboken6.isValid(header):
             return False
+        # Guard against calling methods on partially-destroyed header
+        if not hasattr(header, 'viewport'):
+            return False
         if obj is header.viewport():
             if event.type() == QtCore.QEvent.MouseButtonPress and event.button() == QtCore.Qt.LeftButton:
                 # Track a genuine header click. This prevents stray MouseButtonRelease events (e.g.,
