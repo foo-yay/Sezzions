@@ -9,14 +9,16 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QMessageBox, QDialog, QLineEdit, QComboBox,
     QLabel, QHeaderView, QCalendarWidget, QFileDialog, QGroupBox,
     QPlainTextEdit, QTabWidget, QListView, QCompleter, QSizePolicy,
-    QGridLayout, QApplication, QCheckBox, QSpacerItem
+    QGridLayout, QApplication, QCheckBox, QSpacerItem, QMenu
 )
 from PySide6.QtCore import Qt, QTime, QDate, QTimer
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from ui.date_filter_widget import DateFilterWidget
 from ui.tabs.purchases_tab import PurchaseViewDialog
 from ui.tabs.redemptions_tab import RedemptionViewDialog
 from ui.table_header_filters import TableHeaderFilter
+from ui.spreadsheet_ux import SpreadsheetUXController
+from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 from ui.input_parsers import parse_date_input, parse_time_input
 
 
@@ -152,7 +154,7 @@ class GameSessionsTab(QWidget):
         self.table = QTableWidget(0, len(self.columns))
         self.table.setHorizontalHeaderLabels(self.columns)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setSelectionBehavior(QTableWidget.SelectItems)
         self.table.setSelectionMode(QTableWidget.ExtendedSelection)
         self.table.setAlternatingRowColors(True)
         header = self.table.horizontalHeader()
@@ -161,8 +163,22 @@ class GameSessionsTab(QWidget):
         header.setMinimumSectionSize(40)
         self.table.verticalHeader().setVisible(False)
         self.table.itemDoubleClicked.connect(self.view_session)
-        self.table_filter = TableHeaderFilter(self.table, date_columns=[0], refresh_callback=self.load_data)
+        
+        # Enable custom context menu for spreadsheet UX
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+        
         layout.addWidget(self.table)
+        
+        # Add spreadsheet stats bar
+        self.stats_bar = SpreadsheetStatsBar()
+        layout.addWidget(self.stats_bar)
+        
+        self.table_filter = TableHeaderFilter(self.table, date_columns=[0], refresh_callback=self.load_data)
+        
+        # Set up keyboard shortcuts for spreadsheet UX
+        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self.table)
+        copy_shortcut.activated.connect(self._copy_selection)
 
         self.table.selectionModel().selectionChanged.connect(self._on_selection_changed)
 
@@ -4319,3 +4335,27 @@ class EndSessionDialog(QDialog):
             "wager_amount": wager_amount,
             "notes": notes,
         }, None
+    
+    def _copy_selection(self):
+        """Copy selected cells to clipboard as TSV"""
+        SpreadsheetUXController.copy_to_clipboard(self.table)
+    
+    def _copy_with_headers(self):
+        """Copy selected cells to clipboard with column headers"""
+        SpreadsheetUXController.copy_to_clipboard(self.table, include_headers=True)
+    
+    def _show_context_menu(self, position):
+        """Show context menu for table"""
+        if not self.table.selectionModel().hasSelection():
+            return
+        
+        menu = QMenu(self)
+        
+        copy_action = menu.addAction("Copy")
+        copy_action.setShortcut(QtGui.QKeySequence.Copy)
+        copy_action.triggered.connect(self._copy_selection)
+        
+        copy_headers_action = menu.addAction("Copy With Headers")
+        copy_headers_action.triggered.connect(self._copy_with_headers)
+        
+        menu.exec_(self.table.viewport().mapToGlobal(position))

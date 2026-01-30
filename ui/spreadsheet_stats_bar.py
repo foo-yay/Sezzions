@@ -64,17 +64,18 @@ class SpreadsheetStatsBar(QWidget):
             self._numeric_count_label.setText(f"Numeric: {stats.numeric_count}")
             self._numeric_count_label.setVisible(True)
             
-            # Format sum/avg/min/max as currency with 2 decimal places
-            self._sum_label.setText(f"Sum: ${stats.sum:,.2f}")
+            # Format numbers with commas but without currency symbol
+            # This works for both currency ($1,234.56) and percentages (12.34%)
+            self._sum_label.setText(f"Sum: {stats.sum:,.2f}")
             self._sum_label.setVisible(True)
             
-            self._avg_label.setText(f"Avg: ${stats.avg:,.2f}")
+            self._avg_label.setText(f"Avg: {stats.avg:,.2f}")
             self._avg_label.setVisible(True)
             
-            self._min_label.setText(f"Min: ${stats.min_val:,.2f}")
+            self._min_label.setText(f"Min: {stats.min_val:,.2f}")
             self._min_label.setVisible(True)
             
-            self._max_label.setText(f"Max: ${stats.max_val:,.2f}")
+            self._max_label.setText(f"Max: {stats.max_val:,.2f}")
             self._max_label.setVisible(True)
         else:
             # No numeric values in selection

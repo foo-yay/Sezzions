@@ -50,10 +50,10 @@ class TestSpreadsheetStatsBar:
         
         assert "Count: 5" in bar._count_label.text()
         assert "Numeric: 3" in bar._numeric_count_label.text()
-        assert "Sum: $150.00" in bar._sum_label.text()
-        assert "Avg: $50.00" in bar._avg_label.text()  # 150/3 = 50
-        assert "Min: $10.00" in bar._min_label.text()
-        assert "Max: $90.00" in bar._max_label.text()
+        assert "Sum: 150.00" in bar._sum_label.text()
+        assert "Avg: 50.00" in bar._avg_label.text()  # 150/3 = 50
+        assert "Min: 10.00" in bar._min_label.text()
+        assert "Max: 90.00" in bar._max_label.text()
         
         assert bar._numeric_count_label.isVisible()
         assert bar._sum_label.isVisible()
@@ -111,10 +111,10 @@ class TestSpreadsheetStatsBar:
         stats.max_val = Decimal("10000.00")
         bar.update_stats(stats)
         
-        assert "Sum: $12,345.66" in bar._sum_label.text()
-        assert "Avg: $4,115.22" in bar._avg_label.text()
-        assert "Min: $1,000.00" in bar._min_label.text()
-        assert "Max: $10,000.00" in bar._max_label.text()
+        assert "Sum: 12,345.66" in bar._sum_label.text()
+        assert "Avg: 4,115.22" in bar._avg_label.text()
+        assert "Min: 1,000.00" in bar._min_label.text()
+        assert "Max: 10,000.00" in bar._max_label.text()
         
     def test_negative_values(self, qapp):
         """Negative values should display with minus sign."""
@@ -127,7 +127,7 @@ class TestSpreadsheetStatsBar:
         stats.max_val = Decimal("-10.00")
         bar.update_stats(stats)
         
-        assert "Sum: $-50.00" in bar._sum_label.text()
-        assert "Avg: $-25.00" in bar._avg_label.text()
-        assert "Min: $-40.00" in bar._min_label.text()
-        assert "Max: $-10.00" in bar._max_label.text()
+        assert "Sum: -50.00" in bar._sum_label.text()
+        assert "Avg: -25.00" in bar._avg_label.text()
+        assert "Min: -40.00" in bar._min_label.text()
+        assert "Max: -10.00" in bar._max_label.text()

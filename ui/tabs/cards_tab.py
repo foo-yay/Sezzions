@@ -192,8 +192,8 @@ class CardsTab(QtWidgets.QWidget):
         # Check if any cells are selected
         has_selection = self.table.selectionModel().hasSelection()
         
-        # Detect full-row selections for View/Edit/Delete buttons
-        selected_rows = self._get_fully_selected_rows()
+        # Get unique rows that have any selected cells
+        selected_rows = self._get_selected_row_numbers()
         self.view_btn.setVisible(len(selected_rows) == 1)
         self.edit_btn.setVisible(len(selected_rows) == 1)
         self.delete_btn.setVisible(len(selected_rows) > 0)
@@ -206,24 +206,12 @@ class CardsTab(QtWidgets.QWidget):
         else:
             self.stats_bar.clear_stats()
 
-    def _get_fully_selected_rows(self):
-        """Get list of rows where ALL columns are selected"""
+    def _get_selected_row_numbers(self):
+        """Get list of unique row numbers that have any selected cells"""
         selected_indexes = self.table.selectedIndexes()
         if not selected_indexes:
             return []
-        
-        # Group by row
-        rows_dict = {}
-        for index in selected_indexes:
-            row = index.row()
-            if row not in rows_dict:
-                rows_dict[row] = set()
-            rows_dict[row].add(index.column())
-        
-        # Find rows where all columns are selected
-        col_count = self.table.columnCount()
-        fully_selected = [row for row, cols in rows_dict.items() if len(cols) == col_count]
-        return fully_selected
+        return sorted(set(index.row() for index in selected_indexes))
     
     def _get_selected_card_id(self):
         """Get ID of selected card"""
@@ -232,7 +220,7 @@ class CardsTab(QtWidgets.QWidget):
 
     def _get_selected_card_ids(self):
         ids = []
-        for row in self._get_fully_selected_rows():
+        for row in self._get_selected_row_numbers():
             item = self.table.item(row, 0)
             if item is not None:
                 value = item.data(QtCore.Qt.UserRole)

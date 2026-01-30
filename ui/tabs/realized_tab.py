@@ -7,6 +7,8 @@ from datetime import date, datetime
 
 from app_facade import AppFacade
 from ui.date_filter_widget import DateFilterWidget
+from ui.spreadsheet_ux import SpreadsheetUXController
+from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 from ui.daily_sessions_filters import (
     ColumnFilterDialog,
     DateTimeFilterDialog,
@@ -684,7 +686,20 @@ class RealizedTab(QtWidgets.QWidget):
         self.tree.setColumnWidth(7, 140)
         self.header = header
         header.viewport().installEventFilter(self)
+        
+        # Enable custom context menu for spreadsheet UX
+        self.tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._show_context_menu)
+        
         layout.addWidget(self.tree, 1)
+        
+        # Add spreadsheet stats bar
+        self.stats_bar = SpreadsheetStatsBar()
+        layout.addWidget(self.stats_bar)
+        
+        # Set up keyboard shortcuts for spreadsheet UX
+        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self.tree)
+        copy_shortcut.activated.connect(self._copy_selection)
 
         self.tree.itemSelectionChanged.connect(self._update_action_buttons)
         self.tree.itemDoubleClicked.connect(self._handle_double_click)

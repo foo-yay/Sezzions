@@ -88,8 +88,22 @@ class RedemptionMethodTypesTab(QtWidgets.QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         self.table.itemDoubleClicked.connect(self._view_type)
+        
+        # Enable custom context menu for spreadsheet UX
+        self.table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+        
         layout.addWidget(self.table)
+        
+        # Add spreadsheet stats bar
+        self.stats_bar = SpreadsheetStatsBar()
+        layout.addWidget(self.stats_bar)
+        
         self.table_filter = TableHeaderFilter(self.table, refresh_callback=self.refresh_data)
+        
+        # Set up keyboard shortcuts for spreadsheet UX
+        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self.table)
+        copy_shortcut.activated.connect(self._copy_selection)
 
         self.refresh_data()
 
@@ -147,8 +161,8 @@ class RedemptionMethodTypesTab(QtWidgets.QWidget):
         # Check if any cells are selected
         has_selection = self.table.selectionModel().hasSelection()
         
-        # Detect full-row selections for View/Edit/Delete buttons
-        selected_rows = self._get_fully_selected_rows()
+        # Get unique rows that have any selected cells
+        selected_rows = self._get_selected_row_numbers()
         self.view_btn.setVisible(len(selected_rows) == 1)
         self.edit_btn.setVisible(len(selected_rows) == 1)
         self.delete_btn.setVisible(len(selected_rows) > 0)
@@ -161,24 +175,12 @@ class RedemptionMethodTypesTab(QtWidgets.QWidget):
         else:
             self.stats_bar.clear_stats()
 
-    def _get_fully_selected_rows(self):
-        """Get list of rows where ALL columns are selected"""
+    def _get_selected_row_numbers(self):
+        """Get list of unique row numbers that have any selected cells"""
         selected_indexes = self.table.selectedIndexes()
         if not selected_indexes:
             return []
-        
-        # Group by row
-        rows_dict = {}
-        for index in selected_indexes:
-            row = index.row()
-            if row not in rows_dict:
-                rows_dict[row] = set()
-            rows_dict[row].add(index.column())
-        
-        # Find rows where all columns are selected
-        col_count = self.table.columnCount()
-        fully_selected = [row for row, cols in rows_dict.items() if len(cols) == col_count]
-        return fully_selected
+        return sorted(set(index.row() for index in selected_indexes))
 
     def _get_selected_type_id(self):
         ids = self._get_selected_type_ids()
@@ -186,7 +188,7 @@ class RedemptionMethodTypesTab(QtWidgets.QWidget):
 
     def _get_selected_type_ids(self):
         ids = []
-        for row in self._get_fully_selected_rows():
+        for row in self._get_selected_row_numbers():
             item = self.table.item(row, 0)
             if item is not None:
                 value = item.data(QtCore.Qt.UserRole)
@@ -613,3 +615,27 @@ class RedemptionMethodTypeViewDialog(QtWidgets.QDialog):
         self.accept()
         if self._on_delete:
             self._on_delete()
+    
+    def _copy_selection(self):
+        """Copy selected cells to clipboard as TSV"""
+        SpreadsheetUXController.copy_to_clipboard(self.table)
+    
+    def _copy_with_headers(self):
+        """Copy selected cells to clipboard with column headers"""
+        SpreadsheetUXController.copy_to_clipboard(self.table, include_headers=True)
+    
+    def _show_context_menu(self, position):
+        """Show context menu for table"""
+        if not self.table.selectionModel().hasSelection():
+            return
+        
+        menu = QtWidgets.QMenu(self)
+        
+        copy_action = menu.addAction("Copy")
+        copy_action.setShortcut(QtGui.QKeySequence.Copy)
+        copy_action.triggered.connect(self._copy_selection)
+        
+        copy_headers_action = menu.addAction("Copy With Headers")
+        copy_headers_action.triggered.connect(self._copy_with_headers)
+        
+        menu.exec_(self.table.viewport().mapToGlobal(position))
