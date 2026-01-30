@@ -6,6 +6,8 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
 from models.redemption_method import RedemptionMethod
 from ui.table_header_filters import TableHeaderFilter
+from ui.spreadsheet_ux import SpreadsheetUXController
+from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 
 
 class RedemptionMethodsTab(QtWidgets.QWidget):
@@ -82,14 +84,27 @@ class RedemptionMethodsTab(QtWidgets.QWidget):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
-        self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectRows)
+        self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectItems)
         self.table.setSelectionMode(QtWidgets.QTableWidget.ExtendedSelection)
         self.table.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         self.table.itemDoubleClicked.connect(self._view_method)
+        
+        # Context menu setup
+        self.table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+        
         layout.addWidget(self.table)
+        
+        # Stats bar and keyboard shortcut
+        self.stats_bar = SpreadsheetStatsBar()
+        layout.addWidget(self.stats_bar)
+        
         self.table_filter = TableHeaderFilter(self.table, refresh_callback=self.refresh_data)
+        
+        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self.table)
+        copy_shortcut.activated.connect(self._copy_selection)
 
         self.refresh_data()
 
@@ -156,11 +171,30 @@ class RedemptionMethodsTab(QtWidgets.QWidget):
         self._populate_table()
 
     def _on_selection_changed(self):
-        selected_rows = self.table.selectionModel().selectedRows()
-        has_selection = bool(selected_rows)
+        """Enable/disable buttons based on selection"""
+        # Check if any cells are selected
+        has_selection = self.table.selectionModel().hasSelection()
+        
+        # Get unique rows that have any selected cells
+        selected_rows = self._get_selected_row_numbers()
         self.view_btn.setVisible(len(selected_rows) == 1)
         self.edit_btn.setVisible(len(selected_rows) == 1)
-        self.delete_btn.setVisible(has_selection)
+        self.delete_btn.setVisible(len(selected_rows) > 0)
+        
+        # Update spreadsheet stats bar
+        if has_selection:
+            grid = SpreadsheetUXController.extract_selection_grid(self.table)
+            stats = SpreadsheetUXController.compute_stats(grid)
+            self.stats_bar.update_stats(stats)
+        else:
+            self.stats_bar.clear_stats()
+
+    def _get_selected_row_numbers(self):
+        """Get list of unique row numbers that have any selected cells"""
+        selected_indexes = self.table.selectedIndexes()
+        if not selected_indexes:
+            return []
+        return sorted(set(index.row() for index in selected_indexes))
 
     def _get_selected_method_id(self):
         ids = self._get_selected_method_ids()
@@ -168,8 +202,8 @@ class RedemptionMethodsTab(QtWidgets.QWidget):
 
     def _get_selected_method_ids(self):
         ids = []
-        for row in self.table.selectionModel().selectedRows():
-            item = self.table.item(row.row(), 0)
+        for row in self._get_selected_row_numbers():
+            item = self.table.item(row, 0)
             if item is not None:
                 value = item.data(QtCore.Qt.UserRole)
                 if value is not None:
@@ -259,6 +293,32 @@ class RedemptionMethodsTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.warning(
                     self, "Error", f"Failed to delete method(s):\n{str(e)}"
                 )
+
+    def _copy_selection(self):
+        """Copy selected cells to clipboard as TSV"""
+        grid = SpreadsheetUXController.extract_selection_grid(self.table)
+        SpreadsheetUXController.copy_to_clipboard(grid)
+
+    def _copy_with_headers(self):
+        """Copy selected cells to clipboard with column headers"""
+        grid = SpreadsheetUXController.extract_selection_grid(self.table, include_headers=True)
+        SpreadsheetUXController.copy_to_clipboard(grid)
+
+    def _show_context_menu(self, position):
+        """Show context menu for table"""
+        if not self.table.selectionModel().hasSelection():
+            return
+        
+        menu = QtWidgets.QMenu(self)
+        
+        copy_action = menu.addAction("Copy")
+        copy_action.setShortcut(QtGui.QKeySequence.Copy)
+        copy_action.triggered.connect(self._copy_selection)
+        
+        copy_headers_action = menu.addAction("Copy With Headers")
+        copy_headers_action.triggered.connect(self._copy_with_headers)
+        
+        menu.exec_(self.table.viewport().mapToGlobal(position))
 
     def _export_csv(self):
         if self.table.rowCount() == 0:

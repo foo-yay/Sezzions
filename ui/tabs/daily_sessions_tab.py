@@ -8,6 +8,8 @@ from decimal import Decimal
 from datetime import date, datetime
 from app_facade import AppFacade
 from ui.date_filter_widget import DateFilterWidget
+from ui.spreadsheet_ux import SpreadsheetUXController
+from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 from ui.daily_sessions_filters import (
     ColumnFilterDialog,
     DateTimeFilterDialog,
@@ -154,7 +156,8 @@ class DailySessionsTab(QtWidgets.QWidget):
         self.tree.setColumnCount(len(self.columns))
         self.tree.setHeaderLabels(self.columns)
         self.tree.setAlternatingRowColors(True)
-        self.tree.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.tree.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
+        self.tree.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.tree.setUniformRowHeights(True)
         header = self.tree.header()
         header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
@@ -169,7 +172,20 @@ class DailySessionsTab(QtWidgets.QWidget):
         self.tree.setColumnWidth(7, 200)
         header.viewport().installEventFilter(self)
         self.tree.itemDoubleClicked.connect(lambda *_args: self.add_edit_notes())
+        
+        # Enable custom context menu for spreadsheet UX
+        self.tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._show_context_menu)
+        
         layout.addWidget(self.tree, 1)
+        
+        # Add spreadsheet stats bar
+        self.stats_bar = SpreadsheetStatsBar()
+        layout.addWidget(self.stats_bar)
+        
+        # Set up keyboard shortcuts for spreadsheet UX
+        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self.tree)
+        copy_shortcut.activated.connect(self._copy_selection)
 
         self.search_edit.textChanged.connect(self.refresh_view)
         self.search_clear_btn.clicked.connect(self._clear_search)
@@ -182,9 +198,16 @@ class DailySessionsTab(QtWidgets.QWidget):
         self.export_btn.clicked.connect(self._export_csv)
         self.user_filter_btn.clicked.connect(self._show_user_filter)
         self.site_filter_btn.clicked.connect(self._show_site_filter)
-        self.tree.itemSelectionChanged.connect(self._update_action_buttons)
+        self.tree.itemSelectionChanged.connect(self._on_selection_changed)
 
         self.refresh_view()
+    
+    def _on_selection_changed(self):
+        """Update stats bar and action buttons on selection change"""
+        grid = SpreadsheetUXController.extract_selection_grid(self.tree)
+        stats = SpreadsheetUXController.compute_stats(grid)
+        self.stats_bar.update_stats(stats)
+        self._update_action_buttons()
 
     def eventFilter(self, obj, event):
         if getattr(self, "tree", None) is not None and obj is self.tree.header().viewport():
@@ -497,12 +520,22 @@ class DailySessionsTab(QtWidgets.QWidget):
     def _update_action_buttons(self):
         meta = self._current_meta() or {}
         kind = meta.get("kind")
+        has_selection = self.tree.selectionModel().hasSelection()
+        
         if kind == "date":
             self.primary_btn_stack.setCurrentWidget(self.notes_btn)
         elif kind == "session":
             self.primary_btn_stack.setCurrentWidget(self.view_btn)
         else:
             self.primary_btn_stack.setCurrentWidget(self.primary_btn_placeholder)
+        
+        # Update spreadsheet stats bar
+        if has_selection:
+            grid = SpreadsheetUXController.extract_selection_grid(self.tree)
+            stats = SpreadsheetUXController.compute_stats(grid)
+            self.stats_bar.update_stats(stats)
+        else:
+            self.stats_bar.clear_stats()
 
     def _handle_notes_clicked(self):
         meta = self._current_meta() or {}
@@ -728,6 +761,32 @@ class DailySessionsTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.critical(
                     self, "Export Error", f"Failed to export:\n{str(e)}"
                 )
+    
+    def _copy_selection(self):
+        """Copy selected cells to clipboard as TSV"""
+        grid = SpreadsheetUXController.extract_selection_grid(self.tree)
+        SpreadsheetUXController.copy_to_clipboard(grid)
+
+    def _copy_with_headers(self):
+        """Copy selected cells to clipboard with column headers"""
+        grid = SpreadsheetUXController.extract_selection_grid(self.tree, include_headers=True)
+        SpreadsheetUXController.copy_to_clipboard(grid)
+    
+    def _show_context_menu(self, position):
+        """Show context menu for tree"""
+        if not self.tree.selectionModel().hasSelection():
+            return
+        
+        menu = QtWidgets.QMenu(self)
+        
+        copy_action = menu.addAction("Copy")
+        copy_action.setShortcut(QtGui.QKeySequence.Copy)
+        copy_action.triggered.connect(self._copy_selection)
+        
+        copy_headers_action = menu.addAction("Copy With Headers")
+        copy_headers_action.triggered.connect(self._copy_with_headers)
+        
+        menu.exec_(self.tree.viewport().mapToGlobal(position))
 
 
 class DailySessionNotesDialog(QtWidgets.QDialog):

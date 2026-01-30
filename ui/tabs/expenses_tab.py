@@ -3,11 +3,13 @@ Expenses tab - Manage expenses
 """
 from datetime import date, datetime
 from decimal import Decimal
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
 from models.expense import Expense
 from ui.date_filter_widget import DateFilterWidget
 from ui.table_header_filters import TableHeaderFilter
+from ui.spreadsheet_ux import SpreadsheetUXController
+from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 from ui.input_parsers import parse_date_input, parse_time_input
 
 
@@ -131,17 +133,30 @@ class ExpensesTab(QtWidgets.QWidget):
         self.table = QtWidgets.QTableWidget(0, len(self.columns))
         self.table.setHorizontalHeaderLabels(self.columns)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectItems)
+        self.table.setSelectionMode(QtWidgets.QTableWidget.ExtendedSelection)
         self.table.verticalHeader().setVisible(False)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
         header.setStretchLastSection(True)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         self.table.itemDoubleClicked.connect(self._view_expense)
+        
+        # Enable custom context menu for spreadsheet UX
+        self.table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+        
         layout.addWidget(self.table)
+        
+        # Add spreadsheet stats bar
+        self.stats_bar = SpreadsheetStatsBar()
+        layout.addWidget(self.stats_bar)
 
         self.table_filter = TableHeaderFilter(self.table, date_columns=[0], refresh_callback=self.refresh_data)
+        
+        # Set up keyboard shortcuts for spreadsheet UX
+        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self.table)
+        copy_shortcut.activated.connect(self._copy_selection)
 
         self.refresh_data()
 
@@ -206,10 +221,18 @@ class ExpensesTab(QtWidgets.QWidget):
 
     def _on_selection_changed(self):
         selected = self.table.selectionModel().selectedRows()
-        has_selection = bool(selected)
+        has_selection = self.table.selectionModel().hasSelection()
         self.view_btn.setVisible(len(selected) == 1)
         self.edit_btn.setVisible(len(selected) == 1)
-        self.delete_btn.setVisible(has_selection)
+        self.delete_btn.setVisible(bool(selected))
+        
+        # Update spreadsheet stats bar
+        if has_selection:
+            grid = SpreadsheetUXController.extract_selection_grid(self.table)
+            stats = SpreadsheetUXController.compute_stats(grid)
+            self.stats_bar.update_stats(stats)
+        else:
+            self.stats_bar.clear_stats()
 
     def _selected_ids(self):
         ids = []
@@ -320,6 +343,32 @@ class ExpensesTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.information(self, "Export Complete", f"Exported expenses to:\n{filename}")
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "Export Error", f"Failed to export:\n{e}")
+    
+    def _copy_selection(self):
+        """Copy selected cells to clipboard as TSV"""
+        grid = SpreadsheetUXController.extract_selection_grid(self.table)
+        SpreadsheetUXController.copy_to_clipboard(grid)
+
+    def _copy_with_headers(self):
+        """Copy selected cells to clipboard with column headers"""
+        grid = SpreadsheetUXController.extract_selection_grid(self.table, include_headers=True)
+        SpreadsheetUXController.copy_to_clipboard(grid)
+    
+    def _show_context_menu(self, position):
+        """Show context menu for table"""
+        if not self.table.selectionModel().hasSelection():
+            return
+        
+        menu = QtWidgets.QMenu(self)
+        
+        copy_action = menu.addAction("Copy")
+        copy_action.setShortcut(QtGui.QKeySequence.Copy)
+        copy_action.triggered.connect(self._copy_selection)
+        
+        copy_headers_action = menu.addAction("Copy With Headers")
+        copy_headers_action.triggered.connect(self._copy_with_headers)
+        
+        menu.exec_(self.table.viewport().mapToGlobal(position))
 
 
 class ExpenseDialog(QtWidgets.QDialog):
@@ -911,3 +960,4 @@ class ExpenseViewDialog(QtWidgets.QDialog):
         self.accept()
         if self._on_edit:
             self._on_edit()
+

@@ -9,6 +9,73 @@ Rules:
 
 ---
 
+## 2026-01-31
+
+```yaml
+id: 2026-01-31-01
+type: feature
+areas: [ui, architecture, tests]
+summary: "Add spreadsheet UX with cell selection, copy, and statistics (Issue #14, Phase 1)."
+files_changed:
+  - ui/spreadsheet_ux.py (new, 325 lines)
+  - ui/spreadsheet_stats_bar.py (new, 95 lines)
+  - tests/unit/ui/test_spreadsheet_ux.py (new, 32 tests)
+  - tests/unit/ui/widgets/test_spreadsheet_stats_bar.py (new, 7 tests)
+  - ui/tabs/*.py (14 tabs integrated)
+  - docs/status/CHANGELOG.md
+  - docs/PROJECT_SPEC.md
+```
+
+Notes:
+- **Spreadsheet UX Module** (`ui/spreadsheet_ux.py`):
+  - Excel-like cell-level selection with multi-cell highlights
+  - Copy selection to clipboard as TSV (Tab-Separated Values) via Cmd+C
+  - Context menu: Copy, Copy With Headers
+  - Selection statistics: Count, Numeric Count, Sum, Avg, Min, Max
+  - Currency parsing: handles `$1,234.56`, `(123.45)`, `100%`, `N/A`, empty strings
+  - Widget-agnostic: supports QTableWidget (11 tabs) and QTreeWidget (2 tabs)
+  - Phase 1: Read-only features (no inline editing or paste yet)
+
+- **Stats Bar Widget** (`ui/spreadsheet_stats_bar.py`):
+  - Horizontal layout showing 6 statistics for current selection
+  - Format-neutral: works with currency, percentages, raw numbers
+  - Updates dynamically on selection change
+
+- **QTreeWidget Support** (Daily Sessions, Realized):
+  - Qt limitation: QTreeWidget doesn't support true cell-level selection
+  - Workaround: Detect single-cell clicks using `currentColumn()` and `currentItem()`
+  - Single-cell selection → extracts only clicked column value for stats
+  - Multi-selection → falls back to full row extraction (all columns)
+  - Added `setSelectionBehavior(SelectItems)` for visual consistency
+
+- **14 Tabs Integrated**:
+  - **QTableWidget (11 tabs)**: Purchases, Redemptions, Games, Game Types, Sites, Users, Cards, Redemption Methods, Redemption Method Types, Unrealized, Game Sessions, Expenses
+  - **QTreeWidget (2 tabs)**: Daily Sessions, Realized
+  - All tabs: Cell selection, Cmd+C copy, context menu, stats bar integration
+  - Selection logic: `_get_selected_row_numbers()` for action button visibility
+  - Stats updates: `_on_selection_changed()` handlers update stats bar on selection
+
+- **Tests**: 39 new tests (32 core + 7 widget)
+  - Core: Currency parsing, TSV formatting, grid extraction, stats computation
+  - Widget: Stats bar display, format handling, empty/numeric/mixed scenarios
+  - All 545 tests passing
+
+- **Implementation Fixes** (this session):
+  - Fixed runtime errors: Moved methods from dialog classes to main tab classes
+  - Fixed clipboard operations: Extract grid first, then pass to clipboard (not widget)
+  - Fixed tree cell detection: `currentColumn()` approach for single-cell statistics
+  - Fixed selection handlers: Added stats bar updates to all tabs
+  - Fixed corrupted method definitions: Restored missing `def` statements (4 tabs)
+  - Fixed old method references: Replaced `_get_fully_selected_rows()` with `_get_selected_row_numbers()`
+
+- **Future Work** (Phase 2/3, separate issues):
+  - Inline cell editing
+  - Paste from clipboard
+  - Advanced selection (Shift+Click, range selection)
+  - Export with selection preserved
+
+---
+
 ## 2026-01-30
 
 ```yaml
