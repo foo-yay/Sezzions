@@ -108,19 +108,22 @@ class SpreadsheetUXController(QObject):
         Extract selected cells as a rectangular grid of strings.
         
         For QTableWidget: returns selected cells in row/column order
+        For QTableView: returns selected model indexes in row/column order
         For QTreeWidget: returns selected items as visible "cells"
         
         Args:
-            widget: QTableWidget or QTreeWidget
+            widget: QTableWidget, QTableView, or QTreeWidget
             include_headers: If True, prepend column headers as first row
         
         Returns:
             List of rows, where each row is a list of cell values (strings)
         """
-        from PySide6.QtWidgets import QTableWidget, QTreeWidget
+        from PySide6.QtWidgets import QTableWidget, QTreeWidget, QTableView
         
         if isinstance(widget, QTableWidget):
             return SpreadsheetUXController._extract_table_selection(widget, include_headers)
+        elif isinstance(widget, QTableView):
+            return SpreadsheetUXController._extract_tableview_selection(widget, include_headers)
         elif isinstance(widget, QTreeWidget):
             return SpreadsheetUXController._extract_tree_selection(widget, include_headers)
         else:
@@ -162,6 +165,58 @@ class SpreadsheetUXController(QObject):
                 if is_selected:
                     item = table.item(row, col)
                     row_data.append(item.text() if item else "")
+                else:
+                    row_data.append("")  # Empty for non-selected cells in bounding box
+            grid.append(row_data)
+        
+        return grid
+    
+    @staticmethod
+    def _extract_tableview_selection(view, include_headers=False) -> List[List[str]]:
+        """
+        Extract selection from QTableView with model/proxy.
+        
+        QTableView uses a selection model and item model. Selected indexes
+        may map through a QSortFilterProxyModel to source model indexes.
+        """
+        from PySide6.QtCore import Qt
+        
+        selection_model = view.selectionModel()
+        if not selection_model:
+            return []
+        
+        selected_indexes = selection_model.selectedIndexes()
+        if not selected_indexes:
+            return []
+        
+        # Find bounding box of selection
+        min_row = min(idx.row() for idx in selected_indexes)
+        max_row = max(idx.row() for idx in selected_indexes)
+        min_col = min(idx.column() for idx in selected_indexes)
+        max_col = max(idx.column() for idx in selected_indexes)
+        
+        # Build map of (row, col) -> data
+        cell_map = {}
+        for idx in selected_indexes:
+            cell_map[(idx.row(), idx.column())] = idx.data(Qt.DisplayRole) or ""
+        
+        grid = []
+        
+        # Add headers if requested
+        if include_headers:
+            header_row = []
+            model = view.model()
+            for col in range(min_col, max_col + 1):
+                header_data = model.headerData(col, Qt.Horizontal, Qt.DisplayRole)
+                header_row.append(str(header_data) if header_data else f"Column {col}")
+            grid.append(header_row)
+        
+        # Extract selected cells in rectangular grid
+        for row in range(min_row, max_row + 1):
+            row_data = []
+            for col in range(min_col, max_col + 1):
+                if (row, col) in cell_map:
+                    row_data.append(str(cell_map[(row, col)]))
                 else:
                     row_data.append("")  # Empty for non-selected cells in bounding box
             grid.append(row_data)

@@ -12,6 +12,33 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-02
+type: decision
+areas: [architecture, rollback]
+summary: "QTableView migration rejected - reverted PR #24 (Issue #15 closed as won't do)."
+files_changed:
+  - docs/adr/0002-qtableview-migration-rejected.md (new)
+  - ui/tabs/sites_tab.py (reverted to QTableWidget)
+  - tests/ui/test_sites_tab_qtableview.py (removed)
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Decision:** Do NOT migrate tabs from QTableWidget to QTableView
+- **Rationale:**
+  - Critical functionality loss: TableHeaderFilter (per-column filtering UI) incompatible with QTableView
+  - Weak benefits without inline editing (which was removed from scope)
+  - Trade-off: Lost user-facing features for minimal architectural improvement
+  - This is architecture for architecture's sake without concrete need
+- **Actions:**
+  - Closed PR #24 without merge
+  - Closed Issue #15 as "won't do"
+  - Reverted Sites tab to QTableWidget
+  - Infrastructure code (BaseTableModel, SpreadsheetUX QTableView support) remains but unused
+- **ADR:** See `docs/adr/0002-qtableview-migration-rejected.md` for full rationale
+- **If Revisited:** Only if we implement inline editing OR solve column filtering UI for QTableView
+
+```yaml
 id: 2026-01-31-01
 type: feature
 areas: [ui, architecture, tests]
