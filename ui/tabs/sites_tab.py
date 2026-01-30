@@ -5,7 +5,6 @@ from datetime import date
 from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
 from models.site import Site
-from ui.table_header_filters import TableHeaderFilter
 from ui.spreadsheet_ux import SpreadsheetUXController
 from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 from ui.base_table_model import BaseTableModel, ColumnDefinition
@@ -149,7 +148,8 @@ class SitesTab(QtWidgets.QWidget):
         self.stats_bar = SpreadsheetStatsBar()
         layout.addWidget(self.stats_bar)
         
-        self.table_filter = TableHeaderFilter(self.table, refresh_callback=self.refresh_data)
+        # Note: TableHeaderFilter is for QTableWidget only. QTableView uses proxy model for filtering.
+        # Column filtering can be added later using QSortFilterProxyModel.
         
         copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self.table)
         copy_shortcut.activated.connect(self._copy_selection)
@@ -177,9 +177,6 @@ class SitesTab(QtWidgets.QWidget):
         
         # Update model data
         self.model.set_data(filtered)
-        
-        # Apply column filters
-        self.table_filter.apply_filters()
     
     def _filter_sites(self):
         """Filter table based on search"""
@@ -195,8 +192,7 @@ class SitesTab(QtWidgets.QWidget):
         self.search_edit.clear()
         self.table.clearSelection()
         self._on_selection_changed()
-        if hasattr(self, "table_filter"):
-            self.table_filter.clear_all_filters()
+        # Column filtering removed (was TableHeaderFilter specific)
         self._populate_table()
     
     def _on_selection_changed(self):
