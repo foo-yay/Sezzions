@@ -102,6 +102,102 @@ UI rules:
 - Prefer View-first dialog flows; edits are deliberate.
 - Bulk actions and destructive actions require confirmation.
 
+### 5.1 Spreadsheet UX (Issue #14, Phase 1)
+
+**Purpose:**
+Provide Excel-like usability across all table/tree views in the application:
+- Cell-level selection with multi-cell highlights
+- Copy selection to clipboard as TSV (Tab-Separated Values)
+- Real-time selection statistics: Count, Numeric Count, Sum, Avg, Min, Max
+- Context menu: Copy, Copy With Headers
+- Keyboard shortcut: Cmd+C / Ctrl+C for copy
+
+**Architecture:**
+- Core controller: `ui/spreadsheet_ux.py` (325 lines)
+  - `SpreadsheetUXController`: Static methods for widget-agnostic operations
+  - `SelectionStats`: Dataclass for computed statistics
+  - Currency parsing: Handles `$1,234.56`, `(123.45)` (negative), `100%`, `N/A`, empty strings
+  - TSV formatting: Excel-compatible tab-separated values
+  - Widget support: QTableWidget (full), QTreeWidget (hybrid)
+- Stats bar widget: `ui/spreadsheet_stats_bar.py` (95 lines)
+  - Horizontal layout showing 6 statistics
+  - Format-neutral: works with currency, percentages, raw numbers
+  - Updates dynamically on selection change via `_on_selection_changed()` handlers
+
+**Widget Support:**
+
+*QTableWidget (11 tabs):*
+- Purchases, Redemptions, Games, Game Types, Sites, Users, Cards, Redemption Methods, Redemption Method Types, Unrealized, Game Sessions, Expenses
+- Selection mode: `ExtendedSelection` + `SelectItems` behavior
+- Full cell-level selection support (Qt native)
+- Copy extracts exact selected cells
+
+*QTreeWidget (2 tabs):*
+- Daily Sessions, Realized
+- Selection mode: `ExtendedSelection` + `SelectItems` behavior
+- **Qt Limitation**: QTreeWidget doesn't support true cell-level selection
+  - When an item is selected, all columns are selected (Qt architecture)
+  - `selectedIndexes()` returns all columns for selected items, not just clicked cell
+- **Workaround**: Single-cell detection via `currentColumn()` and `currentItem()`
+  - If exactly one item selected AND it's the current item AND currentColumn valid → treat as single-cell
+  - Extract only the clicked column's value for stats
+  - Multi-selection → falls back to full row extraction (all columns)
+- This provides "feels like cell selection" UX while respecting Qt constraints
+
+**Integration Pattern (per tab):**
+```python
+# 1. Add stats bar to layout
+self.stats_bar = SpreadsheetStatsBar(self)
+layout.addWidget(self.stats_bar)
+
+# 2. Set selection behavior
+self.table.setSelectionBehavior(QAbstractItemView.SelectItems)  # or self.tree
+self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+
+# 3. Connect selection handler
+self.table.selectionModel().selectionChanged.connect(self._on_selection_changed)
+
+# 4. Update stats on selection change
+def _on_selection_changed(self):
+    grid = SpreadsheetUXController.extract_selection_grid(self.table)
+    stats = SpreadsheetUXController.compute_stats(grid)
+    self.stats_bar.update_stats(stats)
+    self._update_action_buttons()  # If applicable
+
+# 5. Copy methods
+def _copy_selection(self):
+    grid = SpreadsheetUXController.extract_selection_grid(self.table)
+    SpreadsheetUXController.copy_to_clipboard(grid)
+
+def _copy_with_headers(self):
+    grid = SpreadsheetUXController.extract_selection_grid(self.table, include_headers=True)
+    SpreadsheetUXController.copy_to_clipboard(grid)
+
+# 6. Context menu and keyboard shortcut
+copy_shortcut = QShortcut(QKeySequence.Copy, self.table)
+copy_shortcut.activated.connect(self._copy_selection)
+self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+self.table.customContextMenuRequested.connect(self._show_context_menu)
+```
+
+**Phase 1 Scope (Read-Only):**
+- Cell selection (multi-cell, rectangular regions)
+- Copy to clipboard (TSV format)
+- Selection statistics
+- Context menu
+- Keyboard shortcuts (Cmd+C)
+
+**Future Phases (Separate Issues):**
+- Phase 2: Inline cell editing
+- Phase 3: Paste from clipboard
+- Advanced selection: Shift+Click range selection, non-contiguous selection
+- Export with selection preserved
+
+**Tests:**
+- 39 new tests: 32 core module tests + 7 stats bar widget tests
+- Coverage: Currency parsing, TSV formatting, grid extraction, stats computation
+- All 545 tests passing
+
 ## 6) Tools (Operational)
 
 Tools are accessible via Setup → Tools sub-tab and provide "production readiness" capabilities:
