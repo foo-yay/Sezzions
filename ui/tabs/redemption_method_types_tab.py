@@ -329,6 +329,32 @@ class RedemptionMethodTypesTab(QtWidgets.QWidget):
         )
         dialog.exec()
         self.refresh_data()
+    
+    def _copy_selection(self):
+        """Copy selected cells to clipboard as TSV"""
+        grid = SpreadsheetUXController.extract_selection_grid(self.table)
+        SpreadsheetUXController.copy_to_clipboard(grid)
+
+    def _copy_with_headers(self):
+        """Copy selected cells to clipboard with column headers"""
+        grid = SpreadsheetUXController.extract_selection_grid(self.table, include_headers=True)
+        SpreadsheetUXController.copy_to_clipboard(grid)
+    
+    def _show_context_menu(self, position):
+        """Show context menu for table"""
+        if not self.table.selectionModel().hasSelection():
+            return
+        
+        menu = QtWidgets.QMenu(self)
+        
+        copy_action = menu.addAction("Copy")
+        copy_action.setShortcut(QtGui.QKeySequence.Copy)
+        copy_action.triggered.connect(self._copy_selection)
+        
+        copy_headers_action = menu.addAction("Copy With Headers")
+        copy_headers_action.triggered.connect(self._copy_with_headers)
+        
+        menu.exec_(self.table.viewport().mapToGlobal(position))
 
 
 class RedemptionMethodTypeDialog(QtWidgets.QDialog):
@@ -615,27 +641,4 @@ class RedemptionMethodTypeViewDialog(QtWidgets.QDialog):
         self.accept()
         if self._on_delete:
             self._on_delete()
-    
-    def _copy_selection(self):
-        """Copy selected cells to clipboard as TSV"""
-        SpreadsheetUXController.copy_to_clipboard(self.table)
-    
-    def _copy_with_headers(self):
-        """Copy selected cells to clipboard with column headers"""
-        SpreadsheetUXController.copy_to_clipboard(self.table, include_headers=True)
-    
-    def _show_context_menu(self, position):
-        """Show context menu for table"""
-        if not self.table.selectionModel().hasSelection():
-            return
-        
-        menu = QtWidgets.QMenu(self)
-        
-        copy_action = menu.addAction("Copy")
-        copy_action.setShortcut(QtGui.QKeySequence.Copy)
-        copy_action.triggered.connect(self._copy_selection)
-        
-        copy_headers_action = menu.addAction("Copy With Headers")
-        copy_headers_action.triggered.connect(self._copy_with_headers)
-        
         menu.exec_(self.table.viewport().mapToGlobal(position))

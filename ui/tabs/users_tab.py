@@ -307,11 +307,13 @@ class UsersTab(QtWidgets.QWidget):
 
     def _copy_selection(self):
         """Copy selected cells to clipboard as TSV"""
-        SpreadsheetUXController.copy_to_clipboard(self.table)
+        grid = SpreadsheetUXController.extract_selection_grid(self.table)
+        SpreadsheetUXController.copy_to_clipboard(grid)
 
     def _copy_with_headers(self):
         """Copy selected cells to clipboard with column headers"""
-        SpreadsheetUXController.copy_to_clipboard(self.table, include_headers=True)
+        grid = SpreadsheetUXController.extract_selection_grid(self.table, include_headers=True)
+        SpreadsheetUXController.copy_to_clipboard(grid)
 
     def _show_context_menu(self, position):
         """Show context menu for table"""

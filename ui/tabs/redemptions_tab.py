@@ -303,7 +303,7 @@ class RedemptionsTab(QtWidgets.QWidget):
 
     def _get_selected_redemption_ids(self):
         ids = []
-        for row in self._get_fully_selected_rows():
+        for row in self._get_selected_row_numbers():
             item = self.table.item(row, 0)
             if item is not None:
                 value = item.data(QtCore.Qt.UserRole)
@@ -704,11 +704,13 @@ class RedemptionsTab(QtWidgets.QWidget):
 
     def _copy_selection(self):
         """Copy selected cells to clipboard as TSV"""
-        SpreadsheetUXController.copy_to_clipboard(self.table)
+        grid = SpreadsheetUXController.extract_selection_grid(self.table)
+        SpreadsheetUXController.copy_to_clipboard(grid)
 
     def _copy_with_headers(self):
         """Copy selected cells to clipboard with column headers"""
-        SpreadsheetUXController.copy_to_clipboard(self.table, include_headers=True)
+        grid = SpreadsheetUXController.extract_selection_grid(self.table, include_headers=True)
+        SpreadsheetUXController.copy_to_clipboard(grid)
 
     def _show_context_menu(self, position):
         """Show context menu for table"""

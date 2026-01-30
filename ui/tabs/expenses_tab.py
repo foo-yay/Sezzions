@@ -3,7 +3,7 @@ Expenses tab - Manage expenses
 """
 from datetime import date, datetime
 from decimal import Decimal
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
 from models.expense import Expense
 from ui.date_filter_widget import DateFilterWidget
@@ -343,6 +343,32 @@ class ExpensesTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.information(self, "Export Complete", f"Exported expenses to:\n{filename}")
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "Export Error", f"Failed to export:\n{e}")
+    
+    def _copy_selection(self):
+        """Copy selected cells to clipboard as TSV"""
+        grid = SpreadsheetUXController.extract_selection_grid(self.table)
+        SpreadsheetUXController.copy_to_clipboard(grid)
+
+    def _copy_with_headers(self):
+        """Copy selected cells to clipboard with column headers"""
+        grid = SpreadsheetUXController.extract_selection_grid(self.table, include_headers=True)
+        SpreadsheetUXController.copy_to_clipboard(grid)
+    
+    def _show_context_menu(self, position):
+        """Show context menu for table"""
+        if not self.table.selectionModel().hasSelection():
+            return
+        
+        menu = QtWidgets.QMenu(self)
+        
+        copy_action = menu.addAction("Copy")
+        copy_action.setShortcut(QtGui.QKeySequence.Copy)
+        copy_action.triggered.connect(self._copy_selection)
+        
+        copy_headers_action = menu.addAction("Copy With Headers")
+        copy_headers_action.triggered.connect(self._copy_with_headers)
+        
+        menu.exec_(self.table.viewport().mapToGlobal(position))
 
 
 class ExpenseDialog(QtWidgets.QDialog):
@@ -934,51 +960,4 @@ class ExpenseViewDialog(QtWidgets.QDialog):
         self.accept()
         if self._on_edit:
             self._on_edit()
-    
-    def _copy_selection(self):
-        """Copy selected cells to clipboard as TSV"""
-        SpreadsheetUXController.copy_to_clipboard(self.table)
-    
-    def _copy_with_headers(self):
-        """Copy selected cells to clipboard with column headers"""
-        SpreadsheetUXController.copy_to_clipboard(self.table, include_headers=True)
-    
-    def _show_context_menu(self, position):
-        """Show context menu for table"""
-        if not self.table.selectionModel().hasSelection():
-            return
-        
-        menu = QtWidgets.QMenu(self)
-        
-        copy_action = menu.addAction("Copy")
-        copy_action.setShortcut(QtGui.QKeySequence.Copy)
-        copy_action.triggered.connect(self._copy_selection)
-        
-        copy_headers_action = menu.addAction("Copy With Headers")
-        copy_headers_action.triggered.connect(self._copy_with_headers)
-        
-        menu.exec_(self.table.viewport().mapToGlobal(position))
-    
-    def _copy_selection(self):
-        """Copy selected cells to clipboard as TSV"""
-        SpreadsheetUXController.copy_to_clipboard(self.table)
-    
-    def _copy_with_headers(self):
-        """Copy selected cells to clipboard with column headers"""
-        SpreadsheetUXController.copy_to_clipboard(self.table, include_headers=True)
-    
-    def _show_context_menu(self, position):
-        """Show context menu for table"""
-        if not self.table.selectionModel().hasSelection():
-            return
-        
-        menu = QtWidgets.QMenu(self)
-        
-        copy_action = menu.addAction("Copy")
-        copy_action.setShortcut(QtGui.QKeySequence.Copy)
-        copy_action.triggered.connect(self._copy_selection)
-        
-        copy_headers_action = menu.addAction("Copy With Headers")
-        copy_headers_action.triggered.connect(self._copy_with_headers)
-        
-        menu.exec_(self.table.viewport().mapToGlobal(position))
+

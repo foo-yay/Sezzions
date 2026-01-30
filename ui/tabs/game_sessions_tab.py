@@ -177,7 +177,7 @@ class GameSessionsTab(QWidget):
         self.table_filter = TableHeaderFilter(self.table, date_columns=[0], refresh_callback=self.load_data)
         
         # Set up keyboard shortcuts for spreadsheet UX
-        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self.table)
+        copy_shortcut = QShortcut(QKeySequence.Copy, self.table)
         copy_shortcut.activated.connect(self._copy_selection)
 
         self.table.selectionModel().selectionChanged.connect(self._on_selection_changed)
@@ -756,15 +756,25 @@ class GameSessionsTab(QWidget):
                 writer.writerow(row_values)
 
     def _selected_ids(self):
-        selected_rows = self.table.selectionModel().selectedRows()
+        selected_row_numbers = self._get_selected_row_numbers()
         ids = []
-        for row in selected_rows:
-            item = self.table.item(row.row(), 0)
+        for row in selected_row_numbers:
+            item = self.table.item(row, 0)
             if item:
                 ids.append(item.data(Qt.UserRole))
         return ids
+    
+    def _get_selected_row_numbers(self):
+        """Get unique row numbers that have any selected cells"""
+        selected_indexes = self.table.selectedIndexes()
+        return sorted(set(index.row() for index in selected_indexes))
 
     def _on_selection_changed(self):
+        # Update stats bar
+        grid = SpreadsheetUXController.extract_selection_grid(self.table)
+        stats = SpreadsheetUXController.compute_stats(grid)
+        self.stats_bar.update_stats(stats)
+        
         ids = self._selected_ids()
         has_selection = bool(ids)
         sessions_by_id = {s.id: s for s in self.sessions}
@@ -795,6 +805,32 @@ class GameSessionsTab(QWidget):
         if hasattr(self, "table_filter"):
             self.table_filter.clear_all_filters()
         self.apply_filters()
+    
+    def _copy_selection(self):
+        """Copy selected cells to clipboard as TSV"""
+        grid = SpreadsheetUXController.extract_selection_grid(self.table)
+        SpreadsheetUXController.copy_to_clipboard(grid)
+    
+    def _copy_with_headers(self):
+        """Copy selected cells to clipboard with column headers"""
+        grid = SpreadsheetUXController.extract_selection_grid(self.table, include_headers=True)
+        SpreadsheetUXController.copy_to_clipboard(grid)
+    
+    def _show_context_menu(self, position):
+        """Show context menu for table"""
+        if not self.table.selectionModel().hasSelection():
+            return
+        
+        menu = QMenu(self)
+        
+        copy_action = menu.addAction("Copy")
+        copy_action.setShortcut(QKeySequence.Copy)
+        copy_action.triggered.connect(self._copy_selection)
+        
+        copy_headers_action = menu.addAction("Copy With Headers")
+        copy_headers_action.triggered.connect(self._copy_with_headers)
+        
+        menu.exec_(self.table.viewport().mapToGlobal(position))
 
 
 class StartSessionDialog(QDialog):
@@ -4335,27 +4371,4 @@ class EndSessionDialog(QDialog):
             "wager_amount": wager_amount,
             "notes": notes,
         }, None
-    
-    def _copy_selection(self):
-        """Copy selected cells to clipboard as TSV"""
-        SpreadsheetUXController.copy_to_clipboard(self.table)
-    
-    def _copy_with_headers(self):
-        """Copy selected cells to clipboard with column headers"""
-        SpreadsheetUXController.copy_to_clipboard(self.table, include_headers=True)
-    
-    def _show_context_menu(self, position):
-        """Show context menu for table"""
-        if not self.table.selectionModel().hasSelection():
-            return
-        
-        menu = QMenu(self)
-        
-        copy_action = menu.addAction("Copy")
-        copy_action.setShortcut(QtGui.QKeySequence.Copy)
-        copy_action.triggered.connect(self._copy_selection)
-        
-        copy_headers_action = menu.addAction("Copy With Headers")
-        copy_headers_action.triggered.connect(self._copy_with_headers)
-        
-        menu.exec_(self.table.viewport().mapToGlobal(position))
+

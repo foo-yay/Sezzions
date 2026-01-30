@@ -173,11 +173,58 @@ class SpreadsheetUXController(QObject):
         """
         Extract selection from QTreeWidget.
         
-        Best-effort: treats each selected item as a row, extracts text from all columns.
+        Note: QTreeWidget doesn't support true cell-level selection like QTableWidget.
+        When an item is selected, all columns are selected. We use currentColumn() 
+        to detect single-cell clicks, but multi-selection will select entire rows.
         """
+        selection_model = tree.selectionModel()
+        if not selection_model:
+            return []
+        
         selected_items = tree.selectedItems()
         if not selected_items:
             return []
+        
+        # Check if this is a single-cell selection by using currentColumn
+        current_col = tree.currentColumn()
+        current_item = tree.currentItem()
+        
+        # If we have exactly one selected item and it's the current item,
+        # and currentColumn is valid, treat as single-cell selection
+        if (len(selected_items) == 1 and 
+            selected_items[0] == current_item and 
+            current_col >= 0):
+            # Single cell selection
+            grid = []
+            if include_headers:
+                header_item = tree.headerItem()
+                if header_item:
+                    grid.append([header_item.text(current_col)])
+                else:
+                    grid.append([f"Column {current_col}"])
+            grid.append([current_item.text(current_col)])
+            return grid
+        
+        # Multi-item selection or range selection - extract all columns
+        # Find all selected columns from indexes
+        selected_indexes = selection_model.selectedIndexes()
+        if not selected_indexes:
+            return []
+        
+        # Build map of (item, col) -> data
+        cell_map = {}
+        for index in selected_indexes:
+            item = tree.itemFromIndex(index)
+            if item and item in selected_items:
+                cell_map[(item, index.column())] = item.text(index.column())
+        
+        if not cell_map:
+            return []
+        
+        # Find column range
+        all_cols = set(col for _, col in cell_map.keys())
+        min_col = min(all_cols)
+        max_col = max(all_cols)
         
         column_count = tree.columnCount()
         grid = []
@@ -185,7 +232,7 @@ class SpreadsheetUXController(QObject):
         # Add headers if requested
         if include_headers:
             header_row = []
-            for col in range(column_count):
+            for col in range(min_col, max_col + 1):
                 header_item = tree.headerItem()
                 if header_item:
                     header_row.append(header_item.text(col))
@@ -193,11 +240,22 @@ class SpreadsheetUXController(QObject):
                     header_row.append(f"Column {col}")
             grid.append(header_row)
         
-        # Extract selected items
+        # Extract selected items in order they appear in tree
+        items_with_index = []
         for item in selected_items:
+            index = tree.indexFromItem(item)
+            if index.isValid():
+                items_with_index.append((index.row(), item))
+        items_with_index.sort(key=lambda x: x[0])
+        
+        # Extract data for each row
+        for _, item in items_with_index:
             row_data = []
-            for col in range(column_count):
-                row_data.append(item.text(col))
+            for col in range(min_col, max_col + 1):
+                if (item, col) in cell_map:
+                    row_data.append(cell_map[(item, col)])
+                else:
+                    row_data.append("")  # Empty for non-selected cells in bounding box
             grid.append(row_data)
         
         return grid

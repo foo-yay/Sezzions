@@ -156,7 +156,8 @@ class DailySessionsTab(QtWidgets.QWidget):
         self.tree.setColumnCount(len(self.columns))
         self.tree.setHeaderLabels(self.columns)
         self.tree.setAlternatingRowColors(True)
-        self.tree.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.tree.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
+        self.tree.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.tree.setUniformRowHeights(True)
         header = self.tree.header()
         header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
@@ -197,9 +198,16 @@ class DailySessionsTab(QtWidgets.QWidget):
         self.export_btn.clicked.connect(self._export_csv)
         self.user_filter_btn.clicked.connect(self._show_user_filter)
         self.site_filter_btn.clicked.connect(self._show_site_filter)
-        self.tree.itemSelectionChanged.connect(self._update_action_buttons)
+        self.tree.itemSelectionChanged.connect(self._on_selection_changed)
 
         self.refresh_view()
+    
+    def _on_selection_changed(self):
+        """Update stats bar and action buttons on selection change"""
+        grid = SpreadsheetUXController.extract_selection_grid(self.tree)
+        stats = SpreadsheetUXController.compute_stats(grid)
+        self.stats_bar.update_stats(stats)
+        self._update_action_buttons()
 
     def eventFilter(self, obj, event):
         if getattr(self, "tree", None) is not None and obj is self.tree.header().viewport():
@@ -756,11 +764,13 @@ class DailySessionsTab(QtWidgets.QWidget):
     
     def _copy_selection(self):
         """Copy selected cells to clipboard as TSV"""
-        SpreadsheetUXController.copy_to_clipboard(self.tree)
-    
+        grid = SpreadsheetUXController.extract_selection_grid(self.tree)
+        SpreadsheetUXController.copy_to_clipboard(grid)
+
     def _copy_with_headers(self):
         """Copy selected cells to clipboard with column headers"""
-        SpreadsheetUXController.copy_to_clipboard(self.tree, include_headers=True)
+        grid = SpreadsheetUXController.extract_selection_grid(self.tree, include_headers=True)
+        SpreadsheetUXController.copy_to_clipboard(grid)
     
     def _show_context_menu(self, position):
         """Show context menu for tree"""
