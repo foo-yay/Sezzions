@@ -241,6 +241,10 @@ class DailySessionsTab(QtWidgets.QWidget):
         self._render_tree(data)
         self._update_action_buttons()
     
+    def refresh_data(self):
+        """Standardized refresh method for global refresh system (Issue #9)."""
+        self.refresh_view()
+    
     def _render_tree(self, data):
         self.tree.clear()
         for day in data:

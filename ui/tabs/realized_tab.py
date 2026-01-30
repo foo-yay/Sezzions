@@ -1224,6 +1224,10 @@ class RealizedTab(QtWidgets.QWidget):
         data = self._group_transactions(transactions)
         self._render_tree(data)
         self._update_action_buttons()
+    
+    def refresh_data(self):
+        """Standardized refresh method for global refresh system (Issue #9)."""
+        self.refresh_view()
 
     def _fetch_notes_for_dates(self, dates):
         dates = list(dates)

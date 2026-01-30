@@ -185,6 +185,10 @@ class GameSessionsTab(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load sessions:\n{str(e)}")
     
+    def refresh_data(self):
+        """Standardized refresh method for global refresh system (Issue #9)."""
+        self.load_data()
+    
     def _filter_sessions(self):
         """Filter sessions based on search text"""
         self.apply_filters()
