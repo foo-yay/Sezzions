@@ -12,6 +12,52 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-02
+type: feature
+areas: [ui, architecture, tests]
+summary: "Add QTableView migration infrastructure and pilot Sites tab migration (Issue #15, Partial)."
+files_changed:
+  - ui/base_table_model.py (new, 125 lines)
+  - ui/spreadsheet_ux.py (QTableView support added)
+  - ui/tabs/sites_tab.py (migrated QTableWidget → QTableView)
+  - tests/ui/test_sites_tab_qtableview.py (new, 5 tests)
+  - docs/PROJECT_SPEC.md (section 5.2 added)
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Base Model Infrastructure** (`ui/base_table_model.py`):
+  - `ColumnDefinition`: Metadata class for table columns (label, key, formatter, alignment, width_hint)
+  - `BaseTableModel(QAbstractTableModel)`: Shared base class for grid tabs
+  - Object-oriented: rows are domain objects, attribute-based access
+  - No inline editing support (flags return ItemIsEnabled | ItemIsSelectable only)
+  - Subclasses override `data()` for custom formatting/coloring
+
+- **Spreadsheet UX Extended**:
+  - Added `_extract_tableview_selection()` method to support QTableView
+  - Works with QSortFilterProxyModel
+  - Preserves all Phase 1 spreadsheet UX features (copy/stats/context menu)
+
+- **Sites Tab Migration (Pilot)**:
+  - Migrated from QTableWidget → QTableView + `SitesTableModel`
+  - Uses QSortFilterProxyModel for sorting
+  - Removed TableHeaderFilter (QTableWidget-specific)
+  - Spreadsheet UX fully preserved (copy/stats/selection behavior identical)
+  - All toolbar actions work (add/edit/delete/export)
+  - 5 headless UI tests added (instantiation, model access, filtering, spreadsheet UX)
+
+- **Architecture Decision**:
+  - Issue #15 originally included inline editing, but this was removed
+  - Inline editing is complex/risky; keeping all edits in dialogs
+  - QTableView migration is now optional architectural improvement
+  - Sites tab proves feasibility; remaining tabs (11 total) will migrate incrementally
+
+- **Migration Status**:
+  - Migrated: Sites (pilot)
+  - Remaining Setup tabs (6): Users, Cards, Redemption Method Types, Redemption Methods, Game Types, Games
+  - Remaining non-Setup tabs (5): Purchases, Redemptions, Game Sessions, Expenses, Unrealized
+
+```yaml
 id: 2026-01-31-01
 type: feature
 areas: [ui, architecture, tests]
