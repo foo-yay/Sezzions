@@ -592,7 +592,9 @@ class ToolsTab(QWidget):
         
         # Emit unified data change event (Issue #9)
         from services.data_change_event import DataChangeEvent, OperationType
-        operation = OperationType.RECALCULATE_ALL if result.operation == "all" else OperationType.RECALCULATE_SCOPED
+        # Safely access operation attribute (fallback to RECALCULATE_ALL if not present)
+        result_operation = getattr(result, 'operation', 'all')
+        operation = OperationType.RECALCULATE_ALL if result_operation == "all" else OperationType.RECALCULATE_SCOPED
         self.facade.emit_data_changed(DataChangeEvent(
             operation=operation,
             scope="all"

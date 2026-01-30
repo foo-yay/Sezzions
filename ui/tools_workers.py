@@ -4,6 +4,7 @@ Background workers for Tools operations (recalculation, imports, backups)
 from PySide6.QtCore import QObject, QRunnable, Signal, Slot
 from typing import Optional, List
 import traceback
+import dataclasses
 
 
 class WorkerSignals(QObject):
@@ -71,6 +72,8 @@ class RecalculationWorker(QRunnable):
                 result = recalc_service.rebuild_all(
                     progress_callback=self._progress_callback
                 )
+                # Add operation tracking to result
+                result = dataclasses.replace(result, operation=self.operation)
             elif self.operation == "pair":
                 if self.user_id is None or self.site_id is None:
                     raise ValueError("user_id and site_id required for pair recalculation")
@@ -79,6 +82,8 @@ class RecalculationWorker(QRunnable):
                     site_id=self.site_id,
                     progress_callback=self._progress_callback
                 )
+                # Add operation tracking to result
+                result = dataclasses.replace(result, operation=self.operation)
             elif self.operation == "after_import":
                 if self.entity_type is None:
                     raise ValueError("entity_type required for after_import recalculation")
@@ -88,6 +93,8 @@ class RecalculationWorker(QRunnable):
                     site_ids=self.site_ids or [],
                     progress_callback=self._progress_callback
                 )
+                # Add operation tracking to result
+                result = dataclasses.replace(result, operation=self.operation)
             else:
                 raise ValueError(f"Unknown operation: {self.operation}")
                 

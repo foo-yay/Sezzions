@@ -12,6 +12,39 @@ Rules:
 ## 2026-01-30
 
 ```yaml
+id: 2026-01-30-03
+type: bugfix
+areas: [ui, services, tests]
+summary: "Fix recalculation crash and TableHeaderFilter AttributeError (Issue #20, PR #21)."
+files_changed:
+  - services/recalculation_service.py
+  - ui/tools_workers.py
+  - ui/tabs/tools_tab.py
+  - ui/table_header_filters.py
+  - tests/integration/test_issue_20_recalc_completion.py
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Recalculation Crash Fix**: `AttributeError: 'RebuildResult' object has no attribute 'operation'`
+  - Added optional `operation: Optional[str]` field to `RebuildResult` dataclass
+  - `RecalculationWorker.run()` uses `dataclasses.replace(result, operation=self.operation)` to pass operation through
+  - `ToolsTab._on_recalculation_finished()` uses `getattr(result, 'operation', 'all')` for backward compatibility
+  - Crash prevented `emit_data_changed()` from completing, masking Games tab RTP auto-refresh
+- **Games Tab RTP Auto-Refresh**: Now works via Issue #9 event system
+  - Recalculation completion → emits `DataChangeEvent` → MainWindow → setup_tab → games_tab.refresh_data()
+  - Fixing crash allowed event emission to complete, automatically fixing RTP refresh
+- **TableHeaderFilter AttributeError**: Fixed Qt cleanup race condition
+  - Added `hasattr(self, 'table')` guard before accessing `self.table` in `eventFilter()`
+  - Prevents AttributeError during widget destruction (common in tests)
+- **Tests**: 10 new tests in `test_issue_20_recalc_completion.py`
+  - RebuildResult operation field contract (3 tests)
+  - RecalculationWorker operation propagation (2 tests)
+  - ToolsTab completion handling with/without operation field (3 tests)
+  - Games tab refresh contract and event integration (2 tests)
+  - All 506 tests passing cleanly (no AttributeError warnings)
+
+```yaml
 id: 2026-01-30-01
 type: feature
 areas: [architecture, ui, services, tests]
