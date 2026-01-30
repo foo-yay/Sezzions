@@ -34,7 +34,8 @@ class TableHeaderFilter(QtCore.QObject):
         header.viewport().installEventFilter(self)
 
     def eventFilter(self, obj, event):
-        if not shiboken6.isValid(self.table):
+        # Guard against calls during/after destruction (common in tests)
+        if not hasattr(self, 'table') or not shiboken6.isValid(self.table):
             return False
         header = self.table.horizontalHeader()
         if not shiboken6.isValid(header):
