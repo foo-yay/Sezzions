@@ -12,6 +12,37 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-03
+type: bug-fix
+areas: [architecture, layering, services]
+summary: "Fix UI→DB layering violations (Issue #23)."
+files_changed:
+  - services/realized_notes_service.py (new)
+  - services/redemption_service.py (add get_deletion_impact method)
+  - services/game_session_service.py (add get_deletion_impact method)
+  - app_facade.py (wire up realized_notes_service)
+  - ui/tabs/realized_tab.py (use service instead of direct SQL)
+  - ui/tabs/redemptions_tab.py (use service instead of cursor access)
+  - ui/tabs/game_sessions_tab.py (use service instead of cursor access)
+  - tests/unit/test_realized_notes_service.py (new, 9 tests)
+```
+
+Notes:
+- **Problem:** UI tabs directly executed SQL or accessed repository cursors (layering violation)
+- **Evidence:**
+  - `realized_tab.py`: Direct `self.db.execute()` for daily notes CRUD
+  - `redemptions_tab.py`: Direct cursor access via `self.facade.redemption_repo.db._connection.cursor()`
+  - `game_sessions_tab.py`: Direct cursor access for deletion impact checks
+- **Solution:**
+  - Created `RealizedNotesService` for daily notes CRUD operations
+  - Added `get_deletion_impact(id)` methods to `RedemptionService` and `GameSessionService`
+  - Updated UI tabs to call service methods via `AppFacade`
+  - All direct SQL/cursor access removed from UI layer
+- **Tests:** Added 9 unit tests for RealizedNotesService (554 total tests passing)
+- **Architecture:** Enforces UI → Service → Repository layering
+- **PR:** #25 (Issue #23)
+
+```yaml
 id: 2026-01-31-02
 type: decision
 areas: [architecture, rollback]
