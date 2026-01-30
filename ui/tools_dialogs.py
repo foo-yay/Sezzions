@@ -848,3 +848,7 @@ class ResetDialog(QDialog):
         
         # Enable button only when both confirmations are complete
         self.reset_btn.setEnabled(checkbox_confirmed and text_confirmed)
+
+    def should_preserve_setup(self) -> bool:
+        """Check if setup data should be preserved."""
+        return self.preserve_setup_checkbox.isChecked()
