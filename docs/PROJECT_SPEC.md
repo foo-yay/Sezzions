@@ -187,6 +187,26 @@ Tools are accessible via Setup → Tools sub-tab and provide "production readine
 - Audit log can be preserved during reset operations (keep_audit_log flag)
 - Backup can optionally exclude audit log for privacy
 
+**Event-Driven Refresh Architecture (Issue #9):**
+- **Global Data Change Notifications**: AppFacade provides centralized event emission for all data-modifying operations
+  - `DataChangeEvent` payload with `OperationType` enum (CSV_IMPORT, RECALCULATION, RESTORE, RESET, PURCHASE, REDEMPTION, etc.)
+  - `AppFacade.emit_data_changed(operation_type, **details)` sends notifications to all registered listeners
+  - Services call `emit_data_changed()` after completing write operations
+- **Debounced UI Refresh**: MainWindow orchestrates tab refreshes with 250ms debouncing
+  - Single `QTimer` (single-shot mode) consolidates multiple rapid data changes into one refresh cycle
+  - Prevents performance degradation from cascading/redundant refreshes during bulk operations
+  - MainWindow calls `refresh_data()` on all tabs when timer fires
+- **Standardized Tab Refresh Contract**: All tabs implement `refresh_data()` method
+  - Tabs reload their display data from services (no direct DB access)
+  - Idempotent: safe to call multiple times
+  - Pattern: disconnect signals → reload data → reconnect signals (prevents feedback loops)
+- **Maintenance Mode**: Write-blocking during destructive operations (restore, reset)
+  - `AppFacade.enter_maintenance_mode()` / `exit_maintenance_mode()` toggle flag
+  - Services check `is_in_maintenance_mode()` and reject writes with user-friendly error
+  - Prevents data corruption from concurrent writes during database replacement
+  - Automatically exits maintenance mode on operation completion or error
+- **Benefits**: Eliminates need for tabs to know about each other, reduces coupling, scales to future multi-window/multi-tab scenarios
+
 **Settings Persistence Architecture:**
 - Settings stored in `settings.json` with nested structure (e.g., `automatic_backup` object)
 - Each `Settings()` instantiation loads fresh from disk—no singleton pattern currently

@@ -9,6 +9,101 @@ Rules:
 
 ---
 
+## 2026-01-30
+
+```yaml
+id: 2026-01-30-01
+type: feature
+areas: [architecture, ui, services, tests]
+summary: "Unified global refresh system with event-driven debouncing and maintenance mode (Issue #9, PR #17)."
+files_changed:
+  - app_facade.py
+  - services/data_change_event.py
+  - ui/main_window.py
+  - ui/tabs/daily_sessions_tab.py
+  - ui/tabs/realized_tab.py
+  - ui/tabs/game_sessions_tab.py
+  - ui/tabs/tools_tab.py
+  - tests/integration/test_issue_9_global_refresh.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Event-Driven Architecture**: Introduced `DataChangeEvent` with operation types and affected tables
+  - Single notification channel via `AppFacade.emit_data_changed()`
+  - All tabs register listeners via `AppFacade.add_data_change_listener()`
+  - Replaces fragmented direct refresh calls and ad-hoc signals
+- **Debounced Refresh**: MainWindow debounces rapid events (250ms window) to prevent refresh storms
+  - Uses QTimer single-shot mechanism
+  - Multiple rapid events (e.g., CSV imports) trigger only one UI refresh
+  - Improves UX during bulk operations
+- **Standardized Tab Contract**: All tabs now expose `refresh_data()` method
+  - DailySessionsTab, RealizedTab, GameSessionsTab, ToolsTab
+  - Consistent refresh API across the application
+  - MainWindow calls `refresh_data()` on all tabs when events fire
+- **Maintenance Mode**: AppFacade coordinates write-blocking during destructive operations
+  - `enter_maintenance_mode()` / `exit_maintenance_mode()` wrap reset/restore flows
+  - Prevents mid-operation writes that could corrupt state
+  - Safe coordination of long-running database operations
+- **Tools Integration**: Tools operations (CSV import, recalc, restore, reset) emit unified events
+  - Replaced `ToolsTab.data_changed` signal with facade events
+  - Consistent event emission across all data-modifying operations
+- **Testing**: New integration test suite `test_issue_9_global_refresh.py` with 11 tests:
+  - Event propagation and listener registration
+  - Maintenance mode write blocking
+  - Tab refresh contract verification
+  - All 496 tests pass
+
+Architecture Benefits:
+- Single source of truth for data change notifications
+- Decoupled components (tabs don't directly call each other)
+- Predictable refresh behavior (debounced, ordered)
+- Safe coordination of destructive operations
+- Scalable event-driven design
+
+Refs: Issue #9, PR #17
+
+```yaml
+id: 2026-01-30-02
+type: fix
+areas: [ui, tools, tests]
+summary: "ResetDialog button gating and API regressions fixed; comprehensive test coverage added (Issue #18, PR #19)."
+files_changed:
+  - ui/tools_dialogs.py
+  - tests/unit/test_reset_dialog.py
+  - tests/integration/test_reset_database_flow.py
+  - docs/status/CHANGELOG.md
+```
+
+Notes:
+- **Bug Context**: ResetDialog had regressed during RestoreDialog sizing refactors (copy/paste bleed)
+  - Missing `should_preserve_setup()` API method
+  - Broken button gating logic (referenced restore-only `_is_updating_size` attribute)
+  - Reset workflow was unusable (button never enabled, crashes on dialog accept)
+- **Fixes Applied** (in PR #17, then locked by tests in PR #19):
+  - Restored `ResetDialog._update_button_state()` to only check checkbox + "DELETE" text
+  - Restored `ResetDialog.should_preserve_setup()` API for Tools tab reset flow
+  - Removed restore-dialog sizing logic from ResetDialog
+- **Test Coverage Added** (PR #19):
+  - **Unit tests** (`test_reset_dialog.py`): 17 tests
+    - Button gating: checkbox + "DELETE" confirmation (case-insensitive, whitespace-tolerant)
+    - API contract: `should_preserve_setup()` reflects checkbox state
+    - Invariants: no restore-only attributes in ResetDialog
+  - **Integration smoke tests** (`test_reset_database_flow.py`): 8 tests
+    - Headless dialog construction and API validation
+    - Tools tab can construct dialog and read options without exceptions
+    - Reset flow invariants verified
+- **All 496 tests pass** (100% pass rate)
+- **Regression Prevention**: Tests explicitly guard against:
+  - Missing `should_preserve_setup()` (AttributeError from Tools tab)
+  - Missing `_is_updating_size` (AttributeError from button update)
+  - Copy/paste bleed from other dialogs
+
+Refs: Issue #18, PR #19
+
+---
+
 ## 2026-01-29
 
 ```yaml
