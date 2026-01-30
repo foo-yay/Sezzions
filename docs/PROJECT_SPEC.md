@@ -1,6 +1,6 @@
 # Sezzions — Master Product & Implementation Spec
 
-Version: 2026-01-28
+Version: 2026-01-29
 
 This document is intended to be the **single consolidated project file** describing Sezzions end-to-end. It should be usable by a developer team (or an AI) to recreate Sezzions with high functional parity.
 
@@ -201,7 +201,14 @@ Tools are accessible via Setup → Tools sub-tab and provide "production readine
 **UI Integration:**
 - Tools tab provides unified interface for all database operations
 - Manual backup: directory picker, "Backup Now" button, status display with file size, last backup timestamp
-- Restore: dialog with mode selection (Replace/Merge All/Merge Selected), safety warnings
+- Restore: compact mode selection via combo box with progressive disclosure of mode-specific details
+  - Restore action is disabled until a backup is selected and a restore mode is chosen
+  - Merge Selected shows a two-column table picker (Setup vs Transactions) and requires at least one table selected
+  - Dialog sizing: Uses show/hide pattern instead of QStackedWidget for reliable dynamic height adjustment
+    - Each mode's detail widget is added directly to layout and shown/hidden based on selection
+    - Hidden widgets don't contribute to layout size calculations
+    - Standard Qt pattern: hide all widgets → show selected widget → `layout.activate()` → `adjustSize()` → explicit resize
+    - Avoids QStackedWidget's tendency to reserve space for largest page
 - Reset: dialog with table counts, preserve setup data checkbox, typed confirmation
 - Automatic backup: enable toggle, directory selection, frequency spinner (1-168 hrs), status label (color-coded), test button, last backup timestamp display
 Helpful maintenance scripts:

@@ -1191,6 +1191,7 @@ class ToolsTab(QWidget):
             
         backup_path = dialog.backup_path
         restore_mode = dialog.get_restore_mode()
+        selected_tables = dialog.get_selected_tables() if restore_mode.name == 'MERGE_SELECTED' else None
         
         # Validate backup file exists
         if not os.path.exists(backup_path):
@@ -1212,7 +1213,7 @@ class ToolsTab(QWidget):
 
         def start_restore_worker():
             # Create worker
-            worker = self.facade.create_restore_worker(backup_path, restore_mode)
+            worker = self.facade.create_restore_worker(backup_path, restore_mode, selected_tables)
 
             # Keep worker alive; PySide QRunnable wrappers can be GC'd otherwise.
             # Also disable auto-delete so the C++ runnable isn't deleted before queued signals are delivered.
