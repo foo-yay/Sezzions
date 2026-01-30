@@ -97,6 +97,15 @@ Before moving to “Ready for Review”:
    - Bug: `.github/ISSUE_TEMPLATE/bug_report.yml`
 - If you cannot create the Issue directly, draft the Issue content to match the template sections so the owner can paste it with minimal editing.
 
+## Issue Creation (CLI Safety)
+
+If asked to create a GitHub Issue via `gh`, do not inline a long multi-line body in the shell.
+
+Preferred pattern:
+- Write the body to a repo file (e.g. `docs/archive/<date>-issue-body.md`).
+- Use `gh issue create --body-file <file>` (and `gh issue edit <n> --body-file <file>` if needed).
+- Check available labels with `gh label list` before applying labels.
+
 ## Approval Gate
 
 - Do not mark/remove TODO items as done without explicit project owner approval.

@@ -43,6 +43,25 @@ This file defines how humans and AI agents should work in this repository.
   - Bug: `.github/ISSUE_TEMPLATE/bug_report.yml`
 - If an agent cannot create the Issue directly, it should still draft the Issue text to match the template sections (problem, proposal, scope, acceptance criteria, test plan, etc.) so the owner can paste it with minimal editing.
 
+### Issue Creation (Agent-Safe Process)
+
+When an agent is asked to create a GitHub Issue via CLI, avoid passing long multi-line bodies directly on the command line (shell quoting and command substitution can corrupt the body).
+
+Preferred workflow:
+
+1. Draft the issue body into a repo file (temporary or archival), e.g. `docs/archive/<date>-issue-body.md`.
+2. Create the issue using a body file:
+  - `gh issue create --title "..." --body-file docs/archive/<file>.md --label <existing-label>`
+3. If labels fail:
+  - List available labels first: `gh label list`
+  - Use an existing label (e.g. `bug`) or omit labels.
+4. If the body is corrupted after creation:
+  - Regenerate the body file and run: `gh issue edit <number> --body-file docs/archive/<file>.md`
+
+Notes:
+- Prefer ASCII-only in issue bodies when using terminal heredocs (avoid “smart quotes” and long lines if your terminal wraps aggressively).
+- If the terminal session gets into a bad state (garbled output / stuck heredoc), use a fresh terminal session or write the body file via a tool/script and only use `gh ... --body-file`.
+
 ## Approval Gate (Owner Review)
 
 - Do not mark/remove TODO items as done without explicit project owner approval.
