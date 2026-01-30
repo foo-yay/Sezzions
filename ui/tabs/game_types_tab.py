@@ -6,6 +6,8 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
 from models.game_type import GameType
 from ui.table_header_filters import TableHeaderFilter
+from ui.spreadsheet_ux import SpreadsheetUXController
+from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 
 
 class GameTypesTab(QtWidgets.QWidget):
@@ -82,14 +84,27 @@ class GameTypesTab(QtWidgets.QWidget):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
-        self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectRows)
+        self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectItems)
         self.table.setSelectionMode(QtWidgets.QTableWidget.ExtendedSelection)
         self.table.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         self.table.itemDoubleClicked.connect(self._view_type)
+        
+        # Context menu setup
+        self.table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+        
         layout.addWidget(self.table)
+        
+        # Stats bar and keyboard shortcut
+        self.stats_bar = SpreadsheetStatsBar()
+        layout.addWidget(self.stats_bar)
+        
         self.table_filter = TableHeaderFilter(self.table, refresh_callback=self.refresh_data)
+        
+        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self.table)
+        copy_shortcut.activated.connect(self._copy_selection)
 
         self.refresh_data()
 
@@ -142,11 +157,42 @@ class GameTypesTab(QtWidgets.QWidget):
         self._populate_table()
 
     def _on_selection_changed(self):
-        selected_rows = self.table.selectionModel().selectedRows()
-        has_selection = bool(selected_rows)
+        """Enable/disable buttons based on selection"""
+        # Check if any cells are selected
+        has_selection = self.table.selectionModel().hasSelection()
+        
+        # Detect full-row selections for View/Edit/Delete buttons
+        selected_rows = self._get_fully_selected_rows()
         self.view_btn.setVisible(len(selected_rows) == 1)
         self.edit_btn.setVisible(len(selected_rows) == 1)
-        self.delete_btn.setVisible(has_selection)
+        self.delete_btn.setVisible(len(selected_rows) > 0)
+        
+        # Update spreadsheet stats bar
+        if has_selection:
+            grid = SpreadsheetUXController.extract_selection_grid(self.table)
+            stats = SpreadsheetUXController.compute_stats(grid)
+            self.stats_bar.update_stats(stats)
+        else:
+            self.stats_bar.clear_stats()
+
+    def _get_fully_selected_rows(self):
+        """Get list of rows where ALL columns are selected"""
+        selected_indexes = self.table.selectedIndexes()
+        if not selected_indexes:
+            return []
+        
+        # Group by row
+        rows_dict = {}
+        for index in selected_indexes:
+            row = index.row()
+            if row not in rows_dict:
+                rows_dict[row] = set()
+            rows_dict[row].add(index.column())
+        
+        # Find rows where all columns are selected
+        col_count = self.table.columnCount()
+        fully_selected = [row for row, cols in rows_dict.items() if len(cols) == col_count]
+        return fully_selected
 
     def _get_selected_type_id(self):
         ids = self._get_selected_type_ids()
@@ -154,8 +200,8 @@ class GameTypesTab(QtWidgets.QWidget):
 
     def _get_selected_type_ids(self):
         ids = []
-        for row in self.table.selectionModel().selectedRows():
-            item = self.table.item(row.row(), 0)
+        for row in self._get_fully_selected_rows():
+            item = self.table.item(row, 0)
             if item is not None:
                 value = item.data(QtCore.Qt.UserRole)
                 if value is not None:
@@ -244,6 +290,30 @@ class GameTypesTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.warning(
                     self, "Error", f"Failed to delete game type(s):\n{str(e)}"
                 )
+
+    def _copy_selection(self):
+        """Copy selected cells to clipboard as TSV"""
+        SpreadsheetUXController.copy_to_clipboard(self.table)
+
+    def _copy_with_headers(self):
+        """Copy selected cells to clipboard with column headers"""
+        SpreadsheetUXController.copy_to_clipboard(self.table, include_headers=True)
+
+    def _show_context_menu(self, position):
+        """Show context menu for table"""
+        if not self.table.selectionModel().hasSelection():
+            return
+        
+        menu = QtWidgets.QMenu(self)
+        
+        copy_action = menu.addAction("Copy")
+        copy_action.setShortcut(QtGui.QKeySequence.Copy)
+        copy_action.triggered.connect(self._copy_selection)
+        
+        copy_headers_action = menu.addAction("Copy With Headers")
+        copy_headers_action.triggered.connect(self._copy_with_headers)
+        
+        menu.exec_(self.table.viewport().mapToGlobal(position))
 
     def _export_csv(self):
         if self.table.rowCount() == 0:

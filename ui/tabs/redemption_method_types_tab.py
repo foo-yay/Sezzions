@@ -6,6 +6,8 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
 from models.redemption_method_type import RedemptionMethodType
 from ui.table_header_filters import TableHeaderFilter
+from ui.spreadsheet_ux import SpreadsheetUXController
+from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 
 
 class RedemptionMethodTypesTab(QtWidgets.QWidget):
@@ -80,7 +82,7 @@ class RedemptionMethodTypesTab(QtWidgets.QWidget):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
-        self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectRows)
+        self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectItems)
         self.table.setSelectionMode(QtWidgets.QTableWidget.ExtendedSelection)
         self.table.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
@@ -141,11 +143,42 @@ class RedemptionMethodTypesTab(QtWidgets.QWidget):
         self._populate_table()
 
     def _on_selection_changed(self):
-        selected_rows = self.table.selectionModel().selectedRows()
-        has_selection = bool(selected_rows)
+        """Enable/disable buttons based on selection"""
+        # Check if any cells are selected
+        has_selection = self.table.selectionModel().hasSelection()
+        
+        # Detect full-row selections for View/Edit/Delete buttons
+        selected_rows = self._get_fully_selected_rows()
         self.view_btn.setVisible(len(selected_rows) == 1)
         self.edit_btn.setVisible(len(selected_rows) == 1)
-        self.delete_btn.setVisible(has_selection)
+        self.delete_btn.setVisible(len(selected_rows) > 0)
+        
+        # Update spreadsheet stats bar
+        if has_selection:
+            grid = SpreadsheetUXController.extract_selection_grid(self.table)
+            stats = SpreadsheetUXController.compute_stats(grid)
+            self.stats_bar.update_stats(stats)
+        else:
+            self.stats_bar.clear_stats()
+
+    def _get_fully_selected_rows(self):
+        """Get list of rows where ALL columns are selected"""
+        selected_indexes = self.table.selectedIndexes()
+        if not selected_indexes:
+            return []
+        
+        # Group by row
+        rows_dict = {}
+        for index in selected_indexes:
+            row = index.row()
+            if row not in rows_dict:
+                rows_dict[row] = set()
+            rows_dict[row].add(index.column())
+        
+        # Find rows where all columns are selected
+        col_count = self.table.columnCount()
+        fully_selected = [row for row, cols in rows_dict.items() if len(cols) == col_count]
+        return fully_selected
 
     def _get_selected_type_id(self):
         ids = self._get_selected_type_ids()
@@ -153,8 +186,8 @@ class RedemptionMethodTypesTab(QtWidgets.QWidget):
 
     def _get_selected_type_ids(self):
         ids = []
-        for row in self.table.selectionModel().selectedRows():
-            item = self.table.item(row.row(), 0)
+        for row in self._get_fully_selected_rows():
+            item = self.table.item(row, 0)
             if item is not None:
                 value = item.data(QtCore.Qt.UserRole)
                 if value is not None:

@@ -8,6 +8,8 @@ from app_facade import AppFacade
 from models.unrealized_position import UnrealizedPosition
 from ui.date_filter_widget import DateFilterWidget
 from ui.table_header_filters import TableHeaderFilter
+from ui.spreadsheet_ux import SpreadsheetUXController
+from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 
 
 class UnrealizedTab(QtWidgets.QWidget):
@@ -101,15 +103,28 @@ class UnrealizedTab(QtWidgets.QWidget):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
-        self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectRows)
-        self.table.setSelectionMode(QtWidgets.QTableWidget.SingleSelection)
+        self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectItems)
+        self.table.setSelectionMode(QtWidgets.QTableWidget.ExtendedSelection)
         self.table.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
         self.table.itemDoubleClicked.connect(self._add_notes)
         
+        # Enable custom context menu for spreadsheet UX
+        self.table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+        
         layout.addWidget(self.table)
+        
+        # Add spreadsheet stats bar
+        self.stats_bar = SpreadsheetStatsBar()
+        layout.addWidget(self.stats_bar)
+        
         self.table_filter = TableHeaderFilter(self.table, date_columns=[2, 7], refresh_callback=self.refresh_data)
+        
+        # Set up keyboard shortcuts for spreadsheet UX
+        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self.table)
+        copy_shortcut.activated.connect(self._copy_selection)
         
         # Totals
         totals_layout = QtWidgets.QHBoxLayout()
@@ -207,11 +222,66 @@ class UnrealizedTab(QtWidgets.QWidget):
     
     def _on_selection_changed(self):
         """Enable/disable buttons based on selection"""
-        selected = self.table.selectionModel().selectedRows()
-        single = len(selected) == 1
+        # Check if any cells are selected
+        has_selection = self.table.selectionModel().hasSelection()
+        
+        # Detect full-row selections for View/Notes/Close buttons
+        selected_rows = self._get_fully_selected_rows()
+        single = len(selected_rows) == 1
         self.view_btn.setVisible(single)
         self.notes_btn.setVisible(single)
         self.close_btn.setVisible(single)
+        
+        # Update spreadsheet stats bar
+        if has_selection:
+            grid = SpreadsheetUXController.extract_selection_grid(self.table)
+            stats = SpreadsheetUXController.compute_stats(grid)
+            self.stats_bar.update_stats(stats)
+        else:
+            self.stats_bar.clear_stats()
+
+    def _get_fully_selected_rows(self):
+        """Get list of rows where ALL columns are selected"""
+        selected_indexes = self.table.selectedIndexes()
+        if not selected_indexes:
+            return []
+        
+        # Group by row
+        rows_dict = {}
+        for index in selected_indexes:
+            row = index.row()
+            if row not in rows_dict:
+                rows_dict[row] = set()
+            rows_dict[row].add(index.column())
+        
+        # Find rows where all columns are selected
+        col_count = self.table.columnCount()
+        fully_selected = [row for row, cols in rows_dict.items() if len(cols) == col_count]
+        return fully_selected
+    
+    def _copy_selection(self):
+        """Copy selected cells to clipboard as TSV"""
+        SpreadsheetUXController.copy_to_clipboard(self.table)
+
+    def _copy_with_headers(self):
+        """Copy selected cells to clipboard with column headers"""
+        SpreadsheetUXController.copy_to_clipboard(self.table, include_headers=True)
+
+    def _show_context_menu(self, position):
+        """Show context menu for table"""
+        if not self.table.selectionModel().hasSelection():
+            return
+        
+        menu = QtWidgets.QMenu(self)
+        
+        copy_action = menu.addAction("Copy")
+        copy_action.setShortcut(QtGui.QKeySequence.Copy)
+        copy_action.triggered.connect(self._copy_selection)
+        
+        copy_headers_action = menu.addAction("Copy With Headers")
+        copy_headers_action.triggered.connect(self._copy_with_headers)
+        
+        menu.exec_(self.table.viewport().mapToGlobal(position))
     
     def _close_balance(self):
         """Close position (create $0 redemption to mark dormant)"""
