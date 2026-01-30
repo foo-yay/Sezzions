@@ -65,6 +65,7 @@ class RebuildResult:
     purchases_updated: int
     game_sessions_processed: int = 0
     errors: List[str] = None
+    operation: Optional[str] = None  # Track which operation completed (all, pair, user, site, after_import)
     
     def __post_init__(self):
         """Initialize mutable fields."""
