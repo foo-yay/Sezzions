@@ -580,10 +580,10 @@ class RedemptionsTab(QtWidgets.QWidget):
             msg += "Consider using Tools > Recalculate for data fixes instead.\n\n"
             msg += "Are you sure you want to proceed?"
         else:
-            # Check detailed impact for small deletes
+            # Check detailed impact for small deletes (using service layer)
             warning_messages = []
             for redemption in redemptions:
-                impact = self._check_redemption_deletion_impact(redemption)
+                impact = self.facade.redemption_service.get_deletion_impact(redemption.id)
                 if impact:
                     warning_messages.append(impact)
             
@@ -629,61 +629,6 @@ class RedemptionsTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.warning(
                     self, "Error", f"Failed to delete redemption(s):\n{str(e)}\n\n{error_detail}"
                 )
-
-    def _check_redemption_deletion_impact(self, redemption) -> str:
-        """Check impact of deleting a redemption"""
-        try:
-            from decimal import Decimal
-            
-            # Check if this redemption has FIFO allocations
-            db = self.facade.redemption_repo.db
-            cursor = db._connection.cursor()
-            cursor.execute(
-                """
-                SELECT COUNT(*) as count, SUM(amount_allocated) as total
-                FROM fifo_allocations
-                WHERE redemption_id = ?
-                """,
-                (redemption.id,)
-            )
-            fifo_result = cursor.fetchone()
-            
-            # Check affected game sessions
-            cursor.execute(
-                """
-                SELECT COUNT(*) as count
-                FROM game_sessions
-                WHERE site_id = ? AND user_id = ?
-                  AND status = 'Closed'
-                  AND (end_date > ? OR (end_date = ? AND end_time >= ?))
-                """,
-                (redemption.site_id, redemption.user_id,
-                 redemption.redemption_date, redemption.redemption_date, redemption.redemption_time)
-            )
-            session_result = cursor.fetchone()
-            
-            if fifo_result and fifo_result["count"] > 0:
-                allocated_amount = Decimal(str(fifo_result["total"] or 0))
-                session_count = session_result["count"] if session_result else 0
-                
-                site = self.facade.get_site(redemption.site_id)
-                user = self.facade.get_user(redemption.user_id)
-                
-                msg = f"Redemption: {site.name if site else 'Unknown'} / "
-                msg += f"{user.name if user else 'Unknown'}\n"
-                msg += f"Amount: ${float(redemption.amount):,.2f} on {redemption.redemption_date}\n"
-                msg += f"FIFO allocated from {fifo_result['count']} purchase(s): ${float(allocated_amount):,.2f}\n\n"
-                msg += f"Deleting will:\n"
-                msg += f"• Reverse ${float(allocated_amount):,.2f} in FIFO allocations\n"
-                if session_count > 0:
-                    msg += f"• Recalculate {session_count} subsequent session(s)\n"
-                msg += f"• May affect validation of subsequent transactions"
-                
-                return msg
-        except Exception as e:
-            print(f"Error checking redemption deletion impact: {e}")
-        
-        return ""
     
     def _clear_search(self):
         """Clear search filter"""

@@ -366,8 +366,8 @@ class GameSessionsTab(QWidget):
             QMessageBox.warning(self, "Warning", "Session not found")
             return
 
-        # Check if editing could affect subsequent redemptions
-        impact = self._check_deletion_impact(session_id)
+        # Check if editing could affect subsequent redemptions (using service layer)
+        impact = self.facade.game_session_service.get_deletion_impact(session_id)
         if impact:
             reply = QMessageBox.question(
                 self, "Edit May Affect Redemptions",
@@ -601,7 +601,7 @@ class GameSessionsTab(QWidget):
             # Check detailed impact for small deletes
             warning_messages = []
             for session_id in ids:
-                impact = self._check_deletion_impact(session_id)
+                impact = self.facade.game_session_service.get_deletion_impact(session_id)
                 if impact:
                     warning_messages.append(impact)
             
@@ -639,61 +639,6 @@ class GameSessionsTab(QWidget):
         
         if reply == QMessageBox.Yes:
             self._delete_sessions(ids)
-
-    def _check_deletion_impact(self, session_id: int) -> str:
-        """Check if deleting session would affect subsequent redemptions"""
-        try:
-            from decimal import Decimal
-            from datetime import datetime
-            
-            session = self.facade.get_game_session(session_id)
-            if not session or session.status != "Closed":
-                return ""
-            
-            # Get redemptions after this session
-            db = self.facade.game_session_repo.db
-            cursor = db._connection.cursor()
-            cursor.execute(
-                """
-                SELECT COUNT(*) as count, SUM(amount) as total
-                FROM redemptions
-                WHERE site_id = ? AND user_id = ?
-                  AND (redemption_date > ? 
-                       OR (redemption_date = ? AND redemption_time > ?))
-                """,
-                (session.site_id, session.user_id, 
-                 session.end_date, session.end_date, session.end_time)
-            )
-            result = cursor.fetchone()
-            
-            if result and result["count"] > 0:
-                count = result["count"]
-                total = Decimal(str(result["total"] or 0))
-                ending_balance = Decimal(str(session.ending_balance or 0))
-                
-                # Calculate what expected balance would be without this session
-                expected_total, _ = self.facade.compute_expected_balances(
-                    session.user_id, session.site_id,
-                    session.session_date, session.session_time
-                )
-                
-                site = self.facade.get_site(session.site_id)
-                user = self.facade.get_user(session.user_id)
-                
-                msg = f"Session: {site.name if site else 'Unknown'} / "
-                msg += f"{user.name if user else 'Unknown'}\n"
-                msg += f"Session ended with {float(ending_balance):,.2f} SC\n"
-                msg += f"Found {count} redemption(s) after this session totaling ${float(total):,.2f}\n\n"
-                msg += f"If you delete this session:\n"
-                msg += f"• Expected balance drops to {float(expected_total):,.2f} SC\n"
-                msg += f"• Redemptions may temporarily exceed expected balance\n"
-                msg += f"• You won't be able to edit redemptions until you fix the gap"
-                
-                return msg
-        except Exception as e:
-            print(f"Error checking deletion impact: {e}")
-        
-        return ""
     
     def _delete_sessions(self, ids):
         try:

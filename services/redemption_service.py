@@ -314,3 +314,59 @@ class RedemptionService:
         
         query = "DELETE FROM realized_transactions WHERE redemption_id = ?"
         self.db.execute(query, (redemption_id,))
+
+    def get_deletion_impact(self, redemption_id: int) -> str:
+        """
+        Check if deleting a redemption would affect FIFO allocations or game sessions.
+
+        This method replaces direct UI cursor access to check deletion impact.
+
+        Args:
+            redemption_id: ID of redemption to check
+
+        Returns:
+            Formatted impact message string, or empty string if no impact
+        """
+        if not self.db:
+            return ""
+
+        try:
+            # Check FIFO allocations
+            cursor = self.db._connection.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) as count, SUM(amount_allocated) as total FROM fifo_allocations WHERE redemption_id = ?",
+                (redemption_id,),
+            )
+            alloc_result = cursor.fetchone()
+            alloc_count = alloc_result["count"] if alloc_result else 0
+            alloc_total = Decimal(str(alloc_result["total"] or 0)) if alloc_result else Decimal("0")
+
+            # Check affected game sessions
+            cursor.execute(
+                """
+                SELECT COUNT(*) as count
+                FROM game_sessions gs
+                WHERE EXISTS (
+                    SELECT 1 FROM fifo_allocations fa
+                    JOIN purchases p ON fa.purchase_id = p.id
+                    WHERE fa.redemption_id = ?
+                      AND p.user_id = gs.user_id AND p.site_id = gs.site_id
+                      AND gs.session_date >= p.purchase_date
+                      AND gs.end_date IS NOT NULL
+                )
+                """,
+                (redemption_id,),
+            )
+            session_result = cursor.fetchone()
+            session_count = session_result["count"] if session_result else 0
+
+            if alloc_count > 0 or session_count > 0:
+                msg = f"This redemption has {alloc_count} FIFO allocation(s) totaling ${float(alloc_total):,.2f} SC.\n"
+                if session_count > 0:
+                    msg += f"{session_count} closed game session(s) may be affected.\n"
+                msg += "Deleting will recalculate all affected sessions."
+                return msg
+            return ""
+        except Exception as e:
+            print(f"Error checking redemption deletion impact: {e}")
+            return ""

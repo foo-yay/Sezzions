@@ -44,6 +44,7 @@ from services.validation_service import ValidationService
 from services.recalculation_service import RecalculationService
 from services.game_session_event_link_service import GameSessionEventLinkService
 from services.expense_service import ExpenseService
+from services.realized_notes_service import RealizedNotesService
 from services.tools.csv_import_service import CSVImportService
 from services.tools.csv_export_service import CSVExportService
 
@@ -135,6 +136,7 @@ class AppFacade:
         self.report_service = ReportService(self.db)
         self.daily_sessions_service = DailySessionsService(self.db, self.daily_session_repo)
         self.expense_service = ExpenseService(self.expense_repo)
+        self.realized_notes_service = RealizedNotesService(self.db)
 
         # Bulk rebuild / recalculation orchestration (legacy parity)
         # Pass game_session_service so RecalculationService can recalculate both FIFO + sessions

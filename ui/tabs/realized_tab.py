@@ -1273,23 +1273,19 @@ class RealizedTab(QtWidgets.QWidget):
         if not session_date:
             QtWidgets.QMessageBox.information(self, "Select Date", "Select a date to add notes.")
             return
-        row = self.db.fetch_one(
-            "SELECT notes FROM realized_daily_notes WHERE session_date = ?",
-            (session_date,),
-        )
-        current_notes = row["notes"] if row else ""
+        
+        # Use service layer instead of direct SQL
+        current_notes = self.facade.realized_notes_service.get_date_note(session_date) or ""
 
         dialog = RealizedDateNotesDialog(session_date, current_notes, parent=self)
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
+        
         new_notes = dialog.notes_text()
         if new_notes:
-            self.db.execute(
-                "INSERT OR REPLACE INTO realized_daily_notes (session_date, notes) VALUES (?, ?)",
-                (session_date, new_notes),
-            )
+            self.facade.realized_notes_service.set_date_note(session_date, new_notes)
         else:
-            self.db.execute("DELETE FROM realized_daily_notes WHERE session_date = ?", (session_date,))
+            self.facade.realized_notes_service.delete_date_note(session_date)
         self.refresh_view()
 
     def _view_position(self):
