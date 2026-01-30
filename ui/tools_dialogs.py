@@ -842,38 +842,9 @@ class ResetDialog(QDialog):
         
     def _update_button_state(self):
         """Enable reset button only when all confirmations are complete"""
-        if self._is_updating_size:
-            return
-        self._is_updating_size = True
-        try:
-            # Lock width during auto-resize so wrapped labels (warning, helper text)
-            # don't change line breaks between mode switches.
-            target_width = max(self.minimumWidth(), self.width() or 0)
-            if target_width <= 0:
-                target_width = self.minimumWidth()
-            self.setMinimumWidth(target_width)
-            self.setMaximumWidth(target_width)
-
-            # Relax any previous fixed height before recomputing; otherwise the dialog can
-            # get "stuck" at the previous page's height (e.g., switching away from MERGE_SELECTED).
-            self.setMinimumHeight(0)
-            self.setMaximumHeight(16777215)
-
-            # Force the details area to match the current page (Qt otherwise tends to
-            # reserve the max height across all pages).
-            current = self.mode_stack.currentWidget()
-            if current is not None:
-                current.adjustSize()
-                self.mode_stack.setFixedHeight(max(0, current.sizeHint().height()))
-            else:
-                self.mode_stack.setFixedHeight(0)
-
-            self.mode_stack.updateGeometry()
-            self.layout().activate()
-            self.adjustSize()
-
-            # Snap to the content-driven height after the stack updates.
-            self.resize(target_width, self.sizeHint().height())
-            self.setFixedHeight(self.sizeHint().height())
-        finally:
-            self._is_updating_size = False
+        # Check if checkbox is checked AND user typed "DELETE"
+        checkbox_confirmed = self.confirm_checkbox.isChecked()
+        text_confirmed = self.type_confirm_input.text().strip().upper() == "DELETE"
+        
+        # Enable button only when both confirmations are complete
+        self.reset_btn.setEnabled(checkbox_confirmed and text_confirmed)
