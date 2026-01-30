@@ -6,10 +6,11 @@ all backend services while maintaining backward compatibility during migration.
 """
 from decimal import Decimal
 from datetime import date, datetime
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Callable
 import threading
 
 from repositories.database import DatabaseManager
+from services.data_change_event import DataChangeEvent, OperationType
 from repositories.user_repository import UserRepository
 from repositories.site_repository import SiteRepository
 from repositories.card_repository import CardRepository
@@ -83,6 +84,10 @@ class AppFacade:
         # Exclusive tools operation lock (prevents concurrent destructive operations)
         self._tools_lock = threading.Lock()
         self._tools_operation_active = False
+        
+        # Data change event system for unified refresh
+        self._data_change_listeners: List[Callable[[DataChangeEvent], None]] = []
+        self._maintenance_mode = False
         
         # Initialize repositories
         self.user_repo = UserRepository(self.db)
@@ -1592,6 +1597,89 @@ class AppFacade:
         """Check if a tools operation is currently running."""
         with self._tools_lock:
             return self._tools_operation_active
+    
+    # ==========================================================================
+    # Data Change Event System (Issue #9: Global Refresh)
+    # ==========================================================================
+    
+    def add_data_change_listener(self, listener: Callable[[DataChangeEvent], None]) -> None:
+        """
+        Register a listener for data change events.
+        
+        Listeners are called when database-changing operations complete.
+        Used by MainWindow to trigger debounced UI refresh.
+        
+        Args:
+            listener: Callback function that receives DataChangeEvent
+        """
+        if listener not in self._data_change_listeners:
+            self._data_change_listeners.append(listener)
+    
+    def remove_data_change_listener(self, listener: Callable[[DataChangeEvent], None]) -> None:
+        """Remove a data change listener."""
+        if listener in self._data_change_listeners:
+            self._data_change_listeners.remove(listener)
+    
+    def emit_data_changed(self, event: DataChangeEvent) -> None:
+        """
+        Emit a data change event to all listeners.
+        
+        Called by tools operations, import, and recalculation after successful completion.
+        UI listeners should debounce and refresh appropriately.
+        
+        Args:
+            event: DataChangeEvent with operation type and scope
+        """
+        # Also notify the legacy DatabaseManager listener system for compatibility
+        if hasattr(self.db, "notify_change"):
+            try:
+                self.db.notify_change()
+            except Exception:
+                pass
+        
+        # Notify all registered listeners
+        for listener in list(self._data_change_listeners):
+            try:
+                listener(event)
+            except Exception:
+                # Don't let one broken listener crash the emit
+                continue
+    
+    def is_maintenance_mode(self) -> bool:
+        """
+        Check if the app is in maintenance mode.
+        
+        During maintenance (restore/reset), user writes are blocked and
+        manual refresh should be prevented.
+        """
+        return self._maintenance_mode
+    
+    def set_maintenance_mode(self, enabled: bool) -> None:
+        """
+        Enable/disable maintenance mode.
+        
+        Should be called by tools operations at start/end of destructive operations.
+        When enabled, writes are blocked via set_writes_blocked.
+        """
+        self._maintenance_mode = enabled
+        if hasattr(self.db, "set_writes_blocked"):
+            self.db.set_writes_blocked(enabled)
+        
+        # Emit maintenance phase events
+        if enabled:
+            self.emit_data_changed(DataChangeEvent(
+                operation="maintenance",
+                maintenance_phase="start"
+            ))
+        else:
+            self.emit_data_changed(DataChangeEvent(
+                operation="maintenance",
+                maintenance_phase="end"
+            ))
+    
+    # ==========================================================================
+    # Tools Workers (Backup/Restore/Reset)
+    # ==========================================================================
     
     def create_backup_worker(self, backup_path: str, include_audit_log: bool = True):
         """

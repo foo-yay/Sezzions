@@ -590,11 +590,13 @@ class ToolsTab(QWidget):
         result_dialog = RecalculationResultDialog(result, self)
         result_dialog.exec()
         
-        # Notify listeners (refresh UI tables)
-        if hasattr(self.facade, "db") and hasattr(self.facade.db, "notify_change"):
-            self.facade.db.notify_change()
-        elif hasattr(self.facade, "db") and hasattr(self.facade.db, "_notify_change"):
-            self.facade.db._notify_change()
+        # Emit unified data change event (Issue #9)
+        from services.data_change_event import DataChangeEvent, OperationType
+        operation = OperationType.RECALCULATE_ALL if result.operation == "all" else OperationType.RECALCULATE_SCOPED
+        self.facade.emit_data_changed(DataChangeEvent(
+            operation=operation,
+            scope="all"
+        ))
         
     def _on_recalculation_error(self, error: str, progress_dialog: RecalculationProgressDialog):
         """Handle recalculation error"""
@@ -623,6 +625,10 @@ class ToolsTab(QWidget):
         self._load_users()
         self._load_sites()
         self._update_stats()
+    
+    def refresh_data(self):
+        """Standardized refresh method (Issue #9 contract)"""
+        self.refresh()
     
     # ========================================================================
     # CSV Import/Export Handlers
@@ -675,13 +681,14 @@ class ToolsTab(QWidget):
             result_dialog = ImportResultDialog(result, self)
             result_dialog.exec()
 
-            # Notify listeners so main tabs refresh (purchases/redemptions/etc.)
+            # Emit unified data change event (Issue #9)
             if result.success and result.total_processed > 0:
-                self.data_changed.emit()
-                if hasattr(self.facade, "db") and hasattr(self.facade.db, "notify_change"):
-                    self.facade.db.notify_change()
-                elif hasattr(self.facade, "db") and hasattr(self.facade.db, "_notify_change"):
-                    self.facade.db._notify_change()
+                from services.data_change_event import DataChangeEvent, OperationType
+                self.facade.emit_data_changed(DataChangeEvent(
+                    operation=OperationType.CSV_IMPORT,
+                    scope="transactions" if entity_type in ['purchases', 'redemptions', 'game_sessions'] else "setup",
+                    affected_tables=[entity_type]
+                ))
             
             # If successful and affects accounting data, prompt for recalculation
             if result.success and result.total_processed > 0:
@@ -1212,6 +1219,10 @@ class ToolsTab(QWidget):
             return
 
         def start_restore_worker():
+            # Enter maintenance mode (Issue #9)
+            if hasattr(self.facade, "set_maintenance_mode"):
+                self.facade.set_maintenance_mode(True)
+            
             # Create worker
             worker = self.facade.create_restore_worker(backup_path, restore_mode, selected_tables)
 
@@ -1246,7 +1257,11 @@ class ToolsTab(QWidget):
                     except Exception:
                         pass
                     self._active_progress_dialog = None
+                
+                # Release tools lock and exit maintenance mode
                 self.facade.release_tools_lock()
+                if hasattr(self.facade, "set_maintenance_mode"):
+                    self.facade.set_maintenance_mode(False)
 
                 # Drop strong ref now that we're done
                 self._active_tools_worker = None
@@ -1259,16 +1274,22 @@ class ToolsTab(QWidget):
                         f"✓ Database restored successfully!\n\n"
                         f"Mode: {restore_mode.name.replace('_', ' ').title()}\n"
                         f"Records restored: {result.records_restored:,}\n"
-                        f"Tables affected:\n• {tables_info}\n\n"
-                        "Please restart the application to see all changes."
+                        f"Tables affected:\n• {tables_info}"
                     )
-                    self.data_changed.emit()
-
-                    # Notify global DB listeners (MainWindow refresh)
-                    if hasattr(self.facade, "db") and hasattr(self.facade.db, "notify_change"):
-                        self.facade.db.notify_change()
-                    elif hasattr(self.facade, "db") and hasattr(self.facade.db, "_notify_change"):
-                        self.facade.db._notify_change()
+                    
+                    # Emit unified data change event (Issue #9)
+                    from services.data_change_event import DataChangeEvent, OperationType
+                    operation = {
+                        "REPLACE": OperationType.RESTORE_REPLACE,
+                        "MERGE_ALL": OperationType.RESTORE_MERGE_ALL,
+                        "MERGE_SELECTED": OperationType.RESTORE_MERGE_SELECTED
+                    }.get(restore_mode.name, OperationType.RESTORE_REPLACE)
+                    
+                    self.facade.emit_data_changed(DataChangeEvent(
+                        operation=operation,
+                        scope="all",
+                        affected_tables=result.tables_affected
+                    ))
                 else:
                     QMessageBox.critical(
                         self,
@@ -1452,6 +1473,10 @@ class ToolsTab(QWidget):
             return
 
         def start_reset_worker():
+            # Enter maintenance mode (Issue #9)
+            if hasattr(self.facade, "set_maintenance_mode"):
+                self.facade.set_maintenance_mode(True)
+            
             # Create worker
             worker = self.facade.create_reset_worker(keep_setup_data=preserve_setup, keep_audit_log=True)
 
@@ -1471,7 +1496,11 @@ class ToolsTab(QWidget):
             # Connect signals
             def on_finished(result):
                 progress_dialog.close()
+                
+                # Release tools lock and exit maintenance mode
                 self.facade.release_tools_lock()
+                if hasattr(self.facade, "set_maintenance_mode"):
+                    self.facade.set_maintenance_mode(False)
 
                 # Drop strong ref now that we're done
                 self._active_tools_worker = None
@@ -1483,16 +1512,18 @@ class ToolsTab(QWidget):
                         "Reset Complete",
                         f"✓ Database reset successfully!\n\n"
                         f"Records deleted: {result.records_deleted:,}\n"
-                        f"Tables cleared:\n• {tables_info}\n\n"
-                        "Please restart the application to see all changes."
+                        f"Tables cleared:\n• {tables_info}"
                     )
-                    self.data_changed.emit()
-
-                    # Notify global DB listeners (MainWindow refresh)
-                    if hasattr(self.facade, "db") and hasattr(self.facade.db, "notify_change"):
-                        self.facade.db.notify_change()
-                    elif hasattr(self.facade, "db") and hasattr(self.facade.db, "_notify_change"):
-                        self.facade.db._notify_change()
+                    
+                    # Emit unified data change event (Issue #9)
+                    from services.data_change_event import DataChangeEvent, OperationType
+                    operation = OperationType.RESET_PARTIAL if preserve_setup else OperationType.RESET_FULL
+                    
+                    self.facade.emit_data_changed(DataChangeEvent(
+                        operation=operation,
+                        scope="all",
+                        affected_tables=result.tables_cleared
+                    ))
                 else:
                     QMessageBox.critical(
                         self,
@@ -1502,7 +1533,11 @@ class ToolsTab(QWidget):
 
             def on_error(error_msg):
                 progress_dialog.close()
+                
+                # Release tools lock and exit maintenance mode on error
                 self.facade.release_tools_lock()
+                if hasattr(self.facade, "set_maintenance_mode"):
+                    self.facade.set_maintenance_mode(False)
 
                 # Drop strong ref now that we're done
                 self._active_tools_worker = None

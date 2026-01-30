@@ -94,6 +94,13 @@ class MainWindow(QtWidgets.QMainWindow):
         # Initial state
         self._update_tools_busy_indicator()
         
+        # Debounced refresh system (Issue #9)
+        self._refresh_timer = QtCore.QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(250)  # 250ms debounce window
+        self._refresh_timer.timeout.connect(self._execute_refresh)
+        self._pending_refresh_event = None
+        
         # Apply saved theme
         self._apply_theme(self.settings.get_theme())
         
@@ -102,6 +109,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if last_tab < self.tab_bar.count():
             self.tab_bar.setCurrentIndex(last_tab)
 
+        # Register for data change events (unified refresh system)
+        if hasattr(self.facade, "add_data_change_listener"):
+            self.facade.add_data_change_listener(self._on_data_changed)
+        
+        # Legacy compatibility: also listen to DatabaseManager changes
         if hasattr(self.facade, "db") and hasattr(self.facade.db, "add_change_listener"):
             self.facade.db.add_change_listener(self._schedule_refresh_all)
     
@@ -297,15 +309,78 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._tools_busy_progress is not None:
             self._tools_busy_progress.setVisible(active)
     
+    # ==========================================================================
+    # Debounced Refresh System (Issue #9)
+    # ==========================================================================
+    
+    def _on_data_changed(self, event) -> None:
+        """
+        Handle data change events from AppFacade.
+        
+        Debounces refresh requests: multiple events in 250ms → one refresh.
+        Blocks refresh during maintenance phase "start".
+        """
+        from services.data_change_event import DataChangeEvent
+        
+        # Don't refresh during maintenance start phase
+        if event.maintenance_phase == "start":
+            return
+        
+        # Store the latest event and restart the debounce timer
+        self._pending_refresh_event = event
+        self._refresh_timer.stop()
+        self._refresh_timer.start()
+    
+    def _execute_refresh(self) -> None:
+        """Execute the actual refresh after debounce window expires."""
+        # Check if maintenance is still active
+        if hasattr(self.facade, "is_maintenance_mode") and self.facade.is_maintenance_mode():
+            # Reschedule for later
+            self._refresh_timer.start()
+            return
+        
+        # Execute the refresh
+        self.refresh_all_tabs()
+        
+        # Optional status message
+        if self._pending_refresh_event:
+            # Only show message for major operations (not manual edits)
+            if self._pending_refresh_event.operation in [
+                "csv_import", "restore_replace", "restore_merge_all", 
+                "restore_merge_selected", "reset_full", "reset_partial",
+                "recalculate_all", "recalculate_scoped"
+            ]:
+                self.statusBar().showMessage("Data refreshed", 2000)
+        
+        self._pending_refresh_event = None
+    
     def _refresh_all(self):
-        """Refresh all tabs"""
+        """Manual refresh action from menu."""
+        # Block if maintenance is active
+        if hasattr(self.facade, "is_maintenance_mode") and self.facade.is_maintenance_mode():
+            QtWidgets.QMessageBox.information(
+                self,
+                "Maintenance in Progress",
+                "Database maintenance is currently running.\n\n"
+                "Please wait for it to complete before refreshing."
+            )
+            return
+        
         self.refresh_all_tabs()
         self.statusBar().showMessage("Refreshed", 2000)
 
     def _schedule_refresh_all(self):
-        QtCore.QTimer.singleShot(0, self.refresh_all_tabs)
+        """Legacy compatibility: schedule refresh from DatabaseManager listener."""
+        # Use the new debounced system
+        from services.data_change_event import DataChangeEvent, OperationType
+        self._on_data_changed(DataChangeEvent(operation=OperationType.MANUAL_EDIT))
 
     def refresh_all_tabs(self):
+        """
+        Refresh all tabs using standardized refresh_data() contract.
+        
+        Every tab must implement refresh_data() for the global refresh system (Issue #9).
+        """
         for widget in (
             self.purchases_tab,
             self.redemptions_tab,
@@ -316,16 +391,19 @@ class MainWindow(QtWidgets.QMainWindow):
             self.realized_tab,
             self.setup_tab,
         ):
-            if hasattr(widget, "refresh_all"):
-                widget.refresh_all()
-            elif hasattr(widget, "refresh_data"):
-                widget.refresh_data()
+            if hasattr(widget, "refresh_data"):
+                try:
+                    widget.refresh_data()
+                except Exception as e:
+                    # Don't let one broken tab crash the entire refresh
+                    print(f"Warning: Failed to refresh {widget.__class__.__name__}: {e}")
+                    continue
+            # Legacy fallback for tabs that haven't been updated yet
             elif hasattr(widget, "load_data"):
-                widget.load_data()
-            elif hasattr(widget, "refresh"):
-                widget.refresh()
-            elif hasattr(widget, "refresh_all"):
-                widget.refresh_all()
+                try:
+                    widget.load_data()
+                except Exception:
+                    continue
     
     def _validate_data(self):
         """Run data validation"""
