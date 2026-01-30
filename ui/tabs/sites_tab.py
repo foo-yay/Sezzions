@@ -8,6 +8,42 @@ from models.site import Site
 from ui.table_header_filters import TableHeaderFilter
 from ui.spreadsheet_ux import SpreadsheetUXController
 from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from ui.base_table_model import BaseTableModel, ColumnDefinition
+
+
+class SitesTableModel(BaseTableModel):
+    """Table model for Sites tab"""
+    
+    def __init__(self, parent=None):
+        columns = [
+            ColumnDefinition("Name", "name"),
+            ColumnDefinition("URL", "url", lambda v: v or ""),
+            ColumnDefinition("SC Rate", "sc_rate", lambda v: f"{v:.4f}", QtCore.Qt.AlignRight),
+            ColumnDefinition("Status", "is_active", lambda v: "Active" if v else "Inactive"),
+            ColumnDefinition("Notes", "notes", lambda v: (v or "")[:100])
+        ]
+        super().__init__(columns, parent)
+    
+    def data(self, index: QtCore.QModelIndex, role: int):
+        """Override to add foreground color for inactive sites"""
+        if not index.isValid():
+            return None
+        
+        row = index.row()
+        col = index.column()
+        
+        if row >= len(self._data):
+            return None
+        
+        site = self._data[row]
+        
+        # Custom foreground for inactive status
+        if role == QtCore.Qt.ForegroundRole and col == 3:  # Status column
+            if not site.is_active:
+                return QtGui.QColor("#999")
+        
+        # Delegate to base class for other roles
+        return super().data(index, role)
 
 
 class SitesTab(QtWidgets.QWidget):
@@ -81,19 +117,27 @@ class SitesTab(QtWidgets.QWidget):
         
         layout.addLayout(toolbar)
         
-        # Table
-        self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["Name", "URL", "SC Rate", "Status", "Notes"])
+        # Table - QTableView with model/proxy
+        self.model = SitesTableModel()
+        self.proxy = QtCore.QSortFilterProxyModel()
+        self.proxy.setSourceModel(self.model)
+        self.proxy.setFilterCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        
+        self.table = QtWidgets.QTableView()
+        self.table.setModel(self.proxy)
+        self.table.setSortingEnabled(True)
+        self.table.setSelectionBehavior(QtWidgets.QTableView.SelectItems)
+        self.table.setSelectionMode(QtWidgets.QTableView.ExtendedSelection)
+        self.table.setEditTriggers(QtWidgets.QTableView.NoEditTriggers)
+        self.table.verticalHeader().setVisible(False)
+        
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
-        self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectItems)
-        self.table.setSelectionMode(QtWidgets.QTableWidget.ExtendedSelection)
-        self.table.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
-        self.table.verticalHeader().setVisible(False)
-        self.table.itemSelectionChanged.connect(self._on_selection_changed)
-        self.table.itemDoubleClicked.connect(self._view_site)
+        
+        selection_model = self.table.selectionModel()
+        selection_model.selectionChanged.connect(self._on_selection_changed)
+        self.table.doubleClicked.connect(self._view_site)
         
         # Context menu setup
         self.table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -119,7 +163,7 @@ class SitesTab(QtWidgets.QWidget):
         self._populate_table()
     
     def _populate_table(self):
-        """Populate table with sites"""
+        """Populate model with sites"""
         search_text = self.search_edit.text().lower()
         
         # Filter sites
@@ -131,35 +175,10 @@ class SitesTab(QtWidgets.QWidget):
         else:
             filtered = self.sites
         
-        self.table.setRowCount(len(filtered))
+        # Update model data
+        self.model.set_data(filtered)
         
-        for row, site in enumerate(filtered):
-            # Name
-            name_item = QtWidgets.QTableWidgetItem(site.name)
-            name_item.setData(QtCore.Qt.UserRole, site.id)
-            self.table.setItem(row, 0, name_item)
-            
-            # URL
-            url = site.url or ""
-            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(url))
-            
-            # SC Rate
-            rate_item = QtWidgets.QTableWidgetItem(f"{site.sc_rate:.4f}")
-            rate_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            self.table.setItem(row, 2, rate_item)
-            
-            # Status
-            status = "Active" if site.is_active else "Inactive"
-            status_item = QtWidgets.QTableWidgetItem(status)
-            if not site.is_active:
-                status_item.setForeground(QtGui.QColor("#999"))
-            self.table.setItem(row, 3, status_item)
-            
-            # Notes
-            notes = (site.notes or "")[:100]
-            self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(notes))
-        
-        # Column sizing handled by header resize mode
+        # Apply column filters
         self.table_filter.apply_filters()
     
     def _filter_sites(self):
@@ -201,7 +220,7 @@ class SitesTab(QtWidgets.QWidget):
 
     def _get_selected_row_numbers(self):
         """Get list of unique row numbers that have any selected cells"""
-        selected_indexes = self.table.selectedIndexes()
+        selected_indexes = self.table.selectionModel().selectedIndexes()
         if not selected_indexes:
             return []
         return sorted(set(index.row() for index in selected_indexes))
@@ -212,13 +231,15 @@ class SitesTab(QtWidgets.QWidget):
         return ids[0] if ids else None
 
     def _get_selected_site_ids(self):
+        """Get IDs of selected sites from proxy model"""
         ids = []
-        for row in self._get_selected_row_numbers():
-            item = self.table.item(row, 0)
-            if item is not None:
-                value = item.data(QtCore.Qt.UserRole)
-                if value is not None:
-                    ids.append(value)
+        for proxy_row in self._get_selected_row_numbers():
+            proxy_index = self.proxy.index(proxy_row, 0)
+            source_index = self.proxy.mapToSource(proxy_index)
+            if source_index.isValid():
+                site = self.model.get_row_object(source_index.row())
+                if site:
+                    ids.append(site.id)
         return ids
     
     def _add_site(self):
@@ -338,7 +359,7 @@ class SitesTab(QtWidgets.QWidget):
         menu.exec_(self.table.viewport().mapToGlobal(position))
 
     def _export_csv(self):
-        if self.table.rowCount() == 0:
+        if self.proxy.rowCount() == 0:
             QtWidgets.QMessageBox.information(self, "Export", "No data to export")
             return
 
@@ -354,15 +375,18 @@ class SitesTab(QtWidgets.QWidget):
                 import csv
                 with open(filename, 'w', newline='') as f:
                     writer = csv.writer(f)
-                    headers = [self.table.horizontalHeaderItem(c).text() for c in range(self.table.columnCount())]
+                    
+                    # Headers
+                    headers = [self.model.columns[c].label for c in range(len(self.model.columns))]
                     writer.writerow(headers)
-                    for row in range(self.table.rowCount()):
-                        if self.table.isRowHidden(row):
-                            continue
+                    
+                    # Data rows (from proxy, so filtered/sorted order)
+                    for proxy_row in range(self.proxy.rowCount()):
                         row_values = []
-                        for col in range(self.table.columnCount()):
-                            item = self.table.item(row, col)
-                            row_values.append(item.text() if item else "")
+                        for col in range(len(self.model.columns)):
+                            proxy_index = self.proxy.index(proxy_row, col)
+                            data = proxy_index.data(QtCore.Qt.DisplayRole)
+                            row_values.append(str(data) if data is not None else "")
                         writer.writerow(row_values)
 
                 QtWidgets.QMessageBox.information(
