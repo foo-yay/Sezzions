@@ -907,3 +907,91 @@ class GameSessionService:
         self._recalculate_game_rtp_from_aggregates(session.game_id, conn)
         conn.commit()
 
+    def get_deletion_impact(self, session_id: int) -> str:
+        """
+        Check if deleting a session would affect subsequent redemptions.
+
+        This method replaces direct UI cursor access to check deletion impact.
+
+        Args:
+            session_id: ID of game session to check
+
+        Returns:
+            Formatted impact message string, or empty string if no impact
+        """
+        try:
+            session = self.session_repo.get_by_id(session_id)
+            if not session or session.status != "Closed":
+                return ""
+
+            # Get redemptions after this session
+            cursor = self.session_repo.db._connection.cursor()
+            cursor.execute(
+                """
+                SELECT COUNT(*) as count, SUM(amount) as total
+                FROM redemptions
+                WHERE site_id = ? AND user_id = ?
+                  AND (redemption_date > ? 
+                       OR (redemption_date = ? AND redemption_time > ?))
+                """,
+                (session.site_id, session.user_id, 
+                 session.end_date, session.end_date, session.end_time)
+            )
+            result = cursor.fetchone()
+
+            if result and result["count"] > 0:
+                count = result["count"]
+                total = Decimal(str(result["total"] or 0))
+                ending_balance = Decimal(str(session.ending_balance or 0))
+
+                # Calculate what expected balance would be without this session
+                # Import here to avoid circular import
+                from app_facade import AppFacade
+                
+                # Note: This is not ideal but matches current UI pattern
+                # In a proper refactor, we'd pass a compute service or extract this logic
+                # For now, we replicate the minimal logic needed
+                from repositories.database import DatabaseManager
+                db = self.session_repo.db
+                prev_row = db.fetch_one(
+                    """
+                    SELECT ending_balance
+                    FROM game_sessions
+                    WHERE site_id = ? AND user_id = ?
+                      AND (session_date < ? OR (session_date = ? AND COALESCE(session_time,'00:00:00') < ?))
+                      AND status = 'Closed'
+                    ORDER BY session_date DESC, COALESCE(session_time,'00:00:00') DESC
+                    LIMIT 1
+                    """,
+                    (session.site_id, session.user_id, session.session_date, 
+                     session.session_date, session.session_time or '00:00:00')
+                )
+                expected_total = Decimal(str(prev_row["ending_balance"])) if prev_row else Decimal("0")
+
+                # Get site and user names for the message
+                site_name = "Unknown"
+                user_name = "Unknown"
+                if self.site_repo:
+                    site = self.site_repo.get_by_id(session.site_id)
+                    if site:
+                        site_name = site.name
+                
+                user_row = db.fetch_one("SELECT name FROM users WHERE id = ?", (session.user_id,))
+                if user_row:
+                    user_name = user_row["name"]
+
+                msg = f"Session: {site_name} / {user_name}\n"
+                msg += f"Session ended with {float(ending_balance):,.2f} SC\n"
+                msg += f"Found {count} redemption(s) after this session totaling ${float(total):,.2f}\n\n"
+                msg += f"If you delete this session:\n"
+                msg += f"• Expected balance drops to {float(expected_total):,.2f} SC\n"
+                msg += f"• Redemptions may temporarily exceed expected balance\n"
+                msg += f"• You won't be able to edit redemptions until you fix the gap"
+
+                return msg
+            return ""
+        except Exception as e:
+            print(f"Error checking game session deletion impact: {e}")
+            return ""
+
+
