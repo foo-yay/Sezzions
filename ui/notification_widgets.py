@@ -227,6 +227,8 @@ class NotificationCenterDialog(QDialog):
     def __init__(self, facade, parent=None):
         super().__init__(parent)
         self.facade = facade
+        self.setObjectName("NotificationsDialog")
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setWindowTitle("Notifications")
         self.setMinimumSize(600, 500)
         self._init_ui()

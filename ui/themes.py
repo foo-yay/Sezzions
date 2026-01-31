@@ -38,7 +38,16 @@ class Theme:
                 background: {surface};
                 border: none;
             }}
+            QAbstractScrollArea::viewport {{
+                background: {surface};
+            }}
+            QScrollArea::viewport {{
+                background: {surface};
+            }}
             QDialog QScrollArea QWidget#qt_scrollarea_viewport {{
+                background: {surface};
+            }}
+            QDialog#NotificationsDialog {{
                 background: {surface};
             }}
             
