@@ -47,6 +47,9 @@ from services.expense_service import ExpenseService
 from services.realized_notes_service import RealizedNotesService
 from services.tools.csv_import_service import CSVImportService
 from services.tools.csv_export_service import CSVExportService
+from services.notification_service import NotificationService
+from services.notification_rules_service import NotificationRulesService
+from repositories.notification_repository import NotificationRepository
 
 from models.user import User
 from models.site import Site
@@ -152,6 +155,15 @@ class AppFacade:
         # Tools services (CSV import/export, backup/restore)
         self.csv_import_service = CSVImportService(self.db)
         self.csv_export_service = CSVExportService(self.db)
+        
+        # Notification services
+        self.notification_repo = NotificationRepository()
+        self.notification_service = NotificationService(self.notification_repo)
+        self.notification_rules_service = NotificationRulesService(
+            self.notification_service,
+            None,  # Will be set from MainWindow
+            self.db
+        )
 
     @staticmethod
     def _normalize_time(value: Optional[str]) -> str:
