@@ -407,6 +407,57 @@ Provide passive, persistent notifications for important app events without inter
 - No integration tests for rules evaluators yet (future: mock DB/settings, assert notification creation)
 - No headless UI smoke test yet (future: boot MainWindow, assert bell exists, open center)
 
+### 6.5 Tax Withholding Estimates (Issue #29, Part 1/2)
+
+**Purpose:**
+Store and compute per-session tax withholding estimates for informational tax planning. This is not legal/tax advice; user must consult a tax professional.
+
+**Architecture (Part 1 — backend foundation, no UI yet):**
+- `models/game_session.py`: adds three new optional fields:
+  - `tax_withholding_rate_pct` (Decimal): the rate (%) used; defaults to the app-wide default if not custom
+  - `tax_withholding_is_custom` (bool): whether user explicitly set a rate for this session
+  - `tax_withholding_amount` (Decimal): the computed estimate (in dollars)
+- `repositories/database.py`: new columns `tax_withholding_rate_pct` (REAL), `tax_withholding_is_custom` (INTEGER 0/1), `tax_withholding_amount` (TEXT)
+  - Migration path: ALTER TABLE additions for existing DBs
+- `repositories/game_session_repository.py`: persists withholding fields in create/update/model mapping
+- `services/tax_withholding_service.py`:
+  - `get_config()`: reads `tax_withholding_enabled` + `tax_withholding_default_rate_pct` from settings; clamps rate 0..100
+  - `compute_amount(net_taxable_pl, rate_pct)`: `max(0, net_taxable_pl) * (rate / 100)` using Decimal rounding to cents
+  - `apply_to_session_model(session)`: for closed sessions, captures default rate if missing, computes amount
+  - `bulk_recalculate(site_id, user_id, overwrite_custom=False)`: transactional bulk update; skips custom-rate sessions unless overwrite=True
+- `services/game_session_service.py`: wires `tax_withholding_service` as an optional dependency; calls `apply_to_session_model()` after computing `net_taxable_pl` during closed-session recalculation
+- `app_facade.py`: constructs `TaxWithholdingService` and passes it to `GameSessionService` (settings wiring still placeholder)
+
+**Computation:**
+- Only for closed sessions with positive `net_taxable_pl`
+- Formula: `withholding_amount = max(0, net_taxable_pl) * (rate_pct / 100)`
+- Decimal precision: rounds to cents (2 decimal places)
+- Zero or negative taxable P/L → withholding = $0
+
+**Settings (planned, not yet wired):**
+- `tax_withholding_enabled` (bool): master on/off switch
+- `tax_withholding_default_rate_pct` (float): default rate applied to new closed sessions (clamped 0..100)
+
+**Bulk Recalculation:**
+- Service provides `bulk_recalculate(site_id, user_id, overwrite_custom)` for batch updates
+- Filters: site/user (if provided); only closed sessions
+- Atomicity: uses DB transaction + no-commit operations; rolls back on any failure
+- Custom rates: skips sessions with `tax_withholding_is_custom=1` unless `overwrite_custom=True`
+
+**Part 2 (pending):**
+- Settings UI: enable/disable toggle + default rate spinner (depends on Issue #31 Settings entry point)
+- Per-session override UI: optional withholding % field in session editor dialog + readonly display of computed amount
+- Daily Sessions column/aggregates: "Tax set-aside (est.)" column showing per-session withholding + aggregated totals
+- Bulk recalc dialog: UI wrapper for `bulk_recalculate()` with site/user filters, overwrite-custom checkbox, progress/confirmation
+
+**Tests:**
+- 6 unit tests in `tests/unit/test_tax_withholding_service.py`:
+  - compute_amount: positive P/L, zero, negative P/L
+  - bulk_recalculate: writes correct rate/is_custom/amount
+  - skip custom-rate sessions unless overwrite
+  - atomicity: monkeypatch executemany to raise, assert no changes persisted
+- All 579 tests passing
+
 ## 7) Testing Strategy
 
 Tests live under `tests/` and use `pytest`.
