@@ -457,7 +457,47 @@ Store and compute per-session tax withholding estimates for informational tax pl
   - skip custom-rate sessions unless overwrite
   - atomicity: monkeypatch executemany to raise, assert no changes persisted
 - All 579 tests passing
+### 6.6 Settings UI Entry Point (Issue #31)
 
+**Purpose:**
+Provide a first-class, always-available Settings entry point for managing notifications, taxes, and future cross-cutting preferences.
+
+**Architecture:**
+- `ui/settings_dialog.py`: Centralized Settings dialog
+  - Left navigation list: section names (Notifications, Taxes, etc.)
+  - Right stacked widget: section-specific controls
+  - Bottom buttons: Cancel, Save
+- `ui/main_window.py`: gear icon overlay button
+  - Positioned to the left of the notification bell (same top margin)
+  - Transparent background, hover effect
+  - Clicking opens SettingsDialog
+- Settings persistence: uses existing `ui/settings.py` → `settings.json`
+
+**UI Components:**
+- **Gear icon** (⚙️): 32x32 button, transparent, positioned dynamically via `_position_notification_bell()` (also positions gear)
+- **SettingsDialog**:
+  - Modal dialog, minimum 700x500
+  - Left nav: "Notifications", "Taxes" (expandable for future sections)
+  - Content sections:
+    - **Notifications**: `redemption_pending_receipt_threshold_days` spinner (0..365 days, suffix " days")
+    - **Taxes**: placeholder message ("Tax withholding estimate settings will appear here once Issue #29 is completed")
+  - Save button: persists settings to settings.json, triggers notification rule re-evaluation
+  - ESC key: closes dialog without saving
+
+**Integration:**
+- MainWindow creates gear button after notification bell
+- Gear click calls `_show_settings_dialog()` → opens Settings dialog
+- After Save, calls `_evaluate_notifications()` to refresh notification rules (in case threshold changed)
+
+**Tests:**
+- 1 headless UI smoke test in `tests/integration/test_settings_dialog_smoke.py`:
+  - Boots MainWindow, asserts gear exists and is accessible
+  - Simulates gear click, verifies Settings dialog opens and closes cleanly
+- All 580 tests passing
+
+**Future expansion:**
+- Issue #29 (Part 2) will populate the Taxes section with withholding controls
+- Additional sections (e.g., Backup, Display) can be added by extending the nav list and stacked widget
 ## 7) Testing Strategy
 
 Tests live under `tests/` and use `pytest`.

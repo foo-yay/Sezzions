@@ -14,6 +14,7 @@ from ui.tabs.setup_tab import SetupTab
 from ui.themes import get_theme, get_theme_names
 from ui.settings import Settings
 from ui.notification_widgets import NotificationBellWidget, NotificationCenterDialog
+from ui.settings_dialog import SettingsDialog
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -52,6 +53,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self._notification_bell = NotificationBellWidget(self.main_content)
         self._notification_bell.clicked.connect(self._show_notification_center)
         self._notification_bell.raise_()
+
+        # Settings gear overlay (pinned to the left of the notification bell)
+        self._settings_gear = QtWidgets.QPushButton("⚙️", self.main_content)
+        self._settings_gear.setObjectName("SettingsGearButton")
+        self._settings_gear.setFixedSize(32, 32)
+        self._settings_gear.setToolTip("Settings")
+        self._settings_gear.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._settings_gear.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                font-size: 18px;
+            }
+            QPushButton:hover {
+                background-color: rgba(0, 0, 0, 0.05);
+                border-radius: 4px;
+            }
+        """)
+        self._settings_gear.clicked.connect(self._show_settings_dialog)
+        self._settings_gear.raise_()
 
         # Reserve vertical space so the overlay bell doesn't sit on top of the tab bar.
         self._notification_bell_margin_top = 6
@@ -167,10 +188,21 @@ class MainWindow(QtWidgets.QMainWindow):
         margin_top = getattr(self, "_notification_bell_margin_top", 6)
         margin_right = getattr(self, "_notification_bell_margin_right", 6)
         inset = getattr(self, "_content_inset", 0)
-        x = max(0, parent.width() - inset - bell.width() - margin_right)
-        y = max(0, margin_top)
-        bell.move(x, y)
+        
+        # Position bell at top-right
+        bell_x = max(0, parent.width() - inset - bell.width() - margin_right)
+        bell_y = max(0, margin_top)
+        bell.move(bell_x, bell_y)
         bell.raise_()
+        
+        # Position gear to the left of the bell
+        if hasattr(self, "_settings_gear") and self._settings_gear is not None:
+            gear = self._settings_gear
+            gear_spacing = 6  # space between gear and bell
+            gear_x = bell_x - gear.width() - gear_spacing
+            gear_y = bell_y
+            gear.move(gear_x, gear_y)
+            gear.raise_()
     
     def closeEvent(self, event):
         """Save settings on close"""
@@ -575,6 +607,14 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Refresh badge after dialog closes
         self._evaluate_notifications()
+    
+    def _show_settings_dialog(self):
+        """Show Settings dialog (Issue #31)"""
+        dialog = SettingsDialog(self.settings, self)
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            # Settings were saved; optionally trigger re-evaluation of notification rules
+            # if threshold changed
+            self._evaluate_notifications()
     
     def on_backup_completed(self):
         """Called by Tools tab after backup completion"""
