@@ -34,6 +34,35 @@ class Theme:
             QMainWindow {{ background: {bg}; }}
             QWidget {{ color: {text}; font-size: 12px; }}
             QDialog, QMessageBox {{ background: {surface}; }}
+            QDialog QScrollArea {{
+                background: {surface};
+                border: none;
+            }}
+            QAbstractScrollArea::viewport {{
+                background: {surface};
+            }}
+            QScrollArea::viewport {{
+                background: {surface};
+            }}
+            QDialog QScrollArea QWidget#qt_scrollarea_viewport {{
+                background: {surface};
+            }}
+            QDialog#NotificationsDialog {{
+                background: {surface};
+            }}
+            QWidget#NotificationsHeader {{
+                background: {surface};
+            }}
+            QScrollArea#NotificationsScroll {{
+                background: {surface};
+                border: none;
+            }}
+            QScrollArea#NotificationsScroll QWidget#qt_scrollarea_viewport {{
+                background: {surface};
+            }}
+            QWidget#NotificationsContainer {{
+                background: {surface};
+            }}
             
             QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
                 background: {input_bg};
@@ -154,6 +183,21 @@ class Theme:
             QPushButton#MiniButton {{
                 padding: 4px 10px;
                 min-height: 20px;
+            }}
+            QPushButton#NotificationBell {{
+                background: transparent;
+                border: none;
+                border-radius: 0;
+                padding: 0;
+                min-height: 0;
+            }}
+            QPushButton#NotificationBell:hover {{
+                background: transparent;
+                border: none;
+            }}
+            QPushButton#NotificationBell:pressed {{
+                background: transparent;
+                border: none;
             }}
             QToolButton#InfoButton {{
                 background: {surface2};

@@ -13,6 +13,7 @@ from ui.tabs.daily_sessions_tab import DailySessionsTab
 from ui.tabs.setup_tab import SetupTab
 from ui.themes import get_theme, get_theme_names
 from ui.settings import Settings
+from ui.notification_widgets import NotificationBellWidget, NotificationCenterDialog
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -41,8 +42,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_content.setObjectName("MainContentFrame")
         main_layout = QtWidgets.QVBoxLayout(self.main_content)
         main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(12)
 
-        # Create main tab bar + stacked content (for centered tabs)
+        # Shared inset so top tabs/bell align with tab content edges.
+        self._content_inset = 12
+
+        # Notification bell overlay (pinned to top-right of main content)
+        # This avoids affecting the tab layout or minimum window size.
+        self._notification_bell = NotificationBellWidget(self.main_content)
+        self._notification_bell.clicked.connect(self._show_notification_center)
+        self._notification_bell.raise_()
+
+        # Reserve vertical space so the overlay bell doesn't sit on top of the tab bar.
+        self._notification_bell_margin_top = 6
+        self._notification_bell_margin_right = 6
+        self._notification_reserved_top = int(
+            self._notification_bell_margin_top + self._notification_bell.height() + main_layout.spacing()
+        )
+        main_layout.setContentsMargins(0, self._notification_reserved_top, 0, 0)
+
+        # Create main tab bar + stacked content (centered tabs)
         self.tab_bar = QtWidgets.QTabBar()
         self.tab_bar.setObjectName("MainTabs")
         self.tab_bar.setDrawBase(False)
@@ -51,7 +70,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         tab_bar_container = QtWidgets.QWidget()
         tab_bar_layout = QtWidgets.QHBoxLayout(tab_bar_container)
-        tab_bar_layout.setContentsMargins(0, 0, 0, 0)
+        tab_bar_layout.setContentsMargins(self._content_inset, 0, self._content_inset, 0)
+        tab_bar_layout.setSpacing(0)
         tab_bar_layout.addStretch(1)
         tab_bar_layout.addWidget(self.tab_bar)
         tab_bar_layout.addStretch(1)
@@ -116,6 +136,41 @@ class MainWindow(QtWidgets.QMainWindow):
         # Legacy compatibility: also listen to DatabaseManager changes
         if hasattr(self.facade, "db") and hasattr(self.facade.db, "add_change_listener"):
             self.facade.db.add_change_listener(self._schedule_refresh_all)
+        
+        # Initialize notification system
+        self._init_notification_system()
+
+        # Position bell after initial layout pass
+        QtCore.QTimer.singleShot(0, self._position_notification_bell)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_notification_bell()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._position_notification_bell()
+
+    def _position_notification_bell(self):
+        """Pin the notification bell to the top-right of the main content."""
+        if not hasattr(self, "_notification_bell") or self._notification_bell is None:
+            return
+        if not hasattr(self, "main_content") or self.main_content is None:
+            return
+
+        bell = self._notification_bell
+        parent = self.main_content
+
+        if parent.width() <= 0 or parent.height() <= 0:
+            return
+
+        margin_top = getattr(self, "_notification_bell_margin_top", 6)
+        margin_right = getattr(self, "_notification_bell_margin_right", 6)
+        inset = getattr(self, "_content_inset", 0)
+        x = max(0, parent.width() - inset - bell.width() - margin_right)
+        y = max(0, margin_top)
+        bell.move(x, y)
+        bell.raise_()
     
     def closeEvent(self, event):
         """Save settings on close"""
@@ -458,7 +513,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def _apply_theme(self, theme_name: str):
         """Apply theme to application"""
         theme = get_theme(theme_name)
-        self.setStyleSheet(theme.get_stylesheet())
+        css = theme.get_stylesheet()
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(css)
+        self.setStyleSheet(css)
     
     def _change_theme(self, theme_name: str):
         """Change application theme"""
@@ -476,6 +535,58 @@ class MainWindow(QtWidgets.QMainWindow):
             "<p>Version 2.0 - OOP Backend</p>"
             "<p>© 2026 Carolina Edge Gaming</p>"
         )
+    
+    def _init_notification_system(self):
+        """Initialize notification system with periodic evaluation"""
+        # Wire Settings to rules service for backup configuration access
+        if hasattr(self.facade, 'notification_rules_service'):
+            self.facade.notification_rules_service.settings = self.settings
+        
+        # Evaluate immediately on startup
+        self._evaluate_notifications()
+        
+        # Set up periodic evaluation timer (every hour)
+        self._notification_timer = QtCore.QTimer(self)
+        self._notification_timer.setInterval(3600000)  # 1 hour in ms
+        self._notification_timer.timeout.connect(self._evaluate_notifications)
+        self._notification_timer.start()
+        
+        # Also evaluate after Tools operations
+        if hasattr(self, 'tools_tab'):
+            # Connect to backup completion signal if it exists
+            pass  # Tools tab will call on_backup_completed
+    
+    def _evaluate_notifications(self):
+        """Evaluate notification rules and update badge"""
+        if hasattr(self.facade, 'notification_rules_service'):
+            self.facade.notification_rules_service.evaluate_all_rules()
+
+        self._refresh_notification_badge()
+
+    def _refresh_notification_badge(self):
+        """Update the bell badge from current notification state (no rule evaluation)."""
+        unread_count = self.facade.notification_service.get_unread_count()
+        self._notification_bell.set_unread_count(unread_count)
+    
+    def _show_notification_center(self):
+        """Show notification center dialog"""
+        dialog = NotificationCenterDialog(self.facade, self)
+        dialog.exec()
+        
+        # Refresh badge after dialog closes
+        self._evaluate_notifications()
+    
+    def on_backup_completed(self):
+        """Called by Tools tab after backup completion"""
+        if hasattr(self.facade, 'notification_rules_service'):
+            self.facade.notification_rules_service.on_backup_completed()
+            self._evaluate_notifications()
+    
+    def on_redemption_received(self, redemption_id: int):
+        """Called when a redemption is marked as received"""
+        if hasattr(self.facade, 'notification_rules_service'):
+            self.facade.notification_rules_service.on_redemption_received(redemption_id)
+            self._evaluate_notifications()
 
     def _show_help(self):
         QtWidgets.QMessageBox.information(
