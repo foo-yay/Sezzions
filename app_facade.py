@@ -47,6 +47,7 @@ from services.expense_service import ExpenseService
 from services.realized_notes_service import RealizedNotesService
 from services.tools.csv_import_service import CSVImportService
 from services.tools.csv_export_service import CSVExportService
+from services.tax_withholding_service import TaxWithholdingService
 from services.notification_service import NotificationService
 from services.notification_rules_service import NotificationRulesService
 from repositories.notification_repository import NotificationRepository
@@ -126,12 +127,16 @@ class AppFacade:
             self.fifo_service,
             db_manager=self.db  # Needed for redemption_allocations table
         )
+        # Tax withholding estimates (Issue #29)
+        self.tax_withholding_service = TaxWithholdingService(self.db, settings=None)  # wired from MainWindow
+
         self.game_session_service = GameSessionService(
             self.game_session_repo,
             site_repo=self.site_repo,  # Needed for SC rate in P/L calculation
             fifo_service=self.fifo_service,  # May be needed in future
             purchase_repo=self.purchase_repo,
-            redemption_repo=self.redemption_repo
+            redemption_repo=self.redemption_repo,
+            tax_withholding_service=self.tax_withholding_service,
         )
         
         self.report_service = ReportService(self.db)
