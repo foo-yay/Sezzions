@@ -44,16 +44,11 @@ class MainWindow(QtWidgets.QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(12)
 
-        # Notification bell (top-right, does not affect minimum window width)
-        bell_container = QtWidgets.QWidget()
-        bell_layout = QtWidgets.QHBoxLayout(bell_container)
-        bell_layout.setContentsMargins(0, 0, 0, 0)
-        bell_layout.setSpacing(0)
-        bell_layout.addStretch(1)
-        self._notification_bell = NotificationBellWidget(self)
+        # Notification bell overlay (pinned to top-right of main content)
+        # This avoids affecting the tab layout or minimum window size.
+        self._notification_bell = NotificationBellWidget(self.main_content)
         self._notification_bell.clicked.connect(self._show_notification_center)
-        bell_layout.addWidget(self._notification_bell)
-        main_layout.addWidget(bell_container)
+        self._notification_bell.raise_()
 
         # Create main tab bar + stacked content (centered tabs)
         self.tab_bar = QtWidgets.QTabBar()
@@ -133,6 +128,37 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Initialize notification system
         self._init_notification_system()
+
+        # Position bell after initial layout pass
+        QtCore.QTimer.singleShot(0, self._position_notification_bell)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_notification_bell()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._position_notification_bell()
+
+    def _position_notification_bell(self):
+        """Pin the notification bell to the top-right of the main content."""
+        if not hasattr(self, "_notification_bell") or self._notification_bell is None:
+            return
+        if not hasattr(self, "main_content") or self.main_content is None:
+            return
+
+        bell = self._notification_bell
+        parent = self.main_content
+
+        if parent.width() <= 0 or parent.height() <= 0:
+            return
+
+        margin_top = 6
+        margin_right = 6
+        x = max(0, parent.width() - bell.width() - margin_right)
+        y = max(0, margin_top)
+        bell.move(x, y)
+        bell.raise_()
     
     def closeEvent(self, event):
         """Save settings on close"""
