@@ -34,6 +34,13 @@ class Theme:
             QMainWindow {{ background: {bg}; }}
             QWidget {{ color: {text}; font-size: 12px; }}
             QDialog, QMessageBox {{ background: {surface}; }}
+            QDialog QScrollArea {{
+                background: {surface};
+                border: none;
+            }}
+            QDialog QScrollArea QWidget#qt_scrollarea_viewport {{
+                background: {surface};
+            }}
             
             QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
                 background: {input_bg};
