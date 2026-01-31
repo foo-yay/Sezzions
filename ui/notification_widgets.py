@@ -240,6 +240,8 @@ class NotificationCenterDialog(QDialog):
 
         # Header (no underline; uses global typography)
         header = QWidget()
+        header.setObjectName("NotificationsHeader")
+        header.setAttribute(Qt.WA_StyledBackground, True)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(16, 12, 16, 8)
 
@@ -263,10 +265,16 @@ class NotificationCenterDialog(QDialog):
         
         # Scroll area for notifications
         scroll = QScrollArea()
+        scroll.setObjectName("NotificationsScroll")
+        scroll.setAttribute(Qt.WA_StyledBackground, True)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
+        if scroll.viewport() is not None:
+            scroll.viewport().setAttribute(Qt.WA_StyledBackground, True)
         
         self.notifications_container = QWidget()
+        self.notifications_container.setObjectName("NotificationsContainer")
+        self.notifications_container.setAttribute(Qt.WA_StyledBackground, True)
         self.notifications_layout = QVBoxLayout(self.notifications_container)
         self.notifications_layout.setSpacing(8)
         self.notifications_layout.setContentsMargins(12, 12, 12, 12)

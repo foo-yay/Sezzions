@@ -50,6 +50,19 @@ class Theme:
             QDialog#NotificationsDialog {{
                 background: {surface};
             }}
+            QWidget#NotificationsHeader {{
+                background: {surface};
+            }}
+            QScrollArea#NotificationsScroll {{
+                background: {surface};
+                border: none;
+            }}
+            QScrollArea#NotificationsScroll QWidget#qt_scrollarea_viewport {{
+                background: {surface};
+            }}
+            QWidget#NotificationsContainer {{
+                background: {surface};
+            }}
             
             QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
                 background: {input_bg};
