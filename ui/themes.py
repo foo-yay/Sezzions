@@ -155,6 +155,21 @@ class Theme:
                 padding: 4px 10px;
                 min-height: 20px;
             }}
+            QPushButton#NotificationBell {{
+                background: transparent;
+                border: none;
+                border-radius: 0;
+                padding: 0;
+                min-height: 0;
+            }}
+            QPushButton#NotificationBell:hover {{
+                background: transparent;
+                border: none;
+            }}
+            QPushButton#NotificationBell:pressed {{
+                background: transparent;
+                border: none;
+            }}
             QToolButton#InfoButton {{
                 background: {surface2};
                 border: 1px solid {border};

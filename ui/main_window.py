@@ -44,6 +44,9 @@ class MainWindow(QtWidgets.QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(12)
 
+        # Shared inset so top tabs/bell align with tab content edges.
+        self._content_inset = 12
+
         # Notification bell overlay (pinned to top-right of main content)
         # This avoids affecting the tab layout or minimum window size.
         self._notification_bell = NotificationBellWidget(self.main_content)
@@ -51,7 +54,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._notification_bell.raise_()
 
         # Reserve vertical space so the overlay bell doesn't sit on top of the tab bar.
-        self._notification_reserved_top = int(self._notification_bell.height() + 12)
+        self._notification_bell_margin_top = 6
+        self._notification_bell_margin_right = 6
+        self._notification_reserved_top = int(
+            self._notification_bell_margin_top + self._notification_bell.height() + main_layout.spacing()
+        )
         main_layout.setContentsMargins(0, self._notification_reserved_top, 0, 0)
 
         # Create main tab bar + stacked content (centered tabs)
@@ -63,7 +70,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         tab_bar_container = QtWidgets.QWidget()
         tab_bar_layout = QtWidgets.QHBoxLayout(tab_bar_container)
-        tab_bar_layout.setContentsMargins(0, 0, 0, 0)
+        tab_bar_layout.setContentsMargins(self._content_inset, 0, self._content_inset, 0)
         tab_bar_layout.setSpacing(0)
         tab_bar_layout.addStretch(1)
         tab_bar_layout.addWidget(self.tab_bar)
@@ -157,9 +164,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if parent.width() <= 0 or parent.height() <= 0:
             return
 
-        margin_top = 6
-        margin_right = 6
-        x = max(0, parent.width() - bell.width() - margin_right)
+        margin_top = getattr(self, "_notification_bell_margin_top", 6)
+        margin_right = getattr(self, "_notification_bell_margin_right", 6)
+        inset = getattr(self, "_content_inset", 0)
+        x = max(0, parent.width() - inset - bell.width() - margin_right)
         y = max(0, margin_top)
         bell.move(x, y)
         bell.raise_()
@@ -505,7 +513,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def _apply_theme(self, theme_name: str):
         """Apply theme to application"""
         theme = get_theme(theme_name)
-        self.setStyleSheet(theme.get_stylesheet())
+        css = theme.get_stylesheet()
+        app = QtWidgets.QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(css)
+        self.setStyleSheet(css)
     
     def _change_theme(self, theme_name: str):
         """Change application theme"""

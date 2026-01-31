@@ -17,7 +17,7 @@ class NotificationBellWidget(QPushButton):
     
     def __init__(self, parent=None):
         super().__init__("🔔", parent)
-        self.setObjectName("MiniButton")
+        self.setObjectName("NotificationBell")
         self.setFixedSize(30, 30)
         self.setToolTip("Notifications")
         self._unread_count = 0
@@ -165,7 +165,6 @@ class NotificationItemWidget(QFrame):
         
         # Delete button (larger, more usable)
         delete_btn = QPushButton("🗑️ Delete")
-        delete_btn.setObjectName("DangerButton")
         delete_btn.clicked.connect(lambda: self.deleted.emit(self.notification.id))
         actions_layout.addWidget(delete_btn)
         
@@ -250,12 +249,10 @@ class NotificationCenterDialog(QDialog):
         
         # Mark all read button
         mark_all_btn = QPushButton("✓ Mark All Read")
-        mark_all_btn = QPushButton("✓ Mark All Read")
         mark_all_btn.clicked.connect(self._mark_all_read)
         header_layout.addWidget(mark_all_btn)
         
         # Close button
-        close_btn = QPushButton("✕ Close")
         close_btn = QPushButton("✕ Close")
         close_btn.clicked.connect(self.accept)
         header_layout.addWidget(close_btn)
