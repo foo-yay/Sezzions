@@ -12,6 +12,29 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-04
+type: bug-fix
+areas: [ui, ux]
+summary: "Add Clear button to notes dialogs; fix Expenses tab selection/actions (Issue #26)."
+files_changed:
+  - ui/tabs/realized_tab.py (add Clear button to RealizedDateNotesDialog)
+  - ui/tabs/unrealized_tab.py (add Clear button to UnrealizedNotesDialog)
+  - ui/tabs/daily_sessions_tab.py (add Clear button to DailySessionNotesDialog)
+  - ui/tabs/expenses_tab.py (change SelectItems to SelectRows)
+```
+
+Notes:
+- **Problem 1:** Notes dialogs for Daily Sessions, Unrealized, and Realized tabs lacked a Clear button (only Cancel/Save).
+- **Problem 2:** Expenses tab selection didn't reveal View/Edit/Delete buttons; double-click had no effect.
+- **Root Cause:** Expenses table used `SelectItems` behavior, so `selectedRows()` was always empty.
+- **Solution:**
+  - Added `🧹 Clear` button to all three notes dialogs, positioned between Cancel and Save.
+  - Changed Expenses table to `SelectRows` selection behavior.
+- **Result:** Clear button provides one-click note reset; Expenses tab now shows action buttons and supports double-click to view.
+- **Tests:** All 554 tests passing.
+- **PR:** #27 (Issue #26)
+
+```yaml
 id: 2026-01-31-03
 type: bug-fix
 areas: [architecture, layering, services]
