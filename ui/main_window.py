@@ -56,6 +56,12 @@ class MainWindow(QtWidgets.QMainWindow):
         tab_bar_layout.addStretch(1)
         tab_bar_layout.addWidget(self.tab_bar)
         tab_bar_layout.addStretch(1)
+        
+        # Add notification bell to right side of tab bar
+        self._notification_bell = NotificationBellWidget(self)
+        self._notification_bell.clicked.connect(self._show_notification_center)
+        tab_bar_layout.addWidget(self._notification_bell)
+        
         main_layout.addWidget(tab_bar_container)
 
         self.stack = QtWidgets.QStackedWidget()
@@ -71,12 +77,6 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Create menu bar
         self._create_menu_bar()
-        
-        # Add notification bell to corner
-        self._notification_bell = NotificationBellWidget(self)
-        self._notification_bell.clicked.connect(self._show_notification_center)
-        menubar = self.menuBar()
-        menubar.setCornerWidget(self._notification_bell, QtCore.Qt.TopRightCorner)
 
         # Passive indicator for Tools maintenance operations (backup/restore/reset).
         # Uses a small indeterminate progress bar + label in the status bar.
