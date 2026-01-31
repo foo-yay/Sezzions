@@ -5,19 +5,19 @@ from PySide6.QtWidgets import (
     QPushButton, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QScrollArea, QWidget, QFrame, QMessageBox, QComboBox, QDateTimeEdit
 )
-from PySide6.QtCore import Qt, Signal, QDateTime
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, Signal, QDateTime, QRect, QPoint
+from PySide6.QtGui import QFont, QPainter, QColor, QPen
 from datetime import datetime, timedelta
 
 
 class NotificationBellWidget(QPushButton):
-    """Notification bell button with badge count"""
+    """Notification bell button with badge overlay"""
     
     clicked_signal = Signal()
     
     def __init__(self, parent=None):
         super().__init__("🔔", parent)
-        self.setFixedSize(44, 32)
+        self.setFixedSize(40, 40)
         self.setToolTip("Notifications")
         self._unread_count = 0
         self.setStyleSheet("""
@@ -25,7 +25,8 @@ class NotificationBellWidget(QPushButton):
                 border: 1px solid #ccc;
                 border-radius: 4px;
                 padding: 4px;
-                font-size: 16px;
+                font-size: 20px;
+                background-color: white;
             }
             QPushButton:hover {
                 background-color: #f0f0f0;
@@ -36,11 +37,39 @@ class NotificationBellWidget(QPushButton):
         """Update badge count"""
         self._unread_count = count
         if count > 0:
-            self.setText(f"🔔 {count}")
             self.setToolTip(f"{count} unread notification(s)")
         else:
-            self.setText("🔔")
             self.setToolTip("Notifications")
+        self.update()  # Trigger repaint
+    
+    def paintEvent(self, event):
+        """Custom paint to draw badge overlay"""
+        super().paintEvent(event)
+        
+        if self._unread_count > 0:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+            
+            # Badge position (top-right corner)
+            badge_size = 18
+            badge_x = self.width() - badge_size - 2
+            badge_y = 2
+            
+            # Draw red circle
+            painter.setBrush(QColor(220, 50, 50))
+            painter.setPen(QPen(QColor(255, 255, 255), 2))
+            painter.drawEllipse(badge_x, badge_y, badge_size, badge_size)
+            
+            # Draw count text
+            painter.setPen(QColor(255, 255, 255))
+            font = QFont()
+            font.setBold(True)
+            font.setPixelSize(11)
+            painter.setFont(font)
+            
+            count_text = str(self._unread_count) if self._unread_count < 100 else "99+"
+            text_rect = QRect(badge_x, badge_y, badge_size, badge_size)
+            painter.drawText(text_rect, Qt.AlignCenter, count_text)
 
 
 class NotificationItemWidget(QFrame):
