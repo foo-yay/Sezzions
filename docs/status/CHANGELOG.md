@@ -51,6 +51,34 @@ Notes:
 - **Issue:** #28
 
 ```yaml
+id: 2026-01-31-06
+type: feature
+areas: [accounting, services, models, repositories]
+summary: "Add tax withholding estimates foundation (Issue #29, Part 1/2)."
+files_changed:
+  - models/game_session.py (add tax_withholding_rate_pct, tax_withholding_is_custom, tax_withholding_amount)
+  - repositories/database.py (add game_sessions columns + migration)
+  - repositories/game_session_repository.py (persist withholding fields)
+  - services/tax_withholding_service.py (new, config + compute + bulk recalc)
+  - services/game_session_service.py (wire withholding into closed-session recalc)
+  - app_facade.py (construct TaxWithholdingService, pass to GameSessionService)
+  - tests/unit/test_tax_withholding_service.py (new, 6 unit tests including rollback)
+```
+
+Notes:
+- **Purpose:** Store and compute per-session tax withholding estimates for informational tax planning (not legal advice).
+- **Architecture (Part 1 — backend foundation):**
+  - GameSession model: adds `tax_withholding_rate_pct` (Decimal), `tax_withholding_is_custom` (bool), `tax_withholding_amount` (Decimal).
+  - DB schema + migration: new columns in `game_sessions`; ALTER TABLE path for existing DBs.
+  - TaxWithholdingService: computes `max(0, net_taxable_pl) * (rate / 100)` with Decimal rounding; provides config parsing, apply-to-session, and bulk recalculation.
+  - Bulk recalc: transactional, atomic; updates only withholding columns; skips custom-rate sessions unless `overwrite_custom=True`.
+  - GameSessionService: optionally calls `apply_to_session_model()` after computing `net_taxable_pl` for closed sessions.
+- **Config (placeholder):** Settings keys planned: `tax_withholding_enabled` (bool), `tax_withholding_default_rate_pct` (float).
+- **Tests:** 6 unit tests (compute positive/zero/negative, bulk recalc, skip custom, rollback atomicity). All 579 tests passing.
+- **Part 2 (pending):** UI + wiring (Settings controls, per-session override in session editor, Daily Sessions column/aggregates, bulk recalc dialog).
+- **PR:** #32 (Issue #29, Part 1 — does not close Issue #29)
+
+```yaml
 id: 2026-01-31-04
 type: bug-fix
 areas: [ui, ux]

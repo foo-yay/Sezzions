@@ -49,6 +49,12 @@ class GameSession:
     basis_consumed: Optional[Decimal] = None   # Basis consumed (when redeem increases)
     net_taxable_pl: Optional[Decimal] = None   # THE actual taxable P/L
     profit_loss: Optional[Decimal] = None      # Back-compat alias for net_taxable_pl
+
+    # Tax withholding estimate (Issue #29)
+    # Stored historically on closed sessions.
+    tax_withholding_rate_pct: Optional[Decimal] = None
+    tax_withholding_is_custom: bool = False
+    tax_withholding_amount: Optional[Decimal] = None
     
     # Metadata
     session_time: str = "00:00:00"
@@ -77,7 +83,8 @@ class GameSession:
         for field_name in ['starting_balance', 'ending_balance', 'starting_redeemable', 'ending_redeemable',
                            'purchases_during', 'redemptions_during', 'wager_amount', 'expected_start_total', 
                            'expected_start_redeemable', 'discoverable_sc', 'delta_total', 'delta_redeem',
-                           'session_basis', 'basis_consumed', 'net_taxable_pl', 'profit_loss']:
+                           'session_basis', 'basis_consumed', 'net_taxable_pl', 'profit_loss',
+                           'tax_withholding_rate_pct', 'tax_withholding_amount']:
             value = getattr(self, field_name)
             if value is not None and not isinstance(value, Decimal):
                 setattr(self, field_name, Decimal(str(value)))
@@ -86,6 +93,10 @@ class GameSession:
             self.net_taxable_pl = Decimal(str(self.profit_loss))
         if self.profit_loss is None and self.net_taxable_pl is not None:
             self.profit_loss = Decimal(str(self.net_taxable_pl))
+
+        # Normalize custom flag from int/bool
+        if isinstance(self.tax_withholding_is_custom, int):
+            self.tax_withholding_is_custom = bool(self.tax_withholding_is_custom)
         
         # Validate non-negative amounts
         if self.starting_balance < 0:

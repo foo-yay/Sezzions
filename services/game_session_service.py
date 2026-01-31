@@ -20,12 +20,14 @@ class GameSessionService:
                  site_repo: Optional[SiteRepository] = None,
                  fifo_service: Optional[FIFOService] = None,
                  purchase_repo=None,
-                 redemption_repo=None):
+                 redemption_repo=None,
+                 tax_withholding_service=None):
         self.session_repo = session_repo
         self.site_repo = site_repo
         self.fifo_service = fifo_service
         self.purchase_repo = purchase_repo
         self.redemption_repo = redemption_repo
+        self.tax_withholding_service = tax_withholding_service
     
     def create_session(
         self,
@@ -473,6 +475,9 @@ class GameSessionService:
             sess.session_basis = session_basis
             sess.basis_consumed = basis_consumed
             sess.net_taxable_pl = net_taxable_pl
+
+            if self.tax_withholding_service is not None:
+                self.tax_withholding_service.apply_to_session_model(sess)
 
             self.session_repo.update(sess)
 
