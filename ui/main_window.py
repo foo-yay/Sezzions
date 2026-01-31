@@ -560,10 +560,13 @@ class MainWindow(QtWidgets.QMainWindow):
         """Evaluate notification rules and update badge"""
         if hasattr(self.facade, 'notification_rules_service'):
             self.facade.notification_rules_service.evaluate_all_rules()
-        
-        # Update bell badge
-        active_count = self.facade.notification_service.get_active_count()
-        self._notification_bell.set_unread_count(active_count)
+
+        self._refresh_notification_badge()
+
+    def _refresh_notification_badge(self):
+        """Update the bell badge from current notification state (no rule evaluation)."""
+        unread_count = self.facade.notification_service.get_unread_count()
+        self._notification_bell.set_unread_count(unread_count)
     
     def _show_notification_center(self):
         """Show notification center dialog"""

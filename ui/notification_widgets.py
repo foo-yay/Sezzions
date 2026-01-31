@@ -276,37 +276,120 @@ class NotificationCenterDialog(QDialog):
         self.notifications_container.setObjectName("NotificationsContainer")
         self.notifications_container.setAttribute(Qt.WA_StyledBackground, True)
         self.notifications_layout = QVBoxLayout(self.notifications_container)
-        self.notifications_layout.setSpacing(8)
+        self.notifications_layout.setSpacing(10)
         self.notifications_layout.setContentsMargins(12, 12, 12, 12)
+
+        self._groups = {}
+        self._groups["unread"] = self._create_group("Unread", initially_expanded=True)
+        self._groups["read"] = self._create_group("Read", initially_expanded=False)
+        self._groups["snoozed"] = self._create_group("Snoozed", initially_expanded=False)
+
+        self.notifications_layout.addWidget(self._groups["unread"]["root"])
+        self.notifications_layout.addWidget(self._groups["read"]["root"])
+        self.notifications_layout.addWidget(self._groups["snoozed"]["root"])
         self.notifications_layout.addStretch()
         
         scroll.setWidget(self.notifications_container)
         layout.addWidget(scroll)
+
+    def _create_group(self, title: str, initially_expanded: bool):
+        root = QWidget()
+        root_layout = QVBoxLayout(root)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(6)
+
+        header = QWidget()
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(8)
+
+        toggle_btn = QPushButton("▼" if initially_expanded else "▶")
+        toggle_btn.setFixedSize(24, 24)
+        toggle_btn.setObjectName("MiniButton")
+        header_layout.addWidget(toggle_btn)
+
+        label = QLabel(title)
+        label.setObjectName("SectionHeader")
+        header_layout.addWidget(label)
+
+        header_layout.addStretch(1)
+
+        count_label = QLabel("")
+        count_label.setObjectName("HelperText")
+        header_layout.addWidget(count_label)
+
+        content = QWidget()
+        content.setVisible(initially_expanded)
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(8)
+
+        def _toggle():
+            content.setVisible(not content.isVisible())
+            toggle_btn.setText("▼" if content.isVisible() else "▶")
+
+        toggle_btn.clicked.connect(_toggle)
+
+        root_layout.addWidget(header)
+        root_layout.addWidget(content)
+
+        return {
+            "root": root,
+            "content": content,
+            "content_layout": content_layout,
+            "count_label": count_label,
+        }
+
+    def _refresh_bell_badge(self):
+        main_window = self.parent()
+        if main_window is not None and hasattr(main_window, "_refresh_notification_badge"):
+            main_window._refresh_notification_badge()
     
     def load_notifications(self):
-        """Load and display all active notifications"""
-        # Clear existing
-        while self.notifications_layout.count() > 1:
-            item = self.notifications_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        
-        # Get active notifications
-        notifications = self.facade.notification_service.get_active()
-        
-        if not notifications:
-            empty_label = QLabel("No notifications")
-            empty_label.setAlignment(Qt.AlignCenter)
-            empty_label.setObjectName("HelperText")
-            self.notifications_layout.insertWidget(0, empty_label)
-        else:
-            for notif in notifications:
+        """Load and display notifications, grouped by state."""
+
+        def _clear_layout(vbox: QVBoxLayout):
+            while vbox.count():
+                item = vbox.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+
+        for g in self._groups.values():
+            _clear_layout(g["content_layout"])
+
+        notifications = self.facade.notification_service.get_all(
+            include_dismissed=False,
+            include_deleted=False,
+            include_snoozed=True,
+        )
+
+        unread = [n for n in notifications if (not n.is_snoozed and not n.is_read)]
+        read = [n for n in notifications if (not n.is_snoozed and n.is_read)]
+        snoozed = [n for n in notifications if n.is_snoozed]
+
+        def _add_items(group_key: str, items):
+            group = self._groups[group_key]
+            group["count_label"].setText(f"{len(items)}")
+            group["root"].setVisible(len(items) > 0 or group_key == "unread")
+            if not items and group_key == "unread":
+                empty_label = QLabel("No notifications")
+                empty_label.setAlignment(Qt.AlignCenter)
+                empty_label.setObjectName("HelperText")
+                group["content_layout"].addWidget(empty_label)
+                return
+            for notif in items:
                 item_widget = NotificationItemWidget(notif)
                 item_widget.action_clicked.connect(self._handle_action)
                 item_widget.dismissed.connect(self._dismiss_notification)
                 item_widget.snoozed.connect(self._snooze_notification)
                 item_widget.deleted.connect(self._delete_notification)
-                self.notifications_layout.insertWidget(self.notifications_layout.count() - 1, item_widget)
+                group["content_layout"].addWidget(item_widget)
+
+        _add_items("unread", unread)
+        _add_items("read", read)
+        _add_items("snoozed", snoozed)
+
+        self._refresh_bell_badge()
     
     def _handle_action(self, notification):
         """Handle notification action"""
@@ -391,11 +474,13 @@ class NotificationCenterDialog(QDialog):
         """Dismiss a notification"""
         self.facade.notification_service.dismiss(notification_id)
         self.load_notifications()
+        self._refresh_bell_badge()
     
     def _snooze_notification(self, notification_id, until):
         """Snooze a notification"""
         self.facade.notification_service.snooze(notification_id, until)
         self.load_notifications()
+        self._refresh_bell_badge()
     
     def _delete_notification(self, notification_id):
         """Delete a notification"""
@@ -408,9 +493,11 @@ class NotificationCenterDialog(QDialog):
         if reply == QMessageBox.Yes:
             self.facade.notification_service.delete(notification_id)
             self.load_notifications()
+            self._refresh_bell_badge()
     
     def _mark_all_read(self):
         """Mark all notifications as read"""
         count = self.facade.notification_service.mark_all_read()
         if count > 0:
             self.load_notifications()
+        self._refresh_bell_badge()

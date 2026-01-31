@@ -65,8 +65,13 @@ class NotificationService:
             )
             return self.notification_repo.create(notification)
     
-    def get_all(self, include_dismissed: bool = False, include_deleted: bool = False) -> List[Notification]:
-        """Get all notifications, optionally including dismissed/deleted"""
+    def get_all(
+        self,
+        include_dismissed: bool = False,
+        include_deleted: bool = False,
+        include_snoozed: bool = False,
+    ) -> List[Notification]:
+        """Get all notifications, optionally including dismissed/deleted/snoozed."""
         notifications = self.notification_repo.get_all()
         
         filtered = []
@@ -79,8 +84,8 @@ class NotificationService:
             if notif.is_dismissed and not include_dismissed:
                 continue
             
-            # Skip snoozed notifications
-            if notif.is_snoozed:
+            # Skip snoozed notifications unless requested
+            if notif.is_snoozed and not include_snoozed:
                 continue
             
             filtered.append(notif)
@@ -89,9 +94,9 @@ class NotificationService:
         filtered.sort(key=lambda n: n.created_at or datetime.min, reverse=True)
         return filtered
     
-    def get_active(self) -> List[Notification]:
-        """Get all active (not dismissed, deleted, or snoozed) notifications"""
-        return self.get_all(include_dismissed=False, include_deleted=False)
+    def get_active(self, include_snoozed: bool = False) -> List[Notification]:
+        """Get all active (not dismissed, deleted, or snoozed) notifications."""
+        return self.get_all(include_dismissed=False, include_deleted=False, include_snoozed=include_snoozed)
 
     def get_active_count(self) -> int:
         """Get count of active (not dismissed, deleted, or snoozed) notifications"""
@@ -125,8 +130,9 @@ class NotificationService:
         return None
     
     def mark_all_read(self) -> int:
-        """Mark all active notifications as read. Returns count updated."""
-        active = self.get_active()
+        """Mark all non-dismissed, non-deleted notifications as read. Returns count updated."""
+        # Include snoozed items so the Notification Center can truly clear the badge.
+        active = self.get_all(include_dismissed=False, include_deleted=False, include_snoozed=True)
         count = 0
         for notif in active:
             if not notif.is_read:
