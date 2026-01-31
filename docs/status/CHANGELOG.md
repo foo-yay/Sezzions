@@ -12,6 +12,42 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-05
+type: feature
+areas: [notifications, ui, services]
+summary: "Add notification system with bell widget and periodic evaluation (Issue #28)."
+files_changed:
+  - models/notification.py (new, Notification model with severity/state)
+  - services/notification_service.py (new, CRUD + state management)
+  - repositories/notification_repository.py (new, JSON persistence to settings.json)
+  - services/notification_rules_service.py (new, backup + redemption rules)
+  - ui/notification_widgets.py (new, bell + notification center + item widgets)
+  - ui/main_window.py (integrate bell, periodic QTimer)
+  - app_facade.py (wire notification services)
+  - tests/test_notification_service.py (new, 19 unit tests)
+  - docs/PROJECT_SPEC.md (add notification system section 6.4)
+```
+
+Notes:
+- **Purpose:** Passive, persistent notifications for backup reminders and redemption pending-receipt tracking. No modal popups.
+- **Architecture:**
+  - Notification model: severity (INFO/WARNING/ERROR), state (read/dismissed/snoozed/deleted), composite key de-duplication (type + subject_id).
+  - NotificationService: CRUD, state transitions (mark_read/unread, dismiss, snooze, delete), bulk operations.
+  - NotificationRepository: JSON persistence to settings.json (v1; future split to DB-backed for scalability).
+  - NotificationRulesService: evaluates backup rules (directory missing, backup due/overdue) and redemption rules (pending receipt > threshold).
+- **UI:**
+  - NotificationBellWidget: QPushButton with badge count in MainWindow menu bar corner.
+  - NotificationCenterDialog: scrollable list, snooze/dismiss/delete actions, "Mark All Read" button.
+  - Periodic evaluation: Startup + hourly QTimer.
+- **Rules:**
+  - Backup: Creates notifications when automatic backup enabled but directory missing, or last backup > frequency threshold.
+  - Redemption pending-receipt: Queries redemptions where `receipt_date IS NULL` and > 30 days old; one notification per redemption.
+  - Auto-dismiss when conditions resolve (backup completed, redemption received).
+- **Tests:** 19 unit tests covering CRUD, de-duplication, state transitions, unread count, bulk operations. All passing.
+- **Future:** Integration tests for rule evaluators, headless UI smoke test, split persistence (DB vs settings).
+- **Issue:** #28
+
+```yaml
 id: 2026-01-31-04
 type: bug-fix
 areas: [ui, ux]

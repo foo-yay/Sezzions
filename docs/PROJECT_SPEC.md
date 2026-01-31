@@ -334,6 +334,80 @@ Status snapshots:
 - [docs/status/TOOLS_DATABASE_PHASE_3_STATUS.md](status/TOOLS_DATABASE_PHASE_3_STATUS.md)
 - [docs/status/TOOLS_RECALCULATION_PHASE_4_STATUS.md](status/TOOLS_RECALCULATION_PHASE_4_STATUS.md)
 
+### 6.4 Notification System (Issue #28)
+
+**Purpose:**
+Provide passive, persistent notifications for important app events without interrupting user workflow:
+- Backup reminders (missing directory, overdue backups)
+- Redemption pending-receipt tracking (submitted but not received)
+- No modal popups—user has full control over notification lifecycle
+
+**Architecture:**
+- `models/notification.py`: Notification model with severity (INFO/WARNING/ERROR), state management (read/dismissed/snoozed/deleted)
+- `services/notification_service.py`: CRUD operations, state transitions, de-duplication by composite key (type + subject_id)
+- `repositories/notification_repository.py`: JSON persistence to settings.json (v1 implementation)
+- `services/notification_rules_service.py`: Rule evaluators for backup and redemption conditions
+- `ui/notification_widgets.py`: Bell widget with badge, notification center dialog, snooze/dismiss/delete UI
+- Periodic evaluation: Startup + hourly QTimer
+
+**Notification Model:**
+- **Identity**: type (string), subject_id (optional), title, body, severity (enum)
+- **Actions**: action_key (string), action_payload (dict) for routing user clicks
+- **State**: created_at, read_at, dismissed_at, snoozed_until, deleted_at
+- **Properties**: is_read, is_dismissed, is_snoozed, is_deleted, is_active
+- **De-duplication**: Composite key (type, subject_id) ensures only one notification per monitored condition
+
+**Notification Service:**
+- `create_or_update()`: De-dupes by composite key; updates existing if found
+- `get_all()`, `get_active()`, `get_by_id()`, `get_unread_count()`
+- State transitions: `mark_read()`, `mark_unread()`, `mark_all_read()`
+- User actions: `dismiss()`, `snooze()`, `snooze_for_hours()`, `snooze_until_tomorrow()`, `delete()`
+- Bulk: `clear_dismissed()`, `dismiss_by_type()`
+
+**Notification Rules Service:**
+- `evaluate_all_rules()`: Entry point called by QTimer (hourly) and on app startup
+- **Backup rules**:
+  - `backup_directory_missing`: automatic_backup enabled but directory not configured
+  - `backup_due`: last backup > frequency threshold (warning severity)
+  - `backup_overdue`: last backup > 2x frequency threshold (error severity)
+  - Rules auto-dismiss when conditions resolve
+- **Redemption pending-receipt rules**:
+  - Queries: `SELECT * FROM redemptions WHERE receipt_date IS NULL AND redemption_date <= ?`
+  - Creates one notification per pending redemption (subject_id = redemption_id)
+  - Severity: INFO if < 30 days, WARNING if ≥ 30 days
+  - Auto-dismisses when redemption_service marks receipt_date
+- Event handlers: `on_backup_completed()`, `on_redemption_received(redemption_id)` called by Tools/Redemptions tabs
+
+**UI Components:**
+- **NotificationBellWidget**: QPushButton with badge count; lives in MainWindow menu bar corner
+  - Shows "🔔" (no badge) when unread_count = 0
+  - Shows "🔔 N" (with badge) when unread_count > 0
+  - Clicks open NotificationCenterDialog
+- **NotificationItemWidget**: QFrame for single notification in list
+  - Severity icon (ℹ️/⚠️/❌), title (bold if unread), body, timestamp
+  - Actions: "Open" (if action_key), "Snooze", "Dismiss", "Delete"
+  - Background color differentiation for unread (light blue tint)
+- **NotificationCenterDialog**: Scrollable list of active notifications
+  - "Mark All Read" button
+  - Snooze dialog: 1hr, 4hrs, 24hrs, "Until tomorrow 8am"
+  - Delete confirmation dialog
+  - Refreshes bell badge on close
+
+**Integration:**
+- MainWindow wires NotificationRulesService to access automatic_backup settings
+- QTimer (hourly) calls `_evaluate_notifications()` → updates badge
+- Tools tab calls `main_window.on_backup_completed()` after backup success
+- Redemptions tab calls `main_window.on_redemption_received(redemption_id)` after marking receipt_date
+
+**Persistence (v1):**
+- settings.json backed via NotificationRepository
+- Future: Split DB-backed (redemption reminders) vs settings-backed (backup alerts) for scalability
+
+**Tests:**
+- 19 unit tests covering: CRUD, de-duplication, state transitions, unread count, bulk operations
+- No integration tests for rules evaluators yet (future: mock DB/settings, assert notification creation)
+- No headless UI smoke test yet (future: boot MainWindow, assert bell exists, open center)
+
 ## 7) Testing Strategy
 
 Tests live under `tests/` and use `pytest`.
