@@ -39,11 +39,12 @@ class NotificationBellWidget(QPushButton):
         if self._unread_count > 0:
             painter = QPainter(self)
             painter.setRenderHint(QPainter.Antialiasing)
+            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
             
             # Badge position (top-right corner)
-            badge_size = 18
-            badge_x = self.width() - badge_size - 2
-            badge_y = 2
+            badge_size = 20
+            badge_x = self.width() - badge_size - 1
+            badge_y = 1
             
             # Draw red circle
             painter.setBrush(QColor(220, 50, 50))
@@ -54,7 +55,7 @@ class NotificationBellWidget(QPushButton):
             painter.setPen(QColor(255, 255, 255))
             font = QFont()
             font.setBold(True)
-            font.setPixelSize(11)
+            font.setPixelSize(12)
             painter.setFont(font)
             
             count_text = str(self._unread_count) if self._unread_count < 100 else "99+"
