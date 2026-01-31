@@ -13,6 +13,7 @@ from ui.tabs.daily_sessions_tab import DailySessionsTab
 from ui.tabs.setup_tab import SetupTab
 from ui.themes import get_theme, get_theme_names
 from ui.settings import Settings
+from ui.notification_widgets import NotificationBellWidget, NotificationCenterDialog
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -70,6 +71,12 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Create menu bar
         self._create_menu_bar()
+        
+        # Add notification bell to corner
+        self._notification_bell = NotificationBellWidget(self)
+        self._notification_bell.clicked.connect(self._show_notification_center)
+        menubar = self.menuBar()
+        menubar.setCornerWidget(self._notification_bell, QtCore.Qt.TopRightCorner)
 
         # Passive indicator for Tools maintenance operations (backup/restore/reset).
         # Uses a small indeterminate progress bar + label in the status bar.
@@ -116,6 +123,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # Legacy compatibility: also listen to DatabaseManager changes
         if hasattr(self.facade, "db") and hasattr(self.facade.db, "add_change_listener"):
             self.facade.db.add_change_listener(self._schedule_refresh_all)
+        
+        # Initialize notification system
+        self._init_notification_system()
     
     def closeEvent(self, event):
         """Save settings on close"""
@@ -476,6 +486,55 @@ class MainWindow(QtWidgets.QMainWindow):
             "<p>Version 2.0 - OOP Backend</p>"
             "<p>© 2026 Carolina Edge Gaming</p>"
         )
+    
+    def _init_notification_system(self):
+        """Initialize notification system with periodic evaluation"""
+        # Wire MainWindow to rules service for backup settings access
+        if hasattr(self.facade, 'notification_rules_service'):
+            self.facade.notification_rules_service._main_window = self
+        
+        # Evaluate immediately on startup
+        self._evaluate_notifications()
+        
+        # Set up periodic evaluation timer (every hour)
+        self._notification_timer = QtCore.QTimer(self)
+        self._notification_timer.setInterval(3600000)  # 1 hour in ms
+        self._notification_timer.timeout.connect(self._evaluate_notifications)
+        self._notification_timer.start()
+        
+        # Also evaluate after Tools operations
+        if hasattr(self, 'tools_tab'):
+            # Connect to backup completion signal if it exists
+            pass  # Tools tab will call on_backup_completed
+    
+    def _evaluate_notifications(self):
+        """Evaluate notification rules and update badge"""
+        if hasattr(self.facade, 'notification_rules_service'):
+            self.facade.notification_rules_service.evaluate_all_rules()
+        
+        # Update bell badge
+        unread_count = self.facade.notification_service.get_unread_count()
+        self._notification_bell.set_unread_count(unread_count)
+    
+    def _show_notification_center(self):
+        """Show notification center dialog"""
+        dialog = NotificationCenterDialog(self.facade, self)
+        dialog.exec()
+        
+        # Refresh badge after dialog closes
+        self._evaluate_notifications()
+    
+    def on_backup_completed(self):
+        """Called by Tools tab after backup completion"""
+        if hasattr(self.facade, 'notification_rules_service'):
+            self.facade.notification_rules_service.on_backup_completed()
+            self._evaluate_notifications()
+    
+    def on_redemption_received(self, redemption_id: int):
+        """Called when a redemption is marked as received"""
+        if hasattr(self.facade, 'notification_rules_service'):
+            self.facade.notification_rules_service.on_redemption_received(redemption_id)
+            self._evaluate_notifications()
 
     def _show_help(self):
         QtWidgets.QMessageBox.information(
