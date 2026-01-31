@@ -489,9 +489,9 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def _init_notification_system(self):
         """Initialize notification system with periodic evaluation"""
-        # Wire MainWindow to rules service for backup settings access
+        # Wire Settings to rules service for backup configuration access
         if hasattr(self.facade, 'notification_rules_service'):
-            self.facade.notification_rules_service._main_window = self
+            self.facade.notification_rules_service.settings = self.settings
         
         # Evaluate immediately on startup
         self._evaluate_notifications()
