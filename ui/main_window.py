@@ -43,26 +43,36 @@ class MainWindow(QtWidgets.QMainWindow):
         main_layout = QtWidgets.QVBoxLayout(self.main_content)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Create main tab bar + stacked content (for centered tabs)
+        # Main tab bar area: keep tabs centered, and align the bell to the
+        # right edge of the centered tab strip (right-most tab).
+        tabs_container = QtWidgets.QWidget()
+        tabs_grid = QtWidgets.QGridLayout(tabs_container)
+        tabs_grid.setContentsMargins(0, 0, 0, 0)
+        tabs_grid.setHorizontalSpacing(0)
+        tabs_grid.setVerticalSpacing(0)
+
+        # Spacer columns to center the tab bar
+        tabs_grid.setColumnStretch(0, 1)
+        tabs_grid.setColumnStretch(2, 1)
+
+        # Notification bell (row 0, aligned right within the tab strip column)
+        self._notification_bell = NotificationBellWidget(self)
+        self._notification_bell.clicked.connect(self._show_notification_center)
+        tabs_grid.addWidget(self._notification_bell, 0, 1, alignment=QtCore.Qt.AlignRight)
+
+        # Main tab bar (row 1)
         self.tab_bar = QtWidgets.QTabBar()
         self.tab_bar.setObjectName("MainTabs")
         self.tab_bar.setDrawBase(False)
         self.tab_bar.setExpanding(False)
         self.tab_bar.setUsesScrollButtons(False)
+        tabs_grid.addWidget(self.tab_bar, 1, 1)
 
-        tab_bar_container = QtWidgets.QWidget()
-        tab_bar_layout = QtWidgets.QHBoxLayout(tab_bar_container)
-        tab_bar_layout.setContentsMargins(0, 0, 0, 0)
-        tab_bar_layout.addStretch(1)
-        tab_bar_layout.addWidget(self.tab_bar)
-        tab_bar_layout.addStretch(1)
-        
-        # Add notification bell to the right of tabs (inline with right-most tab)
-        self._notification_bell = NotificationBellWidget(self)
-        self._notification_bell.clicked.connect(self._show_notification_center)
-        tab_bar_layout.addWidget(self._notification_bell)
-        
-        main_layout.addWidget(tab_bar_container)
+        # Give a little separation between bell and tabs
+        tabs_grid.setRowMinimumHeight(0, 34)
+        tabs_grid.setRowMinimumHeight(1, 44)
+
+        main_layout.addWidget(tabs_container)
 
         self.stack = QtWidgets.QStackedWidget()
         main_layout.addWidget(self.stack, 1)

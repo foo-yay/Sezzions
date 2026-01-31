@@ -5,7 +5,7 @@ from PySide6.QtWidgets import (
     QPushButton, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QScrollArea, QWidget, QFrame, QMessageBox, QComboBox, QDateTimeEdit
 )
-from PySide6.QtCore import Qt, Signal, QDateTime, QRect, QPoint
+from PySide6.QtCore import Qt, Signal, QDateTime, QRect, QPoint, QTimer
 from PySide6.QtGui import QFont, QPainter, QColor, QPen
 from datetime import datetime, timedelta
 
@@ -17,21 +17,11 @@ class NotificationBellWidget(QPushButton):
     
     def __init__(self, parent=None):
         super().__init__("🔔", parent)
+        self.setObjectName("MiniButton")
         self.setFixedSize(40, 40)
         self.setToolTip("Notifications")
         self._unread_count = 0
-        self.setStyleSheet("""
-            QPushButton {
-                border: 1px solid #ccc;
-                border-radius: 4px;
-                padding: 4px;
-                font-size: 20px;
-                background-color: white;
-            }
-            QPushButton:hover {
-                background-color: #f0f0f0;
-            }
-        """)
+        self.setStyleSheet("font-size: 20px;")
     
     def set_unread_count(self, count: int):
         """Update badge count"""
@@ -88,25 +78,17 @@ class NotificationItemWidget(QFrame):
         self._init_ui()
     
     def _init_ui(self):
-        self.setFrameStyle(QFrame.Box | QFrame.Plain)
-        self.setLineWidth(1)
-        
-        # Rounded borders, app-consistent styling
-        bg_color = "#f5f5ff" if not self.notification.is_read else "white"
-        self.setStyleSheet(f"""
-            QFrame {{
-                border: 1px solid #ddd;
-                border-radius: 8px;
-                background-color: {bg_color};
-            }}
-        """)
+        # Use the app's global "section" styling
+        self.setObjectName("SectionBackground")
         
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
+        # Let the global SectionBackground style provide padding.
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         
         # Header: severity icon + title + timestamp + expand/collapse for snoozed
         header_layout = QHBoxLayout()
+        header_layout.setSpacing(8)
         
         # Expand/collapse button for snoozed notifications
         if self.notification.is_snoozed:
@@ -143,21 +125,21 @@ class NotificationItemWidget(QFrame):
         if self.notification.created_at:
             time_str = self.notification.created_at.strftime("%m/%d %I:%M%p")
             time_label = QLabel(time_str)
-            time_label.setStyleSheet("color: #666; font-size: 11px;")
+            time_label.setObjectName("HelperText")
             header_layout.addWidget(time_label)
         
         layout.addLayout(header_layout)
         
-        # Body and actions container (collapsible for snoozed)
+        # Details container (collapsible for snoozed)
         self.details_widget = QWidget()
         details_layout = QVBoxLayout(self.details_widget)
         details_layout.setContentsMargins(0, 0, 0, 0)
-        details_layout.setSpacing(8)
+        details_layout.setSpacing(10)
         
-        # Body
+        # Notification body in bordered section with different background
+        # Notification body (no extra inner borders; keep padding modest)
         body_label = QLabel(self.notification.body)
         body_label.setWordWrap(True)
-        body_label.setStyleSheet("color: #333;")
         details_layout.addWidget(body_label)
         
         # Actions row
@@ -166,26 +148,23 @@ class NotificationItemWidget(QFrame):
         
         # Action button (if notification has an action)
         if self.notification.action_key:
-            action_btn = QPushButton("📋 Open")
-            action_btn.setStyleSheet("padding: 6px 12px;")
+            action_btn = QPushButton("📂 Open")
             action_btn.clicked.connect(lambda: self.action_clicked.emit(self.notification))
             actions_layout.addWidget(action_btn)
         
         # Snooze button
         snooze_btn = QPushButton("⏰ Snooze")
-        snooze_btn.setStyleSheet("padding: 6px 12px;")
         snooze_btn.clicked.connect(self._show_snooze_menu)
         actions_layout.addWidget(snooze_btn)
         
         # Dismiss button
         dismiss_btn = QPushButton("✓ Dismiss")
-        dismiss_btn.setStyleSheet("padding: 6px 12px;")
         dismiss_btn.clicked.connect(lambda: self.dismissed.emit(self.notification.id))
         actions_layout.addWidget(dismiss_btn)
         
         # Delete button (larger, more usable)
         delete_btn = QPushButton("🗑️ Delete")
-        delete_btn.setStyleSheet("padding: 6px 12px; color: #c00;")
+        delete_btn.setObjectName("DangerButton")
         delete_btn.clicked.connect(lambda: self.deleted.emit(self.notification.id))
         actions_layout.addWidget(delete_btn)
         
@@ -256,45 +235,27 @@ class NotificationCenterDialog(QDialog):
     def _init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Rounded dialog styling
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #f5f5f5;
-                border-radius: 12px;
-            }
-        """)
-        
-        # Header
-        header = QFrame()
-        header.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border-bottom: 1px solid #ddd;
-                border-radius: 0px;
-            }
-        """)
+
+        # Header (no underline; uses global typography)
+        header = QWidget()
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(16, 12, 16, 12)
-        
-        title = QLabel("Notifications")
-        title_font = QFont()
-        title_font.setPointSize(14)
-        title_font.setBold(True)
-        title.setFont(title_font)
+        header_layout.setContentsMargins(16, 12, 16, 8)
+
+        title = QLabel("🔔 Notifications")
+        title.setObjectName("PageTitle")
         header_layout.addWidget(title)
         
         header_layout.addStretch()
         
         # Mark all read button
         mark_all_btn = QPushButton("✓ Mark All Read")
-        mark_all_btn.setStyleSheet("padding: 6px 12px;")
+        mark_all_btn = QPushButton("✓ Mark All Read")
         mark_all_btn.clicked.connect(self._mark_all_read)
         header_layout.addWidget(mark_all_btn)
         
         # Close button
         close_btn = QPushButton("✕ Close")
-        close_btn.setStyleSheet("padding: 6px 12px;")
+        close_btn = QPushButton("✕ Close")
         close_btn.clicked.connect(self.accept)
         header_layout.addWidget(close_btn)
         
@@ -328,7 +289,7 @@ class NotificationCenterDialog(QDialog):
         if not notifications:
             empty_label = QLabel("No notifications")
             empty_label.setAlignment(Qt.AlignCenter)
-            empty_label.setStyleSheet("color: #999; padding: 40px; font-size: 14px;")
+            empty_label.setObjectName("HelperText")
             self.notifications_layout.insertWidget(0, empty_label)
         else:
             for notif in notifications:
@@ -373,25 +334,41 @@ class NotificationCenterDialog(QDialog):
                         try:
                             redemption_id = int(notification.subject_id.replace('redemption_', ''))
                             # Give tab time to load, then select the row
-                            from PySide6.QtCore import QTimer
-                            QTimer.singleShot(100, lambda: self._select_redemption_row(main_window.redemptions_tab, redemption_id))
+                            QTimer.singleShot(150, lambda: self._select_redemption_row(main_window.redemptions_tab, redemption_id))
                         except (ValueError, AttributeError):
                             pass
                     break
-    
-    def _select_redemption_row(self, redemptions_tab, redemption_id):
-        """Select and highlight a specific redemption row"""
+
+    def _select_redemption_row(self, redemptions_tab, redemption_id: int, _retried_all_time: bool = False):
+        """Select and highlight a specific redemption row.
+
+        Redemptions are stored in Qt.UserRole of the Date/Time column item.
+        """
         if not hasattr(redemptions_tab, 'table'):
             return
-        
+
         table = redemptions_tab.table
+
+        # Try to find the row by the stored ID.
         for row in range(table.rowCount()):
-            # Check if ID column matches
-            id_item = table.item(row, 0)  # Assuming ID is first column
-            if id_item and id_item.text() == str(redemption_id):
+            id_item = table.item(row, 0)
+            if id_item and id_item.data(Qt.UserRole) == redemption_id:
+                table.setFocus()
+                table.setCurrentCell(row, 0)
                 table.selectRow(row)
-                table.scrollToItem(id_item)
-                break
+                table.scrollToItem(id_item, table.PositionAtCenter)
+                return
+
+        # If the row isn't visible (date filter/search/header filters), widen to All Time once.
+        if not _retried_all_time:
+            if hasattr(redemptions_tab, 'search_edit'):
+                redemptions_tab.search_edit.setText("")
+            if hasattr(redemptions_tab, 'date_filter') and hasattr(redemptions_tab.date_filter, 'set_all_time'):
+                redemptions_tab.date_filter.set_all_time()
+                QTimer.singleShot(
+                    200,
+                    lambda: self._select_redemption_row(redemptions_tab, redemption_id, _retried_all_time=True),
+                )
     
     def _dismiss_notification(self, notification_id):
         """Dismiss a notification"""
