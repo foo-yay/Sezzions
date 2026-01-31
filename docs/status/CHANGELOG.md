@@ -36,12 +36,15 @@ Notes:
   - NotificationRepository: JSON persistence to settings.json (v1; future split to DB-backed for scalability).
   - NotificationRulesService: evaluates backup rules (directory missing, backup due/overdue) and redemption rules (pending receipt > threshold).
 - **UI:**
-  - NotificationBellWidget: QPushButton with badge count in MainWindow menu bar corner.
-  - NotificationCenterDialog: scrollable list, snooze/dismiss/delete actions, "Mark All Read" button.
-  - Periodic evaluation: Startup + hourly QTimer.
+  - Notification bell: lightweight overlay button (no pill background) pinned to the main content inset; shows a red badge when unread > 0.
+  - NotificationCenterDialog: grouped sections (Unread / Read / Snoozed) with collapsible headers.
+  - Per-item actions: Open (when available), Snooze, Dismiss, Delete, Mark Read, Mark Unread.
+  - Badge count updates immediately after dialog actions.
+  - macOS theme fix: dialog/scroll viewport forced to paint theme "surface" to avoid dark palette bleed.
+  - Periodic evaluation: startup + hourly QTimer.
 - **Rules:**
   - Backup: Creates notifications when automatic backup enabled but directory missing, or last backup > frequency threshold.
-  - Redemption pending-receipt: Queries redemptions where `receipt_date IS NULL` and > 30 days old; one notification per redemption.
+  - Redemption pending-receipt: Queries redemptions where `receipt_date IS NULL` and older than the configured threshold days; one notification per redemption.
   - Auto-dismiss when conditions resolve (backup completed, redemption received).
 - **Tests:** 19 unit tests covering CRUD, de-duplication, state transitions, unread count, bulk operations. All passing.
 - **Future:** Integration tests for rule evaluators, headless UI smoke test, split persistence (DB vs settings).

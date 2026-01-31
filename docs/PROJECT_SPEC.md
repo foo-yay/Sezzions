@@ -379,19 +379,18 @@ Provide passive, persistent notifications for important app events without inter
 - Event handlers: `on_backup_completed()`, `on_redemption_received(redemption_id)` called by Tools/Redemptions tabs
 
 **UI Components:**
-- **NotificationBellWidget**: QPushButton with badge count; lives in MainWindow menu bar corner
-  - Shows "🔔" (no badge) when unread_count = 0
-  - Shows "🔔 N" (with badge) when unread_count > 0
-  - Clicks open NotificationCenterDialog
-- **NotificationItemWidget**: QFrame for single notification in list
+- **NotificationBellWidget**: lightweight overlay button with badge count; pinned to the top-right of the main content inset
+  - Transparent background (no pill); shows a red badge when `unread_count > 0`
+  - Click opens NotificationCenterDialog
+- **NotificationItemWidget**: QFrame for a single notification
   - Severity icon (ℹ️/⚠️/❌), title (bold if unread), body, timestamp
-  - Actions: "Open" (if action_key), "Snooze", "Dismiss", "Delete"
-  - Background color differentiation for unread (light blue tint)
-- **NotificationCenterDialog**: Scrollable list of active notifications
-  - "Mark All Read" button
-  - Snooze dialog: 1hr, 4hrs, 24hrs, "Until tomorrow 8am"
-  - Delete confirmation dialog
-  - Refreshes bell badge on close
+  - Actions: "Open" (if action_key), "Snooze", "Dismiss", "Delete", "Mark Read", "Mark Unread"
+- **NotificationCenterDialog**: grouped, scrollable list of notifications
+  - Groups: Unread / Read / Snoozed (Read + Snoozed are collapsed by default)
+  - "Mark All Read" button (applies to non-dismissed/non-deleted notifications, including snoozed)
+  - Snooze presets: 1hr, 4hrs, 24hrs, "Until tomorrow 8am"
+  - Badge refreshes immediately after dialog actions
+  - macOS theme fix: dialog + scroll viewport forced to paint theme "surface"
 
 **Integration:**
 - MainWindow wires NotificationRulesService to access automatic_backup settings
