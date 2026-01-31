@@ -133,7 +133,7 @@ class ExpensesTab(QtWidgets.QWidget):
         self.table = QtWidgets.QTableWidget(0, len(self.columns))
         self.table.setHorizontalHeaderLabels(self.columns)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectItems)
+        self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectRows)
         self.table.setSelectionMode(QtWidgets.QTableWidget.ExtendedSelection)
         self.table.verticalHeader().setVisible(False)
         header = self.table.horizontalHeader()

@@ -451,13 +451,16 @@ class UnrealizedNotesDialog(QtWidgets.QDialog):
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
         cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
+        clear_btn = QtWidgets.QPushButton("🧹 Clear")
         save_btn = QtWidgets.QPushButton("💾 Save")
         save_btn.setObjectName("PrimaryButton")
         btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(clear_btn)
         btn_row.addWidget(save_btn)
         layout.addLayout(btn_row)
 
         cancel_btn.clicked.connect(self.reject)
+        clear_btn.clicked.connect(lambda: self.notes_edit.clear())
         save_btn.clicked.connect(self.accept)
 
     def notes_text(self):
