@@ -164,11 +164,15 @@ class NotificationItemWidget(QFrame):
         dismiss_btn.clicked.connect(lambda: self.dismissed.emit(self.notification.id))
         actions_layout.addWidget(dismiss_btn)
 
-        # Mark as unread (only useful if currently read)
+        # Mark as read/unread (moves between groups)
         if self.notification.is_read:
             unread_btn = QPushButton("↩︎ Mark Unread")
             unread_btn.clicked.connect(lambda: self.marked_unread.emit(self.notification.id))
             actions_layout.addWidget(unread_btn)
+        else:
+            read_btn = QPushButton("✓ Mark Read")
+            read_btn.clicked.connect(lambda: self.marked_read.emit(self.notification.id))
+            actions_layout.addWidget(read_btn)
         
         # Delete button (larger, more usable)
         delete_btn = QPushButton("🗑️ Delete")
@@ -391,6 +395,7 @@ class NotificationCenterDialog(QDialog):
                 item_widget.snoozed.connect(self._snooze_notification)
                 item_widget.deleted.connect(self._delete_notification)
                 item_widget.marked_unread.connect(self._mark_unread_notification)
+                item_widget.marked_read.connect(self._mark_read_notification)
                 group["content_layout"].addWidget(item_widget)
 
         _add_items("unread", unread)
@@ -502,6 +507,12 @@ class NotificationCenterDialog(QDialog):
             self.facade.notification_service.delete(notification_id)
             self.load_notifications()
             self._refresh_bell_badge()
+
+    def _mark_read_notification(self, notification_id: int):
+        """Mark a notification as read (moves it into the Read group)."""
+        self.facade.notification_service.mark_read(notification_id)
+        self.load_notifications()
+        self._refresh_bell_badge()
 
     def _mark_unread_notification(self, notification_id: int):
         """Mark a notification as unread (moves it back to the Unread group)."""
