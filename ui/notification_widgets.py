@@ -71,6 +71,7 @@ class NotificationItemWidget(QFrame):
     snoozed = Signal(int, datetime)  # notification_id, until
     deleted = Signal(int)  # notification_id
     marked_read = Signal(int)  # notification_id
+    marked_unread = Signal(int)  # notification_id
     
     def __init__(self, notification, parent=None):
         super().__init__(parent)
@@ -94,8 +95,8 @@ class NotificationItemWidget(QFrame):
         # Expand/collapse button for snoozed notifications
         if self.notification.is_snoozed:
             self.expand_btn = QPushButton("▶" if not self._is_expanded else "▼")
-            self.expand_btn.setFixedSize(20, 20)
-            self.expand_btn.setStyleSheet("border: none; font-size: 10px;")
+            self.expand_btn.setFixedSize(28, 28)
+            self.expand_btn.setStyleSheet("border: none; font-size: 14px; font-weight: 600;")
             self.expand_btn.clicked.connect(self._toggle_expanded)
             header_layout.addWidget(self.expand_btn)
         
@@ -162,6 +163,12 @@ class NotificationItemWidget(QFrame):
         dismiss_btn = QPushButton("✓ Dismiss")
         dismiss_btn.clicked.connect(lambda: self.dismissed.emit(self.notification.id))
         actions_layout.addWidget(dismiss_btn)
+
+        # Mark as unread (only useful if currently read)
+        if self.notification.is_read:
+            unread_btn = QPushButton("↩︎ Mark Unread")
+            unread_btn.clicked.connect(lambda: self.marked_unread.emit(self.notification.id))
+            actions_layout.addWidget(unread_btn)
         
         # Delete button (larger, more usable)
         delete_btn = QPushButton("🗑️ Delete")
@@ -304,8 +311,8 @@ class NotificationCenterDialog(QDialog):
         header_layout.setSpacing(8)
 
         toggle_btn = QPushButton("▼" if initially_expanded else "▶")
-        toggle_btn.setFixedSize(24, 24)
-        toggle_btn.setObjectName("MiniButton")
+        toggle_btn.setFixedSize(30, 30)
+        toggle_btn.setStyleSheet("font-size: 16px; font-weight: 700; padding: 0;")
         header_layout.addWidget(toggle_btn)
 
         label = QLabel(title)
@@ -383,6 +390,7 @@ class NotificationCenterDialog(QDialog):
                 item_widget.dismissed.connect(self._dismiss_notification)
                 item_widget.snoozed.connect(self._snooze_notification)
                 item_widget.deleted.connect(self._delete_notification)
+                item_widget.marked_unread.connect(self._mark_unread_notification)
                 group["content_layout"].addWidget(item_widget)
 
         _add_items("unread", unread)
@@ -494,6 +502,12 @@ class NotificationCenterDialog(QDialog):
             self.facade.notification_service.delete(notification_id)
             self.load_notifications()
             self._refresh_bell_badge()
+
+    def _mark_unread_notification(self, notification_id: int):
+        """Mark a notification as unread (moves it back to the Unread group)."""
+        self.facade.notification_service.mark_unread(notification_id)
+        self.load_notifications()
+        self._refresh_bell_badge()
     
     def _mark_all_read(self):
         """Mark all notifications as read"""
