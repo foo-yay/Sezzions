@@ -37,16 +37,6 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.setContentsMargins(25, 25, 25, 25)
         layout.setSpacing(12)
         
-        # Add notification bell at the top
-        bell_container = QtWidgets.QWidget()
-        bell_layout = QtWidgets.QHBoxLayout(bell_container)
-        bell_layout.setContentsMargins(0, 0, 0, 8)
-        bell_layout.addStretch(1)
-        self._notification_bell = NotificationBellWidget(self)
-        self._notification_bell.clicked.connect(self._show_notification_center)
-        bell_layout.addWidget(self._notification_bell)
-        layout.addWidget(bell_container)
-        
         # Create main content frame (bordered)
         self.main_content = QtWidgets.QFrame()
         self.main_content.setObjectName("MainContentFrame")
@@ -66,6 +56,11 @@ class MainWindow(QtWidgets.QMainWindow):
         tab_bar_layout.addStretch(1)
         tab_bar_layout.addWidget(self.tab_bar)
         tab_bar_layout.addStretch(1)
+        
+        # Add notification bell to the right of tabs (inline with right-most tab)
+        self._notification_bell = NotificationBellWidget(self)
+        self._notification_bell.clicked.connect(self._show_notification_center)
+        tab_bar_layout.addWidget(self._notification_bell)
         
         main_layout.addWidget(tab_bar_container)
 
