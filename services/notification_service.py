@@ -92,6 +92,10 @@ class NotificationService:
     def get_active(self) -> List[Notification]:
         """Get all active (not dismissed, deleted, or snoozed) notifications"""
         return self.get_all(include_dismissed=False, include_deleted=False)
+
+    def get_active_count(self) -> int:
+        """Get count of active (not dismissed, deleted, or snoozed) notifications"""
+        return len(self.get_active())
     
     def get_unread_count(self) -> int:
         """Get count of unread active notifications"""

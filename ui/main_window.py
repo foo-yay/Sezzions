@@ -50,6 +50,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._notification_bell.clicked.connect(self._show_notification_center)
         self._notification_bell.raise_()
 
+        # Reserve vertical space so the overlay bell doesn't sit on top of the tab bar.
+        self._notification_reserved_top = int(self._notification_bell.height() + 12)
+        main_layout.setContentsMargins(0, self._notification_reserved_top, 0, 0)
+
         # Create main tab bar + stacked content (centered tabs)
         self.tab_bar = QtWidgets.QTabBar()
         self.tab_bar.setObjectName("MainTabs")
@@ -546,8 +550,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.facade.notification_rules_service.evaluate_all_rules()
         
         # Update bell badge
-        unread_count = self.facade.notification_service.get_unread_count()
-        self._notification_bell.set_unread_count(unread_count)
+        active_count = self.facade.notification_service.get_active_count()
+        self._notification_bell.set_unread_count(active_count)
     
     def _show_notification_center(self):
         """Show notification center dialog"""

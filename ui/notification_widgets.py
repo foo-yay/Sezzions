@@ -3,7 +3,7 @@ Notification UI components - Bell, badge, and notification center dialog
 """
 from PySide6.QtWidgets import (
     QPushButton, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QScrollArea, QWidget, QFrame, QMessageBox, QComboBox, QDateTimeEdit
+    QScrollArea, QWidget, QFrame, QMessageBox, QComboBox, QDateTimeEdit, QAbstractItemView
 )
 from PySide6.QtCore import Qt, Signal, QDateTime, QRect, QPoint, QTimer
 from PySide6.QtGui import QFont, QPainter, QColor, QPen
@@ -18,16 +18,16 @@ class NotificationBellWidget(QPushButton):
     def __init__(self, parent=None):
         super().__init__("🔔", parent)
         self.setObjectName("MiniButton")
-        self.setFixedSize(40, 40)
+        self.setFixedSize(30, 30)
         self.setToolTip("Notifications")
         self._unread_count = 0
-        self.setStyleSheet("font-size: 20px;")
+        self.setStyleSheet("font-size: 16px;")
     
     def set_unread_count(self, count: int):
         """Update badge count"""
         self._unread_count = count
         if count > 0:
-            self.setToolTip(f"{count} unread notification(s)")
+            self.setToolTip(f"{count} notification(s)")
         else:
             self.setToolTip("Notifications")
         self.update()  # Trigger repaint
@@ -42,7 +42,7 @@ class NotificationBellWidget(QPushButton):
             painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
             
             # Badge position (top-right corner)
-            badge_size = 20
+            badge_size = 16
             badge_x = self.width() - badge_size - 1
             badge_y = 1
             
@@ -55,7 +55,7 @@ class NotificationBellWidget(QPushButton):
             painter.setPen(QColor(255, 255, 255))
             font = QFont()
             font.setBold(True)
-            font.setPixelSize(12)
+            font.setPixelSize(10)
             painter.setFont(font)
             
             count_text = str(self._unread_count) if self._unread_count < 100 else "99+"
@@ -318,11 +318,20 @@ class NotificationCenterDialog(QDialog):
             return
         
         if notification.action_key == 'open_tools':
-            # Find and open tools tab
+            # Tools lives under Setup → Tools
+            setup_index = None
             for i in range(main_window.tab_bar.count()):
-                if "Tools" in main_window.tab_bar.tabText(i):
-                    main_window.tab_bar.setCurrentIndex(i)
+                if "Setup" in main_window.tab_bar.tabText(i):
+                    setup_index = i
                     break
+            if setup_index is not None:
+                main_window.tab_bar.setCurrentIndex(setup_index)
+                if hasattr(main_window, 'setup_tab') and hasattr(main_window.setup_tab, 'sub_tabs'):
+                    sub_tabs = main_window.setup_tab.sub_tabs
+                    for j in range(sub_tabs.count()):
+                        if "Tools" in sub_tabs.tabText(j):
+                            sub_tabs.setCurrentIndex(j)
+                            break
         
         elif notification.action_key == 'view_redemptions':
             # Find redemptions tab
@@ -357,7 +366,7 @@ class NotificationCenterDialog(QDialog):
                 table.setFocus()
                 table.setCurrentCell(row, 0)
                 table.selectRow(row)
-                table.scrollToItem(id_item, table.PositionAtCenter)
+                table.scrollToItem(id_item, QAbstractItemView.PositionAtCenter)
                 return
 
         # If the row isn't visible (date filter/search/header filters), widen to All Time once.
