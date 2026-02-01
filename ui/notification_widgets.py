@@ -111,12 +111,14 @@ class NotificationBellWidget(QPushButton):
         if self._badge_parent_is_self:
             # Fallback if we couldn't parent into a container.
             self._badge.move(self.width() - badge_w_i - badge_margin, badge_margin)
+            self._badge.raise_()
             return
 
         # Anchor the pill by its *left edge* at a fixed point so it doesn't shift
         # left when the text width grows.
         anchor_left_x = self.x() + self.width() - badge_margin - (badge_h / 2)
         self._badge.move(int(round(anchor_left_x)), self.y() + badge_margin)
+        self._badge.raise_()
 
 
 class NotificationItemWidget(QFrame):
