@@ -627,6 +627,10 @@ class MainWindow(QtWidgets.QMainWindow):
             # Settings were saved; optionally trigger re-evaluation of notification rules
             # if threshold changed
             self._evaluate_notifications()
+            
+            # Rebuild Daily Sessions columns if tax withholding settings changed
+            if hasattr(self, 'daily_sessions_tab') and hasattr(self.daily_sessions_tab, 'rebuild_columns'):
+                self.daily_sessions_tab.rebuild_columns()
     
     def on_backup_completed(self):
         """Called by Tools tab after backup completion"""

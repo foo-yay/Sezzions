@@ -12,6 +12,28 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-12
+type: feature
+areas: [ui, tax]
+summary: "Add dynamic column refresh for Daily Sessions when tax settings change."
+files_changed:
+  - ui/tabs/daily_sessions_tab.py (add rebuild_columns method for dynamic column updates)
+  - ui/main_window.py (call rebuild_columns when settings dialog closes)
+```
+
+Notes:
+- **Purpose:** Tax Set-Aside column now dynamically shows/hides when tax withholding feature is enabled/disabled in Settings
+- **Implementation:**
+  - Added `rebuild_columns()` method to DailySessionsTab that:
+    - Rebuilds the columns list based on current tax withholding feature state
+    - Updates tree widget column count and headers
+    - Refreshes data to re-render with new columns
+  - Updated MainWindow._show_settings_dialog() to call `rebuild_columns()` after settings are saved
+  - Column structure is now rebuilt immediately when settings change (no app restart required)
+- **User Experience:** Toggle tax withholding checkbox in Settings → Save → Daily Sessions column appears/disappears instantly
+- **Tests:** All 580 tests passing
+
+```yaml
 id: 2026-01-31-11
 type: fix
 areas: [ui, tax]

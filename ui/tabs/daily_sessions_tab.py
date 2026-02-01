@@ -281,6 +281,42 @@ class DailySessionsTab(QtWidgets.QWidget):
         """Standardized refresh method for global refresh system (Issue #9)."""
         self.refresh_view()
     
+    def rebuild_columns(self):
+        """Rebuild column structure when tax withholding settings change.
+        
+        This method should be called when the tax withholding feature is enabled/disabled
+        in Settings to update the column list and header.
+        """
+        # Rebuild columns list
+        self.columns = [
+            "Date/User/Site",
+            "Game",
+            "Δ Redeem",
+            "Δ Basis",
+            "Δ Total (SC)",
+            "Net P/L",
+        ]
+        
+        # Check current tax withholding feature state
+        self.tax_column_enabled = False
+        if hasattr(self.facade, 'tax_withholding_service'):
+            try:
+                config = self.facade.tax_withholding_service.get_config()
+                if config.enabled:
+                    self.columns.append("Tax Set-Aside")
+                    self.tax_column_enabled = True
+            except Exception:
+                pass
+        
+        self.columns.extend(["Details", "Notes"])
+        
+        # Update tree widget columns
+        self.tree.setColumnCount(len(self.columns))
+        self.tree.setHeaderLabels(self.columns)
+        
+        # Refresh data to re-render with new columns
+        self.refresh_view()
+    
     def _render_tree(self, data):
         self.tree.clear()
         for day in data:
