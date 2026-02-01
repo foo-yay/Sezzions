@@ -3623,7 +3623,7 @@ class EndSessionDialog(QDialog):
         self.session = session
         self.setWindowTitle("End Game Session")
         self.setMinimumWidth(700)
-        self.setMinimumHeight(680)
+        self.setMinimumHeight(720)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
