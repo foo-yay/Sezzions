@@ -82,10 +82,11 @@ Notes:
 id: 2026-01-31-07
 type: feature
 areas: [ui, settings]
-summary: "Add Settings entry point: gear icon + dialog shell (Issue #31)."
+summary: "Add Settings entry point: gear icon + dialog shell + notification badge (Issue #31)."
 files_changed:
   - ui/settings_dialog.py (new, Settings dialog with Notifications + Taxes sections)
-  - ui/main_window.py (add gear button overlay, wire Settings dialog)
+  - ui/notification_widgets.py (notification bell with widget-based pill badge)
+  - ui/main_window.py (add gear button overlay + bell overlay, wire Settings dialog, badge z-order management)
   - tests/integration/test_settings_dialog_smoke.py (new, headless UI smoke test)
   - requirements.txt (add pytest-qt)
 ```
@@ -98,6 +99,13 @@ Notes:
   - Taxes section: placeholder message for Issue #29 (no functionality yet).
   - Settings persistence: uses existing `ui/settings.py` → `settings.json`.
 - **UI:**
+  - Settings gear button: 32x32 pill overlay pinned to top-right of main content inset, matches bell styling.
+  - Notification bell: includes scalable badge overlay (QLabel) with pill styling; counts cap at "10+"; non-bold, centered text; left edge anchored to bell's horizontal center for stable growth to the right; badge raised above bell/gear via explicit z-order management in MainWindow.
+  - Badge styling iterations: increased vertical padding (+1px); decreased font size (-1px); rounded pill shape.
+  - Testing override: `SEZZIONS_FORCE_BADGE_TEXT` environment variable to force badge text for UI verification.
+- **Tests:** headless UI smoke test passes; full suite (580 tests) passing.
+- **PR:** #33
+- **Issue:** #31
   - Gear icon (⚙️): transparent button overlay, pinned to the left of the notification bell.
   - Positioning: same top margin as bell; dynamically placed via `_position_notification_bell()`.
   - Settings dialog: modal, ESC to close, Cancel/Save buttons.

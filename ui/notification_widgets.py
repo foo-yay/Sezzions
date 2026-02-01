@@ -84,7 +84,8 @@ class NotificationBellWidget(QPushButton):
 
     def _update_badge_geometry(self):
         # Keep the badge compact and readable.
-        badge_h = 14
+        # +2px overall height gives ~+1px vertical padding top/bottom.
+        badge_h = 16
         badge_margin = 2
 
         text = self._badge.text()
@@ -115,13 +116,16 @@ class NotificationBellWidget(QPushButton):
 
         if self._badge_parent_is_self:
             # Fallback if we couldn't parent into a container.
-            self._badge.move(self.width() - badge_w_i - badge_margin, badge_margin)
+            # Anchor the badge's *left edge* to the horizontal center of the bell.
+            anchor_left_x = self.width() / 2
+            self._badge.move(int(round(anchor_left_x)), badge_margin)
             self._badge.raise_()
             return
 
-        # Anchor the pill by its *left edge* at a fixed point so it doesn't shift
-        # left when the text width grows.
-        anchor_left_x = self.x() + self.width() - badge_margin - (badge_h / 2)
+        # Anchor the pill by its *left edge* at the bell pill's horizontal center.
+        # This keeps the badge firmly within the bell button while still allowing
+        # it to overflow to the right as the text width grows.
+        anchor_left_x = self.x() + (self.width() / 2)
         self._badge.move(int(round(anchor_left_x)), self.y() + badge_margin)
         self._badge.raise_()
 
