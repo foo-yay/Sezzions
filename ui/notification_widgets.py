@@ -94,12 +94,12 @@ class NotificationBellWidget(QPushButton):
             tight = metrics.tightBoundingRect(count_text)
             center = badge_rect.center()
 
-            baseline_x = center.x() - (tight.left() + tight.width() / 2.0)
-            baseline_y = center.y() - (tight.top() + tight.height() / 2.0)
-
-            # Small optical correction: digits tend to look low/left in many fonts.
-            baseline_x = snap(baseline_x + (0.35 if len(count_text) == 1 else 0.25))
-            baseline_y = snap(baseline_y - (0.25 if len(count_text) == 1 else 0.15))
+            # Center the *ink bounds* inside the badge.
+            # Note: tightBoundingRect() is in the text's coordinate system where (0, 0)
+            # is the baseline origin; drawText(QPointF) expects that same origin.
+            tight_center = tight.center()
+            baseline_x = snap(center.x() - tight_center.x())
+            baseline_y = snap(center.y() - tight_center.y())
 
             painter.drawText(QPointF(baseline_x, baseline_y), count_text)
 
