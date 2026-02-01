@@ -264,9 +264,6 @@ class DatabaseManager:
                 session_basis TEXT,
                 basis_consumed TEXT,
                 net_taxable_pl TEXT,
-                tax_withholding_rate_pct REAL,
-                tax_withholding_is_custom INTEGER DEFAULT 0,
-                tax_withholding_amount TEXT,
                 status TEXT DEFAULT 'Active',
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -304,6 +301,7 @@ class DatabaseManager:
         # Migration: Add new columns if table already exists
         self._migrate_game_sessions_table()
         self._migrate_game_rtp_aggregates_table()
+        self._migrate_daily_sessions_table()
         
         # Redemption allocations table (tracks FIFO purchase consumption)
         # Reference: DATABASE_DESIGN.md §6
@@ -596,9 +594,6 @@ class DatabaseManager:
             ("session_basis", "TEXT"),
             ("basis_consumed", "TEXT"),
             ("net_taxable_pl", "TEXT"),
-            ("tax_withholding_rate_pct", "REAL"),
-            ("tax_withholding_is_custom", "INTEGER DEFAULT 0"),
-            ("tax_withholding_amount", "TEXT"),
             ("status", "TEXT DEFAULT 'Active'"),
         ]
         
@@ -614,6 +609,28 @@ class DatabaseManager:
         if "profit_loss" in existing_columns and "net_taxable_pl" in existing_columns:
             # Can't drop columns in SQLite easily, but net_taxable_pl will be used going forward
             pass
+
+    def _migrate_daily_sessions_table(self):
+        """Add tax withholding columns to daily_sessions table"""
+        cursor = self._connection.cursor()
+        
+        # Get existing columns
+        cursor.execute("PRAGMA table_info(daily_sessions)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        
+        # Add tax withholding columns
+        migrations = [
+            ("tax_withholding_rate_pct", "REAL"),
+            ("tax_withholding_is_custom", "INTEGER DEFAULT 0"),
+            ("tax_withholding_amount", "TEXT"),
+        ]
+        
+        for column_name, column_def in migrations:
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE daily_sessions ADD COLUMN {column_name} {column_def}")
+                except Exception:
+                    pass
 
     def _migrate_games_table(self):
         """Add new columns to games if they don't exist"""

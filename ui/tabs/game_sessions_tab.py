@@ -4054,6 +4054,12 @@ class EndSessionDialog(QDialog):
         self._set_today()
         self._set_now()
         self._validate_inline()
+        
+        # Load existing tax withholding custom rate if present
+        if hasattr(self.session, 'tax_withholding_is_custom') and self.session.tax_withholding_is_custom:
+            if hasattr(self.session, 'tax_withholding_rate_pct') and self.session.tax_withholding_rate_pct is not None:
+                self.tax_rate_edit.setText(str(float(self.session.tax_withholding_rate_pct)))
+        
         self._update_session_details()
     
     def _get_game_type(self) -> str:
