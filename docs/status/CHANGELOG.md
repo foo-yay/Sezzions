@@ -12,6 +12,43 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-17
+type: refactor
+areas: [database, services, ui, tax]
+summary: "Complete tax withholding refactor: move from game sessions to daily sessions only."
+files_changed:
+  - repositories/database.py (add tax columns to daily_sessions, remove from game_sessions)
+  - services/tax_withholding_service.py (rewrite for daily-only semantics)
+  - services/daily_sessions_service.py (add fetch_daily_tax_data, update group_sessions)
+  - ui/tabs/game_sessions_tab.py (remove tax UI from all dialogs)
+  - ui/tabs/daily_sessions_tab.py (fetch and display daily tax data)
+branch: feature/issue-29-tax-withholding-ui
+commits: 153cdf0, 22c3925, 3a0220a
+pr: "#34"
+issue: "#29"
+```
+
+Notes:
+- **Problem:** Tax withholding was stored per-game-session but taxable events are daily rollups, causing incorrect totaling
+- **Solution:** Complete architectural change to daily-only tax withholding
+- **Database changes:**
+  - Added `tax_withholding_rate_pct`, `tax_withholding_is_custom`, `tax_withholding_amount` to `daily_sessions` table
+  - Removed all tax columns from `game_sessions` CREATE TABLE statement
+  - Migration tested: columns added successfully to existing databases
+- **Service layer changes:**
+  - `TaxWithholdingService`: Removed `apply_to_session_model()`, added `apply_to_daily_session(session_date, user_id, net_daily_pl, custom_rate_pct)`
+  - `TaxWithholdingService.bulk_recalculate()`: Now targets `daily_sessions` table, respects custom rates
+  - `DailySessionsService.fetch_daily_tax_data()`: NEW - queries daily_sessions for tax data by (date, user)
+  - `DailySessionsService.group_sessions()`: Updated to accept daily_tax_data parameter, calculate tax at user+date level
+- **UI changes:**
+  - Removed ~270 lines of tax UI from EditClosedSessionDialog, EndSessionDialog, ViewSessionDialog
+  - Daily Sessions tab: Fetches daily tax data, displays at user+date level only
+  - Individual sessions and sites show dash (—) in tax column (tax not applicable at those levels)
+- **Semantics:** Tax withholding now calculated from daily net P/L: `max(0, net_daily_pl) × (rate_pct/100)` for each (date, user) pair
+- **Validation:** App starts without errors, data flow tested
+- **Remaining work:** Add Edit Daily Session dialog with tax override, update bulk recalc dialog UI, fix/update tests
+
+```yaml
 id: 2026-01-31-16
 type: fix
 areas: [services, ui, tax]
