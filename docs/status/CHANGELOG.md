@@ -9,6 +9,45 @@ Rules:
 
 ---
 
+## 2026-02-01
+
+```yaml
+id: 2026-02-01-01
+type: fix
+areas: [repositories, tests, ui]
+summary: "Complete tax withholding test fixes and repository cleanup for daily-only semantics."
+files_changed:
+  - repositories/game_session_repository.py (remove tax column references from INSERT/UPDATE)
+  - repositories/database.py (add tax columns to daily_sessions CREATE TABLE)
+  - tests/unit/test_tax_withholding_service.py (rewrite for daily_sessions)
+  - ui/tax_recalc_dialog.py (update messaging to 'daily sessions')
+branch: feature/issue-29-tax-withholding-ui
+commits: 644609d
+pr: "#34"
+issue: "#29"
+```
+
+Notes:
+- **Problem:** Tests failing after tax refactor; game_session_repository still trying to INSERT/UPDATE removed columns
+- **game_session_repository fixes:**
+  - Removed tax_withholding_* columns from INSERT statement (25 params → 22 params)
+  - Removed tax_withholding_* columns from UPDATE statement
+  - Set tax fields to None/False in _row_to_model (columns no longer exist in DB)
+- **database.py fix:**
+  - Added tax columns to daily_sessions CREATE TABLE statement
+  - Previously only added via migration (for existing DBs)
+  - Fresh test databases now include tax columns by default
+- **test_tax_withholding_service.py rewrite:**
+  - Changed from game_sessions to daily_sessions table
+  - Updated _insert_daily_session helper (no site_id, keyed by date+user)
+  - Fixed queries to use (session_date, user_id) primary key instead of id
+  - Fixed type assertions: 20.0 (float) not "20.00" (string)
+- **tax_recalc_dialog.py:**
+  - Updated UI messaging: "daily sessions" instead of "closed sessions"
+  - Updated tooltips and confirmation dialogs
+- **Result:** All 580 tests passing
+- **Deferred:** Edit Daily Session dialog with per-day tax override (users can use bulk recalc tool for now)
+
 ## 2026-01-31
 
 ```yaml
