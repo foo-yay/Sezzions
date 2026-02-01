@@ -1,0 +1,11 @@
+Collecting pytest-qt
+  Downloading pytest_qt-4.5.0-py3-none-any.whl.metadata (7.9 kB)
+Requirement already satisfied: pytest in /Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages (from pytest-qt) (9.0.2)
+Requirement already satisfied: pluggy>=1.1 in /Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages (from pytest-qt) (1.6.0)
+Requirement already satisfied: typing_extensions in /Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages (from pytest-qt) (4.15.0)
+Requirement already satisfied: iniconfig>=1.0.1 in /Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages (from pytest->pytest-qt) (2.3.0)
+Requirement already satisfied: packaging>=22 in /Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages (from pytest->pytest-qt) (25.0)
+Requirement already satisfied: pygments>=2.7.2 in /Library/Frameworks/Python.framework/Versions/3.14/lib/python3.14/site-packages (from pytest->pytest-qt) (2.19.2)
+Downloading pytest_qt-4.5.0-py3-none-any.whl (37 kB)
+Installing collected packages: pytest-qt
+Successfully installed pytest-qt-4.5.0

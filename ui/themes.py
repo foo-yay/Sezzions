@@ -184,20 +184,20 @@ class Theme:
                 padding: 4px 10px;
                 min-height: 20px;
             }}
-            QPushButton#NotificationBell {{
-                background: transparent;
-                border: none;
-                border-radius: 0;
+            /* Header icon buttons (notification bell + settings gear) */
+            QPushButton#HeaderIconButton, QToolButton#HeaderIconButton {{
+                background: {surface};
+                border: 1px solid {border};
+                border-radius: 8px;
                 padding: 0;
+                min-width: 0;
                 min-height: 0;
             }}
-            QPushButton#NotificationBell:hover {{
-                background: transparent;
-                border: none;
+            QPushButton#HeaderIconButton:hover, QToolButton#HeaderIconButton:hover {{
+                background: {surface2};
             }}
-            QPushButton#NotificationBell:pressed {{
-                background: transparent;
-                border: none;
+            QPushButton#HeaderIconButton:pressed, QToolButton#HeaderIconButton:pressed {{
+                background: {selection};
             }}
             QToolButton#InfoButton {{
                 background: {surface2};

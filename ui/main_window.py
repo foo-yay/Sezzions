@@ -14,6 +14,7 @@ from ui.tabs.setup_tab import SetupTab
 from ui.themes import get_theme, get_theme_names
 from ui.settings import Settings
 from ui.notification_widgets import NotificationBellWidget, NotificationCenterDialog
+from ui.settings_dialog import SettingsDialog
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -51,14 +52,31 @@ class MainWindow(QtWidgets.QMainWindow):
         # This avoids affecting the tab layout or minimum window size.
         self._notification_bell = NotificationBellWidget(self.main_content)
         self._notification_bell.clicked.connect(self._show_notification_center)
+        self._notification_bell.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._notification_bell.raise_()
+
+        # Settings gear overlay (pinned to the right of the notification bell)
+        self._settings_gear = QtWidgets.QToolButton(self.main_content)
+        # Shared styling with NotificationBellWidget (styled in ui/themes.py)
+        self._settings_gear.setObjectName("HeaderIconButton")
+        self._settings_gear.setText("⚙")
+        self._settings_gear.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self._settings_gear.setAutoRaise(True)
+        self._settings_gear.setFixedSize(32, 32)
+        self._settings_gear.setToolTip("Settings")
+        gear_font = QtGui.QFont("Apple Color Emoji")
+        gear_font.setPixelSize(16)
+        self._settings_gear.setFont(gear_font)
+        self._settings_gear.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        self._settings_gear.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._settings_gear.clicked.connect(self._show_settings_dialog)
+        self._settings_gear.raise_()
 
         # Reserve vertical space so the overlay bell doesn't sit on top of the tab bar.
         self._notification_bell_margin_top = 6
         self._notification_bell_margin_right = 6
-        self._notification_reserved_top = int(
-            self._notification_bell_margin_top + self._notification_bell.height() + main_layout.spacing()
-        )
+        reserved_height = max(self._notification_bell.height(), self._settings_gear.height())
+        self._notification_reserved_top = int(self._notification_bell_margin_top + reserved_height + main_layout.spacing())
         main_layout.setContentsMargins(0, self._notification_reserved_top, 0, 0)
 
         # Create main tab bar + stacked content (centered tabs)
@@ -167,10 +185,26 @@ class MainWindow(QtWidgets.QMainWindow):
         margin_top = getattr(self, "_notification_bell_margin_top", 6)
         margin_right = getattr(self, "_notification_bell_margin_right", 6)
         inset = getattr(self, "_content_inset", 0)
-        x = max(0, parent.width() - inset - bell.width() - margin_right)
-        y = max(0, margin_top)
-        bell.move(x, y)
+        
+        # Position bell at top-right (but with space for gear to its right)
+        gear_spacing = 6  # space between bell and gear
+        gear_width = self._settings_gear.width() if hasattr(self, "_settings_gear") and self._settings_gear is not None else 0
+        bell_x = max(0, parent.width() - inset - bell.width() - gear_spacing - gear_width - margin_right)
+        bell_y = max(0, margin_top)
+        bell.move(bell_x, bell_y)
         bell.raise_()
+        
+        # Position gear to the right of the bell
+        if hasattr(self, "_settings_gear") and self._settings_gear is not None:
+            gear = self._settings_gear
+            gear_x = bell_x + bell.width() + gear_spacing
+            gear_y = bell_y + max(0, int((bell.height() - gear.height()) / 2))
+            gear.move(gear_x, gear_y)
+            gear.raise_()
+
+        # Keep the unread badge on top of both header buttons.
+        if hasattr(bell, "raise_badge_overlay"):
+            bell.raise_badge_overlay()
     
     def closeEvent(self, event):
         """Save settings on close"""
@@ -525,6 +559,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings.set_theme(theme_name)
         self.statusBar().showMessage(f"Theme changed to {theme_name}", 2000)
     
+    def apply_theme(self, theme_name: str):
+        """Public method for applying theme (called by Settings dialog)"""
+        self._apply_theme(theme_name)
+        self.settings.set_theme(theme_name)
+        self.statusBar().showMessage(f"Theme changed to {theme_name}", 2000)
+    
     def _show_about(self):
         """Show about dialog"""
         QtWidgets.QMessageBox.about(
@@ -575,6 +615,14 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Refresh badge after dialog closes
         self._evaluate_notifications()
+    
+    def _show_settings_dialog(self):
+        """Show Settings dialog (Issue #31)"""
+        dialog = SettingsDialog(self.settings, self)
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            # Settings were saved; optionally trigger re-evaluation of notification rules
+            # if threshold changed
+            self._evaluate_notifications()
     
     def on_backup_completed(self):
         """Called by Tools tab after backup completion"""

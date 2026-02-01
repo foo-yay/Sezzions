@@ -1,12 +1,13 @@
 """
 Notification UI components - Bell, badge, and notification center dialog
 """
+import os
 from PySide6.QtWidgets import (
     QPushButton, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QScrollArea, QWidget, QFrame, QMessageBox, QComboBox, QDateTimeEdit, QAbstractItemView
 )
 from PySide6.QtCore import Qt, Signal, QDateTime, QRect, QPoint, QTimer
-from PySide6.QtGui import QFont, QPainter, QColor, QPen
+from PySide6.QtGui import QFont, QFontMetricsF
 from datetime import datetime, timedelta
 
 
@@ -17,11 +18,32 @@ class NotificationBellWidget(QPushButton):
     
     def __init__(self, parent=None):
         super().__init__("🔔", parent)
-        self.setObjectName("NotificationBell")
-        self.setFixedSize(30, 30)
+        # Shared styling with the Settings gear button (see ui/themes.py).
+        self.setObjectName("HeaderIconButton")
+        self.setFixedSize(32, 32)
         self.setToolTip("Notifications")
         self._unread_count = 0
-        self.setStyleSheet("font-size: 16px;")
+        font = QFont("Apple Color Emoji")
+        font.setPixelSize(16)
+        self.setFont(font)
+
+        # Badge overlay (use a real label so text layout/centering is consistent).
+        # Parent it to the same container as the bell so the pill can extend
+        # beyond the bell button when wider (e.g. "10+").
+        badge_parent = parent if parent is not None else self
+        self._badge_parent_is_self = badge_parent is self
+        self._badge = QLabel(badge_parent)
+        self._badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._badge.setAlignment(Qt.AlignCenter)
+        self._badge.setVisible(False)
+        self._badge.setStyleSheet(
+            "QLabel {"
+            "  background-color: rgb(220, 50, 50);"
+            "  color: white;"
+            "  border: 1px solid white;"
+            "  border-radius: 7px;"
+            "}"
+        )
     
     def set_unread_count(self, count: int):
         """Update badge count"""
@@ -30,37 +52,82 @@ class NotificationBellWidget(QPushButton):
             self.setToolTip(f"{count} notification(s)")
         else:
             self.setToolTip("Notifications")
-        self.update()  # Trigger repaint
-    
-    def paintEvent(self, event):
-        """Custom paint to draw badge overlay"""
-        super().paintEvent(event)
-        
+
         if self._unread_count > 0:
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.Antialiasing)
-            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
-            
-            # Badge position (top-right corner)
-            badge_size = 16
-            badge_x = self.width() - badge_size - 1
-            badge_y = 1
-            
-            # Draw red circle
-            painter.setBrush(QColor(220, 50, 50))
-            painter.setPen(QPen(QColor(255, 255, 255), 2))
-            painter.drawEllipse(badge_x, badge_y, badge_size, badge_size)
-            
-            # Draw count text
-            painter.setPen(QColor(255, 255, 255))
-            font = QFont()
-            font.setBold(True)
-            font.setPixelSize(10)
-            painter.setFont(font)
-            
-            count_text = str(self._unread_count) if self._unread_count < 100 else "99+"
-            text_rect = QRect(badge_x, badge_y, badge_size, badge_size)
-            painter.drawText(text_rect, Qt.AlignCenter, count_text)
+            self._badge.setVisible(True)
+            forced = os.environ.get("SEZZIONS_FORCE_BADGE_TEXT")
+            if forced:
+                display_text = forced
+            else:
+                display_text = "10+" if self._unread_count > 10 else str(self._unread_count)
+            self._badge.setText(display_text)
+            self._update_badge_geometry()
+        else:
+            self._badge.setVisible(False)
+
+        self.update()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._badge.isVisible():
+            self._update_badge_geometry()
+
+    def raise_badge_overlay(self):
+        """Ensure the badge stays above sibling header widgets."""
+        if hasattr(self, "_badge") and self._badge is not None and self._badge.isVisible():
+            self._badge.raise_()
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        if self._badge.isVisible():
+            self._update_badge_geometry()
+
+    def _update_badge_geometry(self):
+        # Keep the badge compact and readable.
+        # +2px overall height gives ~+1px vertical padding top/bottom.
+        badge_h = 16
+        badge_margin = 2
+
+        text = self._badge.text()
+
+        badge_font = QFont()
+        badge_font.setBold(False)
+        badge_font.setPixelSize(8 if len(text) <= 2 else 7)
+        self._badge.setFont(badge_font)
+
+        metrics = QFontMetricsF(badge_font)
+        text_w = metrics.horizontalAdvance(text)
+        pad_x = 6.0
+        badge_w = max(float(badge_h), float(text_w + pad_x * 2.0))
+
+        # QLabel positioning uses ints; snapping helps keep things steady.
+        badge_w_i = int(round(badge_w))
+        self._badge.setFixedSize(badge_w_i, badge_h)
+
+        radius = badge_h // 2
+        self._badge.setStyleSheet(
+            "QLabel {"
+            "  background-color: rgb(220, 50, 50);"
+            "  color: white;"
+            "  border: 1px solid white;"
+            f"  border-radius: {radius}px;"
+            "}"
+        )
+
+        if self._badge_parent_is_self:
+            # Fallback if we couldn't parent into a container.
+            # Anchor the badge's *left edge* to the horizontal center of the bell.
+            anchor_left_x = self.width() / 2
+            self._badge.move(int(round(anchor_left_x)), badge_margin)
+            self._badge.raise_()
+            return
+
+        # Anchor the pill by its *left edge* at the bell pill's horizontal center.
+        # This keeps the badge firmly within the bell button while still allowing
+        # it to overflow to the right as the text width grows.
+        anchor_left_x = self.x() + (self.width() / 2)
+        self._badge.move(int(round(anchor_left_x)), self.y() + badge_margin)
+        self._badge.raise_()
 
 
 class NotificationItemWidget(QFrame):
