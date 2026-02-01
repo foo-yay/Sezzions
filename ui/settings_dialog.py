@@ -26,25 +26,25 @@ class SettingsDialog(QtWidgets.QDialog):
     
     def _setup_ui(self):
         """Build the dialog layout: left nav + content area."""
-        main_layout = QtWidgets.QHBoxLayout(self)
-        main_layout.setSpacing(0)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        
         # Left navigation list
         self.nav_list = QtWidgets.QListWidget()
         self.nav_list.setMaximumWidth(180)
-        self.nav_list.addItems(["Notifications", "Taxes"])
+        self.nav_list.addItems(["Notifications", "Display", "Taxes"])
         self.nav_list.setCurrentRow(0)
         self.nav_list.currentRowChanged.connect(self._on_section_changed)
         
         # Right content area (stacked widget for sections)
         self.content_stack = QtWidgets.QStackedWidget()
         self.content_stack.addWidget(self._build_notifications_section())
+        self.content_stack.addWidget(self._build_display_section())
         self.content_stack.addWidget(self._build_taxes_section())
         
-        # Assemble
-        main_layout.addWidget(self.nav_list)
-        main_layout.addWidget(self.content_stack, 1)
+        # Horizontal split: nav + content
+        content_layout = QtWidgets.QHBoxLayout()
+        content_layout.setSpacing(0)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.addWidget(self.nav_list)
+        content_layout.addWidget(self.content_stack, 1)
         
         # Bottom button row
         button_layout = QtWidgets.QHBoxLayout()
@@ -59,18 +59,11 @@ class SettingsDialog(QtWidgets.QDialog):
         self.save_button.setDefault(True)
         button_layout.addWidget(self.save_button)
         
-        # Add button row to main layout (outside the H split)
-        outer_layout = QtWidgets.QVBoxLayout()
-        outer_layout.setContentsMargins(12, 12, 12, 12)
-        outer_layout.addLayout(main_layout, 1)
-        outer_layout.addLayout(button_layout)
-        
-        # Replace root layout
-        root_widget = QtWidgets.QWidget()
-        root_widget.setLayout(outer_layout)
-        container_layout = QtWidgets.QVBoxLayout(self)
-        container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.addWidget(root_widget)
+        # Main layout: content + buttons
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.addLayout(content_layout, 1)
+        main_layout.addLayout(button_layout)
     
     def _build_notifications_section(self):
         """Build Notifications settings section."""
@@ -106,6 +99,35 @@ class SettingsDialog(QtWidgets.QDialog):
         
         return widget
     
+    def _build_display_section(self):
+        """Build Display settings section (theme selection)."""
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QFormLayout(widget)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+        
+        # Title
+        title = QtWidgets.QLabel("<b>Display Settings</b>")
+        title.setStyleSheet("font-size: 14pt;")
+        layout.addRow(title)
+        
+        # Theme selector
+        theme_label = QtWidgets.QLabel("Color Theme:")
+        theme_label.setToolTip("Select the application color theme")
+        self.theme_combo = QtWidgets.QComboBox()
+        self.theme_combo.addItems(["Light", "Blue", "macOS"])
+        layout.addRow(theme_label, self.theme_combo)
+        
+        # Info label
+        info_label = QtWidgets.QLabel(
+            "<i>Theme changes take effect immediately after saving.</i>"
+        )
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: gray; margin-top: 10px;")
+        layout.addRow(info_label)
+        
+        return widget
+    
     def _build_taxes_section(self):
         """Build Taxes settings section (placeholder for Issue #29)."""
         widget = QtWidgets.QWidget()
@@ -136,14 +158,28 @@ class SettingsDialog(QtWidgets.QDialog):
         # Redemption pending-receipt threshold
         threshold_days = self.settings.settings.get("redemption_pending_receipt_threshold_days", 14)
         self.redemption_threshold_spin.setValue(threshold_days)
+        
+        # Theme selection
+        current_theme = self.settings.settings.get("theme", "Light")
+        theme_index = self.theme_combo.findText(current_theme)
+        if theme_index >= 0:
+            self.theme_combo.setCurrentIndex(theme_index)
     
     def _on_save(self):
         """Save settings and close dialog."""
         # Write notification settings
         self.settings.settings["redemption_pending_receipt_threshold_days"] = self.redemption_threshold_spin.value()
         
+        # Write display settings
+        selected_theme = self.theme_combo.currentText()
+        self.settings.settings["theme"] = selected_theme
+        
         # Persist to settings.json
         self.settings.save()
+        
+        # Apply theme immediately (notify parent window)
+        if self.parent() and hasattr(self.parent(), 'apply_theme'):
+            self.parent().apply_theme(selected_theme)
         
         # Accept dialog
         self.accept()

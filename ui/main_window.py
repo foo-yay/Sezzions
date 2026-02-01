@@ -54,23 +54,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._notification_bell.clicked.connect(self._show_notification_center)
         self._notification_bell.raise_()
 
-        # Settings gear overlay (pinned to the left of the notification bell)
+        # Settings gear overlay (pinned to the right of the notification bell)
         self._settings_gear = QtWidgets.QPushButton("⚙️", self.main_content)
         self._settings_gear.setObjectName("SettingsGearButton")
-        self._settings_gear.setFixedSize(32, 32)
+        self._settings_gear.setFixedSize(30, 30)
         self._settings_gear.setToolTip("Settings")
-        self._settings_gear.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-        self._settings_gear.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                border: none;
-                font-size: 18px;
-            }
-            QPushButton:hover {
-                background-color: rgba(0, 0, 0, 0.05);
-                border-radius: 4px;
-            }
-        """)
+        self._settings_gear.setStyleSheet("font-size: 16px;")
         self._settings_gear.clicked.connect(self._show_settings_dialog)
         self._settings_gear.raise_()
 
@@ -189,17 +178,18 @@ class MainWindow(QtWidgets.QMainWindow):
         margin_right = getattr(self, "_notification_bell_margin_right", 6)
         inset = getattr(self, "_content_inset", 0)
         
-        # Position bell at top-right
-        bell_x = max(0, parent.width() - inset - bell.width() - margin_right)
+        # Position bell at top-right (but with space for gear to its right)
+        gear_spacing = 6  # space between bell and gear
+        gear_width = 30  # gear button width
+        bell_x = max(0, parent.width() - inset - bell.width() - gear_spacing - gear_width - margin_right)
         bell_y = max(0, margin_top)
         bell.move(bell_x, bell_y)
         bell.raise_()
         
-        # Position gear to the left of the bell
+        # Position gear to the right of the bell
         if hasattr(self, "_settings_gear") and self._settings_gear is not None:
             gear = self._settings_gear
-            gear_spacing = 6  # space between gear and bell
-            gear_x = bell_x - gear.width() - gear_spacing
+            gear_x = bell_x + bell.width() + gear_spacing
             gear_y = bell_y
             gear.move(gear_x, gear_y)
             gear.raise_()
