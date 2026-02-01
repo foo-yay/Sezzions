@@ -407,12 +407,12 @@ Provide passive, persistent notifications for important app events without inter
 - No integration tests for rules evaluators yet (future: mock DB/settings, assert notification creation)
 - No headless UI smoke test yet (future: boot MainWindow, assert bell exists, open center)
 
-### 6.5 Tax Withholding Estimates (Issue #29, Part 1/2)
+### 6.5 Tax Withholding Estimates (Issue #29)
 
 **Purpose:**
 Store and compute per-session tax withholding estimates for informational tax planning. This is not legal/tax advice; user must consult a tax professional.
 
-**Architecture (Part 1 — backend foundation, no UI yet):**
+**Architecture:**
 - `models/game_session.py`: adds three new optional fields:
   - `tax_withholding_rate_pct` (Decimal): the rate (%) used; defaults to the app-wide default if not custom
   - `tax_withholding_is_custom` (bool): whether user explicitly set a rate for this session
@@ -426,7 +426,8 @@ Store and compute per-session tax withholding estimates for informational tax pl
   - `apply_to_session_model(session)`: for closed sessions, captures default rate if missing, computes amount
   - `bulk_recalculate(site_id, user_id, overwrite_custom=False)`: transactional bulk update; skips custom-rate sessions unless overwrite=True
 - `services/game_session_service.py`: wires `tax_withholding_service` as an optional dependency; calls `apply_to_session_model()` after computing `net_taxable_pl` during closed-session recalculation
-- `app_facade.py`: constructs `TaxWithholdingService` and passes it to `GameSessionService` (settings wiring still placeholder)
+- `app_facade.py`: constructs `TaxWithholdingService` and passes it to `GameSessionService`
+- `ui/main_window.py`: wires `settings` object to `tax_withholding_service` on startup
 
 **Computation:**
 - Only for closed sessions with positive `net_taxable_pl`
@@ -434,21 +435,22 @@ Store and compute per-session tax withholding estimates for informational tax pl
 - Decimal precision: rounds to cents (2 decimal places)
 - Zero or negative taxable P/L → withholding = $0
 
-**Settings (planned, not yet wired):**
+**Settings:**
 - `tax_withholding_enabled` (bool): master on/off switch
 - `tax_withholding_default_rate_pct` (float): default rate applied to new closed sessions (clamped 0..100)
+- Managed via Settings UI → Taxes section (see § 6.6)
 
 **Bulk Recalculation:**
 - Service provides `bulk_recalculate(site_id, user_id, overwrite_custom)` for batch updates
+- UI: Settings → Taxes → "Recalculate Withholding…" button opens `ui/tax_recalc_dialog.py`
 - Filters: site/user (if provided); only closed sessions
 - Atomicity: uses DB transaction + no-commit operations; rolls back on any failure
 - Custom rates: skips sessions with `tax_withholding_is_custom=1` unless `overwrite_custom=True`
 
-**Part 2 (pending):**
-- Settings UI: enable/disable toggle + default rate spinner (depends on Issue #31 Settings entry point)
-- Per-session override UI: optional withholding % field in session editor dialog + readonly display of computed amount
-- Daily Sessions column/aggregates: "Tax set-aside (est.)" column showing per-session withholding + aggregated totals
-- Bulk recalc dialog: UI wrapper for `bulk_recalculate()` with site/user filters, overwrite-custom checkbox, progress/confirmation
+**Current State:**
+- ✅ Backend complete (Part 1, PR #32): model, repository, service, tests
+- ✅ Settings UI complete (Part 2, current PR): enable toggle, default rate, bulk recalc dialog
+- 🚧 Deferred to follow-up: per-session override UI in session dialogs, Daily Sessions withholding column/aggregates
 
 **Tests:**
 - 6 unit tests in `tests/unit/test_tax_withholding_service.py`:
@@ -456,7 +458,7 @@ Store and compute per-session tax withholding estimates for informational tax pl
   - bulk_recalculate: writes correct rate/is_custom/amount
   - skip custom-rate sessions unless overwrite
   - atomicity: monkeypatch executemany to raise, assert no changes persisted
-- All 579 tests passing
+- All 580 tests passing
 ### 6.6 Settings UI Entry Point (Issue #31)
 
 **Purpose:**

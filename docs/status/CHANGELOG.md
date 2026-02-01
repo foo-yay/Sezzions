@@ -12,6 +12,34 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-08
+type: feature
+areas: [ui, settings, tax]
+summary: "Complete tax withholding estimates Settings UI + bulk recalc (Issue #29, Part 2)."
+files_changed:
+  - ui/settings_dialog.py (replace placeholder with enable toggle, default rate spinner, recalc button)
+  - ui/tax_recalc_dialog.py (new, bulk recalculation UI with site/user filters + overwrite-custom option)
+  - ui/main_window.py (wire settings to tax_withholding_service on startup)
+  - docs/PROJECT_SPEC.md (update § 6.5 tax withholding to reflect completed state)
+```
+
+Notes:
+- **Purpose:** Provide user-facing controls for tax withholding estimates (Issue #29 Part 2).
+- **Architecture:**
+  - Settings → Taxes section: enable/disable toggle, default rate (%) spinner (0-100, 0.1 step), "Recalculate Withholding…" button.
+  - TaxRecalcDialog: filters by site/user (dropdowns), "Overwrite custom rates" checkbox, confirmation prompt with scope summary.
+  - MainWindow init: wires `self.settings` to `facade.tax_withholding_service.settings` so service can read config.
+- **Workflow:**
+  - Enable withholding estimates → enter default rate → close sessions (withholding computed automatically).
+  - Bulk recalc: select scope/filters → confirm → updates historical closed sessions atomically.
+- **Deferred to follow-up:**
+  - Per-session override UI (field in session editor dialogs for custom withholding %).
+  - Daily Sessions column/aggregates ("Tax set-aside (est.)" display).
+  - Both deferred items are non-blocking; backend is ready (values stored/computed); just UI display left.
+- **Tests:** All 580 tests passing (no new tests; backend tested in Part 1 PR #32).
+- **PR:** TBD (Issue #29, Part 2 — enables closing Issue #29)
+
+```yaml
 id: 2026-01-31-05
 type: feature
 areas: [notifications, ui, services]
