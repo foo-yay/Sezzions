@@ -317,6 +317,13 @@ class DailySessionsTab(QtWidgets.QWidget):
         # Refresh data to re-render with new columns
         self.refresh_view()
     
+    def showEvent(self, event):
+        """Called when tab is shown - rebuild columns to ensure tax column appears if enabled."""
+        super().showEvent(event)
+        # Rebuild columns on first show to ensure settings are loaded
+        if hasattr(self, 'tree'):
+            self.rebuild_columns()
+    
     def _render_tree(self, data):
         self.tree.clear()
         for day in data:

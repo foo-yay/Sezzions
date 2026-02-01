@@ -103,7 +103,7 @@ class TaxRecalcDialog(QtWidgets.QDialog):
         
         # Load sites
         try:
-            sites = self.facade.site_service.get_all_sites()
+            sites = self.facade.get_all_sites()
             for site in sites:
                 self.site_combo.addItem(site.name, site.id)
         except Exception:
@@ -111,7 +111,7 @@ class TaxRecalcDialog(QtWidgets.QDialog):
         
         # Load users
         try:
-            users = self.facade.user_service.get_all_users()
+            users = self.facade.get_all_users()
             for user in users:
                 self.user_combo.addItem(user.name, user.id)
         except Exception:

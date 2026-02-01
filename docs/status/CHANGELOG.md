@@ -12,6 +12,28 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-15
+type: fix
+areas: [ui, tax]
+summary: "Fix tax column not appearing at startup and site/user dropdowns not populating."
+files_changed:
+  - ui/tabs/daily_sessions_tab.py (add showEvent to rebuild columns when tab shown)
+  - ui/tax_recalc_dialog.py (fix facade method calls for site/user loading)
+```
+
+Notes:
+- **Issue 1:** Tax Set-Aside column now appears correctly at startup when enabled
+  - Added `showEvent()` override to DailySessionsTab
+  - Rebuilds columns when tab is first shown to ensure settings are loaded
+  - Previously columns were built during `__init__` before settings were fully initialized
+  - Now column structure is refreshed when tab becomes visible
+- **Issue 2:** Site/User dropdowns now populate correctly in TaxRecalcDialog
+  - Fixed method calls from `facade.site_service.get_all_sites()` to `facade.get_all_sites()`
+  - Fixed method calls from `facade.user_service.get_all_users()` to `facade.get_all_users()`
+  - Dropdowns now show all available sites and users with placeholder text
+- **Tests:** All 580 tests passing
+
+```yaml
 id: 2026-01-31-14
 type: fix
 areas: [ui, tax]
