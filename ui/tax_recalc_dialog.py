@@ -43,27 +43,65 @@ class TaxRecalcDialog(QtWidgets.QDialog):
         warning_label.setObjectName("HelperText")
         layout.addWidget(warning_label)
         
-        # Filters group
-        filter_group = QtWidgets.QGroupBox("Scope")
-        filter_layout = QtWidgets.QFormLayout(filter_group)
-        filter_layout.setSpacing(10)
-        filter_layout.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        # Date range filter section
+        filter_section = QtWidgets.QWidget()
+        filter_section.setObjectName("SectionBackground")
+        filter_layout = QtWidgets.QHBoxLayout(filter_section)
+        filter_layout.setContentsMargins(12, 10, 12, 10)
+        filter_layout.setSpacing(12)
         
-        # Site filter
-        self.site_combo = QtWidgets.QComboBox()
-        self.site_combo.setEditable(True)
-        self.site_combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
-        self.site_combo.lineEdit().setPlaceholderText("All Sites")
-        filter_layout.addRow("Site:", self.site_combo)
+        # Start date
+        from_label = QtWidgets.QLabel("From:")
+        from_label.setObjectName("FieldLabel")
+        filter_layout.addWidget(from_label)
         
-        # User filter
-        self.user_combo = QtWidgets.QComboBox()
-        self.user_combo.setEditable(True)
-        self.user_combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
-        self.user_combo.lineEdit().setPlaceholderText("All Users")
-        filter_layout.addRow("User:", self.user_combo)
+        self.start_date_edit = QtWidgets.QLineEdit()
+        self.start_date_edit.setPlaceholderText("YYYY-MM-DD")
+        self.start_date_edit.setFixedWidth(120)
+        filter_layout.addWidget(self.start_date_edit)
         
-        layout.addWidget(filter_group)
+        self.start_calendar_btn = QtWidgets.QPushButton("📅")
+        self.start_calendar_btn.setFixedWidth(44)
+        self.start_calendar_btn.clicked.connect(lambda: self._pick_date(self.start_date_edit))
+        filter_layout.addWidget(self.start_calendar_btn)
+        
+        self.clear_start_btn = QtWidgets.QPushButton("Clear")
+        self.clear_start_btn.clicked.connect(lambda: self.start_date_edit.clear())
+        filter_layout.addWidget(self.clear_start_btn)
+        
+        filter_layout.addSpacing(30)
+        
+        # End date
+        to_label = QtWidgets.QLabel("To:")
+        to_label.setObjectName("FieldLabel")
+        filter_layout.addWidget(to_label)
+        
+        self.end_date_edit = QtWidgets.QLineEdit()
+        self.end_date_edit.setPlaceholderText("YYYY-MM-DD")
+        self.end_date_edit.setFixedWidth(120)
+        filter_layout.addWidget(self.end_date_edit)
+        
+        self.end_calendar_btn = QtWidgets.QPushButton("📅")
+        self.end_calendar_btn.setFixedWidth(44)
+        self.end_calendar_btn.clicked.connect(lambda: self._pick_date(self.end_date_edit))
+        filter_layout.addWidget(self.end_calendar_btn)
+        
+        self.clear_end_btn = QtWidgets.QPushButton("Clear")
+        self.clear_end_btn.clicked.connect(lambda: self.end_date_edit.clear())
+        filter_layout.addWidget(self.clear_end_btn)
+        
+        filter_layout.addStretch()
+        
+        layout.addWidget(filter_section)
+        
+        # Info message
+        info_label = QtWidgets.QLabel(
+            "<b>ℹ️ Scope:</b> Tax is computed on the net P/L of all users for each date. "
+            "Leave date range empty to recalculate all dates."
+        )
+        info_label.setWordWrap(True)
+        info_label.setObjectName("HelperText")
+        layout.addWidget(info_label)
         
         # Options
         options_group = QtWidgets.QGroupBox("Options")
@@ -97,29 +135,41 @@ class TaxRecalcDialog(QtWidgets.QDialog):
         layout.addLayout(button_layout)
     
     def _load_filter_options(self):
-        """Populate site and user dropdowns."""
-        if self.facade is None:
-            return
+        """No longer needed - filters removed."""
+        pass
+    
+    def _pick_date(self, target_edit: QtWidgets.QLineEdit):
+        """Show calendar picker for date selection."""
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Select Date")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        calendar = QtWidgets.QCalendarWidget()
         
-        # Load sites
-        try:
-            sites = self.facade.get_all_sites()
-            for site in sites:
-                self.site_combo.addItem(site.name, site.id)
-            # Set to no selection so placeholder text shows
-            self.site_combo.setCurrentIndex(-1)
-        except Exception:
-            pass
+        # Parse current date if any
+        current_text = target_edit.text().strip()
+        if current_text:
+            try:
+                from datetime import datetime
+                parsed = datetime.strptime(current_text, "%Y-%m-%d")
+                calendar.setSelectedDate(QtCore.QDate(parsed.year, parsed.month, parsed.day))
+            except:
+                calendar.setSelectedDate(QtCore.QDate.currentDate())
+        else:
+            calendar.setSelectedDate(QtCore.QDate.currentDate())
         
-        # Load users
-        try:
-            users = self.facade.get_all_users()
-            for user in users:
-                self.user_combo.addItem(user.name, user.id)
-            # Set to no selection so placeholder text shows
-            self.user_combo.setCurrentIndex(-1)
-        except Exception:
-            pass
+        layout.addWidget(calendar)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch()
+        ok_btn = QtWidgets.QPushButton("Select")
+        cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+        cancel_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            selected = calendar.selectedDate()
+            target_edit.setText(selected.toString("yyyy-MM-dd"))
     
     def _on_recalculate(self):
         """Execute bulk recalculation."""
@@ -129,19 +179,45 @@ class TaxRecalcDialog(QtWidgets.QDialog):
             )
             return
         
-        # Confirm
-        site_text = self.site_combo.currentText().strip()
-        user_text = self.user_combo.currentText().strip()
         overwrite = self.overwrite_custom_checkbox.isChecked()
         
-        # If text is empty or doesn't match any item, treat as "All"
-        site_display = site_text if site_text else "All Sites"
-        user_display = user_text if user_text else "All Users"
+        # Get date range from text fields (empty string = None)
+        start_date = self.start_date_edit.text().strip() or None
+        end_date = self.end_date_edit.text().strip() or None
+        
+        # Validate date format if provided
+        if start_date:
+            try:
+                from datetime import datetime
+                datetime.strptime(start_date, "%Y-%m-%d")
+            except ValueError:
+                QtWidgets.QMessageBox.warning(
+                    self, "Invalid Date", "Start date must be in YYYY-MM-DD format."
+                )
+                return
+        
+        if end_date:
+            try:
+                from datetime import datetime
+                datetime.strptime(end_date, "%Y-%m-%d")
+            except ValueError:
+                QtWidgets.QMessageBox.warning(
+                    self, "Invalid Date", "End date must be in YYYY-MM-DD format."
+                )
+                return
+        
+        # Build confirmation message
+        date_range_display = "All dates"
+        if start_date and end_date:
+            date_range_display = f"{start_date} to {end_date}"
+        elif start_date:
+            date_range_display = f"From {start_date} onwards"
+        elif end_date:
+            date_range_display = f"Up to {end_date}"
         
         confirm_msg = (
-            f"This will recalculate tax withholding for daily sessions:\n"
-            f"  • Site: {site_display}\n"
-            f"  • User: {user_display}\n"
+            f"This will recalculate tax withholding:\n"
+            f"  • Date range: {date_range_display}\n"
             f"  • Overwrite custom rates: {'Yes' if overwrite else 'No'}\n\n"
             f"Historical values will be overwritten. Continue?"
         )
@@ -152,27 +228,10 @@ class TaxRecalcDialog(QtWidgets.QDialog):
         if reply != QtWidgets.QMessageBox.StandardButton.Yes:
             return
         
-        # Execute - get ID from currentData() or find by text, None = all
-        site_id = self.site_combo.currentData()
-        user_id = self.user_combo.currentData()
-        
-        # If currentData is None but we have text, find the ID
-        if site_id is None and site_text:
-            for i in range(self.site_combo.count()):
-                if self.site_combo.itemText(i).lower() == site_text.lower():
-                    site_id = self.site_combo.itemData(i)
-                    break
-        
-        if user_id is None and user_text:
-            for i in range(self.user_combo.count()):
-                if self.user_combo.itemText(i).lower() == user_text.lower():
-                    user_id = self.user_combo.itemData(i)
-                    break
-        
         try:
             self.updated_count = self.facade.tax_withholding_service.bulk_recalculate(
-                site_id=site_id,
-                user_id=user_id,
+                start_date=start_date,
+                end_date=end_date,
                 overwrite_custom=overwrite
             )
             self.accept()

@@ -1,12 +1,13 @@
 """Tax withholding estimates (Issue #29).
 
-Computes an estimated tax set-aside amount per daily session (rollup of game sessions).
+Computes an estimated tax set-aside amount per DATE (rollup of all users' game sessions).
 
 Key semantics:
-- Tax withholding is calculated at the DAILY level, not per game session.
-- Daily net P/L = sum of all game session net P/L for that (date, user).
+- Tax withholding is calculated at the DATE level (not per user, not per session).
+- Daily net P/L = sum of ALL users' net P/L for that date.
+- Only positive net is taxed: max(0, sum_of_all_users_pnl) * rate.
 - Uses stored rate when present (historical or custom override).
-- When enabled and a daily session has no stored rate yet, uses the global default rate.
+- When enabled and a date has no stored rate yet, uses the global default rate.
 - Amount is always `max(0, net_daily_pl) * (rate_pct/100)`.
 - Bulk recalculation can retroactively overwrite historical stored values.
 """
@@ -68,19 +69,21 @@ class TaxWithholdingService:
             return Decimal("0.00")
         return amt
 
-    def apply_to_daily_session(
+    def apply_to_date(
         self,
         session_date: str,
-        user_id: int,
-        net_daily_pl: Optional[Decimal],
         custom_rate_pct: Optional[Decimal] = None,
     ) -> None:
-        """Calculate and store tax withholding for a daily session.
-
+        """Calculate and store tax withholding for a DATE.
+        
+        Tax is calculated on the NET P/L across ALL users (winners netted against losers).
+        Only positive net P/L is taxed.
+        
+        Example:
+            User 1: +$342.61, User 2: -$205.55 → Net: $137.06 → Tax: $27.41 (at 20%)
+        
         Args:
-            session_date: Date of the daily session (YYYY-MM-DD)
-            user_id: User ID
-            net_daily_pl: Net profit/loss for the day (sum of game sessions)
+            session_date: Date (YYYY-MM-DD)
             custom_rate_pct: Optional custom rate override (if None, uses default)
         """
         config = self.get_config()
@@ -88,15 +91,14 @@ class TaxWithholdingService:
             # Clear any existing tax data if feature is disabled
             self.db.execute(
                 """
-                UPDATE daily_sessions
-                SET tax_withholding_rate_pct = NULL,
-                    tax_withholding_is_custom = 0,
-                    tax_withholding_amount = NULL
-                WHERE session_date = ? AND user_id = ?
+                DELETE FROM daily_date_tax WHERE session_date = ?
                 """,
-                (session_date, user_id),
+                (session_date,),
             )
             return
+
+        # Calculate net P/L across ALL users for this date (sum winners and losers)
+        net_daily_pl = self._calculate_date_net_pl(session_date)
 
         # Determine rate to use
         if custom_rate_pct is not None:
@@ -106,78 +108,98 @@ class TaxWithholdingService:
             rate_pct = config.default_rate_pct
             is_custom = False
 
-        # Compute amount
+        # Compute tax amount (only on positive net P/L)
         amount = self.compute_amount(net_daily_pl, rate_pct)
 
-        # Store in daily_sessions table
-        self.db.execute_write(
+        # Store in daily_date_tax table
+        self.db.execute(
             """
-            UPDATE daily_sessions
-            SET tax_withholding_rate_pct = ?,
-                tax_withholding_is_custom = ?,
-                tax_withholding_amount = ?
-            WHERE session_date = ? AND user_id = ?
+            INSERT OR REPLACE INTO daily_date_tax (
+                session_date, 
+                net_daily_pnl,
+                tax_withholding_rate_pct,
+                tax_withholding_is_custom,
+                tax_withholding_amount
+            ) VALUES (?, ?, ?, ?, ?)
             """,
             (
+                session_date,
+                float(net_daily_pl) if net_daily_pl is not None else 0.0,
                 float(rate_pct) if rate_pct is not None else None,
                 1 if is_custom else 0,
-                str(amount) if amount is not None else None,
-                session_date,
-                user_id,
+                float(amount) if amount is not None else None,
             ),
         )
+
+    def _calculate_date_net_pl(self, session_date: str) -> Decimal:
+        """Calculate total net P/L for a date across ALL users."""
+        # Check if daily_sessions table exists (for tests)
+        cursor = self.db._connection.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_sessions'")
+        if not cursor.fetchone():
+            return Decimal("0.00")
+        
+        row = self.db.fetch_one(
+            """
+            SELECT SUM(COALESCE(net_daily_pnl, 0)) as total_net_pnl
+            FROM daily_sessions
+            WHERE session_date = ?
+            """,
+            (session_date,)
+        )
+        if row and row["total_net_pnl"] is not None:
+            return Decimal(str(row["total_net_pnl"]))
+        return Decimal("0.00")
 
     def bulk_recalculate(
         self,
         *,
-        site_id: Optional[int] = None,
-        user_id: Optional[int] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
         overwrite_custom: bool = False,
     ) -> int:
-        """Bulk recalculation (retroactive) of withholding fields for daily sessions.
+        """Bulk recalculation (retroactive) of withholding fields for dates.
 
-        Recalculates tax withholding for all daily sessions based on current settings.
+        Recalculates tax withholding for dates (optionally filtered by range) based on current settings.
+        Tax is calculated on the NET of ALL users' P/L for each date.
         Respects custom rates unless overwrite_custom=True.
 
+        Args:
+            start_date: Optional start date (YYYY-MM-DD) - if None, starts from earliest date
+            end_date: Optional end date (YYYY-MM-DD) - if None, goes to latest date
+            overwrite_custom: If True, overwrites custom rates; if False, skips them
+
+        Note: Site/user filtering is NOT supported because tax must be calculated
+        across ALL users for a date (netting winners against losers).
+
         Invariants:
-        - Updates only withholding columns in daily_sessions table.
+        - Updates only withholding columns in daily_date_tax table.
         - Runs atomically in a transaction.
 
-        Returns: number of daily sessions updated.
+        Returns: number of dates updated.
         """
         config = self.get_config()
         if not config.enabled:
             return 0
 
-        # Build WHERE clause for filtering
+        # Build WHERE clause for date range
         where_parts = []
         params = []
-        if site_id is not None:
-            # Filter by site_id via game sessions
-            where_parts.append(
-                """
-                EXISTS (
-                    SELECT 1 FROM game_sessions gs
-                    WHERE gs.session_date = daily_sessions.session_date
-                      AND gs.user_id = daily_sessions.user_id
-                      AND gs.site_id = ?
-                )
-                """
-            )
-            params.append(site_id)
-        if user_id is not None:
-            where_parts.append("user_id = ?")
-            params.append(user_id)
+        if start_date is not None:
+            where_parts.append("session_date >= ?")
+            params.append(start_date)
+        if end_date is not None:
+            where_parts.append("session_date <= ?")
+            params.append(end_date)
+        
+        where_clause = " AND ".join(where_parts) if where_parts else "1=1"
 
-        where_sql = " AND ".join(where_parts) if where_parts else "1=1"
-
-        # Fetch all daily sessions that need updating
+        # Fetch all DISTINCT dates that need updating
         rows = self.db.fetch_all(
             f"""
-            SELECT session_date, user_id, net_daily_pnl,
-                   tax_withholding_is_custom
+            SELECT DISTINCT session_date
             FROM daily_sessions
-            WHERE {where_sql}
+            WHERE {where_clause}
             ORDER BY session_date ASC
             """,
             tuple(params),
@@ -186,24 +208,29 @@ class TaxWithholdingService:
         updates = []
         updated_count = 0
         for row in rows:
-            is_custom = bool(row.get("tax_withholding_is_custom") or 0)
-            if is_custom and not overwrite_custom:
+            session_date = row["session_date"]
+            
+            # Check if this date has custom tax (skip if overwrite_custom is False)
+            existing = self.db.fetch_one(
+                "SELECT tax_withholding_is_custom FROM daily_date_tax WHERE session_date = ?",
+                (session_date,)
+            )
+            if existing and existing.get("tax_withholding_is_custom") and not overwrite_custom:
                 continue
 
-            net_daily_pl = row.get("net_daily_pnl")
-            if net_daily_pl is None:
-                continue
-
+            # Calculate net P/L across all users for this date
+            net_daily_pl = self._calculate_date_net_pl(session_date)
+            
             rate_pct = config.default_rate_pct
-            amount = self.compute_amount(Decimal(str(net_daily_pl)), rate_pct)
+            amount = self.compute_amount(net_daily_pl, rate_pct)
 
             updates.append(
                 (
+                    session_date,
+                    float(net_daily_pl) if net_daily_pl is not None else 0.0,
                     float(rate_pct),
                     0,  # is_custom (reset to default)
-                    str(amount) if amount is not None else None,
-                    row["session_date"],
-                    row["user_id"],
+                    float(amount) if amount is not None else None,
                 )
             )
             updated_count += 1
@@ -214,11 +241,13 @@ class TaxWithholdingService:
         with self.db.transaction():
             self.db.executemany_no_commit(
                 """
-                UPDATE daily_sessions
-                SET tax_withholding_rate_pct = ?,
-                    tax_withholding_is_custom = ?,
-                    tax_withholding_amount = ?
-                WHERE session_date = ? AND user_id = ?
+                INSERT OR REPLACE INTO daily_date_tax (
+                    session_date,
+                    net_daily_pnl,
+                    tax_withholding_rate_pct,
+                    tax_withholding_is_custom,
+                    tax_withholding_amount
+                ) VALUES (?, ?, ?, ?, ?)
                 """,
                 updates,
             )

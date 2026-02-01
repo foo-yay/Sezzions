@@ -648,11 +648,11 @@ class DailySessionsTab(QtWidgets.QWidget):
         has_selection = self.tree.selectionModel().hasSelection()
         
         if kind == "date":
-            self.notes_btn.setText("➕ Add Notes")
-            self.primary_btn_stack.setCurrentWidget(self.notes_btn)
-        elif kind == "user":
             self.notes_btn.setText("✏️ Edit")
             self.primary_btn_stack.setCurrentWidget(self.notes_btn)
+        elif kind == "user":
+            # No edit button for user level - only date level
+            self.primary_btn_stack.setCurrentWidget(self.primary_btn_placeholder)
         elif kind == "session":
             self.primary_btn_stack.setCurrentWidget(self.view_btn)
         else:
@@ -669,15 +669,7 @@ class DailySessionsTab(QtWidgets.QWidget):
     def _handle_notes_clicked(self):
         meta = self._current_meta() or {}
         if meta.get("kind") == "date":
-            self._edit_daily_session(meta.get("date"), user_id=None)
-        elif meta.get("kind") == "user":
-            # Get the date from the parent item
-            item = self.tree.currentItem()
-            if item and item.parent():
-                parent_meta = item.parent().data(0, QtCore.Qt.UserRole) or {}
-                session_date = parent_meta.get("date")
-                if session_date:
-                    self._edit_daily_session(session_date, user_id=meta.get("user_id"))
+            self._edit_daily_session(meta.get("date"))
 
     def _handle_view_clicked(self):
         meta = self._current_meta() or {}
@@ -685,49 +677,41 @@ class DailySessionsTab(QtWidgets.QWidget):
             self._view_session(meta.get("session_id"))
 
     def add_edit_notes(self):
+        """Handle double-click: date -> edit notes/tax, session -> view details."""
         item = self.tree.currentItem()
         if not item:
-            QtWidgets.QMessageBox.information(self, "No Selection", "Select a day, user, or game session.")
             return
         meta = item.data(0, QtCore.Qt.UserRole) or {}
         kind = meta.get("kind")
         if kind == "session":
             self._view_session(meta.get("session_id"))
         elif kind == "date":
-            self._edit_daily_session(meta.get("date"), user_id=None)
-        elif kind == "user":
-            if item.parent():
-                parent_meta = item.parent().data(0, QtCore.Qt.UserRole) or {}
-                session_date = parent_meta.get("date")
-                if session_date:
-                    self._edit_daily_session(session_date, user_id=meta.get("user_id"))
-        else:
-            QtWidgets.QMessageBox.information(self, "Selection", "Select a day, user, or game session.")
+            self._edit_daily_session(meta.get("date"))
 
-    def _edit_daily_session(self, session_date, user_id=None):
-        """Edit daily session notes and tax. If user_id is None, edits notes only (for all users on date)."""
+    def _edit_daily_session(self, session_date):
+        """Edit daily session notes and tax (both are date-level)."""
         if not session_date:
             return
         
-        # Get current values
+        # Get current notes
         current_notes = self.facade.get_daily_note_for_date(session_date)
+        
+        # Get current tax data for this date
         current_tax_data = None
-        if user_id is not None and hasattr(self.facade, 'daily_sessions_service'):
-            # Get tax data for this specific (date, user) pair
+        if hasattr(self.facade, 'daily_sessions_service'):
             try:
                 tax_dict = self.facade.daily_sessions_service.fetch_daily_tax_data(
-                    selected_users=[user_id],
+                    selected_users=None,
                     selected_sites=None,
                     active_date_filter=(None, None)
                 )
-                current_tax_data = tax_dict.get((session_date, user_id), {})
+                current_tax_data = tax_dict.get(session_date, {})
             except Exception:
                 pass
         
         dialog = EditDailySessionDialog(
             session_date=session_date,
             notes=current_notes,
-            user_id=user_id,
             tax_data=current_tax_data,
             facade=self.facade,
             parent=self
@@ -736,27 +720,20 @@ class DailySessionsTab(QtWidgets.QWidget):
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
         
-        # Save notes (for all users on this date)
+        # Save notes
         new_notes = dialog.notes_text()
         user_ids = [s["user_id"] for s in self.sessions if s["session_date"] == session_date]
         self.facade.set_daily_note_for_date(session_date, user_ids, new_notes)
         
-        # Save tax data (only if user_id was specified)
-        if user_id is not None and dialog.has_tax_fields():
+        # Save tax data (date-level)
+        if dialog.has_tax_fields():
             custom_rate = dialog.get_custom_tax_rate()
             if custom_rate is not None:
-                # Calculate net daily P/L for this user on this date
-                user_sessions = [s for s in self.sessions 
-                                if s["session_date"] == session_date and s["user_id"] == user_id]
-                net_daily_pl = sum(s.get("total_taxable", 0) for s in user_sessions)
-                
-                # Apply tax withholding
+                # Apply tax withholding at date level
                 if hasattr(self.facade, 'tax_withholding_service'):
                     try:
-                        self.facade.tax_withholding_service.apply_to_daily_session(
+                        self.facade.tax_withholding_service.apply_to_date(
                             session_date=session_date,
-                            user_id=user_id,
-                            net_daily_pl=net_daily_pl,
                             custom_rate_pct=custom_rate
                         )
                     except Exception as e:
@@ -981,33 +958,15 @@ class DailySessionsTab(QtWidgets.QWidget):
 
 
 class EditDailySessionDialog(QtWidgets.QDialog):
-    """Dialog for editing daily session notes and tax withholding.
+    """Dialog for editing daily session notes and tax withholding (both date-level)."""
     
-    If user_id is None: edits notes only (applies to all users on that date).
-    If user_id is provided: edits notes + tax for that specific (date, user) pair.
-    """
-    def __init__(self, session_date, notes, user_id=None, tax_data=None, facade=None, parent=None):
+    def __init__(self, session_date, notes, tax_data=None, facade=None, parent=None):
         super().__init__(parent)
         self.session_date = session_date
-        self.user_id = user_id
         self.facade = facade
         
-        # Set title based on mode
-        if user_id is None:
-            self.setWindowTitle(f"Edit Daily Session - {session_date}")
-        else:
-            # Get user name if available
-            user_name = "User"
-            if facade and hasattr(facade, 'get_user'):
-                try:
-                    user = facade.get_user(user_id)
-                    if user:
-                        user_name = user.name
-                except Exception:
-                    pass
-            self.setWindowTitle(f"Edit Daily Session - {session_date} - {user_name}")
-        
-        self.resize(520, 400 if user_id else 320)
+        self.setWindowTitle(f"Edit Daily Session - {session_date}")
+        self.resize(520, 450)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -1026,11 +985,12 @@ class EditDailySessionDialog(QtWidgets.QDialog):
         self.notes_edit.setPlainText(notes or "")
         layout.addWidget(self.notes_edit, 1)
 
-        # Tax section (only if user_id is provided and tax feature is enabled)
+        # Tax section (date-level, always shown if tax feature is enabled)
         self.tax_rate_edit = None
         self.tax_amount_display = None
+        self.net_pl_display = None
         
-        if user_id is not None and facade and hasattr(facade, 'tax_withholding_service'):
+        if facade and hasattr(facade, 'tax_withholding_service'):
             try:
                 config = facade.tax_withholding_service.get_config()
                 if config.enabled:
@@ -1040,37 +1000,51 @@ class EditDailySessionDialog(QtWidgets.QDialog):
                     line.setFrameShadow(QtWidgets.QFrame.Sunken)
                     layout.addWidget(line)
                     
-                    tax_label = QtWidgets.QLabel("Tax Withholding:")
+                    tax_label = QtWidgets.QLabel("Tax Withholding (Date Level):")
                     tax_label.setObjectName("SectionTitle")
                     layout.addWidget(tax_label)
                     
                     tax_grid = QtWidgets.QGridLayout()
                     tax_grid.setSpacing(8)
+                    tax_grid.setColumnStretch(1, 1)
+                    
+                    # Net daily P/L display (read-only)
+                    net_pl_label = QtWidgets.QLabel("Net Daily P/L:")
+                    self.net_pl_display = QtWidgets.QLabel()
+                    if tax_data and tax_data.get("net_daily_pnl") is not None:
+                        net_pl = float(tax_data["net_daily_pnl"])
+                        net_pl_text = f"${net_pl:,.2f}"
+                    else:
+                        net_pl_text = "—"
+                    self.net_pl_display.setText(net_pl_text)
+                    self.net_pl_display.setStyleSheet("font-weight: bold; color: #2563eb;")
+                    tax_grid.addWidget(net_pl_label, 0, 0, QtCore.Qt.AlignRight)
+                    tax_grid.addWidget(self.net_pl_display, 0, 1)
                     
                     # Tax rate input
                     rate_label = QtWidgets.QLabel("Rate (%):")
                     self.tax_rate_edit = QtWidgets.QLineEdit()
                     self.tax_rate_edit.setPlaceholderText(f"Default: {config.default_rate_pct}%")
+                    self.tax_rate_edit.setFixedWidth(200)
                     
                     # Load current tax rate if available
                     if tax_data and tax_data.get("tax_withholding_rate_pct") is not None:
                         self.tax_rate_edit.setText(str(float(tax_data["tax_withholding_rate_pct"])))
                     
-                    tax_grid.addWidget(rate_label, 0, 0)
-                    tax_grid.addWidget(self.tax_rate_edit, 0, 1)
+                    tax_grid.addWidget(rate_label, 1, 0, QtCore.Qt.AlignRight)
+                    tax_grid.addWidget(self.tax_rate_edit, 1, 1)
                     
                     # Current tax amount display (read-only)
                     amount_label = QtWidgets.QLabel("Current Amount:")
                     self.tax_amount_display = QtWidgets.QLabel()
-                    if tax_data and tax_data.get("tax_withholding_amount"):
+                    if tax_data and tax_data.get("tax_withholding_amount") is not None:
                         amount_text = f"${float(tax_data['tax_withholding_amount']):.2f}"
                     else:
                         amount_text = "—"
                     self.tax_amount_display.setText(amount_text)
-                    self.tax_amount_display.setStyleSheet("font-weight: bold;")
-                    
-                    tax_grid.addWidget(amount_label, 1, 0)
-                    tax_grid.addWidget(self.tax_amount_display, 1, 1)
+                    self.tax_amount_display.setStyleSheet("font-weight: bold; color: #dc2626;")
+                    tax_grid.addWidget(amount_label, 2, 0, QtCore.Qt.AlignRight)
+                    tax_grid.addWidget(self.tax_amount_display, 2, 1)
                     
                     layout.addLayout(tax_grid)
                     

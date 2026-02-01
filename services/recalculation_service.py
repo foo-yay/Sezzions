@@ -578,7 +578,8 @@ class RecalculationService:
         
         Populates daily_sessions with aggregated P/L data from closed sessions.
         Uses INSERT OR REPLACE to handle both new and existing rows.
-        Does not overwrite custom tax rates or notes.
+        Notes are stored in daily_date_tax table (not here).
+        Tax data is now stored in daily_date_tax table (see TaxWithholdingService).
         """
         if progress_callback:
             progress_callback(0, 1, "Synchronizing daily sessions from closed game sessions...")
@@ -595,25 +596,16 @@ class RecalculationService:
                 session_date, 
                 user_id, 
                 net_daily_pnl, 
-                num_game_sessions,
-                tax_withholding_rate_pct,
-                tax_withholding_is_custom,
-                tax_withholding_amount,
-                notes
+                num_game_sessions
             )
             SELECT 
-                gs.session_date,
+                gs.end_date,
                 gs.user_id,
                 SUM(COALESCE(gs.net_taxable_pl, 0)) as net_daily_pnl,
-                COUNT(*) as num_game_sessions,
-                COALESCE(ds.tax_withholding_rate_pct, NULL) as tax_withholding_rate_pct,
-                COALESCE(ds.tax_withholding_is_custom, 0) as tax_withholding_is_custom,
-                COALESCE(ds.tax_withholding_amount, NULL) as tax_withholding_amount,
-                COALESCE(ds.notes, '') as notes
+                COUNT(*) as num_game_sessions
             FROM game_sessions gs
-            LEFT JOIN daily_sessions ds ON gs.session_date = ds.session_date AND gs.user_id = ds.user_id
-            WHERE gs.status = 'Closed'
-            GROUP BY gs.session_date, gs.user_id
+            WHERE gs.status = 'Closed' AND gs.end_date IS NOT NULL
+            GROUP BY gs.end_date, gs.user_id
             """,
             ()
         )
@@ -692,6 +684,23 @@ class RecalculationService:
             progress_callback(current_step, total_steps, "Synchronizing daily sessions...")
         
         self._sync_daily_sessions(progress_callback)
+
+        # Recalculate tax withholding (if enabled in settings)
+        current_step += 1
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Recalculating tax withholding...")
+        
+        try:
+            if hasattr(self, 'tax_withholding_service'):
+                config = self.tax_withholding_service.get_config()
+                if config.enabled:
+                    self.tax_withholding_service.bulk_recalculate(
+                        start_date=None,
+                        end_date=None,
+                        overwrite_custom=False
+                    )
+        except Exception:
+            pass
 
         return RebuildResult(
             pairs_processed=len(pairs),

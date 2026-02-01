@@ -410,55 +410,94 @@ Provide passive, persistent notifications for important app events without inter
 ### 6.5 Tax Withholding Estimates (Issue #29)
 
 **Purpose:**
-Store and compute per-session tax withholding estimates for informational tax planning. This is not legal/tax advice; user must consult a tax professional.
+Store and compute date-level tax withholding estimates for informational tax planning. Tax is calculated on the NET P/L of ALL users for each date (winners netted against losers). This is not legal/tax advice; user must consult a tax professional.
 
 **Architecture:**
-- `models/game_session.py`: adds three new optional fields:
-  - `tax_withholding_rate_pct` (Decimal): the rate (%) used; defaults to the app-wide default if not custom
-  - `tax_withholding_is_custom` (bool): whether user explicitly set a rate for this session
-  - `tax_withholding_amount` (Decimal): the computed estimate (in dollars)
-- `repositories/database.py`: new columns `tax_withholding_rate_pct` (REAL), `tax_withholding_is_custom` (INTEGER 0/1), `tax_withholding_amount` (TEXT)
-  - Migration path: ALTER TABLE additions for existing DBs
-- `repositories/game_session_repository.py`: persists withholding fields in create/update/model mapping
-- `services/tax_withholding_service.py`:
-  - `get_config()`: reads `tax_withholding_enabled` + `tax_withholding_default_rate_pct` from settings; clamps rate 0..100
-  - `compute_amount(net_taxable_pl, rate_pct)`: `max(0, net_taxable_pl) * (rate / 100)` using Decimal rounding to cents
-  - `apply_to_session_model(session)`: for closed sessions, captures default rate if missing, computes amount
-  - `bulk_recalculate(site_id, user_id, overwrite_custom=False)`: transactional bulk update; skips custom-rate sessions unless overwrite=True
-- `services/game_session_service.py`: wires `tax_withholding_service` as an optional dependency; calls `apply_to_session_model()` after computing `net_taxable_pl` during closed-session recalculation
-- `app_facade.py`: constructs `TaxWithholdingService` and passes it to `GameSessionService`
-- `ui/main_window.py`: wires `settings` object to `tax_withholding_service` on startup
+- **Date-level calculation:** Tax computed once per date on net P/L across all users, not per-session or per-user
+- **Storage:** `daily_date_tax` table (keyed by `session_date` only)
+  - Columns: `net_daily_pnl`, `tax_withholding_rate_pct`, `tax_withholding_is_custom`, `tax_withholding_amount`, `notes`
+  - Notes migrated from `daily_sessions` (now date-level, not user-level)
+- **Display:** Tax shown at date level in Daily Sessions tab; user-level rows show $0.00
+- **Grouping:** `daily_sessions` uses `end_date` (when session closed) not `session_date` (when started)
 
-**Computation:**
-- Only for closed sessions with positive `net_taxable_pl`
-- Formula: `withholding_amount = max(0, net_taxable_pl) * (rate_pct / 100)`
-- Decimal precision: rounds to cents (2 decimal places)
-- Zero or negative taxable P/L → withholding = $0
+**Services:**
 
-**Settings:**
+`TaxWithholdingService`:
+- `get_config()`: reads `tax_withholding_enabled` + `tax_withholding_default_rate_pct` from settings; clamps rate 0..100
+- `compute_amount(net_taxable_pl, rate_pct)`: `max(0, net_taxable_pl) * (rate / 100)` using Decimal rounding to cents
+- `apply_to_date(session_date, custom_rate_pct)`: Calculate and store tax for ONE date (nets all users)
+- `bulk_recalculate(start_date, end_date, overwrite_custom)`: Batch recalc with optional date range filter
+- `_calculate_date_net_pl(session_date)`: Sum ALL users' P/L for date from daily_sessions
+- Respects custom rates unless `overwrite_custom=True`
+
+`GameSessionService`:
+- Auto-recalc on session close: Syncs daily_sessions + recalcs tax for end_date
+- Auto-recalc on session edit: Recalcs tax for affected dates (old + new if date changed)
+- `_sync_tax_for_affected_dates()`: Called after cascade recalcs (purchase/redemption edits)
+- Ensures tax stays accurate during FIFO rebuilds and session recalculations
+
+`RecalculationService`:
+- `rebuild_all()`: Now includes tax recalculation in full rebuild workflow
+- Uses `end_date` grouping for daily_sessions
+
+`DailySessionsService`:
+- `fetch_daily_tax_data()`: Queries `daily_date_tax` table for display
+- `group_sessions()`: Shows tax at date level, $0.00 at user level
+
+**Computation Example:**
+```
+Date: 2026-01-09
+  User 1 (Fooyay): +$342.61
+  User 2 (Mrs Fooyay): -$205.55
+  Net P/L: $137.06
+  Tax (20%): $27.41
+```
+
+**Settings UI:**
 - `tax_withholding_enabled` (bool): master on/off switch
-- `tax_withholding_default_rate_pct` (float): default rate applied to new closed sessions (clamped 0..100)
-- Managed via Settings UI → Taxes section (see § 6.6)
+- `tax_withholding_default_rate_pct` (float): default rate applied to dates (clamped 0..100)
+- "Recalculate Tax Withholding" button launches dialog
 
-**Bulk Recalculation:**
-- Service provides `bulk_recalculate(site_id, user_id, overwrite_custom)` for batch updates
-- UI: Settings → Taxes → "Recalculate Withholding…" button opens `ui/tax_recalc_dialog.py`
-- Filters: site/user (if provided); only closed sessions
-- Atomicity: uses DB transaction + no-commit operations; rolls back on any failure
-- Custom rates: skips sessions with `tax_withholding_is_custom=1` unless `overwrite_custom=True`
+**Bulk Recalculation Dialog (`ui/tax_recalc_dialog.py`):**
+- **Date range filter:** From/To date fields with 📅 calendar pickers
+- **Options:** Overwrite custom rates checkbox
+- **Removed:** Site/user filters (incompatible with date-level netting)
+- Leave dates empty to recalculate all dates
+- Confirmation dialog shows scope and settings
 
-**Current State:**
-- ✅ Backend complete (Part 1, PR #32): model, repository, service, tests
-- ✅ Settings UI complete (Part 2, current PR): enable toggle, default rate, bulk recalc dialog
-- 🚧 Deferred to follow-up: per-session override UI in session dialogs, Daily Sessions withholding column/aggregates
+**Daily Sessions Tab UI:**
+- **Date-level:**
+  - "✏️ Edit" button opens dialog
+  - Dialog shows: Net P/L (blue), Tax Amount (red), Tax Rate, Notes
+  - Tax fields read-only (use Settings to recalc)
+- **User-level:**
+  - No edit button (no per-user tax)
+  - Tax column shows $0.00
+
+**Tax Recalculation Triggers:**
+1. Session closed → Scoped to end_date
+2. Session edited (already closed) → Scoped to affected date(s)
+3. Purchase/redemption edited → Cascade recalc triggers tax update for all affected dates
+4. Settings → Recalculate Tax Withholding → Optional date range filter
+5. Tools → Recalculate Everything → Full rebuild including tax (all dates)
+
+**Migration:**
+- Old `game_sessions.tax_withholding_*` columns removed (tax is date-level only)
+- Old `daily_sessions.notes` migrated to `daily_date_tax.notes`
+- Tax recalculated on first "Recalculate Everything" after upgrade
 
 **Tests:**
-- 6 unit tests in `tests/unit/test_tax_withholding_service.py`:
-  - compute_amount: positive P/L, zero, negative P/L
-  - bulk_recalculate: writes correct rate/is_custom/amount
-  - skip custom-rate sessions unless overwrite
-  - atomicity: monkeypatch executemany to raise, assert no changes persisted
+- 4 unit tests in `tests/unit/test_tax_withholding_service.py`:
+  - bulk_recalc writes correct rate/amount for non-custom dates
+  - skip custom-rate dates unless overwrite=True
+  - atomicity: failure rolls back all changes
 - All 580 tests passing
+
+**Current State:**
+- ✅ Complete: Backend, Settings UI, Daily Sessions display, cascade recalculation
+- ✅ Date-level netting architecture implemented
+- ✅ Auto-recalc on session close/edit and cascade scenarios
+
 ### 6.6 Settings UI Entry Point (Issue #31)
 
 **Purpose:**
@@ -482,7 +521,7 @@ Provide a first-class, always-available Settings entry point for managing notifi
   - Left nav: "Notifications", "Taxes" (expandable for future sections)
   - Content sections:
     - **Notifications**: `redemption_pending_receipt_threshold_days` spinner (0..365 days, suffix " days")
-    - **Taxes**: placeholder message ("Tax withholding estimate settings will appear here once Issue #29 is completed")
+    - **Taxes**: Enable toggle, default rate percentage, "Recalculate Tax Withholding" button (launches `TaxRecalcDialog`)
   - Save button: persists settings to settings.json, triggers notification rule re-evaluation
   - ESC key: closes dialog without saving
 

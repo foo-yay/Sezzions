@@ -360,7 +360,7 @@ class DatabaseManager:
             )
         ''')
 
-        # Daily sessions table (daily notes + aggregates)
+        # Daily sessions table (per-user daily aggregates)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS daily_sessions (
                 session_date TEXT NOT NULL,
@@ -368,15 +368,23 @@ class DatabaseManager:
                 total_other_income REAL DEFAULT 0.0,
                 total_session_pnl REAL DEFAULT 0.0,
                 net_daily_pnl REAL DEFAULT 0.0,
-                tax_withholding_rate_pct REAL,
-                tax_withholding_is_custom INTEGER DEFAULT 0,
-                tax_withholding_amount REAL,
                 status TEXT,
                 num_game_sessions INTEGER DEFAULT 0,
                 num_other_income_items INTEGER DEFAULT 0,
-                notes TEXT,
                 PRIMARY KEY (session_date, user_id),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+            )
+        ''')
+
+        # Daily date tax (date-level tax calculated on net of ALL users)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS daily_date_tax (
+                session_date TEXT PRIMARY KEY,
+                net_daily_pnl REAL DEFAULT 0.0,
+                tax_withholding_rate_pct REAL,
+                tax_withholding_is_custom INTEGER DEFAULT 0,
+                tax_withholding_amount REAL,
+                notes TEXT
             )
         ''')
 
@@ -614,26 +622,11 @@ class DatabaseManager:
             pass
 
     def _migrate_daily_sessions_table(self):
-        """Add tax withholding columns to daily_sessions table"""
-        cursor = self._connection.cursor()
-        
-        # Get existing columns
-        cursor.execute("PRAGMA table_info(daily_sessions)")
-        existing_columns = {row[1] for row in cursor.fetchall()}
-        
-        # Add tax withholding columns
-        migrations = [
-            ("tax_withholding_rate_pct", "REAL"),
-            ("tax_withholding_is_custom", "INTEGER DEFAULT 0"),
-            ("tax_withholding_amount", "TEXT"),
-        ]
-        
-        for column_name, column_def in migrations:
-            if column_name not in existing_columns:
-                try:
-                    cursor.execute(f"ALTER TABLE daily_sessions ADD COLUMN {column_name} {column_def}")
-                except Exception:
-                    pass
+        """Remove old tax withholding columns from daily_sessions (moved to daily_date_tax)"""
+        # Tax columns are now in daily_date_tax table, not daily_sessions
+        # This migration is a no-op, keeping for reference
+        pass
+
 
     def _migrate_games_table(self):
         """Add new columns to games if they don't exist"""

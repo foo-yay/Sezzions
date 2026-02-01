@@ -1,6 +1,7 @@
 """Integration tests for RecalculationService."""
 
 import pytest
+from contextlib import contextmanager
 from decimal import Decimal
 
 from services.recalculation_service import RecalculationService
@@ -16,6 +17,20 @@ class DB:
     
     def fetch_all(self, query, params=None):
         return self._db.fetch_all(query, params or ())
+    
+    def fetch_one(self, query, params=None):
+        return self._db.fetch_one(query, params or ())
+    
+    def execute(self, query, params=None):
+        return self._db.execute(query, params or ())
+    
+    def executemany_no_commit(self, query, params_seq):
+        return self._db.executemany_no_commit(query, params_seq)
+    
+    @contextmanager
+    def transaction(self):
+        with self._db.transaction():
+            yield
     
     def populate_scenario_1(self):
         """

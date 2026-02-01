@@ -172,54 +172,41 @@ class DailySessionsService:
         selected_users: Optional[Iterable[str]] = None,
         selected_sites: Optional[Iterable[str]] = None,
         active_date_filter: Tuple[Optional[date_type], Optional[date_type]] = (None, None),
-    ) -> Dict[Tuple[str, int], Dict]:
+    ) -> Dict[str, Dict]:
         """
-        Fetch tax withholding data from daily_sessions table.
-        Returns dict keyed by (session_date, user_id) with tax data.
+        Fetch tax withholding data from daily_date_tax table.
+        Returns dict keyed by session_date with tax data.
+        Note: Tax is now date-level, not per-user.
         """
-        if not self._table_exists("daily_sessions"):
+        if not self._table_exists("daily_date_tax"):
             return {}
 
         query = """
             SELECT
-                ds.session_date,
-                ds.user_id,
-                ds.tax_withholding_rate_pct,
-                ds.tax_withholding_is_custom,
-                ds.tax_withholding_amount
-            FROM daily_sessions ds
+                session_date,
+                net_daily_pnl,
+                tax_withholding_rate_pct,
+                tax_withholding_is_custom,
+                tax_withholding_amount
+            FROM daily_date_tax
             WHERE 1=1
         """
         params = []
 
-        if selected_users:
-            user_list = list(selected_users)
-            if user_list:
-                placeholders = ",".join("?" * len(user_list))
-                query += f" AND ds.user_id IN ({placeholders})"
-                params.extend(user_list)
-
-        if selected_sites:
-            site_list = list(selected_sites)
-            if site_list:
-                placeholders = ",".join("?" * len(site_list))
-                query += f" AND ds.site_id IN ({placeholders})"
-                params.extend(site_list)
-
         start_date, end_date = active_date_filter
         if start_date:
-            query += " AND ds.session_date >= ?"
+            query += " AND session_date >= ?"
             params.append(start_date.isoformat())
         if end_date:
-            query += " AND ds.session_date <= ?"
+            query += " AND session_date <= ?"
             params.append(end_date.isoformat())
 
         rows = self.db.fetch_all(query, tuple(params))
 
         result = {}
         for row in rows:
-            key = (row["session_date"], row["user_id"])
-            result[key] = {
+            result[row["session_date"]] = {
+                "net_daily_pnl": float(row["net_daily_pnl"] or 0.0),
                 "tax_withholding_rate_pct": float(row["tax_withholding_rate_pct"] or 0.0) if row["tax_withholding_rate_pct"] is not None else None,
                 "tax_withholding_is_custom": bool(row["tax_withholding_is_custom"]) if row["tax_withholding_is_custom"] is not None else False,
                 "tax_withholding_amount": float(row["tax_withholding_amount"] or 0.0),
@@ -246,38 +233,31 @@ class DailySessionsService:
         return {row["session_date"]: row["notes"] or "" for row in rows}
 
     def get_note_for_date(self, session_date: str) -> str:
+        """Get date-level notes from daily_date_tax table."""
         if self.daily_session_repo is not None:
             return self.daily_session_repo.get_note_for_date(session_date)
-        if not self._table_exists("daily_sessions"):
+        if not self._table_exists("daily_date_tax"):
             return ""
         row = self.db.fetch_one(
-            "SELECT MAX(notes) as notes FROM daily_sessions WHERE session_date = ?",
+            "SELECT notes FROM daily_date_tax WHERE session_date = ?",
             (session_date,),
         )
         return row["notes"] if row and row["notes"] else ""
 
     def set_notes_for_date(self, session_date: str, user_ids: Iterable[int], notes: str) -> None:
+        """Set date-level notes in daily_date_tax table."""
         if self.daily_session_repo is not None:
             self.daily_session_repo.upsert_notes_for_date(session_date, user_ids, notes)
             return
-        if not self._table_exists("daily_sessions"):
+        if not self._table_exists("daily_date_tax"):
             return
-        user_ids = [uid for uid in set(user_ids) if uid is not None]
-        if not user_ids:
-            return
-        for user_id in user_ids:
-            self.db.execute(
-                """
-                INSERT OR IGNORE INTO daily_sessions (
-                    session_date, user_id,
-                    total_other_income, total_session_pnl, net_daily_pnl,
-                    status, num_game_sessions, num_other_income_items, notes
-                ) VALUES (?, ?, 0.0, 0.0, 0.0, '', 0, 0, ?)
-                """,
-                (session_date, user_id, notes),
-            )
+        # Store notes at date level in daily_date_tax (not duplicated per user)
         self.db.execute(
-            "UPDATE daily_sessions SET notes = ? WHERE session_date = ?",
+            """
+            INSERT INTO daily_date_tax (session_date, notes)
+            VALUES (?, ?)
+            ON CONFLICT(session_date) DO UPDATE SET notes = excluded.notes
+            """,
             (notes if notes else None, session_date),
         )
 
@@ -297,6 +277,11 @@ class DailySessionsService:
         data: List[Dict] = []
         for session_date in sorted(dates.keys(), reverse=True):
             users_data = dates[session_date]
+            
+            # Get date-level tax data (keyed by session_date only)
+            date_tax_info = daily_tax_data.get(session_date, {})
+            date_tax_withholding = date_tax_info.get("tax_withholding_amount", 0.0)
+            
             users = []
             for user_id in sorted(
                 users_data.keys(),
@@ -310,10 +295,8 @@ class DailySessionsService:
                 user_basis = sum(sess["basis_consumed"] or 0.0 for sess in all_user_sessions)
                 user_total = sum(sess["total_taxable"] for sess in all_user_sessions)
                 
-                # Get tax withholding from daily_sessions table (not from individual sessions)
-                tax_key = (session_date, user_id)
-                tax_info = daily_tax_data.get(tax_key, {})
-                user_tax_withholding = tax_info.get("tax_withholding_amount", 0.0)
+                # Tax withholding is date-level (net of all users), don't show per-user
+                user_tax_withholding = 0.0
                 
                 # Build sites list with grouped sessions
                 sites = []
@@ -356,7 +339,8 @@ class DailySessionsService:
             date_delta_redeem = sum(user["delta_redeem"] for user in users)
             date_basis = sum(user["basis"] for user in users)
             date_total = sum(user["total"] for user in users)
-            date_tax_withholding = sum(user.get("tax_withholding", 0) for user in users)
+            # Use date-level tax from daily_date_tax table (net of all users)
+            # date_tax_withholding already fetched from daily_tax_data on line 283
             total_sessions = sum(len(site["sessions"]) for user in users for site in user["sites"])
             data.append(
                 {

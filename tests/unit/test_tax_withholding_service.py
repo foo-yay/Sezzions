@@ -30,25 +30,21 @@ def daily_session_repo(test_db):
     return DailySessionRepository(test_db)
 
 
-def _insert_daily_session(test_db, sample_user, session_date: str, net_daily_pl: str, *, rate=None, is_custom=0):
-    """Insert a daily session record for testing."""
+def _insert_daily_session(test_db, sample_user, session_date: str, net_daily_pl: str, *, notes=""):
+    """Insert a daily session record for testing (without tax or notes columns - those are in daily_date_tax now)."""
     test_db.execute(
         """
         INSERT INTO daily_sessions (
             user_id, session_date,
             net_daily_pnl,
-            tax_withholding_rate_pct, tax_withholding_is_custom, tax_withholding_amount,
-            notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            num_game_sessions
+        ) VALUES (?, ?, ?, ?)
         """,
         (
             sample_user.id,
             session_date,
             net_daily_pl,
-            rate,
-            is_custom,
-            None,
-            "",
+            1,
         ),
     )
 
@@ -63,54 +59,71 @@ def test_compute_amount_non_positive_pl_is_zero():
 
 
 def test_bulk_recalc_sets_rate_and_amount_for_non_custom_sessions(service, test_db, sample_user, sample_site):
-    _insert_daily_session(test_db, sample_user, "2026-01-01", "100.00", rate=None, is_custom=0)
+    """Test bulk recalc calculates tax at the DATE level (net across all users)."""
+    # Insert daily sessions for the same date
+    _insert_daily_session(test_db, sample_user, "2026-01-01", "100.00")
 
-    updated = service.bulk_recalculate(site_id=None, user_id=sample_user.id, overwrite_custom=False)
+    # Recalculate all dates
+    updated = service.bulk_recalculate(start_date=None, end_date=None, overwrite_custom=False)
     assert updated == 1
 
+    # Tax is now stored in daily_date_tax table, not daily_sessions
     row = test_db.fetch_one(
         """
-        SELECT tax_withholding_rate_pct, tax_withholding_is_custom, tax_withholding_amount
-        FROM daily_sessions WHERE session_date = ? AND user_id = ?
+        SELECT net_daily_pnl, tax_withholding_rate_pct, tax_withholding_is_custom, tax_withholding_amount
+        FROM daily_date_tax WHERE session_date = ?
         """,
-        ("2026-01-01", sample_user.id),
+        ("2026-01-01",),
     )
+    assert row["net_daily_pnl"] == 100.0
     assert row["tax_withholding_rate_pct"] == 20.0
     assert row["tax_withholding_is_custom"] == 0
     assert row["tax_withholding_amount"] == 20.0
 
 
 def test_bulk_recalc_skips_custom_when_not_overwriting(service, test_db, sample_user, sample_site):
-    _insert_daily_session(test_db, sample_user, "2026-01-01", "100.00", rate=30.0, is_custom=1)
+    """Test bulk recalc skips dates that have custom tax rates."""
+    _insert_daily_session(test_db, sample_user, "2026-01-01", "100.00")
+    # Insert custom tax for this date
+    test_db.execute(
+        "INSERT INTO daily_date_tax (session_date, net_daily_pnl, tax_withholding_rate_pct, tax_withholding_is_custom, tax_withholding_amount) VALUES (?, ?, ?, ?, ?)",
+        ("2026-01-01", 100.0, 30.0, 1, 30.0)
+    )
 
-    updated = service.bulk_recalculate(site_id=None, user_id=sample_user.id, overwrite_custom=False)
-    assert updated == 0  # Custom session should not be updated
+    updated = service.bulk_recalculate(overwrite_custom=False)
+    assert updated == 0  # Custom date should not be updated
 
     row = test_db.fetch_one(
         """
         SELECT tax_withholding_rate_pct, tax_withholding_is_custom, tax_withholding_amount
-        FROM daily_sessions WHERE session_date = ? AND user_id = ?
+        FROM daily_date_tax WHERE session_date = ?
         """,
-        ("2026-01-01", sample_user.id),
+        ("2026-01-01",),
     )
     # Should still have custom values
     assert row["tax_withholding_rate_pct"] == 30.0
     assert row["tax_withholding_is_custom"] == 1
-    assert row["tax_withholding_amount"] is None  # Not recalculated
+    assert row["tax_withholding_amount"] == 30.0
 
 
 def test_bulk_recalc_overwrites_custom_when_requested(service, test_db, sample_user, sample_site):
-    _insert_daily_session(test_db, sample_user, "2026-01-01", "100.00", rate=30.0, is_custom=1)
+    """Test bulk recalc overwrites custom tax rates when requested."""
+    _insert_daily_session(test_db, sample_user, "2026-01-01", "100.00")
+    # Insert custom tax for this date
+    test_db.execute(
+        "INSERT INTO daily_date_tax (session_date, net_daily_pnl, tax_withholding_rate_pct, tax_withholding_is_custom, tax_withholding_amount) VALUES (?, ?, ?, ?, ?)",
+        ("2026-01-01", 100.0, 30.0, 1, 30.0)
+    )
 
-    updated = service.bulk_recalculate(site_id=None, user_id=sample_user.id, overwrite_custom=True)
+    updated = service.bulk_recalculate(start_date=None, end_date=None, overwrite_custom=True)
     assert updated == 1
 
     row = test_db.fetch_one(
         """
         SELECT tax_withholding_rate_pct, tax_withholding_is_custom, tax_withholding_amount
-        FROM daily_sessions WHERE session_date = ? AND user_id = ?
+        FROM daily_date_tax WHERE session_date = ?
         """,
-        ("2026-01-01", sample_user.id),
+        ("2026-01-01",),
     )
     assert row["tax_withholding_rate_pct"] == 20.0
     assert row["tax_withholding_is_custom"] == 0
@@ -118,9 +131,10 @@ def test_bulk_recalc_overwrites_custom_when_requested(service, test_db, sample_u
 
 
 def test_bulk_recalc_is_atomic_on_failure(service, test_db, sample_user, sample_site, monkeypatch):
+    """Test that bulk recalc is atomic - failure rolls back all changes."""
     # Two daily sessions eligible for update.
-    _insert_daily_session(test_db, sample_user, "2026-01-01", "100.00", rate=None, is_custom=0)
-    _insert_daily_session(test_db, sample_user, "2026-01-02", "50.00", rate=None, is_custom=0)
+    _insert_daily_session(test_db, sample_user, "2026-01-01", "100.00")
+    _insert_daily_session(test_db, sample_user, "2026-01-02", "50.00")
 
     # Inject failure after the UPDATE executemany call begins.
     real_executemany = test_db.executemany_no_commit
@@ -132,19 +146,17 @@ def test_bulk_recalc_is_atomic_on_failure(service, test_db, sample_user, sample_
     monkeypatch.setattr(test_db, "executemany_no_commit", boom)
 
     with pytest.raises(RuntimeError, match="boom"):
-        service.bulk_recalculate(site_id=None, user_id=sample_user.id, overwrite_custom=False)
+        service.bulk_recalculate(start_date=None, end_date=None, overwrite_custom=False)
 
-    # Nothing should be updated - check both dates
+    # Nothing should be updated in daily_date_tax - check both dates
     for date in ("2026-01-01", "2026-01-02"):
         row = test_db.fetch_one(
             """
-            SELECT tax_withholding_rate_pct, tax_withholding_amount
-            FROM daily_sessions WHERE session_date = ? AND user_id = ?
+            SELECT * FROM daily_date_tax WHERE session_date = ?
             """,
-            (date, sample_user.id),
+            (date,),
         )
-        assert row["tax_withholding_rate_pct"] is None
-        assert row["tax_withholding_amount"] is None
+        assert row is None  # No tax data should exist after rollback
 
     # Restore to avoid side effects
     monkeypatch.setattr(test_db, "executemany_no_commit", real_executemany)

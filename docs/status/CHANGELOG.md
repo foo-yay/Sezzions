@@ -12,6 +12,121 @@ Rules:
 ## 2026-02-01
 
 ```yaml
+id: 2026-02-01-02
+type: feature
+areas: [tax, database, services, ui]
+summary: "Complete Issue #29: Tax withholding with date-level calculation, cascade recalc, and Settings UI."
+files_changed:
+  - repositories/database.py (daily_date_tax table, daily_sessions uses end_date)
+  - services/tax_withholding_service.py (date-level with date range filter)
+  - services/game_session_service.py (auto-recalc on close/edit, cascade support)
+  - services/recalculation_service.py (end_date grouping, tax recalc in rebuild_all)
+  - services/daily_sessions_service.py (fetch from daily_date_tax, show at date level)
+  - ui/settings_dialog.py (tax settings + recalc dialog launcher)
+  - ui/tax_recalc_dialog.py (date range picker with calendar buttons)
+  - ui/tabs/daily_sessions_tab.py (edit button, dialog with tax display)
+branch: feature/issue-29-tax-withholding-ui
+commits: [multiple]
+pr: "#34"
+issue: "#29"
+```
+
+**Architecture: Date-Level Tax Withholding**
+- Tax calculated on NET P/L of ALL users for each date (winners netted against losers)
+- Storage: `daily_date_tax` table keyed by `session_date` only
+- Example: User1: +$342.61, User2: -$205.55 → Net: $137.06 → Tax: $27.41 (20%)
+- Display: Tax shown at date level only (not per-user) in Daily Sessions tab
+
+**Database Schema Changes:**
+- **New table: `daily_date_tax`**
+  - Primary key: `session_date` (date only, not per-user)
+  - Columns: `net_daily_pnl`, `tax_withholding_rate_pct`, `tax_withholding_is_custom`, `tax_withholding_amount`, `notes`
+  - Notes migrated from `daily_sessions` table (date-level, not user-level)
+- **daily_sessions grouping change:**
+  - Now groups by `end_date` instead of `session_date` (when session closed, not started)
+  - Critical for multi-day sessions: tax counted on close date
+- **game_sessions columns removed:**
+  - All `tax_withholding_*` columns removed (tax is date-level only)
+
+**Services Layer:**
+
+`TaxWithholdingService`:
+- `apply_to_date(session_date, custom_rate_pct)`: Calculate and store tax for ONE date (nets all users)
+- `bulk_recalculate(start_date, end_date, overwrite_custom)`: Batch recalc with optional date range
+- `_calculate_date_net_pl(session_date)`: Sum ALL users' P/L for date from daily_sessions
+- Respects custom rates unless `overwrite_custom=True`
+
+`GameSessionService`:
+- Auto-recalc on session close: Syncs daily_sessions + recalcs tax for end_date
+- Auto-recalc on session edit: Recalcs tax for affected dates (old + new if date changed)
+- `_sync_tax_for_affected_dates()`: NEW - called after cascade recalcs (purchase/redemption edits)
+- Ensures tax stays accurate during FIFO rebuilds and session recalculations
+
+`RecalculationService`:
+- `rebuild_all()`: Now includes tax recalculation in full rebuild workflow
+- Uses `end_date` grouping for daily_sessions (not `session_date`)
+
+`DailySessionsService`:
+- `fetch_daily_tax_data()`: Queries `daily_date_tax` table for display
+- `group_sessions()`: Shows tax at date level, $0.00 at user level
+
+**UI Changes:**
+
+Settings Dialog (`ui/settings_dialog.py`):
+- **Tax Withholding section added:**
+  - Enable/disable toggle
+  - Default rate percentage (with validation)
+  - "Recalculate Tax Withholding" button launches dialog
+
+Tax Recalc Dialog (`ui/tax_recalc_dialog.py`):
+- **Date range filter with calendar pickers:**
+  - From/To date fields with 📅 calendar buttons
+  - Clear buttons for each date
+  - Leave empty to recalculate all dates
+- **Options:**
+  - Overwrite custom rates checkbox
+- **Removed:** Site/user filters (incompatible with date-level netting)
+- Confirmation dialog shows scope and settings
+
+Daily Sessions Tab (`ui/tabs/daily_sessions_tab.py`):
+- **Date-level actions:**
+  - "✏️ Edit" button (was "+Add Notes")
+  - Edit dialog shows: Net P/L (blue), Tax Amount (red), Tax Rate, Notes
+  - Tax fields read-only (use Settings to recalc)
+- **User-level actions:**
+  - Removed edit button (no user-level tax data)
+- **Display:**
+  - Tax withholding shown at date level only
+  - User rows show $0.00 for tax (not calculated per-user)
+
+**Tax Recalculation Triggers:**
+
+1. **Session closed:** Scoped to end_date
+2. **Session edited (already closed):** Scoped to affected date(s)
+3. **Purchase/redemption edited:** Cascade recalc triggers tax update for all affected dates
+4. **Settings → Recalculate Tax Withholding:** Optional date range filter
+5. **Tools → Recalculate Everything:** Full rebuild including tax (all dates)
+
+**Migration Path:**
+- Old `game_sessions.tax_withholding_*` columns removed
+- Old `daily_sessions.notes` migrated to `daily_date_tax.notes`
+- Tax recalculated on first "Recalculate Everything" after upgrade
+- No data loss: old tax estimates discarded (date-level netting more accurate)
+
+**Testing:**
+- All 580 tests passing
+- Tax calculation scenarios validated (net-first, not per-user-first)
+- Cascade scenarios covered (purchase/redemption edits trigger tax updates)
+- Date range filtering tested
+
+**Benefits:**
+- **Accurate:** Tax calculated on net P/L (losses offset gains)
+- **Automatic:** Updates on session close, edit, and cascade recalcs
+- **Flexible:** Date range filtering for targeted recalculation
+- **Transparent:** Clear display in Daily Sessions tab
+- **Compliant:** Settings UI for rate configuration and bulk operations
+
+```yaml
 id: 2026-02-01-01
 type: fix
 areas: [repositories, tests, ui]
