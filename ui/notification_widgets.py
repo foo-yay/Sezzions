@@ -1,6 +1,7 @@
 """
 Notification UI components - Bell, badge, and notification center dialog
 """
+import os
 from PySide6.QtWidgets import (
     QPushButton, QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QScrollArea, QWidget, QFrame, QMessageBox, QComboBox, QDateTimeEdit, QAbstractItemView
@@ -50,7 +51,12 @@ class NotificationBellWidget(QPushButton):
 
         if self._unread_count > 0:
             self._badge.setVisible(True)
-            self._badge.setText(str(self._unread_count) if self._unread_count < 100 else "99+")
+            forced = os.environ.get("SEZZIONS_FORCE_BADGE_TEXT")
+            if forced:
+                display_text = forced
+            else:
+                display_text = "10+" if self._unread_count > 10 else str(self._unread_count)
+            self._badge.setText(display_text)
             self._update_badge_geometry()
         else:
             self._badge.setVisible(False)
@@ -70,7 +76,7 @@ class NotificationBellWidget(QPushButton):
         text = self._badge.text()
 
         badge_font = QFont()
-        badge_font.setBold(True)
+        badge_font.setBold(False)
         badge_font.setPixelSize(9 if len(text) <= 2 else 8)
         self._badge.setFont(badge_font)
 
