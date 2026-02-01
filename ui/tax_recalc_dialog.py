@@ -51,11 +51,17 @@ class TaxRecalcDialog(QtWidgets.QDialog):
         
         # Site filter
         self.site_combo = QtWidgets.QComboBox()
+        self.site_combo.setEditable(True)
+        self.site_combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
+        self.site_combo.lineEdit().setPlaceholderText("All Sites")
         self.site_combo.addItem("All Sites", None)
         filter_layout.addRow("Site:", self.site_combo)
         
         # User filter
         self.user_combo = QtWidgets.QComboBox()
+        self.user_combo.setEditable(True)
+        self.user_combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
+        self.user_combo.lineEdit().setPlaceholderText("All Users")
         self.user_combo.addItem("All Users", None)
         filter_layout.addRow("User:", self.user_combo)
         

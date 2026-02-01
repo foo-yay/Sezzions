@@ -36,6 +36,8 @@ class DailySessionsTab(QtWidgets.QWidget):
         self.sort_reverse = False
         self._last_sessions = []
         self._suppress_header_menu = False
+        
+        # Build columns list based on tax withholding feature state
         self.columns = [
             "Date/User/Site",
             "Game",
@@ -43,10 +45,20 @@ class DailySessionsTab(QtWidgets.QWidget):
             "Δ Basis",
             "Δ Total (SC)",
             "Net P/L",
-            "Tax Set-Aside",
-            "Details",
-            "Notes",
         ]
+        
+        # Add Tax Set-Aside column only if feature is enabled
+        self.tax_column_enabled = False
+        if hasattr(facade, 'tax_withholding_service'):
+            try:
+                config = facade.tax_withholding_service.get_config()
+                if config.enabled:
+                    self.columns.append("Tax Set-Aside")
+                    self.tax_column_enabled = True
+            except Exception:
+                pass
+        
+        self.columns.extend(["Details", "Notes"])
         
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -272,7 +284,6 @@ class DailySessionsTab(QtWidgets.QWidget):
     def _render_tree(self, data):
         self.tree.clear()
         for day in data:
-            date_tax = day.get("date_tax_withholding", 0)
             date_values = [
                 f"📅 {day['date']}",
                 "",
@@ -280,17 +291,23 @@ class DailySessionsTab(QtWidgets.QWidget):
                 self._format_currency_or_dash(day["date_basis"]),
                 self._format_delta(day["date_gameplay"]),
                 self._format_signed_currency(day["date_total"]),
-                self._format_currency_or_dash(date_tax) if date_tax > 0 else "—",
+            ]
+            
+            # Add tax column only if enabled
+            if self.tax_column_enabled:
+                date_tax = day.get("date_tax_withholding", 0)
+                date_values.append(self._format_currency_or_dash(date_tax) if date_tax > 0 else "—")
+            
+            date_values.extend([
                 f"{day['user_count']} users, {day['session_count']} sessions",
                 day["notes"],
-            ]
+            ])
             date_item = QtWidgets.QTreeWidgetItem(date_values)
             date_item.setData(0, QtCore.Qt.UserRole, {"kind": "date", "date": day["date"]})
             self._apply_status_color(date_item, day["date_total"])
             self.tree.addTopLevelItem(date_item)
 
             for user in day["users"]:
-                user_tax = user.get("tax_withholding", 0)
                 user_values = [
                     f"👤 {user['user_name']}",
                     "",
@@ -298,17 +315,23 @@ class DailySessionsTab(QtWidgets.QWidget):
                     self._format_currency_or_dash(user["basis"]),
                     self._format_delta(user["gameplay"]),
                     self._format_signed_currency(user["total"]),
-                    self._format_currency_or_dash(user_tax) if user_tax > 0 else "—",
+                ]
+                
+                # Add tax column only if enabled
+                if self.tax_column_enabled:
+                    user_tax = user.get("tax_withholding", 0)
+                    user_values.append(self._format_currency_or_dash(user_tax) if user_tax > 0 else "—")
+                
+                user_values.extend([
                     f"{len(user['sites'])} sites, {sum(len(site['sessions']) for site in user['sites'])} sessions",
                     "",
-                ]
+                ])
                 user_item = QtWidgets.QTreeWidgetItem(user_values)
                 user_item.setData(0, QtCore.Qt.UserRole, {"kind": "user", "user_id": user["user_id"]})
                 self._apply_status_color(user_item, user["total"])
                 date_item.addChild(user_item)
 
                 for site in user["sites"]:
-                    site_tax = site.get("tax_withholding", 0)
                     site_values = [
                         f"🏢 {site['site_name']}",
                         "",
@@ -316,10 +339,17 @@ class DailySessionsTab(QtWidgets.QWidget):
                         self._format_currency_or_dash(site["basis"]),
                         self._format_delta(site["gameplay"]),
                         self._format_signed_currency(site["total"]),
-                        self._format_currency_or_dash(site_tax) if site_tax > 0 else "—",
+                    ]
+                    
+                    # Add tax column only if enabled
+                    if self.tax_column_enabled:
+                        site_tax = site.get("tax_withholding", 0)
+                        site_values.append(self._format_currency_or_dash(site_tax) if site_tax > 0 else "—")
+                    
+                    site_values.extend([
                         f"{len(site['sessions'])} sessions",
                         "",
-                    ]
+                    ])
                     site_item = QtWidgets.QTreeWidgetItem(site_values)
                     site_item.setData(0, QtCore.Qt.UserRole, {"kind": "site", "site_id": site["site_id"]})
                     self._apply_status_color(site_item, site["total"])
@@ -350,7 +380,6 @@ class DailySessionsTab(QtWidgets.QWidget):
                         # Add clock emoji for multi-day sessions
                         session_prefix = "🕐 ⤷" if is_multi_day else "⤷"
                         
-                        sess_tax = sess.get("tax_withholding_amount", 0)
                         sess_values = [
                             f"{session_prefix} {sess['game_name'] or 'Unknown'}",
                             "",
@@ -358,10 +387,17 @@ class DailySessionsTab(QtWidgets.QWidget):
                             self._format_currency_or_dash(sess["basis_consumed"]),
                             self._format_delta(sess["delta_total"]),
                             self._format_signed_currency(sess["total_taxable"]),
-                            self._format_currency_or_dash(sess_tax) if sess_tax and sess_tax > 0 else "—",
+                        ]
+                        
+                        # Add tax column only if enabled
+                        if self.tax_column_enabled:
+                            sess_tax = sess.get("tax_withholding_amount", 0)
+                            sess_values.append(self._format_currency_or_dash(sess_tax) if sess_tax and sess_tax > 0 else "—")
+                        
+                        sess_values.extend([
                             time_range,
                             sess["notes"],
-                        ]
+                        ])
                         sess_item = QtWidgets.QTreeWidgetItem(sess_values)
                         sess_item.setData(
                             0,
@@ -432,13 +468,17 @@ class DailySessionsTab(QtWidgets.QWidget):
             return self._format_delta(sess["delta_total"])
         if col_index == 5:
             return self._format_signed_currency(sess["total_taxable"])
-        if col_index == 6:
-            # Tax withholding amount (only show if enabled and session has withholding data)
+        
+        # Tax column (index 6) only if feature enabled
+        if self.tax_column_enabled and col_index == 6:
             amount = sess.get("tax_withholding_amount")
             if amount is not None and amount > 0:
                 return f"${float(amount):,.2f}"
             return "—"
-        if col_index == 7:
+        
+        # Adjust Details column index based on whether tax column is present
+        details_col = 7 if self.tax_column_enabled else 6
+        if col_index == details_col:
             # Check if session spans multiple days
             is_multi_day = sess.get("end_date") and sess.get("end_date") != sess.get("session_date")
             
@@ -458,7 +498,10 @@ class DailySessionsTab(QtWidgets.QWidget):
                 return f"{start_time} → Closed"
             else:
                 return f"{start_time} → Active"
-        if col_index == 8:
+        
+        # Notes column (last column, index varies based on tax column)
+        notes_col = 8 if self.tax_column_enabled else 7
+        if col_index == notes_col:
             return sess["notes"] or ""
         return ""
 
@@ -518,12 +561,21 @@ class DailySessionsTab(QtWidgets.QWidget):
                 return item["date_gameplay"]
             if self.sort_column == 5:
                 return item["date_total"]
-            if self.sort_column == 6:
+            
+            # Tax column (6) only if enabled
+            if self.tax_column_enabled and self.sort_column == 6:
                 return item.get("date_tax_withholding", 0)
-            if self.sort_column == 7:
+            
+            # Details column (varies based on tax column)
+            details_col = 7 if self.tax_column_enabled else 6
+            if self.sort_column == details_col:
                 return item["session_count"]
-            if self.sort_column == 8:
+            
+            # Notes column (last, varies based on tax column)
+            notes_col = 8 if self.tax_column_enabled else 7
+            if self.sort_column == notes_col:
                 return 1 if item["notes"] else 0
+            
             return item["date"]
 
         return sorted(data, key=sort_key, reverse=reverse)

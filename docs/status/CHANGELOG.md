@@ -12,6 +12,30 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-10
+type: fix
+areas: [ui, tax]
+summary: "Fix tax withholding UI issues (column visibility, combo boxes, custom override location)."
+files_changed:
+  - ui/tabs/daily_sessions_tab.py (conditionally show Tax Set-Aside column only when feature enabled)
+  - ui/tax_recalc_dialog.py (make Site/User dropdowns editable/searchable combo boxes)
+```
+
+Notes:
+- **Issue 1:** Tax Set-Aside column now hidden when tax withholding is disabled in Settings
+  - Column list built dynamically based on `facade.tax_withholding_service.get_config().enabled`
+  - All column index references updated to handle dynamic column presence
+  - Column width adjustments handled automatically
+- **Issue 2:** TaxRecalcDialog Site/User dropdowns converted to editable/searchable combo boxes
+  - Added `setEditable(True)` and `setInsertPolicy(NoInsert)` for type-ahead autocomplete
+  - Matches pattern used in AddPurchaseDialog
+- **Issue 3:** Custom override field location clarified
+  - Field exists in EndSessionDialog at line 3734: "Tax Withholding % (optional)"
+  - Positioned after Net P/L, before Game Type/RTP
+  - User can enter custom rate or leave blank for default
+- **Tests:** All 580 tests passing
+
+```yaml
 id: 2026-01-31-09
 type: feature
 areas: [ui, tax]
