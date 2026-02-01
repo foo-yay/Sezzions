@@ -12,6 +12,23 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-14
+type: fix
+areas: [ui, tax]
+summary: "Reorder tax fields in EndSessionDialog to match EditClosedSessionDialog layout."
+files_changed:
+  - ui/tabs/game_sessions_tab.py (move tax fields after Game Type/Game in EndSessionDialog)
+```
+
+Notes:
+- **Purpose:** Consistent field ordering across End and Edit dialogs
+- **Change:** Tax withholding fields now positioned after Game Type/Game in EndSessionDialog
+- **Previous order:** Net P/L → Tax fields → Game Type/Game → RTP
+- **New order:** Net P/L → Game Type/Game → Tax fields → RTP
+- **Matches:** EditClosedSessionDialog layout (Session Details section)
+- **Tests:** All 580 tests passing
+
+```yaml
 id: 2026-01-31-13
 type: fix
 areas: [ui, tax]

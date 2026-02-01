@@ -3860,6 +3860,31 @@ class EndSessionDialog(QDialog):
         self.net_pl_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
         details_layout.addWidget(self.net_pl_display, row, 3)
 
+        # Left: Game Type
+        row += 1
+        game_type_label = QLabel("Game Type:")
+        game_type_label.setObjectName("FieldLabel")
+        game_type_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        details_layout.addWidget(game_type_label, row, 0)
+        
+        self.game_type_display = QLabel(self._get_game_type())
+        self.game_type_display.setObjectName("ValueChip")
+        self.game_type_display.setProperty("status", "neutral")
+        self.game_type_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        details_layout.addWidget(self.game_type_display, row, 1)
+
+        # Right: Game
+        game_label = QLabel("Game:")
+        game_label.setObjectName("FieldLabel")
+        game_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        details_layout.addWidget(game_label, row, 2)
+        
+        self.game_display = QLabel(self._get_game_name())
+        self.game_display.setObjectName("ValueChip")
+        self.game_display.setProperty("status", "neutral")
+        self.game_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        details_layout.addWidget(self.game_display, row, 3)
+
         # Left: Tax Withholding Rate (optional override)
         row += 1
         self.tax_rate_label = QLabel("Tax Withholding % (optional):")
@@ -3899,31 +3924,6 @@ class EndSessionDialog(QDialog):
         self.tax_rate_edit.setVisible(tax_enabled)
         self.tax_amount_label.setVisible(tax_enabled)
         self.tax_amount_display.setVisible(tax_enabled)
-
-        # Left: Game Type
-        row += 1
-        game_type_label = QLabel("Game Type:")
-        game_type_label.setObjectName("FieldLabel")
-        game_type_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        details_layout.addWidget(game_type_label, row, 0)
-        
-        self.game_type_display = QLabel(self._get_game_type())
-        self.game_type_display.setObjectName("ValueChip")
-        self.game_type_display.setProperty("status", "neutral")
-        self.game_type_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        details_layout.addWidget(self.game_type_display, row, 1)
-
-        # Right: Game
-        game_label = QLabel("Game:")
-        game_label.setObjectName("FieldLabel")
-        game_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        details_layout.addWidget(game_label, row, 2)
-        
-        self.game_display = QLabel(self._get_game_name())
-        self.game_display.setObjectName("ValueChip")
-        self.game_display.setProperty("status", "neutral")
-        self.game_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        details_layout.addWidget(self.game_display, row, 3)
 
         # Left: RTP (spans both columns)
         row += 1
