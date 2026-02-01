@@ -2087,12 +2087,19 @@ class EditClosedSessionDialog(QDialog):
         self.end_total_edit.textChanged.connect(self._validate_inline)
         self.end_redeem_edit.textChanged.connect(self._validate_inline)
         self.wager_edit.textChanged.connect(self._validate_inline)
+        self.tax_rate_edit.textChanged.connect(self._update_tax_withholding_display)
         
         # Connect fields that affect RTP calculation
         self.wager_edit.textChanged.connect(self._update_rtp_display)
         self.start_total_edit.textChanged.connect(self._update_rtp_display)
         self.end_total_edit.textChanged.connect(self._update_rtp_display)
         self.game_name_combo.currentTextChanged.connect(self._update_rtp_display)
+        
+        # Connect fields that affect tax withholding calculation
+        self.start_total_edit.textChanged.connect(self._update_tax_withholding_display)
+        self.end_total_edit.textChanged.connect(self._update_tax_withholding_display)
+        self.start_redeem_edit.textChanged.connect(self._update_tax_withholding_display)
+        self.end_redeem_edit.textChanged.connect(self._update_tax_withholding_display)
         
         # Set tab order: Start date -> Start time -> End Date -> End Time -> User -> Site -> 
         # Game Type -> Game Name -> Wager -> Start Total -> Start Redeem -> End total -> End redeem -> Notes -> Save
@@ -2244,6 +2251,65 @@ class EditClosedSessionDialog(QDialog):
         
         # Build final display string
         self.rtp_display.setText(f"Exp: {exp_str} / Act: {act_str} / Session: {session_str}")
+    
+    def _update_tax_withholding_display(self):
+        """Update tax withholding amount display based on current inputs."""
+        if not hasattr(self.facade, 'tax_withholding_service'):
+            return
+        
+        try:
+            config = self.facade.tax_withholding_service.get_config()
+            if not config.enabled:
+                self.tax_amount_display.setText("—")
+                self.tax_amount_display.setProperty("status", "neutral")
+                return
+            
+            # Calculate net P/L from current inputs
+            start_total_str = self.start_total_edit.text().strip()
+            end_total_str = self.end_total_edit.text().strip()
+            start_redeem_str = self.start_redeem_edit.text().strip()
+            end_redeem_str = self.end_redeem_edit.text().strip()
+            
+            if not all([start_total_str, end_total_str, start_redeem_str, end_redeem_str]):
+                self.tax_amount_display.setText("—")
+                self.tax_amount_display.setProperty("status", "neutral")
+                return
+            
+            from decimal import Decimal
+            start_total = Decimal(start_total_str)
+            end_total = Decimal(end_total_str)
+            start_redeem = Decimal(start_redeem_str)
+            end_redeem = Decimal(end_redeem_str)
+            
+            delta_total = end_total - start_total
+            delta_redeem = end_redeem - start_redeem
+            basis_consumed = max(Decimal(0), delta_redeem)
+            net_pl = delta_total - basis_consumed
+            
+            # Get custom rate or default
+            rate_text = self.tax_rate_edit.text().strip()
+            if rate_text:
+                try:
+                    rate_pct = Decimal(rate_text)
+                    if rate_pct < 0 or rate_pct > 100:
+                        self.tax_amount_display.setText("Invalid rate")
+                        self.tax_amount_display.setProperty("status", "error")
+                        return
+                except Exception:
+                    self.tax_amount_display.setText("Invalid rate")
+                    self.tax_amount_display.setProperty("status", "error")
+                    return
+            else:
+                rate_pct = Decimal(str(config.default_rate_pct))
+            
+            # Compute withholding
+            amount = self.facade.tax_withholding_service.compute_amount(net_pl, rate_pct)
+            self.tax_amount_display.setText(f"${float(amount):,.2f}")
+            self.tax_amount_display.setProperty("status", "neutral")
+            
+        except Exception:
+            self.tax_amount_display.setText("—")
+            self.tax_amount_display.setProperty("status", "neutral")
     
     def _update_balance_check(self):
         """Update balance check display with proper calculation"""
@@ -2538,6 +2604,20 @@ class EditClosedSessionDialog(QDialog):
         
         notes = self.notes_edit.toPlainText().strip()
         
+        # Capture tax withholding fields (optional custom rate)
+        tax_rate_pct = None
+        tax_is_custom = False
+        rate_text = self.tax_rate_edit.text().strip()
+        if rate_text:
+            try:
+                rate_val = Decimal(rate_text)
+                if rate_val < 0 or rate_val > 100:
+                    return None, "Tax withholding rate must be between 0 and 100."
+                tax_rate_pct = rate_val
+                tax_is_custom = True
+            except Exception:
+                return None, "Invalid tax withholding rate."
+        
         return {
             "session_date": start_date,
             "start_time": start_time,
@@ -2553,6 +2633,8 @@ class EditClosedSessionDialog(QDialog):
             "ending_redeemable_sc": Decimal(str(end_redeem)),
             "wager_amount": wager_amount,
             "notes": notes,
+            "tax_withholding_rate_pct": tax_rate_pct,
+            "tax_withholding_is_custom": tax_is_custom,
         }, None
     
     def _validate_inline(self):
@@ -2747,8 +2829,14 @@ class EditClosedSessionDialog(QDialog):
             self.setMinimumHeight(830)
             self.resize(self.width(), 830)
         
+        # Load tax withholding custom rate if present
+        if hasattr(self.session, 'tax_withholding_is_custom') and self.session.tax_withholding_is_custom:
+            if hasattr(self.session, 'tax_withholding_rate_pct') and self.session.tax_withholding_rate_pct is not None:
+                self.tax_rate_edit.setText(str(float(self.session.tax_withholding_rate_pct)))
+        
         self._update_balance_check()
         self._update_rtp_display()
+        self._update_tax_withholding_display()
 
 
 class ViewSessionDialog(QDialog):

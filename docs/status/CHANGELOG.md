@@ -12,6 +12,31 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-11
+type: fix
+areas: [ui, tax]
+summary: "Fix tax recalc dialog dropdowns and add EditClosedSessionDialog tax fields."
+files_changed:
+  - ui/tax_recalc_dialog.py (use placeholder text for Site/User combo boxes, handle empty selections as 'all')
+  - ui/tabs/game_sessions_tab.py (add tax withholding fields to EditClosedSessionDialog with real-time calculation)
+```
+
+Notes:
+- **Issue 1:** Site/User dropdowns in tax recalc dialog now populate correctly
+  - Removed "All Sites" and "All Users" as items in combo boxes
+  - Made them placeholder text only (displayed when combo box is empty)
+  - Empty/blank selection now treated as "all" (null filter)
+  - `_on_recalculate()` handles empty `currentText()` by checking item data by text
+- **Issue 2:** EditClosedSessionDialog now has full tax withholding override support
+  - Added `tax_rate_edit` (optional % override input) and `tax_amount_display` (computed amount display)
+  - Added `_update_tax_withholding_display()` method for real-time calculation as user edits balances
+  - Connected all relevant fields (start_total, end_total, start_redeem, end_redeem) to trigger tax updates
+  - Modified `_load_session()` to load existing custom rate if `tax_withholding_is_custom` is true
+  - Modified `collect_data()` to persist custom rate and is_custom flag
+  - UI layout matches EndSessionDialog pattern
+- **Tests:** All 580 tests passing
+
+```yaml
 id: 2026-01-31-10
 type: fix
 areas: [ui, tax]

@@ -54,7 +54,6 @@ class TaxRecalcDialog(QtWidgets.QDialog):
         self.site_combo.setEditable(True)
         self.site_combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
         self.site_combo.lineEdit().setPlaceholderText("All Sites")
-        self.site_combo.addItem("All Sites", None)
         filter_layout.addRow("Site:", self.site_combo)
         
         # User filter
@@ -62,7 +61,6 @@ class TaxRecalcDialog(QtWidgets.QDialog):
         self.user_combo.setEditable(True)
         self.user_combo.setInsertPolicy(QtWidgets.QComboBox.InsertPolicy.NoInsert)
         self.user_combo.lineEdit().setPlaceholderText("All Users")
-        self.user_combo.addItem("All Users", None)
         filter_layout.addRow("User:", self.user_combo)
         
         layout.addWidget(filter_group)
@@ -128,14 +126,18 @@ class TaxRecalcDialog(QtWidgets.QDialog):
             return
         
         # Confirm
-        site_text = self.site_combo.currentText()
-        user_text = self.user_combo.currentText()
+        site_text = self.site_combo.currentText().strip()
+        user_text = self.user_combo.currentText().strip()
         overwrite = self.overwrite_custom_checkbox.isChecked()
+        
+        # If text is empty or doesn't match any item, treat as "All"
+        site_display = site_text if site_text else "All Sites"
+        user_display = user_text if user_text else "All Users"
         
         confirm_msg = (
             f"This will recalculate tax withholding for closed sessions:\n"
-            f"  • Site: {site_text}\n"
-            f"  • User: {user_text}\n"
+            f"  • Site: {site_display}\n"
+            f"  • User: {user_display}\n"
             f"  • Overwrite custom rates: {'Yes' if overwrite else 'No'}\n\n"
             f"Historical values will be overwritten. Continue?"
         )
@@ -146,9 +148,22 @@ class TaxRecalcDialog(QtWidgets.QDialog):
         if reply != QtWidgets.QMessageBox.StandardButton.Yes:
             return
         
-        # Execute
+        # Execute - get ID from currentData() or find by text, None = all
         site_id = self.site_combo.currentData()
         user_id = self.user_combo.currentData()
+        
+        # If currentData is None but we have text, find the ID
+        if site_id is None and site_text:
+            for i in range(self.site_combo.count()):
+                if self.site_combo.itemText(i).lower() == site_text.lower():
+                    site_id = self.site_combo.itemData(i)
+                    break
+        
+        if user_id is None and user_text:
+            for i in range(self.user_combo.count()):
+                if self.user_combo.itemText(i).lower() == user_text.lower():
+                    user_id = self.user_combo.itemData(i)
+                    break
         
         try:
             self.updated_count = self.facade.tax_withholding_service.bulk_recalculate(
