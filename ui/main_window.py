@@ -52,6 +52,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # This avoids affecting the tab layout or minimum window size.
         self._notification_bell = NotificationBellWidget(self.main_content)
         self._notification_bell.clicked.connect(self._show_notification_center)
+        self._notification_bell.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._notification_bell.raise_()
 
         # Settings gear overlay (pinned to the right of the notification bell)
@@ -59,7 +60,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self._settings_gear.setObjectName("SettingsGearButton")
         self._settings_gear.setFixedSize(30, 30)
         self._settings_gear.setToolTip("Settings")
-        self._settings_gear.setStyleSheet("font-size: 16px;")
+        self._settings_gear.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: none;
+                font-size: 16px;
+            }
+            QPushButton:hover {
+                background: rgba(0, 0, 0, 0.05);
+                border-radius: 4px;
+            }
+        """)
+        self._settings_gear.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._settings_gear.clicked.connect(self._show_settings_dialog)
         self._settings_gear.raise_()
 
@@ -545,6 +557,11 @@ class MainWindow(QtWidgets.QMainWindow):
         """Change application theme"""
         self._apply_theme(theme_name)
         self.settings.set_theme(theme_name)
+        self.statusBar().showMessage(f"Theme changed to {theme_name}", 2000)
+    
+    def apply_theme(self, theme_name: str):
+        """Public method for applying theme (called by Settings dialog)"""
+        self._apply_theme(theme_name)
         self.statusBar().showMessage(f"Theme changed to {theme_name}", 2000)
     
     def _show_about(self):

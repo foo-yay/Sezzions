@@ -50,11 +50,11 @@ class SettingsDialog(QtWidgets.QDialog):
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addStretch(1)
         
-        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button = QtWidgets.QPushButton("❌ Cancel")
         self.cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(self.cancel_button)
         
-        self.save_button = QtWidgets.QPushButton("Save")
+        self.save_button = QtWidgets.QPushButton("💾 Save")
         self.save_button.clicked.connect(self._on_save)
         self.save_button.setDefault(True)
         button_layout.addWidget(self.save_button)
@@ -71,15 +71,17 @@ class SettingsDialog(QtWidgets.QDialog):
         layout = QtWidgets.QFormLayout(widget)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
+        layout.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         
         # Title
-        title = QtWidgets.QLabel("<b>Notification Settings</b>")
+        title = QtWidgets.QLabel("<b>🔔 Notification Settings</b>")
         title.setStyleSheet("font-size: 14pt;")
         layout.addRow(title)
         
         # Redemption pending-receipt threshold
-        threshold_label = QtWidgets.QLabel("Pending receipt threshold (days):")
+        threshold_label = QtWidgets.QLabel("Pending receipt threshold:")
         threshold_label.setToolTip("Redemptions without a receipt date older than this will trigger a notification.")
+        threshold_label.setStyleSheet("color: palette(mid);")
         self.redemption_threshold_spin = QtWidgets.QSpinBox()
         self.redemption_threshold_spin.setMinimum(0)
         self.redemption_threshold_spin.setMaximum(365)
@@ -105,17 +107,19 @@ class SettingsDialog(QtWidgets.QDialog):
         layout = QtWidgets.QFormLayout(widget)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
+        layout.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         
         # Title
-        title = QtWidgets.QLabel("<b>Display Settings</b>")
+        title = QtWidgets.QLabel("<b>🎨 Display Settings</b>")
         title.setStyleSheet("font-size: 14pt;")
         layout.addRow(title)
         
         # Theme selector
         theme_label = QtWidgets.QLabel("Color Theme:")
         theme_label.setToolTip("Select the application color theme")
+        theme_label.setStyleSheet("color: palette(mid);")
         self.theme_combo = QtWidgets.QComboBox()
-        self.theme_combo.addItems(["Light", "Blue", "macOS"])
+        self.theme_combo.addItems(["Light", "Dark", "Blue"])
         layout.addRow(theme_label, self.theme_combo)
         
         # Info label
@@ -135,7 +139,7 @@ class SettingsDialog(QtWidgets.QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
         
-        title = QtWidgets.QLabel("<b>Tax Settings</b>")
+        title = QtWidgets.QLabel("<b>💰 Tax Settings</b>")
         title.setStyleSheet("font-size: 14pt;")
         layout.addWidget(title)
         
