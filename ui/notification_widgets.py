@@ -45,25 +45,29 @@ class NotificationBellWidget(QPushButton):
             painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
             
             # Badge position (top-right corner)
-            badge_size = 16
-            badge_x = self.width() - badge_size - 1
-            badge_y = 1
+            badge_size = 14
+            badge_margin = 2
+            badge_x = self.width() - badge_size - badge_margin
+            badge_y = badge_margin
+            badge_rect = QRect(badge_x, badge_y, badge_size, badge_size)
             
             # Draw red circle
             painter.setBrush(QColor(220, 50, 50))
-            painter.setPen(QPen(QColor(255, 255, 255), 2))
-            painter.drawEllipse(badge_x, badge_y, badge_size, badge_size)
+            painter.setPen(QPen(QColor(255, 255, 255), 1))
+            painter.drawEllipse(badge_rect)
             
             # Draw count text
             painter.setPen(QColor(255, 255, 255))
             font = QFont()
             font.setBold(True)
-            font.setPixelSize(10)
+            font.setPixelSize(9)
             painter.setFont(font)
             
             count_text = str(self._unread_count) if self._unread_count < 100 else "99+"
-            text_rect = QRect(badge_x, badge_y, badge_size, badge_size)
-            painter.drawText(text_rect, Qt.AlignCenter, count_text)
+            if len(count_text) >= 3:
+                font.setPixelSize(8)
+                painter.setFont(font)
+            painter.drawText(badge_rect, Qt.AlignCenter, count_text)
 
 
 class NotificationItemWidget(QFrame):
