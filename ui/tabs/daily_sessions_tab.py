@@ -272,7 +272,20 @@ class DailySessionsTab(QtWidgets.QWidget):
         )
         self._last_sessions = list(self.sessions)
         sessions = self._filter_sessions(self.sessions)
-        data = self.facade.daily_sessions_service.group_sessions(sessions)
+        
+        # Fetch daily tax data from daily_sessions table
+        daily_tax_data = {}
+        if hasattr(self.facade, 'daily_sessions_service'):
+            try:
+                daily_tax_data = self.facade.daily_sessions_service.fetch_daily_tax_data(
+                    selected_users=sorted(self.selected_users) if self.selected_users else None,
+                    selected_sites=sorted(self.selected_sites) if self.selected_sites else None,
+                    active_date_filter=(start_date, end_date),
+                )
+            except Exception as e:
+                print(f"Warning: Could not fetch daily tax data: {e}")
+        
+        data = self.facade.daily_sessions_service.group_sessions(sessions, daily_tax_data)
         data = self._sort_data(data)
         self._render_tree(data)
         self._update_action_buttons()
@@ -384,10 +397,10 @@ class DailySessionsTab(QtWidgets.QWidget):
                         self._format_signed_currency(site["total"]),
                     ]
                     
-                    # Add tax column only if enabled
+                    # Tax withholding is not shown at site level
+                    # (it's only calculated and displayed at the daily user level)
                     if self.tax_column_enabled:
-                        site_tax = site.get("tax_withholding", 0)
-                        site_values.append(self._format_currency_or_dash(site_tax) if site_tax > 0 else "—")
+                        site_values.append("—")
                     
                     site_values.extend([
                         f"{len(site['sessions'])} sessions",
@@ -432,10 +445,10 @@ class DailySessionsTab(QtWidgets.QWidget):
                             self._format_signed_currency(sess["total_taxable"]),
                         ]
                         
-                        # Add tax column only if enabled
+                        # Tax withholding is not shown at individual session level
+                        # (it's only calculated and displayed at the daily user level)
                         if self.tax_column_enabled:
-                            sess_tax = sess.get("tax_withholding_amount", 0)
-                            sess_values.append(self._format_currency_or_dash(sess_tax) if sess_tax and sess_tax > 0 else "—")
+                            sess_values.append("—")
                         
                         sess_values.extend([
                             time_range,

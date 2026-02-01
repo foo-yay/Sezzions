@@ -45,9 +45,6 @@ class DailySessionsService:
                 COALESCE(gs.ending_redeemable, gs.ending_balance) as ending_redeem,
                 COALESCE(gs.basis_consumed, gs.session_basis) as basis_consumed,
                 COALESCE(gs.net_taxable_pl, 0) as total_taxable,
-                gs.tax_withholding_amount,
-                gs.tax_withholding_rate_pct,
-                gs.tax_withholding_is_custom,
                 gs.notes
             FROM game_sessions gs
             JOIN users u ON gs.user_id = u.id
@@ -163,15 +160,72 @@ class DailySessionsService:
                     "delta_redeem": delta_redeem,
                     "basis_consumed": basis_consumed,
                     "total_taxable": total_taxable,
-                    "tax_withholding_amount": float(row["tax_withholding_amount"] or 0.0),
-                    "tax_withholding_rate_pct": float(row["tax_withholding_rate_pct"] or 0.0) if row["tax_withholding_rate_pct"] is not None else None,
-                    "tax_withholding_is_custom": bool(row["tax_withholding_is_custom"]) if row["tax_withholding_is_custom"] is not None else False,
                     "notes": notes,
                     "search_blob": search_blob,
                 }
             )
 
         return sessions
+
+    def fetch_daily_tax_data(
+        self,
+        selected_users: Optional[Iterable[str]] = None,
+        selected_sites: Optional[Iterable[str]] = None,
+        active_date_filter: Tuple[Optional[date_type], Optional[date_type]] = (None, None),
+    ) -> Dict[Tuple[str, int], Dict]:
+        """
+        Fetch tax withholding data from daily_sessions table.
+        Returns dict keyed by (session_date, user_id) with tax data.
+        """
+        if not self._table_exists("daily_sessions"):
+            return {}
+
+        query = """
+            SELECT
+                ds.session_date,
+                ds.user_id,
+                ds.tax_withholding_rate_pct,
+                ds.tax_withholding_is_custom,
+                ds.tax_withholding_amount
+            FROM daily_sessions ds
+            WHERE 1=1
+        """
+        params = []
+
+        if selected_users:
+            user_list = list(selected_users)
+            if user_list:
+                placeholders = ",".join("?" * len(user_list))
+                query += f" AND ds.user_id IN ({placeholders})"
+                params.extend(user_list)
+
+        if selected_sites:
+            site_list = list(selected_sites)
+            if site_list:
+                placeholders = ",".join("?" * len(site_list))
+                query += f" AND ds.site_id IN ({placeholders})"
+                params.extend(site_list)
+
+        start_date, end_date = active_date_filter
+        if start_date:
+            query += " AND ds.session_date >= ?"
+            params.append(start_date.isoformat())
+        if end_date:
+            query += " AND ds.session_date <= ?"
+            params.append(end_date.isoformat())
+
+        rows = self.db.fetch_all(query, tuple(params))
+
+        result = {}
+        for row in rows:
+            key = (row["session_date"], row["user_id"])
+            result[key] = {
+                "tax_withholding_rate_pct": float(row["tax_withholding_rate_pct"] or 0.0) if row["tax_withholding_rate_pct"] is not None else None,
+                "tax_withholding_is_custom": bool(row["tax_withholding_is_custom"]) if row["tax_withholding_is_custom"] is not None else False,
+                "tax_withholding_amount": float(row["tax_withholding_amount"] or 0.0),
+            }
+
+        return result
 
     def fetch_notes_for_dates(self, dates: Iterable[str]) -> Dict[str, str]:
         dates = list(dates)
@@ -227,8 +281,11 @@ class DailySessionsService:
             (notes if notes else None, session_date),
         )
 
-    def group_sessions(self, sessions: List[Dict]) -> List[Dict]:
+    def group_sessions(self, sessions: List[Dict], daily_tax_data: Optional[Dict] = None) -> List[Dict]:
         from collections import defaultdict
+
+        if daily_tax_data is None:
+            daily_tax_data = {}
 
         dates = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         for sess in sessions:
@@ -252,7 +309,11 @@ class DailySessionsService:
                 user_delta_redeem = sum(sess["delta_redeem"] or 0.0 for sess in all_user_sessions)
                 user_basis = sum(sess["basis_consumed"] or 0.0 for sess in all_user_sessions)
                 user_total = sum(sess["total_taxable"] for sess in all_user_sessions)
-                user_tax_withholding = sum(sess.get("tax_withholding_amount") or 0.0 for sess in all_user_sessions)
+                
+                # Get tax withholding from daily_sessions table (not from individual sessions)
+                tax_key = (session_date, user_id)
+                tax_info = daily_tax_data.get(tax_key, {})
+                user_tax_withholding = tax_info.get("tax_withholding_amount", 0.0)
                 
                 # Build sites list with grouped sessions
                 sites = []
@@ -263,7 +324,7 @@ class DailySessionsService:
                     site_delta_redeem = sum(sess["delta_redeem"] or 0.0 for sess in site_sessions)
                     site_basis = sum(sess["basis_consumed"] or 0.0 for sess in site_sessions)
                     site_total = sum(sess["total_taxable"] for sess in site_sessions)
-                    site_tax_withholding = sum(sess.get("tax_withholding_amount") or 0.0 for sess in site_sessions)
+                    # Tax withholding is at user+date level, not site level (removed site_tax_withholding)
                     sites.append(
                         {
                             "site_id": site_id,
@@ -272,7 +333,6 @@ class DailySessionsService:
                             "delta_redeem": site_delta_redeem,
                             "basis": site_basis,
                             "total": site_total,
-                            "tax_withholding": site_tax_withholding,
                             "status": "Win" if site_total >= 0 else "Loss",
                             "sessions": site_sessions,
                         }
