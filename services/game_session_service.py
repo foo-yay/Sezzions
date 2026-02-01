@@ -202,6 +202,11 @@ class GameSessionService:
                     old_start_date,
                     old_start_time,
                 )
+            
+            # Sync daily_sessions when closing a session
+            if target_status == "Closed" and old_status != "Closed":
+                self._sync_daily_sessions_for_pair(session.user_id, session.site_id, session.session_date)
+            
             refreshed = self.session_repo.get_by_id(session_id)
             if refreshed:
                 self._sync_game_rtp(
@@ -792,6 +797,49 @@ class GameSessionService:
                 delta_delta = new_delta_val - old_delta_val
                 if wager_delta or delta_delta:
                     self.update_game_rtp_incremental(new_game_id, wager_delta, delta_delta, new_session=False)
+
+    def _sync_daily_sessions_for_pair(self, user_id: int, site_id: int, session_date: date) -> None:
+        """Synchronize daily_sessions entry for a specific date+user when session is closed.
+        
+        Uses INSERT OR REPLACE to handle both new and existing rows.
+        Preserves custom tax rates and notes if they already exist.
+        """
+        # Check if daily_sessions table exists first (for tests/old DBs)
+        cursor = self.session_repo.db._connection.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_sessions'")
+        if not cursor.fetchone():
+            return  # Table doesn't exist, skip sync
+        
+        self.session_repo.db.execute(
+            """
+            INSERT OR REPLACE INTO daily_sessions (
+                session_date, 
+                user_id, 
+                net_daily_pnl, 
+                num_game_sessions,
+                tax_withholding_rate_pct,
+                tax_withholding_is_custom,
+                tax_withholding_amount,
+                notes
+            )
+            SELECT 
+                gs.session_date,
+                gs.user_id,
+                SUM(COALESCE(gs.net_taxable_pl, 0)) as net_daily_pnl,
+                COUNT(*) as num_game_sessions,
+                COALESCE(ds.tax_withholding_rate_pct, NULL) as tax_withholding_rate_pct,
+                COALESCE(ds.tax_withholding_is_custom, 0) as tax_withholding_is_custom,
+                COALESCE(ds.tax_withholding_amount, NULL) as tax_withholding_amount,
+                COALESCE(ds.notes, '') as notes
+            FROM game_sessions gs
+            LEFT JOIN daily_sessions ds ON gs.session_date = ds.session_date AND gs.user_id = ds.user_id
+            WHERE gs.status = 'Closed' 
+              AND gs.user_id = ? 
+              AND gs.session_date = ?
+            GROUP BY gs.session_date, gs.user_id
+            """,
+            (user_id, session_date)
+        )
 
     def update_game_rtp_incremental(
         self,
