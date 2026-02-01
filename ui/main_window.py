@@ -61,10 +61,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._settings_gear.setText("⚙")
         self._settings_gear.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
         self._settings_gear.setAutoRaise(True)
-        self._settings_gear.setFixedSize(32, 32)
+        # Match the notification bell sizing exactly for visual alignment.
+        self._settings_gear.setFixedSize(30, 30)
         self._settings_gear.setToolTip("Settings")
         gear_font = QtGui.QFont("Apple Color Emoji")
-        gear_font.setPixelSize(17)
+        gear_font.setPixelSize(16)
         self._settings_gear.setFont(gear_font)
         self._settings_gear.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         self._settings_gear.setStyleSheet(
