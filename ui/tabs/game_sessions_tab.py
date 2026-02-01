@@ -1685,7 +1685,7 @@ class EditClosedSessionDialog(QDialog):
 
         self.setWindowTitle("Edit Closed Session")
         self.setMinimumWidth(750)
-        self.setMinimumHeight(620)
+        self.setMinimumHeight(700)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -1799,6 +1799,17 @@ class EditClosedSessionDialog(QDialog):
         self.balance_check_display.setWordWrap(True)
         self.balance_check_display.setProperty("status", "neutral")
         self.balance_check_display.setToolTip(balance_tooltip)
+
+        # Tax Withholding fields (optional override)
+        self.tax_rate_edit = QLineEdit()
+        self.tax_rate_edit.setPlaceholderText("Leave blank for default")
+        self.tax_amount_display = QLabel("—")
+        self.tax_amount_display.setObjectName("ValueChip")
+        self.tax_amount_display.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.tax_amount_display.setFixedHeight(28)
+        self.tax_amount_display.setProperty("status", "neutral")
+        self.tax_amount_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.tax_amount_display.setCursor(Qt.IBeamCursor)
 
         self.end_total_edit = QLineEdit()
         self.end_total_edit.setPlaceholderText("0.00")
@@ -1936,29 +1947,35 @@ class EditClosedSessionDialog(QDialog):
         
         row += 1
         
-        # Left Column - Wager
-        wager_label = QLabel("Wager:")
-        wager_label.setObjectName("FieldLabel")
-        wager_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        session_grid.addWidget(wager_label, row, 0)
-        self.wager_edit.setFixedWidth(140)
-        session_grid.addWidget(self.wager_edit, row, 1)
+        # Left Column - Tax Withholding % (optional override)
+        self.tax_rate_label = QLabel("Tax Withholding % (optional):")
+        self.tax_rate_label.setObjectName("FieldLabel")
+        self.tax_rate_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.tax_rate_label.setToolTip("Optional: override default rate for this session (leave blank to use default)")
+        session_grid.addWidget(self.tax_rate_label, row, 0)
+        self.tax_rate_edit.setFixedWidth(140)
+        session_grid.addWidget(self.tax_rate_edit, row, 1)
         
-        # Right Column - RTP Display with help button
-        rtp_label = QLabel("RTP:")
-        rtp_label.setObjectName("FieldLabel")
-        rtp_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        session_grid.addWidget(rtp_label, row, 2)
+        # Right Column - Tax Withholding Amount (computed, read-only)
+        self.tax_amount_label = QLabel("Tax Withholding (est.):")
+        self.tax_amount_label.setObjectName("FieldLabel")
+        self.tax_amount_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        session_grid.addWidget(self.tax_amount_label, row, 2)
+        self.tax_amount_display.setToolTip("Estimated tax set-aside (not legal/tax advice)")
+        session_grid.addWidget(self.tax_amount_display, row, 3)
         
-        # RTP container with display and help button
-        rtp_container = QWidget()
-        rtp_layout = QHBoxLayout(rtp_container)
-        rtp_layout.setContentsMargins(0, 0, 0, 0)
-        rtp_layout.setSpacing(6)
-        rtp_layout.addWidget(self.rtp_display)
-        rtp_layout.addWidget(self.rtp_help_btn, 0, Qt.AlignVCenter)
-        rtp_layout.addStretch(1)
-        session_grid.addWidget(rtp_container, row, 3)
+        # Check if tax withholding is enabled and hide/show fields accordingly
+        tax_enabled = False
+        if hasattr(self.facade, 'tax_withholding_service'):
+            try:
+                config = self.facade.tax_withholding_service.get_config()
+                tax_enabled = config.enabled
+            except Exception:
+                pass
+        self.tax_rate_label.setVisible(tax_enabled)
+        self.tax_rate_edit.setVisible(tax_enabled)
+        self.tax_amount_label.setVisible(tax_enabled)
+        self.tax_amount_display.setVisible(tax_enabled)
         
         session_grid.setColumnStretch(1, 1)
         session_grid.setColumnStretch(3, 1)
@@ -2025,6 +2042,32 @@ class EditClosedSessionDialog(QDialog):
         )
         balance_grid.addWidget(balance_check_label, row, 0)
         balance_grid.addWidget(self.balance_check_display, row, 1, 1, 3)
+        
+        row += 1
+        
+        # Left Column - Wager
+        wager_label = QLabel("Wager:")
+        wager_label.setObjectName("FieldLabel")
+        wager_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balance_grid.addWidget(wager_label, row, 0)
+        self.wager_edit.setFixedWidth(140)
+        balance_grid.addWidget(self.wager_edit, row, 1)
+        
+        # Right Column - RTP Display with help button
+        rtp_label = QLabel("RTP:")
+        rtp_label.setObjectName("FieldLabel")
+        rtp_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balance_grid.addWidget(rtp_label, row, 2)
+        
+        # RTP container with display and help button
+        rtp_container = QWidget()
+        rtp_layout = QHBoxLayout(rtp_container)
+        rtp_layout.setContentsMargins(0, 0, 0, 0)
+        rtp_layout.setSpacing(6)
+        rtp_layout.addWidget(self.rtp_display)
+        rtp_layout.addWidget(self.rtp_help_btn, 0, Qt.AlignVCenter)
+        rtp_layout.addStretch(1)
+        balance_grid.addWidget(rtp_container, row, 3)
         
         balance_grid.setColumnStretch(1, 1)
         balance_grid.setColumnStretch(3, 1)
@@ -3281,7 +3324,7 @@ class ViewSessionDialog(QDialog):
             if config.enabled and not is_active:
                 row += 1
                 tax_label = QLabel("Tax Set-Aside:")
-                tax_label.setStyleSheet("font-weight: normal; color: palette(mid); padding: 6px;")
+                tax_label.setStyleSheet("font-weight: bold; padding: 6px;")
                 balances_grid.addWidget(tax_label, row, 0)
 
                 # Display rate used and amount
@@ -3819,11 +3862,11 @@ class EndSessionDialog(QDialog):
 
         # Left: Tax Withholding Rate (optional override)
         row += 1
-        tax_rate_label = QLabel("Tax Withholding % (optional):")
-        tax_rate_label.setObjectName("FieldLabel")
-        tax_rate_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        tax_rate_label.setToolTip("Optional: override default rate for this session (leave blank to use default)")
-        details_layout.addWidget(tax_rate_label, row, 0)
+        self.tax_rate_label = QLabel("Tax Withholding % (optional):")
+        self.tax_rate_label.setObjectName("FieldLabel")
+        self.tax_rate_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.tax_rate_label.setToolTip("Optional: override default rate for this session (leave blank to use default)")
+        details_layout.addWidget(self.tax_rate_label, row, 0)
         
         self.tax_rate_edit = QLineEdit()
         self.tax_rate_edit.setPlaceholderText("Leave blank for default")
@@ -3832,10 +3875,10 @@ class EndSessionDialog(QDialog):
         details_layout.addWidget(self.tax_rate_edit, row, 1)
 
         # Right: Tax Withholding Amount (computed, read-only)
-        tax_amount_label = QLabel("Tax Withholding (est.):")
-        tax_amount_label.setObjectName("FieldLabel")
-        tax_amount_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        details_layout.addWidget(tax_amount_label, row, 2)
+        self.tax_amount_label = QLabel("Tax Withholding (est.):")
+        self.tax_amount_label.setObjectName("FieldLabel")
+        self.tax_amount_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        details_layout.addWidget(self.tax_amount_label, row, 2)
         
         self.tax_amount_display = QLabel("—")
         self.tax_amount_display.setObjectName("ValueChip")
@@ -3843,6 +3886,19 @@ class EndSessionDialog(QDialog):
         self.tax_amount_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.tax_amount_display.setToolTip("Estimated tax set-aside (not legal/tax advice)")
         details_layout.addWidget(self.tax_amount_display, row, 3)
+        
+        # Check if tax withholding is enabled and hide/show fields accordingly
+        tax_enabled = False
+        if hasattr(self.facade, 'tax_withholding_service'):
+            try:
+                config = self.facade.tax_withholding_service.get_config()
+                tax_enabled = config.enabled
+            except Exception:
+                pass
+        self.tax_rate_label.setVisible(tax_enabled)
+        self.tax_rate_edit.setVisible(tax_enabled)
+        self.tax_amount_label.setVisible(tax_enabled)
+        self.tax_amount_display.setVisible(tax_enabled)
 
         # Left: Game Type
         row += 1

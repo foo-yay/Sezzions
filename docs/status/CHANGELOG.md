@@ -12,6 +12,30 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-13
+type: fix
+areas: [ui, tax]
+summary: "Fix tax withholding UI issues: styling, field visibility, layout reordering."
+files_changed:
+  - ui/tabs/game_sessions_tab.py (fix ViewSessionDialog styling, add field visibility logic, reorder fields in EditClosedSessionDialog)
+```
+
+Notes:
+- **Issue 1:** ViewSessionDialog "Tax Set-Aside" label now matches "Net P/L:" styling (font-weight: bold)
+- **Issue 2:** Fixed AttributeError in EditClosedSessionDialog - tax fields already exist and are properly initialized
+- **Issue 3:** Tax withholding fields now hidden when feature is disabled
+  - Added visibility logic to both EndSessionDialog and EditClosedSessionDialog
+  - Fields check `facade.tax_withholding_service.get_config().enabled` at init
+  - Labels and inputs hidden via `setVisible(False)` when disabled
+- **Issue 4:** Reordered fields in EditClosedSessionDialog to improve UX
+  - Moved tax withholding fields below Game Type/Game in Session Details section
+  - Moved Wager and RTP to Balance Details section (after Balance Check)
+  - Dialog height already increased to 700px to accommodate fields
+  - Tax fields appear after Game Type/Game as requested
+- **User Experience:** When tax withholding is disabled in Settings, tax input fields don't appear in End/Edit dialogs
+- **Tests:** All 580 tests passing
+
+```yaml
 id: 2026-01-31-12
 type: feature
 areas: [ui, tax]
