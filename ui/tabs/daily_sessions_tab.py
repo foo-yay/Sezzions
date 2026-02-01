@@ -647,7 +647,11 @@ class DailySessionsTab(QtWidgets.QWidget):
         kind = meta.get("kind")
         has_selection = self.tree.selectionModel().hasSelection()
         
-        if kind == "date" or kind == "user":
+        if kind == "date":
+            self.notes_btn.setText("➕ Add Notes")
+            self.primary_btn_stack.setCurrentWidget(self.notes_btn)
+        elif kind == "user":
+            self.notes_btn.setText("✏️ Edit")
             self.primary_btn_stack.setCurrentWidget(self.notes_btn)
         elif kind == "session":
             self.primary_btn_stack.setCurrentWidget(self.view_btn)

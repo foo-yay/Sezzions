@@ -86,7 +86,7 @@ class TaxWithholdingService:
         config = self.get_config()
         if not config.enabled:
             # Clear any existing tax data if feature is disabled
-            self.db.execute_write(
+            self.db.execute(
                 """
                 UPDATE daily_sessions
                 SET tax_withholding_rate_pct = NULL,
