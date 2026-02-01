@@ -12,6 +12,41 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-09
+type: feature
+areas: [ui, tax]
+summary: "Complete Issue #29 deferred UI items: per-session override + Daily Sessions column."
+files_changed:
+  - ui/tabs/game_sessions_tab.py (add withholding fields to EndSessionDialog + ViewSessionDialog)
+  - ui/tabs/daily_sessions_tab.py (add Tax Set-Aside column to Daily Sessions tab)
+  - services/daily_sessions_service.py (aggregate tax_withholding_amount at date/user/site levels)
+```
+
+Notes:
+- **Purpose:** Complete Issue #29 by adding the "deferred" UI polish items (previously noted as non-blocking).
+- **Changes:**
+  - **EndSessionDialog:**
+    - Added "Tax Withholding % (optional)" input field (QLineEdit, user can override default rate).
+    - Added "Tax Withholding (est.)" display (QLabel ValueChip, shows computed amount in real-time).
+    - Fields positioned after Net P/L, before Game Type/RTP.
+    - Real-time calculation: `_update_tax_withholding_display(net_pl)` updates amount as user types.
+    - `collect_data()` now captures custom rate and sets `tax_withholding_is_custom` flag.
+  - **ViewSessionDialog:**
+    - Added read-only "Tax Set-Aside" row in Balances/Outcomes table (shows rate used, amount, and "(custom)" suffix if applicable).
+    - Only displays if feature enabled and session is closed.
+  - **Daily Sessions tab:**
+    - Added "Tax Set-Aside" column (index 6, between Net P/L and Details).
+    - Shows aggregated withholding amounts at date/user/site/session levels.
+    - Column sorting and filtering supported.
+  - **Service layer:**
+    - `daily_sessions_service.group_sessions()` now computes `tax_withholding` aggregates at user/site/date levels.
+- **Workflow:**
+  - User ends session → sees optional override rate field → can customize withholding for this session or leave blank for default.
+  - Viewing closed sessions → see tax withholding details in dialog and Daily Sessions summary.
+- **Tests:** All 580 tests passing (no new tests; UI-only additions; backend logic already tested).
+- **PR:** #34 (Issue #29 complete — Settings UI + deferred UI items)
+
+```yaml
 id: 2026-01-31-08
 type: feature
 areas: [ui, settings, tax]

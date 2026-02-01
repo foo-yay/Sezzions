@@ -246,6 +246,7 @@ class DailySessionsService:
                 user_delta_redeem = sum(sess["delta_redeem"] or 0.0 for sess in all_user_sessions)
                 user_basis = sum(sess["basis_consumed"] or 0.0 for sess in all_user_sessions)
                 user_total = sum(sess["total_taxable"] for sess in all_user_sessions)
+                user_tax_withholding = sum(sess.get("tax_withholding_amount") or 0.0 for sess in all_user_sessions)
                 
                 # Build sites list with grouped sessions
                 sites = []
@@ -256,6 +257,7 @@ class DailySessionsService:
                     site_delta_redeem = sum(sess["delta_redeem"] or 0.0 for sess in site_sessions)
                     site_basis = sum(sess["basis_consumed"] or 0.0 for sess in site_sessions)
                     site_total = sum(sess["total_taxable"] for sess in site_sessions)
+                    site_tax_withholding = sum(sess.get("tax_withholding_amount") or 0.0 for sess in site_sessions)
                     sites.append(
                         {
                             "site_id": site_id,
@@ -264,6 +266,7 @@ class DailySessionsService:
                             "delta_redeem": site_delta_redeem,
                             "basis": site_basis,
                             "total": site_total,
+                            "tax_withholding": site_tax_withholding,
                             "status": "Win" if site_total >= 0 else "Loss",
                             "sessions": site_sessions,
                         }
@@ -277,6 +280,7 @@ class DailySessionsService:
                         "delta_redeem": user_delta_redeem,
                         "basis": user_basis,
                         "total": user_total,
+                        "tax_withholding": user_tax_withholding,
                         "status": "Win" if user_total >= 0 else "Loss",
                         "sites": sites,
                     }
@@ -286,6 +290,7 @@ class DailySessionsService:
             date_delta_redeem = sum(user["delta_redeem"] for user in users)
             date_basis = sum(user["basis"] for user in users)
             date_total = sum(user["total"] for user in users)
+            date_tax_withholding = sum(user.get("tax_withholding", 0) for user in users)
             total_sessions = sum(len(site["sessions"]) for user in users for site in user["sites"])
             data.append(
                 {
@@ -294,6 +299,7 @@ class DailySessionsService:
                     "date_delta_redeem": date_delta_redeem,
                     "date_basis": date_basis,
                     "date_total": date_total,
+                    "date_tax_withholding": date_tax_withholding,
                     "status": "Win" if date_total >= 0 else "Loss",
                     "users": users,
                     "user_count": len(users),

@@ -3187,6 +3187,28 @@ class ViewSessionDialog(QDialog):
         net_pl_value.setStyleSheet(f"color: {net_color}; padding: 6px;")
         balances_grid.addWidget(net_pl_value, row, 1, 1, 3)
 
+        # Row: Tax Withholding (if enabled and session has withholding data)
+        if hasattr(self.facade, 'tax_withholding_service'):
+            config = self.facade.tax_withholding_service.get_config()
+            if config.enabled and not is_active:
+                row += 1
+                tax_label = QLabel("Tax Set-Aside:")
+                tax_label.setStyleSheet("font-weight: normal; color: palette(mid); padding: 6px;")
+                balances_grid.addWidget(tax_label, row, 0)
+
+                # Display rate used and amount
+                rate_used = self.session.tax_withholding_rate_pct if self.session.tax_withholding_is_custom else config.default_rate_pct
+                amount = self.session.tax_withholding_amount or Decimal(0)
+                
+                rate_suffix = " (custom)" if self.session.tax_withholding_is_custom else ""
+                tax_display = f"${float(amount):.2f} ({float(rate_used):.1f}%{rate_suffix})"
+                tax_value = QLabel(tax_display)
+                tax_value.setAlignment(Qt.AlignCenter)
+                tax_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                tax_value.setCursor(Qt.IBeamCursor)
+                tax_value.setStyleSheet("color: palette(mid); padding: 6px;")
+                balances_grid.addWidget(tax_value, row, 1, 1, 3)
+
         balances_grid.setColumnStretch(1, 1)
         balances_grid.setColumnStretch(2, 1)
         balances_grid.setColumnStretch(3, 1)
@@ -3707,6 +3729,33 @@ class EndSessionDialog(QDialog):
         self.net_pl_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
         details_layout.addWidget(self.net_pl_display, row, 3)
 
+        # Left: Tax Withholding Rate (optional override)
+        row += 1
+        tax_rate_label = QLabel("Tax Withholding % (optional):")
+        tax_rate_label.setObjectName("FieldLabel")
+        tax_rate_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        tax_rate_label.setToolTip("Optional: override default rate for this session (leave blank to use default)")
+        details_layout.addWidget(tax_rate_label, row, 0)
+        
+        self.tax_rate_edit = QLineEdit()
+        self.tax_rate_edit.setPlaceholderText("Leave blank for default")
+        self.tax_rate_edit.setFixedWidth(140)
+        self.tax_rate_edit.textChanged.connect(self._update_session_details)
+        details_layout.addWidget(self.tax_rate_edit, row, 1)
+
+        # Right: Tax Withholding Amount (computed, read-only)
+        tax_amount_label = QLabel("Tax Withholding (est.):")
+        tax_amount_label.setObjectName("FieldLabel")
+        tax_amount_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        details_layout.addWidget(tax_amount_label, row, 2)
+        
+        self.tax_amount_display = QLabel("—")
+        self.tax_amount_display.setObjectName("ValueChip")
+        self.tax_amount_display.setProperty("status", "neutral")
+        self.tax_amount_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.tax_amount_display.setToolTip("Estimated tax set-aside (not legal/tax advice)")
+        details_layout.addWidget(self.tax_amount_display, row, 3)
+
         # Left: Game Type
         row += 1
         game_type_label = QLabel("Game Type:")
@@ -4189,12 +4238,53 @@ class EndSessionDialog(QDialog):
                 self._update_value_chip(self.net_pl_display, f"${float(net_pl):,.2f}", "negative")
             else:
                 self._update_value_chip(self.net_pl_display, "$0.00", "neutral")
+
+            # Calculate and display tax withholding (if enabled)
+            self._update_tax_withholding_display(net_pl)
         else:
             self._update_value_chip(self.delta_basis_display, "—", "neutral")
             self._update_value_chip(self.net_pl_display, "—", "neutral")
+            self._update_tax_withholding_display(None)
 
         # Update RTP display
         self._update_rtp_display(delta_total, wager)
+
+    def _update_tax_withholding_display(self, net_pl):
+        """Calculate and display tax withholding estimate"""
+        if not hasattr(self.facade, 'tax_withholding_service'):
+            self._update_value_chip(self.tax_amount_display, "—", "neutral")
+            return
+
+        # Check if feature is enabled
+        config = self.facade.tax_withholding_service.get_config()
+        if not config.enabled:
+            self._update_value_chip(self.tax_amount_display, "—", "neutral")
+            return
+
+        # Get rate (custom override or default)
+        rate_text = self.tax_rate_edit.text().strip()
+        if rate_text:
+            try:
+                rate_pct = Decimal(str(float(rate_text)))
+                if rate_pct < 0 or rate_pct > 100:
+                    self._update_value_chip(self.tax_amount_display, "Invalid rate", "neutral")
+                    return
+            except (ValueError, decimal.InvalidOperation):
+                self._update_value_chip(self.tax_amount_display, "Invalid rate", "neutral")
+                return
+        else:
+            rate_pct = config.default_rate_pct
+
+        # Compute amount
+        if net_pl is None:
+            self._update_value_chip(self.tax_amount_display, "—", "neutral")
+            return
+
+        amount = self.facade.tax_withholding_service.compute_amount(net_pl, rate_pct)
+        if amount is None or amount == 0:
+            self._update_value_chip(self.tax_amount_display, "$0.00", "neutral")
+        else:
+            self._update_value_chip(self.tax_amount_display, f"${float(amount):,.2f}", "neutral")
 
     def _update_value_chip(self, label, text, status):
         """Helper to update a ValueChip label with text and status"""
@@ -4308,6 +4398,20 @@ class EndSessionDialog(QDialog):
 
         notes = self.notes_edit.toPlainText().strip()
 
+        # Capture tax withholding fields (optional custom rate)
+        tax_rate_pct = None
+        tax_is_custom = False
+        rate_text = self.tax_rate_edit.text().strip()
+        if rate_text:
+            try:
+                rate_val = Decimal(rate_text)
+                if rate_val < 0 or rate_val > 100:
+                    return None, "Tax withholding rate must be between 0 and 100."
+                tax_rate_pct = rate_val
+                tax_is_custom = True
+            except Exception:
+                return None, "Invalid tax withholding rate."
+
         return {
             "end_date": end_date,
             "end_time": end_time,
@@ -4315,5 +4419,7 @@ class EndSessionDialog(QDialog):
             "ending_redeemable_sc": Decimal(str(end_redeem)),
             "wager_amount": wager_amount,
             "notes": notes,
+            "tax_withholding_rate_pct": tax_rate_pct,
+            "tax_withholding_is_custom": tax_is_custom,
         }, None
 

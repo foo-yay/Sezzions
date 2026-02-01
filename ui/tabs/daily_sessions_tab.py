@@ -43,6 +43,7 @@ class DailySessionsTab(QtWidgets.QWidget):
             "Δ Basis",
             "Δ Total (SC)",
             "Net P/L",
+            "Tax Set-Aside",
             "Details",
             "Notes",
         ]
@@ -271,6 +272,7 @@ class DailySessionsTab(QtWidgets.QWidget):
     def _render_tree(self, data):
         self.tree.clear()
         for day in data:
+            date_tax = day.get("date_tax_withholding", 0)
             date_values = [
                 f"📅 {day['date']}",
                 "",
@@ -278,6 +280,7 @@ class DailySessionsTab(QtWidgets.QWidget):
                 self._format_currency_or_dash(day["date_basis"]),
                 self._format_delta(day["date_gameplay"]),
                 self._format_signed_currency(day["date_total"]),
+                self._format_currency_or_dash(date_tax) if date_tax > 0 else "—",
                 f"{day['user_count']} users, {day['session_count']} sessions",
                 day["notes"],
             ]
@@ -287,6 +290,7 @@ class DailySessionsTab(QtWidgets.QWidget):
             self.tree.addTopLevelItem(date_item)
 
             for user in day["users"]:
+                user_tax = user.get("tax_withholding", 0)
                 user_values = [
                     f"👤 {user['user_name']}",
                     "",
@@ -294,6 +298,7 @@ class DailySessionsTab(QtWidgets.QWidget):
                     self._format_currency_or_dash(user["basis"]),
                     self._format_delta(user["gameplay"]),
                     self._format_signed_currency(user["total"]),
+                    self._format_currency_or_dash(user_tax) if user_tax > 0 else "—",
                     f"{len(user['sites'])} sites, {sum(len(site['sessions']) for site in user['sites'])} sessions",
                     "",
                 ]
@@ -303,6 +308,7 @@ class DailySessionsTab(QtWidgets.QWidget):
                 date_item.addChild(user_item)
 
                 for site in user["sites"]:
+                    site_tax = site.get("tax_withholding", 0)
                     site_values = [
                         f"🏢 {site['site_name']}",
                         "",
@@ -310,6 +316,7 @@ class DailySessionsTab(QtWidgets.QWidget):
                         self._format_currency_or_dash(site["basis"]),
                         self._format_delta(site["gameplay"]),
                         self._format_signed_currency(site["total"]),
+                        self._format_currency_or_dash(site_tax) if site_tax > 0 else "—",
                         f"{len(site['sessions'])} sessions",
                         "",
                     ]
@@ -343,6 +350,7 @@ class DailySessionsTab(QtWidgets.QWidget):
                         # Add clock emoji for multi-day sessions
                         session_prefix = "🕐 ⤷" if is_multi_day else "⤷"
                         
+                        sess_tax = sess.get("tax_withholding_amount", 0)
                         sess_values = [
                             f"{session_prefix} {sess['game_name'] or 'Unknown'}",
                             "",
@@ -350,6 +358,7 @@ class DailySessionsTab(QtWidgets.QWidget):
                             self._format_currency_or_dash(sess["basis_consumed"]),
                             self._format_delta(sess["delta_total"]),
                             self._format_signed_currency(sess["total_taxable"]),
+                            self._format_currency_or_dash(sess_tax) if sess_tax and sess_tax > 0 else "—",
                             time_range,
                             sess["notes"],
                         ]
@@ -424,6 +433,12 @@ class DailySessionsTab(QtWidgets.QWidget):
         if col_index == 5:
             return self._format_signed_currency(sess["total_taxable"])
         if col_index == 6:
+            # Tax withholding amount (only show if enabled and session has withholding data)
+            amount = sess.get("tax_withholding_amount")
+            if amount is not None and amount > 0:
+                return f"${float(amount):,.2f}"
+            return "—"
+        if col_index == 7:
             # Check if session spans multiple days
             is_multi_day = sess.get("end_date") and sess.get("end_date") != sess.get("session_date")
             
@@ -443,7 +458,7 @@ class DailySessionsTab(QtWidgets.QWidget):
                 return f"{start_time} → Closed"
             else:
                 return f"{start_time} → Active"
-        if col_index == 7:
+        if col_index == 8:
             return sess["notes"] or ""
         return ""
 
@@ -504,8 +519,10 @@ class DailySessionsTab(QtWidgets.QWidget):
             if self.sort_column == 5:
                 return item["date_total"]
             if self.sort_column == 6:
-                return item["session_count"]
+                return item.get("date_tax_withholding", 0)
             if self.sort_column == 7:
+                return item["session_count"]
+            if self.sort_column == 8:
                 return 1 if item["notes"] else 0
             return item["date"]
 
