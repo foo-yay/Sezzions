@@ -12,6 +12,27 @@ Rules:
 ## 2026-02-01
 
 ```yaml
+id: 2026-02-01-03
+type: fix
+areas: [csv-import, services, tests]
+summary: "Fix Issue #36: User-scoped FK resolution for redemption methods and cards in CSV imports"
+files_changed:
+  - services/tools/fk_resolver.py (scope parameter, clear() method, sqlite3.Row keys() fix)
+  - services/tools/csv_import_service.py (user_id scope for redemption_methods and cards)
+  - tests/integration/test_csv_import_user_scoped_methods.py (new: 4 integration tests)
+  - tests/integration/test_csv_export_integration.py (fix: user_id column on cards table)
+branch: fix/issue-36-redemption-method-csv-user-scope
+commits: [920e1ff, 2934d14]
+pr: "#37"
+issue: "#36"
+notes: |
+  CSV imports were failing when multiple users had redemption methods with the same name
+  (e.g., 'USAA Checking'). Added scope filtering to FK resolver to match by user_id context.
+  Fixed sqlite3.Row 'in' operator bug - must use .keys() for column existence checks.
+  All 585 tests passing.
+```
+
+```yaml
 id: 2026-02-01-02
 type: feature
 areas: [tax, database, services, ui]

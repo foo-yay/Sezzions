@@ -327,6 +327,60 @@ Tools are accessible via Setup → Tools sub-tab and provide "production readine
     - Avoids QStackedWidget's tendency to reserve space for largest page
 - Reset: dialog with table counts, preserve setup data checkbox, typed confirmation
 - Automatic backup: enable toggle, directory selection, frequency spinner (1-168 hrs), status label (color-coded), test button, last backup timestamp display
+
+### 6.2 CSV Import/Export
+
+**Architecture:**
+- Schema-driven import/export using `EntitySchema` definitions
+- Foreign key resolution with user-scoped support for multi-user environments
+- Import preview with validation, duplicate detection, and conflict resolution
+- Export with FK name expansion (IDs → human-readable names)
+
+**Foreign Key Resolution (ForeignKeyResolver):**
+- **Cache-based resolution**: Loads FK tables into memory for fast lookup
+- **Name normalization**: Case-insensitive, punctuation-insensitive matching (handles quotes, hyphens, spaces)
+  - Example: "USAA Checking", "USAA-Checking", "usaa checking" all match the same record
+- **User-scoped FK resolution (Issue #36)**: Filters FK matches by context (e.g., user_id) for user-scoped tables
+  - Scope parameter: `resolve_fk(value, table, scope={'user_id': 1})`
+  - Prevents ambiguity when multiple users have methods/cards with same name
+  - Error messages include scope context: "'USAA Checking' not found in redemption_methods for user_id=1"
+  - Applied to: `redemption_methods` (by user_id), `cards` (by user_id)
+- **Ambiguity detection**: Returns error when multiple records match after normalization/scoping
+- **Technical note**: sqlite3.Row objects require `.keys()` for column existence checks (not `in` operator)
+
+**Import Workflow:**
+1. **Preview Phase** (`preview_import()`):
+   - Parse CSV using DictReader (column order independent)
+   - Resolve foreign keys with optional user-scoped filtering
+   - Validate all fields using field-specific validators
+   - Detect duplicates (exact matches by natural key)
+   - Classify records: to_add, to_update, conflicts, invalid_rows
+   - Return `ImportPreview` DTO with all classifications
+
+2. **Execution Phase** (`execute_import()`):
+   - Re-runs preview to ensure data consistency
+   - Bulk insert/update using `BulkToolsRepository`
+   - Atomic transaction (all-or-nothing)
+   - Emits data-changed event for UI refresh
+
+**Export Workflow:**
+- Query records with optional filters (date range, user, site)
+- Resolve FK IDs to names using cached lookups
+- Write CSV with human-readable column headers
+- Optional timestamp in filename: `purchases_20260201_143022.csv`
+
+**User Experience:**
+- Import dialog shows preview with tabs: Records to Add, To Update, Conflicts, Errors, CSV Duplicates
+- Color-coded validation errors (red for errors, orange for warnings)
+- Conflict resolution: skip, overwrite, or cancel modes
+- Template generation: Creates empty CSV with correct headers for each entity type
+
+**Edge Cases:**
+- CSV imports without recalculation: May create temporary data inconsistencies (e.g., `remaining_amount > amount`)
+  - Expected during multi-session imports (user hasn't imported all data yet)
+  - Solution: Run "Recalculate Everything" after completing all imports
+  - Future: Maintenance mode (Issue #38) will detect and handle integrity violations gracefully
+
 Helpful maintenance scripts:
 - Validate schema vs spec: `python3 tools/validate_schema.py`
 

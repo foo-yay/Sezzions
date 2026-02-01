@@ -56,6 +56,10 @@ class ForeignKeyResolver:
         self.db = db
         self._cache: Dict[str, Dict[str, Any]] = {}
     
+    def clear(self) -> None:
+        """Clear all cached FK lookups. Useful for tests or when database changes."""
+        self._cache.clear()
+    
     def load_cache_for_schema(self, schema: EntitySchema) -> None:
         """Load FK lookup caches for all foreign keys in schema.
         
@@ -114,7 +118,8 @@ class ForeignKeyResolver:
         self,
         value: Any,
         fk_table: str,
-        allow_create: bool = False
+        allow_create: bool = False,
+        scope: Optional[Dict[str, Any]] = None
     ) -> FKResolutionResult:
         """Resolve a foreign key value (name or ID) to database ID.
         
@@ -122,6 +127,7 @@ class ForeignKeyResolver:
             value: FK value from CSV (name or ID)
             fk_table: Target FK table name
             allow_create: Whether to allow creation of new FK records (future)
+            scope: Optional scope filters (e.g., {"user_id": 5} to filter by user)
         
         Returns:
             FKResolutionResult with resolved ID or error
@@ -162,13 +168,40 @@ class ForeignKeyResolver:
             result.error = f"'{name_str}' not found in {fk_table}. Available normalized keys: {', '.join(available[:5])}" if available else f"'{name_str}' not found in {fk_table} (table appears empty)"
             return result
         
-        if len(matches) == 1:
+        # Apply scope filters if provided (e.g., filter by user_id)
+        if scope:
+            filtered_matches = []
+            for match in matches:
+                # Check all scope criteria
+                match_passes = True
+                for scope_key, scope_value in scope.items():
+                    # Note: sqlite3.Row requires .keys() for 'in' check
+                    if scope_key not in match.keys() or match[scope_key] != scope_value:
+                        match_passes = False
+                        break
+                if match_passes:
+                    filtered_matches.append(match)
+            matches = filtered_matches
+        
+        if len(matches) == 0:
+            # Not found (possibly after scope filtering)
+            if scope:
+                scope_desc = ', '.join(f"{k}={v}" for k, v in scope.items())
+                result.error = f"'{name_str}' not found in {fk_table} for {scope_desc}"
+            else:
+                result.error = f"'{name_str}' not found in {fk_table}"
+            return result
+        elif len(matches) == 1:
             # Unique match - success
             result.resolved_id = matches[0]['id']
             return result
         elif len(matches) > 1:
-            # Ambiguous - multiple records with same name
-            result.error = f"'{name_str}' is ambiguous in {fk_table} (found {len(matches)} matches)"
+            # Ambiguous - multiple records with same name (even after scope filtering)
+            if scope:
+                scope_desc = ', '.join(f"{k}={v}" for k, v in scope.items())
+                result.error = f"'{name_str}' is ambiguous in {fk_table} for {scope_desc} (found {len(matches)} matches)"
+            else:
+                result.error = f"'{name_str}' is ambiguous in {fk_table} (found {len(matches)} matches)"
             result.ambiguous_matches = matches
             return result
         

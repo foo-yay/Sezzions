@@ -85,7 +85,9 @@ class SimpleDB:
             CREATE TABLE cards (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
-                is_active INTEGER DEFAULT 1
+                user_id INTEGER NOT NULL,
+                is_active INTEGER DEFAULT 1,
+                FOREIGN KEY (user_id) REFERENCES users(id)
             )
         """)
         
@@ -114,7 +116,7 @@ class SimpleDB:
         # Insert reference data
         cursor.execute("INSERT INTO users (id, name) VALUES (1, 'Test User')")
         cursor.execute("INSERT INTO sites (id, name) VALUES (1, 'Test Site')")
-        cursor.execute("INSERT INTO cards (id, name) VALUES (1, 'Test Card')")
+        cursor.execute("INSERT INTO cards (id, name, user_id) VALUES (1, 'Test Card', 1)")
         
         self.commit()
 
