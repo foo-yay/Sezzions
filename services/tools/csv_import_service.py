@@ -180,8 +180,16 @@ class CSVImportService:
                 records_added=0,
                 records_updated=0,
                 records_skipped=0,
-                errors=[str(error) for error in preview.invalid_rows if error.severity == ValidationSeverity.ERROR],
-                warnings=[str(error) for error in preview.invalid_rows if error.severity == ValidationSeverity.WARNING]
+                errors=[
+                    str(error)
+                    for error in [*preview.invalid_rows, *preview.csv_duplicates]
+                    if error.severity == ValidationSeverity.ERROR
+                ],
+                warnings=[
+                    str(error)
+                    for error in [*preview.invalid_rows, *preview.csv_duplicates]
+                    if error.severity == ValidationSeverity.WARNING
+                ]
             )
         
         schema = get_schema(entity_type)
@@ -391,7 +399,14 @@ class CSVImportService:
             
             # Foreign key resolution
             if field.foreign_key and parsed_value is not None:
-                fk_result = self.fk_resolver.resolve_fk(parsed_value, field.foreign_key.table)
+                # Build scope for user-scoped FK tables (redemption_methods, cards)
+                scope = None
+                if field.foreign_key.table in ('redemption_methods', 'cards'):
+                    # Scope by user_id if it's already been resolved in this row
+                    if 'user_id' in record and record['user_id'] is not None:
+                        scope = {'user_id': record['user_id']}
+                
+                fk_result = self.fk_resolver.resolve_fk(parsed_value, field.foreign_key.table, scope=scope)
                 if fk_result.success:
                     record[field.db_column] = fk_result.resolved_id
                 else:
