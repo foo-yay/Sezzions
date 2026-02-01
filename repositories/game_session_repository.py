@@ -50,9 +50,9 @@ class GameSessionRepository:
             session_basis=safe_decimal(row_value("session_basis")),
             basis_consumed=safe_decimal(row_value("basis_consumed")),
             net_taxable_pl=safe_decimal(row_value("net_taxable_pl")),
-            tax_withholding_rate_pct=safe_decimal(row_value("tax_withholding_rate_pct"), default=None),
-            tax_withholding_is_custom=bool(row_value("tax_withholding_is_custom", 0)),
-            tax_withholding_amount=safe_decimal(row_value("tax_withholding_amount"), default=None),
+            tax_withholding_rate_pct=None,
+            tax_withholding_is_custom=False,
+            tax_withholding_amount=None,
             status=row_value("status", "Active"),
             notes=row["notes"] or "",
             created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
@@ -139,9 +139,8 @@ class GameSessionRepository:
                 expected_start_total, expected_start_redeemable,
                 discoverable_sc, delta_total, delta_redeem,
                 session_basis, basis_consumed, net_taxable_pl,
-                tax_withholding_rate_pct, tax_withholding_is_custom, tax_withholding_amount,
                 status, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         def str_or_none(val):
             return str(val) if val is not None else None
@@ -165,9 +164,6 @@ class GameSessionRepository:
                 str_or_none(session.session_basis),
                 str_or_none(session.basis_consumed),
                 str_or_none(session.net_taxable_pl),
-                str_or_none(session.tax_withholding_rate_pct),
-                1 if session.tax_withholding_is_custom else 0,
-                str_or_none(session.tax_withholding_amount),
                 session.status, session.notes
             )
         )
@@ -184,7 +180,6 @@ class GameSessionRepository:
                 expected_start_total = ?, expected_start_redeemable = ?,
                 discoverable_sc = ?, delta_total = ?, delta_redeem = ?,
                 session_basis = ?, basis_consumed = ?, net_taxable_pl = ?,
-                tax_withholding_rate_pct = ?, tax_withholding_is_custom = ?, tax_withholding_amount = ?,
                 status = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """
@@ -210,9 +205,6 @@ class GameSessionRepository:
                 str_or_none(session.session_basis),
                 str_or_none(session.basis_consumed),
                 str_or_none(session.net_taxable_pl),
-                str_or_none(session.tax_withholding_rate_pct),
-                1 if session.tax_withholding_is_custom else 0,
-                str_or_none(session.tax_withholding_amount),
                 session.status, session.notes, session.id
             )
         )

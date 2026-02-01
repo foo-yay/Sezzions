@@ -37,7 +37,7 @@ class TaxRecalcDialog(QtWidgets.QDialog):
         # Warning
         warning_label = QtWidgets.QLabel(
             "<b>⚠️ Warning:</b> This will <u>overwrite</u> historical withholding values "
-            "for closed sessions using the current default rate from Settings."
+            "for daily sessions using the current default rate from Settings."
         )
         warning_label.setWordWrap(True)
         warning_label.setObjectName("HelperText")
@@ -71,11 +71,11 @@ class TaxRecalcDialog(QtWidgets.QDialog):
         options_layout.setSpacing(8)
         
         self.overwrite_custom_checkbox = QtWidgets.QCheckBox(
-            "Overwrite custom session withholding rates"
+            "Overwrite custom daily withholding rates"
         )
         self.overwrite_custom_checkbox.setToolTip(
-            "If checked, sessions with user-entered custom rates will also be recalculated. "
-            "If unchecked, only sessions using the default rate will be updated."
+            "If checked, daily sessions with user-entered custom rates will also be recalculated. "
+            "If unchecked, only daily sessions using the default rate will be updated."
         )
         options_layout.addWidget(self.overwrite_custom_checkbox)
         
@@ -139,7 +139,7 @@ class TaxRecalcDialog(QtWidgets.QDialog):
         user_display = user_text if user_text else "All Users"
         
         confirm_msg = (
-            f"This will recalculate tax withholding for closed sessions:\n"
+            f"This will recalculate tax withholding for daily sessions:\n"
             f"  • Site: {site_display}\n"
             f"  • User: {user_display}\n"
             f"  • Overwrite custom rates: {'Yes' if overwrite else 'No'}\n\n"
