@@ -72,6 +72,11 @@ class NotificationBellWidget(QPushButton):
         if self._badge.isVisible():
             self._update_badge_geometry()
 
+    def raise_badge_overlay(self):
+        """Ensure the badge stays above sibling header widgets."""
+        if hasattr(self, "_badge") and self._badge is not None and self._badge.isVisible():
+            self._badge.raise_()
+
     def moveEvent(self, event):
         super().moveEvent(event)
         if self._badge.isVisible():

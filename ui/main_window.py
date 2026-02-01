@@ -201,6 +201,10 @@ class MainWindow(QtWidgets.QMainWindow):
             gear_y = bell_y + max(0, int((bell.height() - gear.height()) / 2))
             gear.move(gear_x, gear_y)
             gear.raise_()
+
+        # Keep the unread badge on top of both header buttons.
+        if hasattr(bell, "raise_badge_overlay"):
+            bell.raise_badge_overlay()
     
     def closeEvent(self, event):
         """Save settings on close"""
