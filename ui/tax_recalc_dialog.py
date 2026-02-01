@@ -106,6 +106,8 @@ class TaxRecalcDialog(QtWidgets.QDialog):
             sites = self.facade.get_all_sites()
             for site in sites:
                 self.site_combo.addItem(site.name, site.id)
+            # Set to no selection so placeholder text shows
+            self.site_combo.setCurrentIndex(-1)
         except Exception:
             pass
         
@@ -114,6 +116,8 @@ class TaxRecalcDialog(QtWidgets.QDialog):
             users = self.facade.get_all_users()
             for user in users:
                 self.user_combo.addItem(user.name, user.id)
+            # Set to no selection so placeholder text shows
+            self.user_combo.setCurrentIndex(-1)
         except Exception:
             pass
     
