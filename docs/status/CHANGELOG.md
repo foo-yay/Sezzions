@@ -12,6 +12,23 @@ Rules:
 ## 2026-01-31
 
 ```yaml
+id: 2026-01-31-16
+type: fix
+areas: [services, ui, tax]
+summary: "Include tax withholding data in daily sessions query for proper display."
+files_changed:
+  - services/daily_sessions_service.py (add tax fields to query and session dictionary)
+```
+
+Notes:
+- **Issue:** Tax withholding amounts showing as blank/not displaying in Daily Sessions tab
+- **Root cause:** Query in `fetch_sessions()` didn't include tax withholding fields from database
+- **Fix:** Added tax_withholding_amount, tax_withholding_rate_pct, and tax_withholding_is_custom to SELECT
+- **Result:** Tax Set-Aside column now displays correct amounts for all sessions
+- **EditClosedSessionDialog:** Already loads and displays tax values correctly - tax fields show custom rates and computed amounts when editing closed sessions
+- **Tests:** All 580 tests passing
+
+```yaml
 id: 2026-01-31-15
 type: fix
 areas: [ui, tax]

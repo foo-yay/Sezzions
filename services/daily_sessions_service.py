@@ -45,6 +45,9 @@ class DailySessionsService:
                 COALESCE(gs.ending_redeemable, gs.ending_balance) as ending_redeem,
                 COALESCE(gs.basis_consumed, gs.session_basis) as basis_consumed,
                 COALESCE(gs.net_taxable_pl, 0) as total_taxable,
+                gs.tax_withholding_amount,
+                gs.tax_withholding_rate_pct,
+                gs.tax_withholding_is_custom,
                 gs.notes
             FROM game_sessions gs
             JOIN users u ON gs.user_id = u.id
@@ -160,6 +163,9 @@ class DailySessionsService:
                     "delta_redeem": delta_redeem,
                     "basis_consumed": basis_consumed,
                     "total_taxable": total_taxable,
+                    "tax_withholding_amount": float(row["tax_withholding_amount"] or 0.0),
+                    "tax_withholding_rate_pct": float(row["tax_withholding_rate_pct"] or 0.0) if row["tax_withholding_rate_pct"] is not None else None,
+                    "tax_withholding_is_custom": bool(row["tax_withholding_is_custom"]) if row["tax_withholding_is_custom"] is not None else False,
                     "notes": notes,
                     "search_blob": search_blob,
                 }
