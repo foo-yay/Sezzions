@@ -61,10 +61,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._settings_gear.setText("⚙")
         self._settings_gear.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
         self._settings_gear.setAutoRaise(True)
-        self._settings_gear.setFixedSize(30, 30)
+        self._settings_gear.setFixedSize(32, 32)
         self._settings_gear.setToolTip("Settings")
         gear_font = QtGui.QFont("Apple Color Emoji")
-        gear_font.setPixelSize(15)
+        gear_font.setPixelSize(17)
         self._settings_gear.setFont(gear_font)
         self._settings_gear.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         self._settings_gear.setStyleSheet(
@@ -79,9 +79,8 @@ class MainWindow(QtWidgets.QMainWindow):
         # Reserve vertical space so the overlay bell doesn't sit on top of the tab bar.
         self._notification_bell_margin_top = 6
         self._notification_bell_margin_right = 6
-        self._notification_reserved_top = int(
-            self._notification_bell_margin_top + self._notification_bell.height() + main_layout.spacing()
-        )
+        reserved_height = max(self._notification_bell.height(), self._settings_gear.height())
+        self._notification_reserved_top = int(self._notification_bell_margin_top + reserved_height + main_layout.spacing())
         main_layout.setContentsMargins(0, self._notification_reserved_top, 0, 0)
 
         # Create main tab bar + stacked content (centered tabs)
@@ -193,7 +192,7 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Position bell at top-right (but with space for gear to its right)
         gear_spacing = 6  # space between bell and gear
-        gear_width = 30  # gear button width
+        gear_width = self._settings_gear.width() if hasattr(self, "_settings_gear") and self._settings_gear is not None else 0
         bell_x = max(0, parent.width() - inset - bell.width() - gear_spacing - gear_width - margin_right)
         bell_y = max(0, margin_top)
         bell.move(bell_x, bell_y)
@@ -203,7 +202,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self, "_settings_gear") and self._settings_gear is not None:
             gear = self._settings_gear
             gear_x = bell_x + bell.width() + gear_spacing
-            gear_y = bell_y
+            gear_y = bell_y + max(0, int((bell.height() - gear.height()) / 2))
             gear.move(gear_x, gear_y)
             gear.raise_()
     

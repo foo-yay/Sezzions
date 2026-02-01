@@ -87,7 +87,10 @@ class SettingsDialog(QtWidgets.QDialog):
         self.redemption_threshold_spin.setMinimum(0)
         self.redemption_threshold_spin.setMaximum(365)
         self.redemption_threshold_spin.setSuffix(" days")
+        threshold_label.setMinimumHeight(self.redemption_threshold_spin.sizeHint().height())
         layout.addRow(threshold_label, self.redemption_threshold_spin)
+        layout.setAlignment(threshold_label, QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        layout.setAlignment(self.redemption_threshold_spin, QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
         
         # Spacer
         layout.addRow(QtWidgets.QLabel(""))
@@ -122,7 +125,10 @@ class SettingsDialog(QtWidgets.QDialog):
         theme_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         self.theme_combo = QtWidgets.QComboBox()
         self.theme_combo.addItems(["Light", "Dark", "Blue"])
+        theme_label.setMinimumHeight(self.theme_combo.sizeHint().height())
         layout.addRow(theme_label, self.theme_combo)
+        layout.setAlignment(theme_label, QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        layout.setAlignment(self.theme_combo, QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
         
         # Info label
         info_label = QtWidgets.QLabel(
