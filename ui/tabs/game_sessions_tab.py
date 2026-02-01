@@ -1685,7 +1685,7 @@ class EditClosedSessionDialog(QDialog):
 
         self.setWindowTitle("Edit Closed Session")
         self.setMinimumWidth(750)
-        self.setMinimumHeight(620)
+        self.setMinimumHeight(700)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -1934,32 +1934,6 @@ class EditClosedSessionDialog(QDialog):
         self.game_name_combo.setMinimumWidth(180)
         session_grid.addWidget(self.game_name_combo, row, 3)
         
-        row += 1
-        
-        # Left Column - Wager
-        wager_label = QLabel("Wager:")
-        wager_label.setObjectName("FieldLabel")
-        wager_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        session_grid.addWidget(wager_label, row, 0)
-        self.wager_edit.setFixedWidth(140)
-        session_grid.addWidget(self.wager_edit, row, 1)
-        
-        # Right Column - RTP Display with help button
-        rtp_label = QLabel("RTP:")
-        rtp_label.setObjectName("FieldLabel")
-        rtp_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        session_grid.addWidget(rtp_label, row, 2)
-        
-        # RTP container with display and help button
-        rtp_container = QWidget()
-        rtp_layout = QHBoxLayout(rtp_container)
-        rtp_layout.setContentsMargins(0, 0, 0, 0)
-        rtp_layout.setSpacing(6)
-        rtp_layout.addWidget(self.rtp_display)
-        rtp_layout.addWidget(self.rtp_help_btn, 0, Qt.AlignVCenter)
-        rtp_layout.addStretch(1)
-        session_grid.addWidget(rtp_container, row, 3)
-        
         session_grid.setColumnStretch(1, 1)
         session_grid.setColumnStretch(3, 1)
         
@@ -2025,6 +1999,32 @@ class EditClosedSessionDialog(QDialog):
         )
         balance_grid.addWidget(balance_check_label, row, 0)
         balance_grid.addWidget(self.balance_check_display, row, 1, 1, 3)
+        
+        row += 1
+        
+        # Left Column - Wager
+        wager_label = QLabel("Wager:")
+        wager_label.setObjectName("FieldLabel")
+        wager_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balance_grid.addWidget(wager_label, row, 0)
+        self.wager_edit.setFixedWidth(140)
+        balance_grid.addWidget(self.wager_edit, row, 1)
+        
+        # Right Column - RTP Display with help button
+        rtp_label = QLabel("RTP:")
+        rtp_label.setObjectName("FieldLabel")
+        rtp_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balance_grid.addWidget(rtp_label, row, 2)
+        
+        # RTP container with display and help button
+        rtp_container = QWidget()
+        rtp_layout = QHBoxLayout(rtp_container)
+        rtp_layout.setContentsMargins(0, 0, 0, 0)
+        rtp_layout.setSpacing(6)
+        rtp_layout.addWidget(self.rtp_display)
+        rtp_layout.addWidget(self.rtp_help_btn, 0, Qt.AlignVCenter)
+        rtp_layout.addStretch(1)
+        balance_grid.addWidget(rtp_container, row, 3)
         
         balance_grid.setColumnStretch(1, 1)
         balance_grid.setColumnStretch(3, 1)
@@ -2538,6 +2538,20 @@ class EditClosedSessionDialog(QDialog):
         
         notes = self.notes_edit.toPlainText().strip()
         
+        # Capture tax withholding fields (optional custom rate)
+        tax_rate_pct = None
+        tax_is_custom = False
+        rate_text = self.tax_rate_edit.text().strip()
+        if rate_text:
+            try:
+                rate_val = Decimal(rate_text)
+                if rate_val < 0 or rate_val > 100:
+                    return None, "Tax withholding rate must be between 0 and 100."
+                tax_rate_pct = rate_val
+                tax_is_custom = True
+            except Exception:
+                return None, "Invalid tax withholding rate."
+        
         return {
             "session_date": start_date,
             "start_time": start_time,
@@ -2553,6 +2567,8 @@ class EditClosedSessionDialog(QDialog):
             "ending_redeemable_sc": Decimal(str(end_redeem)),
             "wager_amount": wager_amount,
             "notes": notes,
+            "tax_withholding_rate_pct": tax_rate_pct,
+            "tax_withholding_is_custom": tax_is_custom,
         }, None
     
     def _validate_inline(self):
@@ -3470,7 +3486,7 @@ class EndSessionDialog(QDialog):
         self.session = session
         self.setWindowTitle("End Game Session")
         self.setMinimumWidth(700)
-        self.setMinimumHeight(680)
+        self.setMinimumHeight(720)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -3861,6 +3877,7 @@ class EndSessionDialog(QDialog):
         self._set_today()
         self._set_now()
         self._validate_inline()
+        
         self._update_session_details()
     
     def _get_game_type(self) -> str:
@@ -4308,6 +4325,20 @@ class EndSessionDialog(QDialog):
 
         notes = self.notes_edit.toPlainText().strip()
 
+        # Capture tax withholding fields (optional custom rate)
+        tax_rate_pct = None
+        tax_is_custom = False
+        rate_text = self.tax_rate_edit.text().strip()
+        if rate_text:
+            try:
+                rate_val = Decimal(rate_text)
+                if rate_val < 0 or rate_val > 100:
+                    return None, "Tax withholding rate must be between 0 and 100."
+                tax_rate_pct = rate_val
+                tax_is_custom = True
+            except Exception:
+                return None, "Invalid tax withholding rate."
+
         return {
             "end_date": end_date,
             "end_time": end_time,
@@ -4315,5 +4346,7 @@ class EndSessionDialog(QDialog):
             "ending_redeemable_sc": Decimal(str(end_redeem)),
             "wager_amount": wager_amount,
             "notes": notes,
+            "tax_withholding_rate_pct": tax_rate_pct,
+            "tax_withholding_is_custom": tax_is_custom,
         }, None
 

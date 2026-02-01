@@ -141,25 +141,77 @@ class SettingsDialog(QtWidgets.QDialog):
         return widget
     
     def _build_taxes_section(self):
-        """Build Taxes settings section (placeholder for Issue #29)."""
+        """Build Taxes settings section (Issue #29 tax withholding estimates)."""
         widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
+        form_layout = QtWidgets.QFormLayout(widget)
+        form_layout.setContentsMargins(20, 20, 20, 20)
+        form_layout.setSpacing(12)
+        form_layout.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         
+        # Title
         title = QtWidgets.QLabel("💰 Tax Settings")
         title.setObjectName("PageTitle")
-        layout.addWidget(title)
+        form_layout.addRow(title)
         
-        placeholder = QtWidgets.QLabel(
-            "<i>Tax withholding estimate settings will appear here once Issue #29 is completed.</i>"
+        # Enable withholding estimates toggle
+        enable_label = QtWidgets.QLabel("Enable tax withholding estimates:")
+        enable_label.setToolTip("When enabled, computes estimated tax set-aside per closed session.")
+        enable_label.setObjectName("FieldLabel")
+        enable_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.tax_withholding_enabled_checkbox = QtWidgets.QCheckBox()
+        self.tax_withholding_enabled_checkbox.toggled.connect(self._on_withholding_enabled_changed)
+        form_layout.addRow(enable_label, self.tax_withholding_enabled_checkbox)
+        
+        # Default withholding rate %
+        rate_label = QtWidgets.QLabel("Default withholding rate (%):")
+        rate_label.setToolTip("Default tax withholding % applied to new closed sessions (0-100).")
+        rate_label.setObjectName("FieldLabel")
+        rate_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.tax_withholding_rate_spin = QtWidgets.QDoubleSpinBox()
+        self.tax_withholding_rate_spin.setMinimum(0.0)
+        self.tax_withholding_rate_spin.setMaximum(100.0)
+        self.tax_withholding_rate_spin.setDecimals(1)
+        self.tax_withholding_rate_spin.setSingleStep(0.5)
+        self.tax_withholding_rate_spin.setSuffix(" %")
+        form_layout.addRow(rate_label, self.tax_withholding_rate_spin)
+        
+        # Spacer
+        form_layout.addRow(QtWidgets.QLabel(""))
+        
+        # Bulk recalculation button
+        recalc_button = QtWidgets.QPushButton("⚙️ Recalculate Withholding...")
+        recalc_button.setToolTip("Bulk-recalculate tax withholding for closed sessions.")
+        recalc_button.clicked.connect(self._show_recalc_dialog)
+        form_layout.addRow("", recalc_button)
+        
+        # Info label
+        info_label = QtWidgets.QLabel(
+            "<i>These are estimates only (not legal/tax advice). Consult a tax professional.</i>"
         )
-        placeholder.setWordWrap(True)
-        placeholder.setObjectName("HelperText")
-        layout.addWidget(placeholder)
+        info_label.setWordWrap(True)
+        info_label.setObjectName("HelperText")
+        form_layout.addRow(info_label)
         
-        layout.addStretch()
+        # Store refs for enabling/disabling controls
+        self._tax_rate_label = rate_label
+        self._tax_recalc_button = recalc_button
+        
         return widget
+    
+    def _on_withholding_enabled_changed(self, checked):
+        """Enable/disable withholding rate and recalc when toggle changes."""
+        self.tax_withholding_rate_spin.setEnabled(checked)
+        self._tax_recalc_button.setEnabled(checked)
+    
+    def _show_recalc_dialog(self):
+        """Show bulk recalculation dialog."""
+        from ui.tax_recalc_dialog import TaxRecalcDialog
+        dialog = TaxRecalcDialog(self.parent().facade if hasattr(self.parent(), 'facade') else None, self)
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            QtWidgets.QMessageBox.information(
+                self, "Recalculation Complete",
+                f"Successfully recalculated {dialog.updated_count} session(s)."
+            )
     
     def _on_section_changed(self, index):
         """Switch displayed section when nav list selection changes."""
@@ -176,6 +228,14 @@ class SettingsDialog(QtWidgets.QDialog):
         theme_index = self.theme_combo.findText(current_theme)
         if theme_index >= 0:
             self.theme_combo.setCurrentIndex(theme_index)
+        
+        # Tax withholding settings
+        tax_enabled = self.settings.settings.get("tax_withholding_enabled", False)
+        self.tax_withholding_enabled_checkbox.setChecked(tax_enabled)
+        tax_rate = self.settings.settings.get("tax_withholding_default_rate_pct", 20.0)
+        self.tax_withholding_rate_spin.setValue(float(tax_rate))
+        # Trigger enable/disable state
+        self._on_withholding_enabled_changed(tax_enabled)
     
     def _on_save(self):
         """Save settings and close dialog."""
@@ -185,6 +245,10 @@ class SettingsDialog(QtWidgets.QDialog):
         # Write display settings
         selected_theme = self.theme_combo.currentText()
         self.settings.settings["theme"] = selected_theme
+        
+        # Write tax withholding settings
+        self.settings.settings["tax_withholding_enabled"] = self.tax_withholding_enabled_checkbox.isChecked()
+        self.settings.settings["tax_withholding_default_rate_pct"] = self.tax_withholding_rate_spin.value()
         
         # Persist to settings.json
         self.settings.save()

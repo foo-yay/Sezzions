@@ -36,6 +36,8 @@ class DailySessionsTab(QtWidgets.QWidget):
         self.sort_reverse = False
         self._last_sessions = []
         self._suppress_header_menu = False
+        
+        # Build columns list based on tax withholding feature state
         self.columns = [
             "Date/User/Site",
             "Game",
@@ -43,9 +45,20 @@ class DailySessionsTab(QtWidgets.QWidget):
             "Δ Basis",
             "Δ Total (SC)",
             "Net P/L",
-            "Details",
-            "Notes",
         ]
+        
+        # Add Tax Set-Aside column only if feature is enabled
+        self.tax_column_enabled = False
+        if hasattr(facade, 'tax_withholding_service'):
+            try:
+                config = facade.tax_withholding_service.get_config()
+                if config.enabled:
+                    self.columns.append("Tax Set-Aside")
+                    self.tax_column_enabled = True
+            except Exception:
+                pass
+        
+        self.columns.extend(["Details", "Notes"])
         
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -106,7 +119,7 @@ class DailySessionsTab(QtWidgets.QWidget):
         action_row.addWidget(self.site_filter_label)
         action_row.addStretch(1)
 
-        self.notes_btn = QtWidgets.QPushButton("➕ Add Notes")
+        self.notes_btn = QtWidgets.QPushButton("✏️ Edit")
         self.notes_btn.setObjectName("PrimaryButton")
         self.view_btn = QtWidgets.QPushButton("👁️ View Session")
         view_text_width = self.view_btn.fontMetrics().horizontalAdvance(self.view_btn.text()) + 24
@@ -259,7 +272,20 @@ class DailySessionsTab(QtWidgets.QWidget):
         )
         self._last_sessions = list(self.sessions)
         sessions = self._filter_sessions(self.sessions)
-        data = self.facade.daily_sessions_service.group_sessions(sessions)
+        
+        # Fetch daily tax data from daily_sessions table
+        daily_tax_data = {}
+        if hasattr(self.facade, 'daily_sessions_service'):
+            try:
+                daily_tax_data = self.facade.daily_sessions_service.fetch_daily_tax_data(
+                    selected_users=sorted(self.selected_users) if self.selected_users else None,
+                    selected_sites=sorted(self.selected_sites) if self.selected_sites else None,
+                    active_date_filter=(start_date, end_date),
+                )
+            except Exception as e:
+                print(f"Warning: Could not fetch daily tax data: {e}")
+        
+        data = self.facade.daily_sessions_service.group_sessions(sessions, daily_tax_data)
         data = self._sort_data(data)
         self._render_tree(data)
         self._update_action_buttons()
@@ -267,6 +293,49 @@ class DailySessionsTab(QtWidgets.QWidget):
     def refresh_data(self):
         """Standardized refresh method for global refresh system (Issue #9)."""
         self.refresh_view()
+    
+    def rebuild_columns(self):
+        """Rebuild column structure when tax withholding settings change.
+        
+        This method should be called when the tax withholding feature is enabled/disabled
+        in Settings to update the column list and header.
+        """
+        # Rebuild columns list
+        self.columns = [
+            "Date/User/Site",
+            "Game",
+            "Δ Redeem",
+            "Δ Basis",
+            "Δ Total (SC)",
+            "Net P/L",
+        ]
+        
+        # Check current tax withholding feature state
+        self.tax_column_enabled = False
+        if hasattr(self.facade, 'tax_withholding_service'):
+            try:
+                config = self.facade.tax_withholding_service.get_config()
+                if config.enabled:
+                    self.columns.append("Tax Set-Aside")
+                    self.tax_column_enabled = True
+            except Exception:
+                pass
+        
+        self.columns.extend(["Details", "Notes"])
+        
+        # Update tree widget columns
+        self.tree.setColumnCount(len(self.columns))
+        self.tree.setHeaderLabels(self.columns)
+        
+        # Refresh data to re-render with new columns
+        self.refresh_view()
+    
+    def showEvent(self, event):
+        """Called when tab is shown - rebuild columns to ensure tax column appears if enabled."""
+        super().showEvent(event)
+        # Rebuild columns on first show to ensure settings are loaded
+        if hasattr(self, 'tree'):
+            self.rebuild_columns()
     
     def _render_tree(self, data):
         self.tree.clear()
@@ -278,9 +347,17 @@ class DailySessionsTab(QtWidgets.QWidget):
                 self._format_currency_or_dash(day["date_basis"]),
                 self._format_delta(day["date_gameplay"]),
                 self._format_signed_currency(day["date_total"]),
+            ]
+            
+            # Add tax column only if enabled
+            if self.tax_column_enabled:
+                date_tax = day.get("date_tax_withholding", 0)
+                date_values.append(self._format_currency_or_dash(date_tax) if date_tax > 0 else "—")
+            
+            date_values.extend([
                 f"{day['user_count']} users, {day['session_count']} sessions",
                 day["notes"],
-            ]
+            ])
             date_item = QtWidgets.QTreeWidgetItem(date_values)
             date_item.setData(0, QtCore.Qt.UserRole, {"kind": "date", "date": day["date"]})
             self._apply_status_color(date_item, day["date_total"])
@@ -294,9 +371,17 @@ class DailySessionsTab(QtWidgets.QWidget):
                     self._format_currency_or_dash(user["basis"]),
                     self._format_delta(user["gameplay"]),
                     self._format_signed_currency(user["total"]),
+                ]
+                
+                # Add tax column only if enabled
+                if self.tax_column_enabled:
+                    user_tax = user.get("tax_withholding", 0)
+                    user_values.append(self._format_currency_or_dash(user_tax) if user_tax > 0 else "—")
+                
+                user_values.extend([
                     f"{len(user['sites'])} sites, {sum(len(site['sessions']) for site in user['sites'])} sessions",
                     "",
-                ]
+                ])
                 user_item = QtWidgets.QTreeWidgetItem(user_values)
                 user_item.setData(0, QtCore.Qt.UserRole, {"kind": "user", "user_id": user["user_id"]})
                 self._apply_status_color(user_item, user["total"])
@@ -310,9 +395,17 @@ class DailySessionsTab(QtWidgets.QWidget):
                         self._format_currency_or_dash(site["basis"]),
                         self._format_delta(site["gameplay"]),
                         self._format_signed_currency(site["total"]),
+                    ]
+                    
+                    # Tax withholding is not shown at site level
+                    # (it's only calculated and displayed at the daily user level)
+                    if self.tax_column_enabled:
+                        site_values.append("—")
+                    
+                    site_values.extend([
                         f"{len(site['sessions'])} sessions",
                         "",
-                    ]
+                    ])
                     site_item = QtWidgets.QTreeWidgetItem(site_values)
                     site_item.setData(0, QtCore.Qt.UserRole, {"kind": "site", "site_id": site["site_id"]})
                     self._apply_status_color(site_item, site["total"])
@@ -350,9 +443,17 @@ class DailySessionsTab(QtWidgets.QWidget):
                             self._format_currency_or_dash(sess["basis_consumed"]),
                             self._format_delta(sess["delta_total"]),
                             self._format_signed_currency(sess["total_taxable"]),
+                        ]
+                        
+                        # Tax withholding is not shown at individual session level
+                        # (it's only calculated and displayed at the daily user level)
+                        if self.tax_column_enabled:
+                            sess_values.append("—")
+                        
+                        sess_values.extend([
                             time_range,
                             sess["notes"],
-                        ]
+                        ])
                         sess_item = QtWidgets.QTreeWidgetItem(sess_values)
                         sess_item.setData(
                             0,
@@ -423,7 +524,17 @@ class DailySessionsTab(QtWidgets.QWidget):
             return self._format_delta(sess["delta_total"])
         if col_index == 5:
             return self._format_signed_currency(sess["total_taxable"])
-        if col_index == 6:
+        
+        # Tax column (index 6) only if feature enabled
+        if self.tax_column_enabled and col_index == 6:
+            amount = sess.get("tax_withholding_amount")
+            if amount is not None and amount > 0:
+                return f"${float(amount):,.2f}"
+            return "—"
+        
+        # Adjust Details column index based on whether tax column is present
+        details_col = 7 if self.tax_column_enabled else 6
+        if col_index == details_col:
             # Check if session spans multiple days
             is_multi_day = sess.get("end_date") and sess.get("end_date") != sess.get("session_date")
             
@@ -443,7 +554,10 @@ class DailySessionsTab(QtWidgets.QWidget):
                 return f"{start_time} → Closed"
             else:
                 return f"{start_time} → Active"
-        if col_index == 7:
+        
+        # Notes column (last column, index varies based on tax column)
+        notes_col = 8 if self.tax_column_enabled else 7
+        if col_index == notes_col:
             return sess["notes"] or ""
         return ""
 
@@ -503,10 +617,21 @@ class DailySessionsTab(QtWidgets.QWidget):
                 return item["date_gameplay"]
             if self.sort_column == 5:
                 return item["date_total"]
-            if self.sort_column == 6:
+            
+            # Tax column (6) only if enabled
+            if self.tax_column_enabled and self.sort_column == 6:
+                return item.get("date_tax_withholding", 0)
+            
+            # Details column (varies based on tax column)
+            details_col = 7 if self.tax_column_enabled else 6
+            if self.sort_column == details_col:
                 return item["session_count"]
-            if self.sort_column == 7:
+            
+            # Notes column (last, varies based on tax column)
+            notes_col = 8 if self.tax_column_enabled else 7
+            if self.sort_column == notes_col:
                 return 1 if item["notes"] else 0
+            
             return item["date"]
 
         return sorted(data, key=sort_key, reverse=reverse)
@@ -523,7 +648,11 @@ class DailySessionsTab(QtWidgets.QWidget):
         has_selection = self.tree.selectionModel().hasSelection()
         
         if kind == "date":
+            self.notes_btn.setText("✏️ Edit")
             self.primary_btn_stack.setCurrentWidget(self.notes_btn)
+        elif kind == "user":
+            # No edit button for user level - only date level
+            self.primary_btn_stack.setCurrentWidget(self.primary_btn_placeholder)
         elif kind == "session":
             self.primary_btn_stack.setCurrentWidget(self.view_btn)
         else:
@@ -540,7 +669,7 @@ class DailySessionsTab(QtWidgets.QWidget):
     def _handle_notes_clicked(self):
         meta = self._current_meta() or {}
         if meta.get("kind") == "date":
-            self._edit_daily_notes(meta.get("date"))
+            self._edit_daily_session(meta.get("date"))
 
     def _handle_view_clicked(self):
         meta = self._current_meta() or {}
@@ -548,29 +677,68 @@ class DailySessionsTab(QtWidgets.QWidget):
             self._view_session(meta.get("session_id"))
 
     def add_edit_notes(self):
+        """Handle double-click: date -> edit notes/tax, session -> view details."""
         item = self.tree.currentItem()
         if not item:
-            QtWidgets.QMessageBox.information(self, "No Selection", "Select a day or game session.")
             return
         meta = item.data(0, QtCore.Qt.UserRole) or {}
         kind = meta.get("kind")
         if kind == "session":
             self._view_session(meta.get("session_id"))
         elif kind == "date":
-            self._edit_daily_notes(meta.get("date"))
-        else:
-            QtWidgets.QMessageBox.information(self, "Selection", "Select a day or game session.")
+            self._edit_daily_session(meta.get("date"))
 
-    def _edit_daily_notes(self, session_date):
+    def _edit_daily_session(self, session_date):
+        """Edit daily session notes and tax (both are date-level)."""
         if not session_date:
             return
+        
+        # Get current notes
         current_notes = self.facade.get_daily_note_for_date(session_date)
-        dialog = DailySessionNotesDialog(session_date, current_notes, parent=self)
+        
+        # Get current tax data for this date
+        current_tax_data = None
+        if hasattr(self.facade, 'daily_sessions_service'):
+            try:
+                tax_dict = self.facade.daily_sessions_service.fetch_daily_tax_data(
+                    selected_users=None,
+                    selected_sites=None,
+                    active_date_filter=(None, None)
+                )
+                current_tax_data = tax_dict.get(session_date, {})
+            except Exception:
+                pass
+        
+        dialog = EditDailySessionDialog(
+            session_date=session_date,
+            notes=current_notes,
+            tax_data=current_tax_data,
+            facade=self.facade,
+            parent=self
+        )
+        
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
+        
+        # Save notes
         new_notes = dialog.notes_text()
         user_ids = [s["user_id"] for s in self.sessions if s["session_date"] == session_date]
         self.facade.set_daily_note_for_date(session_date, user_ids, new_notes)
+        
+        # Save tax data (date-level)
+        if dialog.has_tax_fields():
+            custom_rate = dialog.get_custom_tax_rate()
+            if custom_rate is not None:
+                # Apply tax withholding at date level
+                if hasattr(self.facade, 'tax_withholding_service'):
+                    try:
+                        self.facade.tax_withholding_service.apply_to_date(
+                            session_date=session_date,
+                            custom_rate_pct=custom_rate
+                        )
+                    except Exception as e:
+                        QtWidgets.QMessageBox.warning(self, "Tax Update Error", f"Could not update tax: {e}")
+        
         self.refresh_view()
 
     def _view_session(self, session_id):
@@ -789,29 +957,112 @@ class DailySessionsTab(QtWidgets.QWidget):
         menu.exec_(self.tree.viewport().mapToGlobal(position))
 
 
-class DailySessionNotesDialog(QtWidgets.QDialog):
-    def __init__(self, session_date, notes, parent=None):
+class EditDailySessionDialog(QtWidgets.QDialog):
+    """Dialog for editing daily session notes and tax withholding (both date-level)."""
+    
+    def __init__(self, session_date, notes, tax_data=None, facade=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Daily Session Notes - {session_date}")
-        self.resize(520, 320)
+        self.session_date = session_date
+        self.facade = facade
+        
+        self.setWindowTitle(f"Edit Daily Session - {session_date}")
+        self.resize(520, 450)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
-        header = QtWidgets.QLabel("Daily Session Notes")
+        header = QtWidgets.QLabel("Edit Daily Session")
         header.setObjectName("SectionTitle")
         layout.addWidget(header)
 
+        # Notes section (always shown)
+        notes_label = QtWidgets.QLabel("Notes:")
+        layout.addWidget(notes_label)
+        
         self.notes_edit = QtWidgets.QPlainTextEdit()
         self.notes_edit.setObjectName("NotesField")
         self.notes_edit.setPlainText(notes or "")
         layout.addWidget(self.notes_edit, 1)
 
+        # Tax section (date-level, always shown if tax feature is enabled)
+        self.tax_rate_edit = None
+        self.tax_amount_display = None
+        self.net_pl_display = None
+        
+        if facade and hasattr(facade, 'tax_withholding_service'):
+            try:
+                config = facade.tax_withholding_service.get_config()
+                if config.enabled:
+                    # Add separator
+                    line = QtWidgets.QFrame()
+                    line.setFrameShape(QtWidgets.QFrame.HLine)
+                    line.setFrameShadow(QtWidgets.QFrame.Sunken)
+                    layout.addWidget(line)
+                    
+                    tax_label = QtWidgets.QLabel("Tax Withholding (Date Level):")
+                    tax_label.setObjectName("SectionTitle")
+                    layout.addWidget(tax_label)
+                    
+                    tax_grid = QtWidgets.QGridLayout()
+                    tax_grid.setSpacing(8)
+                    tax_grid.setColumnStretch(1, 1)
+                    
+                    # Net daily P/L display (read-only)
+                    net_pl_label = QtWidgets.QLabel("Net Daily P/L:")
+                    self.net_pl_display = QtWidgets.QLabel()
+                    if tax_data and tax_data.get("net_daily_pnl") is not None:
+                        net_pl = float(tax_data["net_daily_pnl"])
+                        net_pl_text = f"${net_pl:,.2f}"
+                    else:
+                        net_pl_text = "—"
+                    self.net_pl_display.setText(net_pl_text)
+                    self.net_pl_display.setStyleSheet("font-weight: bold; color: #2563eb;")
+                    tax_grid.addWidget(net_pl_label, 0, 0, QtCore.Qt.AlignRight)
+                    tax_grid.addWidget(self.net_pl_display, 0, 1)
+                    
+                    # Tax rate input
+                    rate_label = QtWidgets.QLabel("Rate (%):")
+                    self.tax_rate_edit = QtWidgets.QLineEdit()
+                    self.tax_rate_edit.setPlaceholderText(f"Default: {config.default_rate_pct}%")
+                    self.tax_rate_edit.setFixedWidth(200)
+                    
+                    # Load current tax rate if available
+                    if tax_data and tax_data.get("tax_withholding_rate_pct") is not None:
+                        self.tax_rate_edit.setText(str(float(tax_data["tax_withholding_rate_pct"])))
+                    
+                    tax_grid.addWidget(rate_label, 1, 0, QtCore.Qt.AlignRight)
+                    tax_grid.addWidget(self.tax_rate_edit, 1, 1)
+                    
+                    # Current tax amount display (read-only)
+                    amount_label = QtWidgets.QLabel("Current Amount:")
+                    self.tax_amount_display = QtWidgets.QLabel()
+                    if tax_data and tax_data.get("tax_withholding_amount") is not None:
+                        amount_text = f"${float(tax_data['tax_withholding_amount']):.2f}"
+                    else:
+                        amount_text = "—"
+                    self.tax_amount_display.setText(amount_text)
+                    self.tax_amount_display.setStyleSheet("font-weight: bold; color: #dc2626;")
+                    tax_grid.addWidget(amount_label, 2, 0, QtCore.Qt.AlignRight)
+                    tax_grid.addWidget(self.tax_amount_display, 2, 1)
+                    
+                    layout.addLayout(tax_grid)
+                    
+                    # Help text
+                    help_text = QtWidgets.QLabel(
+                        "💡 Leave rate blank to use default. Tax will be recalculated on save."
+                    )
+                    help_text.setWordWrap(True)
+                    help_text.setObjectName("HelperText")
+                    layout.addWidget(help_text)
+            except Exception:
+                pass
+
+        # Buttons
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
         cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
-        clear_btn = QtWidgets.QPushButton("🧹 Clear")
+        clear_btn = QtWidgets.QPushButton("🧹 Clear Notes")
         save_btn = QtWidgets.QPushButton("💾 Save")
         save_btn.setObjectName("PrimaryButton")
         btn_row.addWidget(cancel_btn)
@@ -825,3 +1076,21 @@ class DailySessionNotesDialog(QtWidgets.QDialog):
 
     def notes_text(self):
         return self.notes_edit.toPlainText().strip()
+    
+    def has_tax_fields(self):
+        return self.tax_rate_edit is not None
+    
+    def get_custom_tax_rate(self):
+        """Get the custom tax rate, or None if using default."""
+        if not self.tax_rate_edit:
+            return None
+        text = self.tax_rate_edit.text().strip()
+        if not text:
+            return None  # Use default
+        try:
+            rate = float(text)
+            if rate < 0 or rate > 100:
+                return None
+            return rate
+        except ValueError:
+            return None

@@ -9,7 +9,412 @@ Rules:
 
 ---
 
+## 2026-02-01
+
+```yaml
+id: 2026-02-01-02
+type: feature
+areas: [tax, database, services, ui]
+summary: "Complete Issue #29: Tax withholding with date-level calculation, cascade recalc, and Settings UI."
+files_changed:
+  - repositories/database.py (daily_date_tax table, daily_sessions uses end_date)
+  - services/tax_withholding_service.py (date-level with date range filter)
+  - services/game_session_service.py (auto-recalc on close/edit, cascade support)
+  - services/recalculation_service.py (end_date grouping, tax recalc in rebuild_all)
+  - services/daily_sessions_service.py (fetch from daily_date_tax, show at date level)
+  - ui/settings_dialog.py (tax settings + recalc dialog launcher)
+  - ui/tax_recalc_dialog.py (date range picker with calendar buttons)
+  - ui/tabs/daily_sessions_tab.py (edit button, dialog with tax display)
+branch: feature/issue-29-tax-withholding-ui
+commits: [multiple]
+pr: "#34"
+issue: "#29"
+```
+
+**Architecture: Date-Level Tax Withholding**
+- Tax calculated on NET P/L of ALL users for each date (winners netted against losers)
+- Storage: `daily_date_tax` table keyed by `session_date` only
+- Example: User1: +$342.61, User2: -$205.55 → Net: $137.06 → Tax: $27.41 (20%)
+- Display: Tax shown at date level only (not per-user) in Daily Sessions tab
+
+**Database Schema Changes:**
+- **New table: `daily_date_tax`**
+  - Primary key: `session_date` (date only, not per-user)
+  - Columns: `net_daily_pnl`, `tax_withholding_rate_pct`, `tax_withholding_is_custom`, `tax_withholding_amount`, `notes`
+  - Notes migrated from `daily_sessions` table (date-level, not user-level)
+- **daily_sessions grouping change:**
+  - Now groups by `end_date` instead of `session_date` (when session closed, not started)
+  - Critical for multi-day sessions: tax counted on close date
+- **game_sessions columns removed:**
+  - All `tax_withholding_*` columns removed (tax is date-level only)
+
+**Services Layer:**
+
+`TaxWithholdingService`:
+- `apply_to_date(session_date, custom_rate_pct)`: Calculate and store tax for ONE date (nets all users)
+- `bulk_recalculate(start_date, end_date, overwrite_custom)`: Batch recalc with optional date range
+- `_calculate_date_net_pl(session_date)`: Sum ALL users' P/L for date from daily_sessions
+- Respects custom rates unless `overwrite_custom=True`
+
+`GameSessionService`:
+- Auto-recalc on session close: Syncs daily_sessions + recalcs tax for end_date
+- Auto-recalc on session edit: Recalcs tax for affected dates (old + new if date changed)
+- `_sync_tax_for_affected_dates()`: NEW - called after cascade recalcs (purchase/redemption edits)
+- Ensures tax stays accurate during FIFO rebuilds and session recalculations
+
+`RecalculationService`:
+- `rebuild_all()`: Now includes tax recalculation in full rebuild workflow
+- Uses `end_date` grouping for daily_sessions (not `session_date`)
+
+`DailySessionsService`:
+- `fetch_daily_tax_data()`: Queries `daily_date_tax` table for display
+- `group_sessions()`: Shows tax at date level, $0.00 at user level
+
+**UI Changes:**
+
+Settings Dialog (`ui/settings_dialog.py`):
+- **Tax Withholding section added:**
+  - Enable/disable toggle
+  - Default rate percentage (with validation)
+  - "Recalculate Tax Withholding" button launches dialog
+
+Tax Recalc Dialog (`ui/tax_recalc_dialog.py`):
+- **Date range filter with calendar pickers:**
+  - From/To date fields with 📅 calendar buttons
+  - Clear buttons for each date
+  - Leave empty to recalculate all dates
+- **Options:**
+  - Overwrite custom rates checkbox
+- **Removed:** Site/user filters (incompatible with date-level netting)
+- Confirmation dialog shows scope and settings
+
+Daily Sessions Tab (`ui/tabs/daily_sessions_tab.py`):
+- **Date-level actions:**
+  - "✏️ Edit" button (was "+Add Notes")
+  - Edit dialog shows: Net P/L (blue), Tax Amount (red), Tax Rate, Notes
+  - Tax fields read-only (use Settings to recalc)
+- **User-level actions:**
+  - Removed edit button (no user-level tax data)
+- **Display:**
+  - Tax withholding shown at date level only
+  - User rows show $0.00 for tax (not calculated per-user)
+
+**Tax Recalculation Triggers:**
+
+1. **Session closed:** Scoped to end_date
+2. **Session edited (already closed):** Scoped to affected date(s)
+3. **Purchase/redemption edited:** Cascade recalc triggers tax update for all affected dates
+4. **Settings → Recalculate Tax Withholding:** Optional date range filter
+5. **Tools → Recalculate Everything:** Full rebuild including tax (all dates)
+
+**Migration Path:**
+- Old `game_sessions.tax_withholding_*` columns removed
+- Old `daily_sessions.notes` migrated to `daily_date_tax.notes`
+- Tax recalculated on first "Recalculate Everything" after upgrade
+- No data loss: old tax estimates discarded (date-level netting more accurate)
+
+**Testing:**
+- All 580 tests passing
+- Tax calculation scenarios validated (net-first, not per-user-first)
+- Cascade scenarios covered (purchase/redemption edits trigger tax updates)
+- Date range filtering tested
+
+**Benefits:**
+- **Accurate:** Tax calculated on net P/L (losses offset gains)
+- **Automatic:** Updates on session close, edit, and cascade recalcs
+- **Flexible:** Date range filtering for targeted recalculation
+- **Transparent:** Clear display in Daily Sessions tab
+- **Compliant:** Settings UI for rate configuration and bulk operations
+
+```yaml
+id: 2026-02-01-01
+type: fix
+areas: [repositories, tests, ui]
+summary: "Complete tax withholding test fixes and repository cleanup for daily-only semantics."
+files_changed:
+  - repositories/game_session_repository.py (remove tax column references from INSERT/UPDATE)
+  - repositories/database.py (add tax columns to daily_sessions CREATE TABLE)
+  - tests/unit/test_tax_withholding_service.py (rewrite for daily_sessions)
+  - ui/tax_recalc_dialog.py (update messaging to 'daily sessions')
+branch: feature/issue-29-tax-withholding-ui
+commits: 644609d
+pr: "#34"
+issue: "#29"
+```
+
+Notes:
+- **Problem:** Tests failing after tax refactor; game_session_repository still trying to INSERT/UPDATE removed columns
+- **game_session_repository fixes:**
+  - Removed tax_withholding_* columns from INSERT statement (25 params → 22 params)
+  - Removed tax_withholding_* columns from UPDATE statement
+  - Set tax fields to None/False in _row_to_model (columns no longer exist in DB)
+- **database.py fix:**
+  - Added tax columns to daily_sessions CREATE TABLE statement
+  - Previously only added via migration (for existing DBs)
+  - Fresh test databases now include tax columns by default
+- **test_tax_withholding_service.py rewrite:**
+  - Changed from game_sessions to daily_sessions table
+  - Updated _insert_daily_session helper (no site_id, keyed by date+user)
+  - Fixed queries to use (session_date, user_id) primary key instead of id
+  - Fixed type assertions: 20.0 (float) not "20.00" (string)
+- **tax_recalc_dialog.py:**
+  - Updated UI messaging: "daily sessions" instead of "closed sessions"
+  - Updated tooltips and confirmation dialogs
+- **Result:** All 580 tests passing
+- **Deferred:** Edit Daily Session dialog with per-day tax override (users can use bulk recalc tool for now)
+
 ## 2026-01-31
+
+```yaml
+id: 2026-01-31-17
+type: refactor
+areas: [database, services, ui, tax]
+summary: "Complete tax withholding refactor: move from game sessions to daily sessions only."
+files_changed:
+  - repositories/database.py (add tax columns to daily_sessions, remove from game_sessions)
+  - services/tax_withholding_service.py (rewrite for daily-only semantics)
+  - services/daily_sessions_service.py (add fetch_daily_tax_data, update group_sessions)
+  - ui/tabs/game_sessions_tab.py (remove tax UI from all dialogs)
+  - ui/tabs/daily_sessions_tab.py (fetch and display daily tax data)
+branch: feature/issue-29-tax-withholding-ui
+commits: 153cdf0, 22c3925, 3a0220a
+pr: "#34"
+issue: "#29"
+```
+
+Notes:
+- **Problem:** Tax withholding was stored per-game-session but taxable events are daily rollups, causing incorrect totaling
+- **Solution:** Complete architectural change to daily-only tax withholding
+- **Database changes:**
+  - Added `tax_withholding_rate_pct`, `tax_withholding_is_custom`, `tax_withholding_amount` to `daily_sessions` table
+  - Removed all tax columns from `game_sessions` CREATE TABLE statement
+  - Migration tested: columns added successfully to existing databases
+- **Service layer changes:**
+  - `TaxWithholdingService`: Removed `apply_to_session_model()`, added `apply_to_daily_session(session_date, user_id, net_daily_pl, custom_rate_pct)`
+  - `TaxWithholdingService.bulk_recalculate()`: Now targets `daily_sessions` table, respects custom rates
+  - `DailySessionsService.fetch_daily_tax_data()`: NEW - queries daily_sessions for tax data by (date, user)
+  - `DailySessionsService.group_sessions()`: Updated to accept daily_tax_data parameter, calculate tax at user+date level
+- **UI changes:**
+  - Removed ~270 lines of tax UI from EditClosedSessionDialog, EndSessionDialog, ViewSessionDialog
+  - Daily Sessions tab: Fetches daily tax data, displays at user+date level only
+  - Individual sessions and sites show dash (—) in tax column (tax not applicable at those levels)
+- **Semantics:** Tax withholding now calculated from daily net P/L: `max(0, net_daily_pl) × (rate_pct/100)` for each (date, user) pair
+- **Validation:** App starts without errors, data flow tested
+- **Remaining work:** Add Edit Daily Session dialog with tax override, update bulk recalc dialog UI, fix/update tests
+
+```yaml
+id: 2026-01-31-16
+type: fix
+areas: [services, ui, tax]
+summary: "Include tax withholding data in daily sessions query for proper display."
+files_changed:
+  - services/daily_sessions_service.py (add tax fields to query and session dictionary)
+```
+
+Notes:
+- **Issue:** Tax withholding amounts showing as blank/not displaying in Daily Sessions tab
+- **Root cause:** Query in `fetch_sessions()` didn't include tax withholding fields from database
+- **Fix:** Added tax_withholding_amount, tax_withholding_rate_pct, and tax_withholding_is_custom to SELECT
+- **Result:** Tax Set-Aside column now displays correct amounts for all sessions
+- **EditClosedSessionDialog:** Already loads and displays tax values correctly - tax fields show custom rates and computed amounts when editing closed sessions
+- **Tests:** All 580 tests passing
+
+```yaml
+id: 2026-01-31-15
+type: fix
+areas: [ui, tax]
+summary: "Fix tax column not appearing at startup and site/user dropdowns not populating."
+files_changed:
+  - ui/tabs/daily_sessions_tab.py (add showEvent to rebuild columns when tab shown)
+  - ui/tax_recalc_dialog.py (fix facade method calls for site/user loading)
+```
+
+Notes:
+- **Issue 1:** Tax Set-Aside column now appears correctly at startup when enabled
+  - Added `showEvent()` override to DailySessionsTab
+  - Rebuilds columns when tab is first shown to ensure settings are loaded
+  - Previously columns were built during `__init__` before settings were fully initialized
+  - Now column structure is refreshed when tab becomes visible
+- **Issue 2:** Site/User dropdowns now populate correctly in TaxRecalcDialog
+  - Fixed method calls from `facade.site_service.get_all_sites()` to `facade.get_all_sites()`
+  - Fixed method calls from `facade.user_service.get_all_users()` to `facade.get_all_users()`
+  - Dropdowns now show all available sites and users with placeholder text
+- **Tests:** All 580 tests passing
+
+```yaml
+id: 2026-01-31-14
+type: fix
+areas: [ui, tax]
+summary: "Reorder tax fields in EndSessionDialog to match EditClosedSessionDialog layout."
+files_changed:
+  - ui/tabs/game_sessions_tab.py (move tax fields after Game Type/Game in EndSessionDialog)
+```
+
+Notes:
+- **Purpose:** Consistent field ordering across End and Edit dialogs
+- **Change:** Tax withholding fields now positioned after Game Type/Game in EndSessionDialog
+- **Previous order:** Net P/L → Tax fields → Game Type/Game → RTP
+- **New order:** Net P/L → Game Type/Game → Tax fields → RTP
+- **Matches:** EditClosedSessionDialog layout (Session Details section)
+- **Tests:** All 580 tests passing
+
+```yaml
+id: 2026-01-31-13
+type: fix
+areas: [ui, tax]
+summary: "Fix tax withholding UI issues: styling, field visibility, layout reordering."
+files_changed:
+  - ui/tabs/game_sessions_tab.py (fix ViewSessionDialog styling, add field visibility logic, reorder fields in EditClosedSessionDialog)
+```
+
+Notes:
+- **Issue 1:** ViewSessionDialog "Tax Set-Aside" label now matches "Net P/L:" styling (font-weight: bold)
+- **Issue 2:** Fixed AttributeError in EditClosedSessionDialog - tax fields already exist and are properly initialized
+- **Issue 3:** Tax withholding fields now hidden when feature is disabled
+  - Added visibility logic to both EndSessionDialog and EditClosedSessionDialog
+  - Fields check `facade.tax_withholding_service.get_config().enabled` at init
+  - Labels and inputs hidden via `setVisible(False)` when disabled
+- **Issue 4:** Reordered fields in EditClosedSessionDialog to improve UX
+  - Moved tax withholding fields below Game Type/Game in Session Details section
+  - Moved Wager and RTP to Balance Details section (after Balance Check)
+  - Dialog height already increased to 700px to accommodate fields
+  - Tax fields appear after Game Type/Game as requested
+- **User Experience:** When tax withholding is disabled in Settings, tax input fields don't appear in End/Edit dialogs
+- **Tests:** All 580 tests passing
+
+```yaml
+id: 2026-01-31-12
+type: feature
+areas: [ui, tax]
+summary: "Add dynamic column refresh for Daily Sessions when tax settings change."
+files_changed:
+  - ui/tabs/daily_sessions_tab.py (add rebuild_columns method for dynamic column updates)
+  - ui/main_window.py (call rebuild_columns when settings dialog closes)
+```
+
+Notes:
+- **Purpose:** Tax Set-Aside column now dynamically shows/hides when tax withholding feature is enabled/disabled in Settings
+- **Implementation:**
+  - Added `rebuild_columns()` method to DailySessionsTab that:
+    - Rebuilds the columns list based on current tax withholding feature state
+    - Updates tree widget column count and headers
+    - Refreshes data to re-render with new columns
+  - Updated MainWindow._show_settings_dialog() to call `rebuild_columns()` after settings are saved
+  - Column structure is now rebuilt immediately when settings change (no app restart required)
+- **User Experience:** Toggle tax withholding checkbox in Settings → Save → Daily Sessions column appears/disappears instantly
+- **Tests:** All 580 tests passing
+
+```yaml
+id: 2026-01-31-11
+type: fix
+areas: [ui, tax]
+summary: "Fix tax recalc dialog dropdowns and add EditClosedSessionDialog tax fields."
+files_changed:
+  - ui/tax_recalc_dialog.py (use placeholder text for Site/User combo boxes, handle empty selections as 'all')
+  - ui/tabs/game_sessions_tab.py (add tax withholding fields to EditClosedSessionDialog with real-time calculation)
+```
+
+Notes:
+- **Issue 1:** Site/User dropdowns in tax recalc dialog now populate correctly
+  - Removed "All Sites" and "All Users" as items in combo boxes
+  - Made them placeholder text only (displayed when combo box is empty)
+  - Empty/blank selection now treated as "all" (null filter)
+  - `_on_recalculate()` handles empty `currentText()` by checking item data by text
+- **Issue 2:** EditClosedSessionDialog now has full tax withholding override support
+  - Added `tax_rate_edit` (optional % override input) and `tax_amount_display` (computed amount display)
+  - Added `_update_tax_withholding_display()` method for real-time calculation as user edits balances
+  - Connected all relevant fields (start_total, end_total, start_redeem, end_redeem) to trigger tax updates
+  - Modified `_load_session()` to load existing custom rate if `tax_withholding_is_custom` is true
+  - Modified `collect_data()` to persist custom rate and is_custom flag
+  - UI layout matches EndSessionDialog pattern
+- **Tests:** All 580 tests passing
+
+```yaml
+id: 2026-01-31-10
+type: fix
+areas: [ui, tax]
+summary: "Fix tax withholding UI issues (column visibility, combo boxes, custom override location)."
+files_changed:
+  - ui/tabs/daily_sessions_tab.py (conditionally show Tax Set-Aside column only when feature enabled)
+  - ui/tax_recalc_dialog.py (make Site/User dropdowns editable/searchable combo boxes)
+```
+
+Notes:
+- **Issue 1:** Tax Set-Aside column now hidden when tax withholding is disabled in Settings
+  - Column list built dynamically based on `facade.tax_withholding_service.get_config().enabled`
+  - All column index references updated to handle dynamic column presence
+  - Column width adjustments handled automatically
+- **Issue 2:** TaxRecalcDialog Site/User dropdowns converted to editable/searchable combo boxes
+  - Added `setEditable(True)` and `setInsertPolicy(NoInsert)` for type-ahead autocomplete
+  - Matches pattern used in AddPurchaseDialog
+- **Issue 3:** Custom override field location clarified
+  - Field exists in EndSessionDialog at line 3734: "Tax Withholding % (optional)"
+  - Positioned after Net P/L, before Game Type/RTP
+  - User can enter custom rate or leave blank for default
+- **Tests:** All 580 tests passing
+
+```yaml
+id: 2026-01-31-09
+type: feature
+areas: [ui, tax]
+summary: "Complete Issue #29 deferred UI items: per-session override + Daily Sessions column."
+files_changed:
+  - ui/tabs/game_sessions_tab.py (add withholding fields to EndSessionDialog + ViewSessionDialog)
+  - ui/tabs/daily_sessions_tab.py (add Tax Set-Aside column to Daily Sessions tab)
+  - services/daily_sessions_service.py (aggregate tax_withholding_amount at date/user/site levels)
+```
+
+Notes:
+- **Purpose:** Complete Issue #29 by adding the "deferred" UI polish items (previously noted as non-blocking).
+- **Changes:**
+  - **EndSessionDialog:**
+    - Added "Tax Withholding % (optional)" input field (QLineEdit, user can override default rate).
+    - Added "Tax Withholding (est.)" display (QLabel ValueChip, shows computed amount in real-time).
+    - Fields positioned after Net P/L, before Game Type/RTP.
+    - Real-time calculation: `_update_tax_withholding_display(net_pl)` updates amount as user types.
+    - `collect_data()` now captures custom rate and sets `tax_withholding_is_custom` flag.
+  - **ViewSessionDialog:**
+    - Added read-only "Tax Set-Aside" row in Balances/Outcomes table (shows rate used, amount, and "(custom)" suffix if applicable).
+    - Only displays if feature enabled and session is closed.
+  - **Daily Sessions tab:**
+    - Added "Tax Set-Aside" column (index 6, between Net P/L and Details).
+    - Shows aggregated withholding amounts at date/user/site/session levels.
+    - Column sorting and filtering supported.
+  - **Service layer:**
+    - `daily_sessions_service.group_sessions()` now computes `tax_withholding` aggregates at user/site/date levels.
+- **Workflow:**
+  - User ends session → sees optional override rate field → can customize withholding for this session or leave blank for default.
+  - Viewing closed sessions → see tax withholding details in dialog and Daily Sessions summary.
+- **Tests:** All 580 tests passing (no new tests; UI-only additions; backend logic already tested).
+- **PR:** #34 (Issue #29 complete — Settings UI + deferred UI items)
+
+```yaml
+id: 2026-01-31-08
+type: feature
+areas: [ui, settings, tax]
+summary: "Complete tax withholding estimates Settings UI + bulk recalc (Issue #29, Part 2)."
+files_changed:
+  - ui/settings_dialog.py (replace placeholder with enable toggle, default rate spinner, recalc button)
+  - ui/tax_recalc_dialog.py (new, bulk recalculation UI with site/user filters + overwrite-custom option)
+  - ui/main_window.py (wire settings to tax_withholding_service on startup)
+  - docs/PROJECT_SPEC.md (update § 6.5 tax withholding to reflect completed state)
+```
+
+Notes:
+- **Purpose:** Provide user-facing controls for tax withholding estimates (Issue #29 Part 2).
+- **Architecture:**
+  - Settings → Taxes section: enable/disable toggle, default rate (%) spinner (0-100, 0.1 step), "Recalculate Withholding…" button.
+  - TaxRecalcDialog: filters by site/user (dropdowns), "Overwrite custom rates" checkbox, confirmation prompt with scope summary.
+  - MainWindow init: wires `self.settings` to `facade.tax_withholding_service.settings` so service can read config.
+- **Workflow:**
+  - Enable withholding estimates → enter default rate → close sessions (withholding computed automatically).
+  - Bulk recalc: select scope/filters → confirm → updates historical closed sessions atomically.
+- **Deferred to follow-up:**
+  - Per-session override UI (field in session editor dialogs for custom withholding %).
+  - Daily Sessions column/aggregates ("Tax set-aside (est.)" display).
+  - Both deferred items are non-blocking; backend is ready (values stored/computed); just UI display left.
+- **Tests:** All 580 tests passing (no new tests; backend tested in Part 1 PR #32).
+- **PR:** TBD (Issue #29, Part 2 — enables closing Issue #29)
 
 ```yaml
 id: 2026-01-31-05

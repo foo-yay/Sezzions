@@ -573,17 +573,56 @@ class RecalculationService:
         conn.commit()
         return updated_count
 
+    def _sync_daily_sessions(self, progress_callback: Optional[ProgressCallback] = None):
+        """Synchronize daily_sessions table from closed game_sessions.
+        
+        Populates daily_sessions with aggregated P/L data from closed sessions.
+        Uses INSERT OR REPLACE to handle both new and existing rows.
+        Notes are stored in daily_date_tax table (not here).
+        Tax data is now stored in daily_date_tax table (see TaxWithholdingService).
+        """
+        if progress_callback:
+            progress_callback(0, 1, "Synchronizing daily sessions from closed game sessions...")
+        
+        # Check if daily_sessions table exists first (for tests/old DBs)
+        cursor = self.db._connection.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_sessions'")
+        if not cursor.fetchone():
+            return  # Table doesn't exist, skip sync
+        
+        self.db.execute(
+            """
+            INSERT OR REPLACE INTO daily_sessions (
+                session_date, 
+                user_id, 
+                net_daily_pnl, 
+                num_game_sessions
+            )
+            SELECT 
+                gs.end_date,
+                gs.user_id,
+                SUM(COALESCE(gs.net_taxable_pl, 0)) as net_daily_pnl,
+                COUNT(*) as num_game_sessions
+            FROM game_sessions gs
+            WHERE gs.status = 'Closed' AND gs.end_date IS NOT NULL
+            GROUP BY gs.end_date, gs.user_id
+            """,
+            ()
+        )
+
     def rebuild_all(self, progress_callback: Optional[ProgressCallback] = None) -> RebuildResult:
-        """Rebuild ALL derived data (FIFO + sessions + cashback) for all (user_id, site_id) pairs.
+        """Rebuild ALL derived data (FIFO + sessions + cashback + daily_sessions) for all pairs.
         
         This matches legacy recalculate_everything() which calls:
         rebuild_all_derived(rebuild_fifo=True, rebuild_sessions=True)
         
-        Now also includes cashback recalculation.
+        Now also includes:
+        - Cashback recalculation
+        - Daily sessions synchronization
         """
         pairs = self.iter_pairs()
         total_pairs = len(pairs)
-        total_steps = total_pairs * 3  # 3 steps per pair: FIFO + sessions + cashback
+        total_steps = total_pairs * 3 + 2  # 3 steps per pair + RTP + daily_sessions
         
         redemptions_processed = 0
         allocations_written = 0
@@ -623,6 +662,7 @@ class RecalculationService:
             cashback_updated += cashback_count
 
         # Rebuild game RTP aggregates for all games
+        current_step += 1
         if progress_callback:
             progress_callback(current_step, total_steps, "Recalculating game RTP aggregates...")
         
@@ -635,6 +675,30 @@ class RecalculationService:
                     self.game_session_service.recalculate_game_rtp_full(game.id)
                 except Exception:
                     continue
+        except Exception:
+            pass
+
+        # Synchronize daily_sessions table from closed game sessions
+        current_step += 1
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Synchronizing daily sessions...")
+        
+        self._sync_daily_sessions(progress_callback)
+
+        # Recalculate tax withholding (if enabled in settings)
+        current_step += 1
+        if progress_callback:
+            progress_callback(current_step, total_steps, "Recalculating tax withholding...")
+        
+        try:
+            if hasattr(self, 'tax_withholding_service'):
+                config = self.tax_withholding_service.get_config()
+                if config.enabled:
+                    self.tax_withholding_service.bulk_recalculate(
+                        start_date=None,
+                        end_date=None,
+                        overwrite_custom=False
+                    )
         except Exception:
             pass
 

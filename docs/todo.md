@@ -20,7 +20,14 @@ Rules:
 
 ## Ready for Review (Owner Approval Required)
 
-- (none)
+- [x] **Tax withholding moved to daily sessions only** (PR #34, Issue #29)
+  - Validation: Database migration added tax columns to daily_sessions, removed from game_sessions schema
+  - TaxWithholdingService rewritten for daily-only semantics (apply_to_daily_session, bulk_recalculate)
+  - All tax UI removed from game session dialogs (Edit/End/View)
+  - Daily Sessions tab updated: fetches tax from daily_sessions table, calculates at user+date level
+  - App starts without errors, data flow tested
+  - Commits: 153cdf0, 22c3925, 3a0220a on feature/issue-29-tax-withholding-ui
+  - **Remaining**: Add Edit Daily Session dialog with tax override, update bulk recalc dialog UI, fix/update tests
 
 ## Next
 

@@ -135,6 +135,7 @@ class GameSessionService:
         old_game_id = session.game_id
         old_wager = session.wager_amount
         old_delta_total = session.delta_total
+        old_end_date = session.end_date  # Capture for tax recalculation
         
         # Update fields if provided
         if starting_balance is not None:
@@ -202,6 +203,37 @@ class GameSessionService:
                     old_start_date,
                     old_start_time,
                 )
+            
+            # Sync daily_sessions and recalculate tax when:
+            # 1. Closing a session for the first time
+            # 2. Editing an already-closed session (P/L may have changed)
+            if target_status == "Closed":
+                # Use end_date for tax accounting (when session closed), not session_date (when started)
+                accounting_date = session.end_date or session.session_date
+                self._sync_daily_sessions_for_pair(session.user_id, session.site_id, accounting_date)
+                
+                # Also sync old date if the session moved to a different end_date
+                old_end_date = old_end_date if old_end_date else old_session_date
+                if old_status == "Closed" and old_end_date != accounting_date:
+                    self._sync_daily_sessions_for_pair(old_user_id, old_site_id, old_end_date)
+                
+                # Recalculate tax for affected dates (if tax withholding is enabled)
+                if hasattr(self, 'tax_withholding_service'):
+                    try:
+                        tax_service = self.tax_withholding_service
+                        config = tax_service.get_config()
+                        if config.enabled:
+                            # Recalculate tax for current date
+                            date_str = accounting_date.isoformat() if hasattr(accounting_date, 'isoformat') else str(accounting_date)
+                            tax_service.apply_to_date(session_date=date_str)
+                            
+                            # If session moved to different date, recalculate old date too
+                            if old_status == "Closed" and old_end_date != accounting_date:
+                                old_date_str = old_end_date.isoformat() if hasattr(old_end_date, 'isoformat') else str(old_end_date)
+                                tax_service.apply_to_date(session_date=old_date_str)
+                    except Exception:
+                        pass  # Don't fail the update if tax calculation fails
+            
             refreshed = self.session_repo.get_by_id(session_id)
             if refreshed:
                 self._sync_game_rtp(
@@ -669,6 +701,9 @@ class GameSessionService:
             last_end_total = end_total
             last_end_redeem = end_red
             checkpoint_end_dt = end_dt
+        
+        # After recalculating sessions, sync daily_sessions and tax for ALL affected dates
+        self._sync_tax_for_affected_dates(user_id, site_id, from_date)
     
     def recalculate_all_sessions(self, user_id: Optional[int] = None, site_id: Optional[int] = None) -> int:
         """
@@ -792,6 +827,79 @@ class GameSessionService:
                 delta_delta = new_delta_val - old_delta_val
                 if wager_delta or delta_delta:
                     self.update_game_rtp_incremental(new_game_id, wager_delta, delta_delta, new_session=False)
+
+    def _sync_daily_sessions_for_pair(self, user_id: int, site_id: int, session_date: date) -> None:
+        """Synchronize daily_sessions entry for a specific date+user when session is closed.
+        
+        Uses INSERT OR REPLACE to handle both new and existing rows.
+        Notes are stored in daily_date_tax table (not here).
+        Tax data is now stored in daily_date_tax table (see TaxWithholdingService).
+        """
+        # Check if daily_sessions table exists first (for tests/old DBs)
+        cursor = self.session_repo.db._connection.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_sessions'")
+        if not cursor.fetchone():
+            return  # Table doesn't exist, skip sync
+        
+        self.session_repo.db.execute(
+            """
+            INSERT OR REPLACE INTO daily_sessions (
+                session_date, 
+                user_id, 
+                net_daily_pnl, 
+                num_game_sessions
+            )
+            SELECT 
+                gs.end_date,
+                gs.user_id,
+                SUM(COALESCE(gs.net_taxable_pl, 0)) as net_daily_pnl,
+                COUNT(*) as num_game_sessions
+            FROM game_sessions gs
+            WHERE gs.status = 'Closed' 
+              AND gs.end_date IS NOT NULL
+              AND gs.user_id = ? 
+              AND gs.end_date = ?
+            GROUP BY gs.end_date, gs.user_id
+            """,
+            (user_id, session_date)
+        )
+    
+    def _sync_tax_for_affected_dates(self, user_id: int, site_id: int, from_date) -> None:
+        """Sync daily_sessions and recalculate tax for all dates from boundary onwards.
+        
+        Called after cascade recalculations (e.g., after purchase/redemption edits)
+        to ensure tax withholding reflects updated session P/L.
+        """
+        # Get all distinct end_dates for this user/site from boundary onwards
+        boundary_str = from_date.isoformat() if hasattr(from_date, 'isoformat') else str(from_date)
+        
+        rows = self.session_repo.db.fetch_all(
+            """
+            SELECT DISTINCT end_date
+            FROM game_sessions
+            WHERE user_id = ?
+              AND site_id = ?
+              AND status = 'Closed'
+              AND end_date IS NOT NULL
+              AND end_date >= ?
+            """,
+            (user_id, site_id, boundary_str)
+        )
+        
+        # Sync daily_sessions and recalculate tax for each affected date
+        for row in rows:
+            end_date = row["end_date"]
+            self._sync_daily_sessions_for_pair(user_id, site_id, end_date)
+            
+            # Recalculate tax if enabled
+            if hasattr(self, 'tax_withholding_service'):
+                try:
+                    tax_service = self.tax_withholding_service
+                    config = tax_service.get_config()
+                    if config.enabled:
+                        tax_service.apply_to_date(session_date=end_date)
+                except Exception:
+                    pass  # Don't fail cascade if tax calc fails
 
     def update_game_rtp_incremental(
         self,
