@@ -3203,8 +3203,6 @@ class ViewSessionDialog(QDialog):
         net_pl_value.setStyleSheet(f"color: {net_color}; padding: 6px;")
         balances_grid.addWidget(net_pl_value, row, 1, 1, 3)
 
-                balances_grid.addWidget(tax_value, row, 1, 1, 3)
-
         balances_grid.setColumnStretch(1, 1)
         balances_grid.setColumnStretch(2, 1)
         balances_grid.setColumnStretch(3, 1)
