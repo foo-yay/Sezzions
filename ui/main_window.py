@@ -15,6 +15,8 @@ from ui.themes import get_theme, get_theme_names
 from ui.settings import Settings
 from ui.notification_widgets import NotificationBellWidget, NotificationCenterDialog
 from ui.settings_dialog import SettingsDialog
+from ui.maintenance_mode_dialog import MaintenanceModeDialog
+from services.data_integrity_service import DataIntegrityService
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -25,6 +27,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.facade = facade
         self.settings = Settings()
         self.setWindowTitle("Sezzions - Casino Session Tracker")
+        
+        # Check data integrity before proceeding
+        self.maintenance_mode = False
+        self._check_data_integrity()
         
         # Restore window size
         width = self.settings.get('window_width', 1400)
@@ -221,9 +227,50 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings.set('last_tab', self.tab_bar.currentIndex())
         event.accept()
     
+    def _check_data_integrity(self):
+        """Check database integrity at startup and enter maintenance mode if needed."""
+        # Create integrity service
+        integrity_service = DataIntegrityService(self.facade.db)
+        
+        # Run quick check (fast, stops at first violation)
+        check_result = integrity_service.check_integrity(quick=True)
+        
+        if not check_result.is_clean:
+            # Show maintenance mode dialog
+            dialog = MaintenanceModeDialog(check_result, parent=self)
+            result = dialog.exec()
+            
+            if result == QtWidgets.QDialog.DialogCode.Accepted:
+                # User chose to continue in maintenance mode
+                self.maintenance_mode = True
+                self.setWindowTitle("Sezzions - MAINTENANCE MODE")
+            else:
+                # User chose to exit
+                QtWidgets.QApplication.quit()
+                import sys
+                sys.exit(0)
+    
     def _create_tabs(self):
         """Create all application tabs"""
         self._tab_index = {}
+        
+        if self.maintenance_mode:
+            # Maintenance mode: only show Setup tab (which includes Tools)
+            self.setup_tab = SetupTab(self.facade)
+            self.tab_bar.addTab("⚙️ Setup")
+            self.stack.addWidget(self.setup_tab)
+            self._tab_index["setup"] = 0
+            self.tools_tab = self.setup_tab.tools_tab
+            
+            # Add maintenance mode banner
+            banner = QtWidgets.QLabel("⚠️ MAINTENANCE MODE - Data integrity issues detected. Use Tools to recalculate or restore.")
+            banner.setStyleSheet("background-color: #ff6b6b; color: white; padding: 8px; font-weight: bold;")
+            banner.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            self.main_content.layout().insertWidget(0, banner)
+            
+            return
+        
+        # Normal mode: create all tabs
         # Primary tabs
         self.purchases_tab = PurchasesTab(self.facade, main_window=self)
         self.redemptions_tab = RedemptionsTab(self.facade, main_window=self)
