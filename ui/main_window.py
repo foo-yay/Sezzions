@@ -56,21 +56,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self._notification_bell.raise_()
 
         # Settings gear overlay (pinned to the right of the notification bell)
-        self._settings_gear = QtWidgets.QPushButton("⚙️", self.main_content)
+        self._settings_gear = QtWidgets.QToolButton(self.main_content)
         self._settings_gear.setObjectName("SettingsGearButton")
+        self._settings_gear.setText("⚙")
+        self._settings_gear.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self._settings_gear.setAutoRaise(True)
         self._settings_gear.setFixedSize(30, 30)
         self._settings_gear.setToolTip("Settings")
-        self._settings_gear.setStyleSheet("""
-            QPushButton {
-                background: transparent;
-                border: none;
-                font-size: 16px;
-            }
-            QPushButton:hover {
-                background: rgba(0, 0, 0, 0.05);
-                border-radius: 4px;
-            }
-        """)
+        gear_font = QtGui.QFont("Apple Color Emoji")
+        gear_font.setPixelSize(15)
+        self._settings_gear.setFont(gear_font)
+        self._settings_gear.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        self._settings_gear.setStyleSheet(
+            "QToolButton { background: transparent; border: none; padding: 0px; }"
+            "QToolButton:hover { background: transparent; }"
+            "QToolButton:pressed { background: transparent; }"
+        )
         self._settings_gear.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._settings_gear.clicked.connect(self._show_settings_dialog)
         self._settings_gear.raise_()
@@ -562,6 +563,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def apply_theme(self, theme_name: str):
         """Public method for applying theme (called by Settings dialog)"""
         self._apply_theme(theme_name)
+        self.settings.set_theme(theme_name)
         self.statusBar().showMessage(f"Theme changed to {theme_name}", 2000)
     
     def _show_about(self):
