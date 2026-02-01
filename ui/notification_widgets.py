@@ -17,11 +17,14 @@ class NotificationBellWidget(QPushButton):
     
     def __init__(self, parent=None):
         super().__init__("🔔", parent)
-        self.setObjectName("NotificationBell")
-        self.setFixedSize(30, 30)
+        # Shared styling with the Settings gear button (see ui/themes.py).
+        self.setObjectName("HeaderIconButton")
+        self.setFixedSize(32, 32)
         self.setToolTip("Notifications")
         self._unread_count = 0
-        self.setStyleSheet("font-size: 16px;")
+        font = QFont("Apple Color Emoji")
+        font.setPixelSize(16)
+        self.setFont(font)
     
     def set_unread_count(self, count: int):
         """Update badge count"""

@@ -57,22 +57,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Settings gear overlay (pinned to the right of the notification bell)
         self._settings_gear = QtWidgets.QToolButton(self.main_content)
-        self._settings_gear.setObjectName("SettingsGearButton")
+        # Shared styling with NotificationBellWidget (styled in ui/themes.py)
+        self._settings_gear.setObjectName("HeaderIconButton")
         self._settings_gear.setText("⚙")
         self._settings_gear.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
         self._settings_gear.setAutoRaise(True)
-        # Match the notification bell sizing exactly for visual alignment.
-        self._settings_gear.setFixedSize(30, 30)
+        self._settings_gear.setFixedSize(32, 32)
         self._settings_gear.setToolTip("Settings")
         gear_font = QtGui.QFont("Apple Color Emoji")
         gear_font.setPixelSize(16)
         self._settings_gear.setFont(gear_font)
         self._settings_gear.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
-        self._settings_gear.setStyleSheet(
-            "QToolButton { background: transparent; border: none; padding: 0px; }"
-            "QToolButton:hover { background: transparent; }"
-            "QToolButton:pressed { background: transparent; }"
-        )
         self._settings_gear.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._settings_gear.clicked.connect(self._show_settings_dialog)
         self._settings_gear.raise_()
