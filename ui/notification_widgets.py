@@ -28,7 +28,11 @@ class NotificationBellWidget(QPushButton):
         self.setFont(font)
 
         # Badge overlay (use a real label so text layout/centering is consistent).
-        self._badge = QLabel(self)
+        # Parent it to the same container as the bell so the pill can extend
+        # beyond the bell button when wider (e.g. "10+").
+        badge_parent = parent if parent is not None else self
+        self._badge_parent_is_self = badge_parent is self
+        self._badge = QLabel(badge_parent)
         self._badge.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._badge.setAlignment(Qt.AlignCenter)
         self._badge.setVisible(False)
@@ -68,6 +72,11 @@ class NotificationBellWidget(QPushButton):
         if self._badge.isVisible():
             self._update_badge_geometry()
 
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        if self._badge.isVisible():
+            self._update_badge_geometry()
+
     def _update_badge_geometry(self):
         # Keep the badge compact and readable.
         badge_h = 14
@@ -77,12 +86,12 @@ class NotificationBellWidget(QPushButton):
 
         badge_font = QFont()
         badge_font.setBold(False)
-        badge_font.setPixelSize(9 if len(text) <= 2 else 8)
+        badge_font.setPixelSize(8 if len(text) <= 2 else 7)
         self._badge.setFont(badge_font)
 
         metrics = QFontMetricsF(badge_font)
         text_w = metrics.horizontalAdvance(text)
-        pad_x = 5.0
+        pad_x = 6.0
         badge_w = max(float(badge_h), float(text_w + pad_x * 2.0))
 
         # QLabel positioning uses ints; snapping helps keep things steady.
@@ -99,7 +108,15 @@ class NotificationBellWidget(QPushButton):
             "}"
         )
 
-        self._badge.move(self.width() - badge_w_i - badge_margin, badge_margin)
+        if self._badge_parent_is_self:
+            # Fallback if we couldn't parent into a container.
+            self._badge.move(self.width() - badge_w_i - badge_margin, badge_margin)
+            return
+
+        # Anchor the pill by its *left edge* at a fixed point so it doesn't shift
+        # left when the text width grows.
+        anchor_left_x = self.x() + self.width() - badge_margin - (badge_h / 2)
+        self._badge.move(int(round(anchor_left_x)), self.y() + badge_margin)
 
 
 class NotificationItemWidget(QFrame):
