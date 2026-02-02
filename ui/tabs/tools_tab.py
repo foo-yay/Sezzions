@@ -45,6 +45,19 @@ class ToolsTab(QWidget):
         self._active_tools_worker = None  # Strong ref to active QRunnable to prevent GC
         self._background_tools_workers = []  # Strong refs for non-UI (auto) background workers
         self._setup_ui()
+    
+    def _get_settings_dict(self):
+        """Get settings dictionary for passing to worker threads.
+        
+        Walks up widget hierarchy to find MainWindow and extract settings.
+        Returns empty dict if MainWindow not found (graceful degradation).
+        """
+        widget = self
+        while widget:
+            if hasattr(widget, 'settings') and hasattr(widget.settings, 'settings'):
+                return dict(widget.settings.settings)
+            widget = widget.parentWidget()
+        return {}
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -458,7 +471,11 @@ class ToolsTab(QWidget):
         progress_dialog = RecalculationProgressDialog("Recalculate Everything", self)
         
         # Create worker with database path (creates its own connection for thread safety)
-        worker = RecalculationWorker(self.facade.db.db_path, operation="all")
+        worker = RecalculationWorker(
+            self.facade.db.db_path,
+            operation="all",
+            settings_dict=self._get_settings_dict()
+        )
         
         # Connect signals
         worker.signals.progress.connect(progress_dialog.update_progress)
@@ -562,7 +579,8 @@ class ToolsTab(QWidget):
             self.facade.db.db_path,
             operation=operation,
             user_id=user_id,
-            site_id=site_id
+            site_id=site_id,
+            settings_dict=self._get_settings_dict()
         )
         
         # Connect signals
@@ -1675,7 +1693,8 @@ class ToolsTab(QWidget):
             operation="after_import",
             entity_type=entity_type,
             user_ids=user_ids,
-            site_ids=site_ids
+            site_ids=site_ids,
+            settings_dict=self._get_settings_dict()
         )
         
         # Connect signals

@@ -148,7 +148,11 @@ class AppFacade:
 
         # Bulk rebuild / recalculation orchestration (legacy parity)
         # Pass game_session_service so RecalculationService can recalculate both FIFO + sessions
-        self.recalculation_service = RecalculationService(self.db, game_session_service=self.game_session_service)
+        self.recalculation_service = RecalculationService(
+            self.db,
+            game_session_service=self.game_session_service,
+            tax_withholding_service=self.tax_withholding_service
+        )
         self.game_session_event_link_service = GameSessionEventLinkService(
             self.game_session_event_link_repo,
             self.game_session_repo,
