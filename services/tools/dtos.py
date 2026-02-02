@@ -13,7 +13,6 @@ class ValidationSeverity(Enum):
 
 
 @dataclass
-@dataclass
 class ValidationError:
     """Single validation error from CSV import."""
     row_number: int
@@ -34,7 +33,7 @@ class ImportPreview:
     exact_duplicates: List[Dict[str, Any]] = None
     conflicts: List[Dict[str, Any]] = None
     invalid_rows: List[ValidationError] = None
-    csv_duplicates: List[Dict[str, Any]] = None
+    csv_duplicates: List[ValidationError] = None
     
     def __post_init__(self):
         """Initialize empty lists for None values."""
@@ -50,16 +49,20 @@ class ImportPreview:
             self.invalid_rows = []
         if self.csv_duplicates is None:
             self.csv_duplicates = []
+
+    def _all_issues(self) -> List[ValidationError]:
+        """All validation issues surfaced during preview."""
+        return [*self.invalid_rows, *self.csv_duplicates]
     
     @property
     def has_errors(self) -> bool:
         """Check if there are any blocking errors."""
-        return any(err.severity == ValidationSeverity.ERROR for err in self.invalid_rows)
+        return any(err.severity == ValidationSeverity.ERROR for err in self._all_issues())
     
     @property
     def has_warnings(self) -> bool:
         """Check if there are any warnings."""
-        return any(err.severity == ValidationSeverity.WARNING for err in self.invalid_rows)
+        return any(err.severity == ValidationSeverity.WARNING for err in self._all_issues())
 
 
 @dataclass
@@ -85,26 +88,12 @@ class ImportResult:
 class ExportResult:
     """Result of CSV export operation."""
     success: bool
-    records_exported: int
-    file_path: str
-    error: Optional[str] = None
-
-
-@dataclass
-class ExportResult:
-    """Result of a CSV export operation."""
-    success: bool
     records_exported: int = 0
     file_path: str = ""
-    errors: List[str] = None
-    warnings: List[str] = None
-    
-    def __post_init__(self):
-        """Initialize empty lists if None."""
-        if self.errors is None:
-            self.errors = []
-        if self.warnings is None:
-            self.warnings = []
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    # Legacy single-error field (some callers may still use this)
+    error: Optional[str] = None
 
 
 @dataclass

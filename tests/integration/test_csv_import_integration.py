@@ -368,6 +368,7 @@ class TestCSVImportWorkflow:
         preview = import_service.preview_import(temp_csv, 'purchases')
         
         assert len(preview.csv_duplicates) > 0
+        assert preview.has_errors
     
     def test_import_missing_required_field(self, import_service, temp_csv):
         """Test import with missing required field."""

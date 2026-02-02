@@ -66,7 +66,7 @@ class ImportPreviewDialog(QDialog):
                        f"Errors ({len(self.preview.invalid_rows)})")
         
         if self.preview.csv_duplicates:
-            tabs.addTab(self._create_records_tab(self.preview.csv_duplicates, "red"),
+            tabs.addTab(self._create_errors_tab(self.preview.csv_duplicates),
                        f"CSV Duplicates ({len(self.preview.csv_duplicates)})")
         
         layout.addWidget(tabs)
