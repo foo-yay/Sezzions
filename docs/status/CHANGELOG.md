@@ -12,6 +12,43 @@ Rules:
 ## 2026-02-02
 
 ```yaml
+id: 2026-02-02-05
+type: fix
+areas: [unrealized, repositories, ui]
+summary: "Fix Issue #44: Unrealized tab now reflects purchases/redemptions after last session"
+files_changed:
+  - repositories/unrealized_position_repository.py (incorporate transactions after last session)
+  - ui/tabs/unrealized_tab.py (update column headers for clarity)
+  - tests/integration/test_issue_44_unrealized_live_balances.py (new comprehensive tests)
+branch: fix/issue-44-unrealized-live-balances
+commits: [61ba86e]
+issue: "#44"
+pull_request: "TBD"
+notes: |
+  Fixed bug where Unrealized tab "Current SC / Current Value / Unrealized P/L" columns
+  remained stuck at last session values even after new purchases or redemptions.
+  
+  Root cause: once any session existed, current_sc was pulled from the most recent
+  session's ending balance and ignored all subsequent transactions.
+  
+  Solution: estimate current balances by taking last session as baseline and applying
+  purchases/redemptions that occurred after that session:
+  - estimated_redeemable_sc = session_ending_redeemable + purchases_since - redemptions_since
+  - current_value = estimated_redeemable_sc * sc_rate
+  - unrealized_pl = current_value - remaining_basis
+  
+  Updated column headers to reflect estimated nature and clarify semantics:
+  - "Purchase Basis" → "Remaining Basis"
+  - "Current SC" → "Current Redeemable SC"
+  - "Unrealized P/L" → "Est. Unrealized P/L"
+  
+  Added 6 new integration tests covering purchase-after-session, redemption-after-session,
+  multiple transactions, no-sessions, last-activity tracking, and basis invariants.
+  All 597 tests passing.
+status: complete
+```
+
+```yaml
 id: 2026-02-02-04
 type: fix
 areas: [tax, recalculation, services]
