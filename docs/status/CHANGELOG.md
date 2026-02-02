@@ -17,10 +17,10 @@ type: fix
 areas: [redemptions, ui, validation]
 summary: "Fix Issue #40: Receipt-date-only redemption updates skip unnecessary balance validation"
 files_changed:
-  - ui/tabs/redemptions_tab.py (detect accounting vs metadata field changes in _edit_redemption)
+  - ui/tabs/redemptions_tab.py (skip balance check in dialog when accounting fields unchanged; detect metadata-only changes in tab)
   - tests/integration/test_issue_40_redemption_receipt_date.py (NEW: 5 integration tests)
 branch: fix/issue-40-redemption-receipt-date-warning
-commits: [b09081c, b660061, f33ebbf, 2a6269f]
+commits: [b09081c, b660061, f33ebbf, 2a6269f, c5bb89c, fe866bf]
 issue: "#40"
 pull_request: "#41"
 notes: |
@@ -29,16 +29,22 @@ notes: |
   accounting changes occurred. This caused false warnings about session balance mismatches
   when purchases existed after the redemption date.
   
-  Solution: In RedemptionsTab._edit_redemption(), detect which fields changed:
-  - Accounting fields: user_id, site_id, amount, redemption_date/time, fees, method_id, more_remaining
-  - Metadata fields: receipt_date, processed, notes
+  Root cause: Balance validation was happening in TWO places:
+  1. In the dialog's _validate_and_accept() method (runs when user clicks OK)
+  2. In the tab's _edit_redemption() method (runs after dialog closes)
   
-  Route edits appropriately:
-  - Accounting changes → update_redemption_reprocess (full validation + FIFO rebuild)
-  - Metadata-only changes → update_redemption (lightweight, no validation)
+  The dialog validation was running FIRST and blocking the update before we could detect
+  metadata-only changes in the tab.
   
-  Bug fix (2a6269f): Normalize redemption_time comparison (None vs "00:00:00") to prevent
-  false positives when comparing redemption.redemption_time (None) with dialog.get_time() or "00:00:00".
+  Solution implemented in two layers:
+  
+  Layer 1 (Dialog - fe866bf): In RedemptionDialog._validate_and_accept(), skip balance
+  validation when editing and accounting fields (amount, user, site, date, time) are unchanged.
+  This prevents the session balance warning when only metadata fields change.
+  
+  Layer 2 (Tab - 2a6269f, earlier commits): In RedemptionsTab._edit_redemption(), detect
+  metadata-only changes and route to lightweight update_redemption() instead of 
+  update_redemption_reprocess(). Normalize redemption_time comparison (None vs "00:00:00").
   
   Tests cover happy path, edge cases with complex purchase timelines, and verify both paths.
 ```
