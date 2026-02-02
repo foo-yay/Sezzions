@@ -12,6 +12,38 @@ Rules:
 ## 2026-02-02
 
 ```yaml
+id: 2026-02-02-04
+type: fix
+areas: [tax, recalculation, services]
+summary: "Fix Issue #42: Daily Sessions tax withheld missing after CSV import + Recalculate Everything"
+files_changed:
+  - services/recalculation_service.py (add tax_withholding_service param to __init__)
+  - app_facade.py (pass tax_withholding_service to RecalculationService)
+  - ui/tools_workers.py (accept settings_dict; create TaxWithholdingService in worker thread)
+  - ui/tabs/tools_tab.py (add _get_settings_dict(); pass settings to all RecalculationWorker calls)
+branch: fix/issue-42-tax-withholding-after-recalc
+commits: [0ed82f2]
+issue: "#42"
+pull_request: "#43"
+notes: |
+  Fixed bug where Daily Sessions tab showed Tax Set-Aside = $0.00 after CSV import +
+  "Recalculate Everything", particularly for multi-day sessions. Root cause:
+  RecalculationService.rebuild_all() had tax recalculation code but it never executed
+  because RecalculationService.__init__() didn't accept tax_withholding_service parameter.
+  Worker threads creating their own RecalculationService had no tax service wired.
+  
+  Solution: Wire tax_withholding_service through the full stack:
+  1. RecalculationService now accepts and stores tax_withholding_service
+  2. AppFacade passes it when creating RecalculationService
+  3. RecalculationWorker accepts settings_dict and creates TaxWithholdingService in thread
+  4. ToolsTab extracts settings from MainWindow hierarchy for worker threads
+  
+  Result: Tax withholding now calculates correctly during full rebuild and post-CSV-import
+  recalculation. No more manual Settings → Recalculate Tax needed after import.
+  All 591 tests passing.
+```
+
+```yaml
 id: 2026-02-02-03
 type: fix
 areas: [ui, tables]
