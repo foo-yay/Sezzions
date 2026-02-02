@@ -461,6 +461,23 @@ class RedemptionsTab(QtWidgets.QWidget):
                 old_time = redemption.redemption_time or "00:00:00"
                 new_time = dialog.get_time() or "00:00:00"
                 
+                # Debug logging to diagnose field change detection
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info("=== Redemption Edit Debug ===")
+                logger.info(f"Old redemption: id={redemption.id}")
+                logger.info(f"  user_id: {redemption.user_id} -> {dialog.user_id} (changed: {redemption.user_id != dialog.user_id})")
+                logger.info(f"  site_id: {redemption.site_id} -> {dialog.site_id} (changed: {redemption.site_id != dialog.site_id})")
+                logger.info(f"  amount: {redemption.amount} -> {dialog.get_amount()} (changed: {redemption.amount != dialog.get_amount()})")
+                logger.info(f"  redemption_date: {redemption.redemption_date} -> {dialog.get_date()} (changed: {redemption.redemption_date != dialog.get_date()})")
+                logger.info(f"  redemption_time: {old_time} -> {new_time} (changed: {old_time != new_time})")
+                logger.info(f"  more_remaining: {redemption.more_remaining} -> {dialog.is_partial_selected()} (changed: {redemption.more_remaining != dialog.is_partial_selected()})")
+                logger.info(f"  fees: {redemption.fees} -> {dialog.get_fees()} (changed: {redemption.fees != dialog.get_fees()})")
+                logger.info(f"  redemption_method_id: {redemption.redemption_method_id} -> {dialog.method_id} (changed: {redemption.redemption_method_id != dialog.method_id})")
+                logger.info(f"  receipt_date: {redemption.receipt_date} -> {dialog.get_receipt_date()} (changed: {redemption.receipt_date != dialog.get_receipt_date()})")
+                logger.info(f"  processed: {redemption.processed} -> {dialog.processed_check.isChecked()} (changed: {redemption.processed != dialog.processed_check.isChecked()})")
+                logger.info(f"  notes: {redemption.notes} -> {dialog.notes_edit.toPlainText() or None}")
+                
                 accounting_fields_changed = (
                     redemption.user_id != dialog.user_id or
                     redemption.site_id != dialog.site_id or
@@ -471,6 +488,44 @@ class RedemptionsTab(QtWidgets.QWidget):
                     redemption.fees != dialog.get_fees() or
                     redemption.redemption_method_id != dialog.method_id
                 )
+                
+                logger.info(f"accounting_fields_changed: {accounting_fields_changed}")
+                logger.info("===========================")
+                
+                # Show debug popup
+                if True:  # Always show for now
+                    debug_lines = []
+                    if redemption.user_id != dialog.user_id:
+                        debug_lines.append(f"✗ user_id: {redemption.user_id} → {dialog.user_id}")
+                    if redemption.site_id != dialog.site_id:
+                        debug_lines.append(f"✗ site_id: {redemption.site_id} → {dialog.site_id}")
+                    if redemption.amount != dialog.get_amount():
+                        debug_lines.append(f"✗ amount: {redemption.amount} → {dialog.get_amount()}")
+                    if redemption.redemption_date != dialog.get_date():
+                        debug_lines.append(f"✗ date: {redemption.redemption_date} → {dialog.get_date()}")
+                    if old_time != new_time:
+                        debug_lines.append(f"✗ time: {repr(old_time)} → {repr(new_time)}")
+                    if redemption.more_remaining != dialog.is_partial_selected():
+                        debug_lines.append(f"✗ more_remaining: {redemption.more_remaining} → {dialog.is_partial_selected()}")
+                    if redemption.fees != dialog.get_fees():
+                        debug_lines.append(f"✗ fees: {redemption.fees} → {dialog.get_fees()}")
+                    if redemption.redemption_method_id != dialog.method_id:
+                        debug_lines.append(f"✗ method_id: {redemption.redemption_method_id} → {dialog.method_id}")
+                    
+                    if debug_lines:
+                        QtWidgets.QMessageBox.warning(
+                            self,
+                            "DEBUG: Fields Changed",
+                            f"Accounting fields that changed:\n\n" + "\n".join(debug_lines) + 
+                            f"\n\naccounting_fields_changed = {accounting_fields_changed}"
+                        )
+                    else:
+                        QtWidgets.QMessageBox.information(
+                            self,
+                            "DEBUG: No Accounting Changes",
+                            f"Only metadata changed (receipt_date, processed, notes).\n\n" +
+                            f"accounting_fields_changed = {accounting_fields_changed}"
+                        )
                 
                 if accounting_fields_changed:
                     # Accounting fields changed - use full reprocess path with validation
