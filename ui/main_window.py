@@ -521,6 +521,16 @@ class MainWindow(QtWidgets.QMainWindow):
         
         Every tab must implement refresh_data() for the global refresh system (Issue #9).
         """
+        # In maintenance mode, only setup_tab exists
+        if self.maintenance_mode:
+            if hasattr(self.setup_tab, "refresh_data"):
+                try:
+                    self.setup_tab.refresh_data()
+                except Exception as e:
+                    print(f"Warning: Failed to refresh {self.setup_tab.__class__.__name__}: {e}")
+            return
+        
+        # Normal mode: refresh all tabs
         for widget in (
             self.purchases_tab,
             self.redemptions_tab,
