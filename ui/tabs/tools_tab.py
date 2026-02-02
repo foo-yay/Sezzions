@@ -1899,13 +1899,25 @@ class ToolsTab(QWidget):
                 filename = os.path.basename(result.backup_path)
                 size_mb = result.size_bytes / (1024 * 1024)
                 print(f"[Auto-Backup] Created: {filename} ({size_mb:.2f} MB)")
+                
+                # Notify notification rules service of successful backup
+                if hasattr(self.facade, 'notification_rules_service'):
+                    self.facade.notification_rules_service.on_backup_completed()
             else:
                 print(f"[Auto-Backup] Failed: {result.error}")
+                
+                # Notify notification rules service of backup failure
+                if hasattr(self.facade, 'notification_rules_service'):
+                    self.facade.notification_rules_service.on_backup_failed(result.error)
 
         def on_error(error_msg):
             self.facade.release_tools_lock()
             _cleanup_worker(worker)
             print(f"[Auto-Backup] Error: {error_msg}")
+            
+            # Notify notification rules service of backup failure
+            if hasattr(self.facade, 'notification_rules_service'):
+                self.facade.notification_rules_service.on_backup_failed(error_msg)
 
         worker.signals.finished.connect(on_finished, Qt.QueuedConnection)
         worker.signals.error.connect(on_error, Qt.QueuedConnection)
