@@ -454,52 +454,76 @@ class RedemptionsTab(QtWidgets.QWidget):
         dialog = RedemptionDialog(self.facade, self, redemption)
         if dialog.exec():
             try:
-                if redemption.has_fifo_allocation:
-                    reply = QtWidgets.QMessageBox.question(
-                        self,
-                        "Reprocess Redemption?",
-                        "This redemption has existing FIFO allocations.\n\n"
-                        "Editing will reprocess this redemption and subsequent redemptions for the affected pairs.\n\n"
-                        "Continue?",
-                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                # Determine if this is a metadata-only edit (receipt_date, processed flag, notes)
+                # Metadata-only edits don't require balance validation or FIFO reprocessing
+                accounting_fields_changed = (
+                    redemption.user_id != dialog.user_id or
+                    redemption.site_id != dialog.site_id or
+                    redemption.amount != dialog.get_amount() or
+                    redemption.redemption_date != dialog.get_date() or
+                    redemption.redemption_time != (dialog.get_time() or "00:00:00") or
+                    redemption.more_remaining != dialog.is_partial_selected() or
+                    redemption.fees != dialog.get_fees() or
+                    redemption.redemption_method_id != dialog.method_id
+                )
+                
+                if accounting_fields_changed:
+                    # Accounting fields changed - use full reprocess path with validation
+                    if redemption.has_fifo_allocation:
+                        reply = QtWidgets.QMessageBox.question(
+                            self,
+                            "Reprocess Redemption?",
+                            "This redemption has existing FIFO allocations.\n\n"
+                            "Editing will reprocess this redemption and subsequent redemptions for the affected pairs.\n\n"
+                            "Continue?",
+                            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                        )
+                        if reply != QtWidgets.QMessageBox.Yes:
+                            return
+
+                    redemption_date = dialog.get_date()
+                    redemption_time = dialog.get_time() or "00:00:00"
+                    expected_total, expected_redeemable = self.facade.compute_expected_balances(
+                        dialog.user_id,
+                        dialog.site_id,
+                        redemption_date,
+                        redemption_time,
                     )
-                    if reply != QtWidgets.QMessageBox.Yes:
+                    site = self.facade.get_site(dialog.site_id)
+                    sc_rate = Decimal(str(site.sc_rate if site else 1.0))
+                    expected_balance = (expected_redeemable or Decimal("0.00")) * sc_rate
+                    amount = dialog.get_amount()
+
+                    if not self._confirm_partial_vs_balance(
+                        amount,
+                        expected_balance,
+                        dialog.is_partial_selected(),
+                    ):
                         return
 
-                redemption_date = dialog.get_date()
-                redemption_time = dialog.get_time() or "00:00:00"
-                expected_total, expected_redeemable = self.facade.compute_expected_balances(
-                    dialog.user_id,
-                    dialog.site_id,
-                    redemption_date,
-                    redemption_time,
-                )
-                site = self.facade.get_site(dialog.site_id)
-                sc_rate = Decimal(str(site.sc_rate if site else 1.0))
-                expected_balance = (expected_redeemable or Decimal("0.00")) * sc_rate
-                amount = dialog.get_amount()
-
-                if not self._confirm_partial_vs_balance(
-                    amount,
-                    expected_balance,
-                    dialog.is_partial_selected(),
-                ):
-                    return
-
-                self.facade.update_redemption_reprocess(
-                    redemption_id,
-                    user_id=dialog.user_id,
-                    site_id=dialog.site_id,
-                    amount=amount,
-                    fees=dialog.get_fees(),
-                    redemption_date=redemption_date,
-                    redemption_method_id=dialog.method_id,
-                    redemption_time=redemption_time,
-                    receipt_date=dialog.get_receipt_date(),
-                    processed=dialog.processed_check.isChecked(),
-                    more_remaining=dialog.is_partial_selected(),
-                    notes=dialog.notes_edit.toPlainText() or None,
-                )
+                    self.facade.update_redemption_reprocess(
+                        redemption_id,
+                        user_id=dialog.user_id,
+                        site_id=dialog.site_id,
+                        amount=amount,
+                        fees=dialog.get_fees(),
+                        redemption_date=redemption_date,
+                        redemption_method_id=dialog.method_id,
+                        redemption_time=redemption_time,
+                        receipt_date=dialog.get_receipt_date(),
+                        processed=dialog.processed_check.isChecked(),
+                        more_remaining=dialog.is_partial_selected(),
+                        notes=dialog.notes_edit.toPlainText() or None,
+                    )
+                else:
+                    # Metadata-only edit - use lightweight update path (no validation, no rebuild)
+                    self.facade.update_redemption(
+                        redemption_id,
+                        receipt_date=dialog.get_receipt_date(),
+                        processed=dialog.processed_check.isChecked(),
+                        notes=dialog.notes_edit.toPlainText() or None,
+                    )
+                
                 self.refresh_data()
                 QtWidgets.QMessageBox.information(
                     self, "Success", "Redemption updated"
