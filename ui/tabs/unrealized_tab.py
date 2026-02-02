@@ -94,10 +94,10 @@ class UnrealizedTab(QtWidgets.QWidget):
         
         # Table
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(9)
+        self.table.setColumnCount(10)
         self.table.setHorizontalHeaderLabels([
             "Site", "User", "Start Date", "Remaining Basis", 
-            "Current Redeemable SC", "Current Value", "Est. Unrealized P/L", 
+            "Total SC (Est.)", "Redeemable SC", "Current Value", "Est. Unrealized P/L", 
             "Last Activity", "Notes"
         ])
         header = self.table.horizontalHeader()
@@ -162,8 +162,9 @@ class UnrealizedTab(QtWidgets.QWidget):
                 self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(pos.user_name))
                 self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(str(pos.start_date)))
                 self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(f"${pos.purchase_basis:,.2f}"))
-                self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(f"{pos.current_sc:,.2f}"))
-                self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(f"${pos.current_value:,.2f}"))
+                self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(f"{pos.total_sc:,.2f}"))
+                self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(f"{pos.redeemable_sc:,.2f}"))
+                self.table.setItem(row, 6, QtWidgets.QTableWidgetItem(f"${pos.current_value:,.2f}"))
                 
                 # Color P/L
                 pl_item = QtWidgets.QTableWidgetItem(f"${pos.unrealized_pl:,.2f}")
@@ -171,13 +172,13 @@ class UnrealizedTab(QtWidgets.QWidget):
                     pl_item.setForeground(QtGui.QBrush(QtGui.QColor(0, 150, 0)))  # Green
                 elif pos.unrealized_pl < 0:
                     pl_item.setForeground(QtGui.QBrush(QtGui.QColor(200, 0, 0)))  # Red
-                self.table.setItem(row, 6, pl_item)
+                self.table.setItem(row, 7, pl_item)
                 
-                self.table.setItem(row, 7, QtWidgets.QTableWidgetItem(str(pos.last_activity) if pos.last_activity else ""))
-                self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(pos.notes))
+                self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(str(pos.last_activity) if pos.last_activity else ""))
+                self.table.setItem(row, 9, QtWidgets.QTableWidgetItem(pos.notes))
                 
                 # Right-align numbers
-                for col in [3, 4, 5, 6]:
+                for col in [3, 4, 5, 6, 7]:
                     self.table.item(row, col).setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
 
         finally:

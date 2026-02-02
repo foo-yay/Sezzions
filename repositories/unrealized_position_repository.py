@@ -82,8 +82,9 @@ class UnrealizedPositionRepository:
             
             if last_session:
                 # Baseline: last session ending balances
+                # Use ending_balance for total SC baseline (represents all SC, not just redeemable)
                 baseline_total = Decimal(str(last_session['ending_balance'] or 0))
-                baseline_redeemable = Decimal(str(last_session['ending_redeemable'] or last_session['ending_balance'] or 0))
+                baseline_redeemable = Decimal(str(last_session['ending_redeemable'] or 0))
                 session_end_date = last_session['end_date'] or last_session['session_date']
                 session_end_time = last_session['end_time'] or last_session['session_time']
                 session_end_dt = self._to_dt(session_end_date, session_end_time)
@@ -121,12 +122,13 @@ class UnrealizedPositionRepository:
                 )
                 redemptions_since = Decimal(str(redemptions_after['total_redeemed'] or 0))
                 
-                # Estimated current balances
+                # Estimated current balances (purchases add to both, redemptions reduce both)
                 estimated_total_sc = baseline_total + purchases_since - redemptions_since
                 estimated_redeemable_sc = baseline_redeemable + purchases_since - redemptions_since
                 
-                # For display: use estimated redeemable (but keep total for potential future use)
-                current_sc = estimated_redeemable_sc
+                # Use total SC for value/P&L calculations
+                total_sc = estimated_total_sc
+                redeemable_sc = estimated_redeemable_sc
                 
                 # Determine last activity date (most recent of session end, purchase, redemption)
                 last_activity_candidates = [(session_end_date, session_end_time or '00:00:00')]
@@ -162,7 +164,7 @@ class UnrealizedPositionRepository:
                 last_activity = last_activity_dt.date() if last_activity_dt else session_end_date
                 
             else:
-                # No sessions yet - sum all purchases
+                # No sessions yet - sum all purchases (both total and redeemable are same)
                 purchase_sum_query = """
                     SELECT COALESCE(SUM(sc_received), 0) as total_sc
                     FROM purchases
@@ -170,7 +172,8 @@ class UnrealizedPositionRepository:
                       AND (status IS NULL OR status = 'active')
                 """
                 purchase_data = self.db.fetch_one(purchase_sum_query, (site_id, user_id))
-                current_sc = Decimal(str(purchase_data['total_sc'] or 0))
+                total_sc = Decimal(str(purchase_data['total_sc'] or 0))
+                redeemable_sc = total_sc  # Before any sessions, all SC is redeemable
                 
                 last_purchase_query = """
                     SELECT purchase_date, COALESCE(purchase_time, '00:00:00') as purchase_time
@@ -194,8 +197,8 @@ class UnrealizedPositionRepository:
             site_data = self.db.fetch_one(site_query, (site_id,))
             sc_rate = Decimal(str(site_data['sc_rate'] if site_data and site_data['sc_rate'] else 1.0))
             
-            # Calculate current value and unrealized P/L
-            current_value = current_sc * sc_rate
+            # Calculate current value and unrealized P/L from total SC (not redeemable)
+            current_value = total_sc * sc_rate
             unrealized_pl = current_value - remaining_basis
             
             position = UnrealizedPosition(
@@ -205,7 +208,8 @@ class UnrealizedPositionRepository:
                 user_name=pair['user_name'],
                 start_date=basis_data['start_date'],
                 purchase_basis=remaining_basis,
-                current_sc=current_sc,
+                total_sc=total_sc,
+                redeemable_sc=redeemable_sc,
                 current_value=current_value,
                 unrealized_pl=unrealized_pl,
                 last_activity=last_activity,
