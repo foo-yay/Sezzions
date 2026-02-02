@@ -9,6 +9,34 @@ Rules:
 
 ---
 
+## 2026-02-02
+
+```yaml
+id: 2026-02-02-01
+type: fix
+areas: [startup, transactions, data-integrity, ui]
+summary: "Fix startup crash on corrupted data + add atomic transaction wrapping"
+files_changed:
+  - ui/main_window.py (wrap tab creation in try/except to force maintenance mode on data errors)
+  - ui/tabs/game_sessions_tab.py (remove orphaned tax_rate_edit reference in EndSessionDialog)
+  - app_facade.py (wrap create/update/delete purchase and create redemption in transactions)
+branch: main
+commits: [pending]
+issue: "N/A (urgent bug fix)"
+notes: |
+  Fixed two critical issues:
+  1. App crashed at startup before maintenance mode could activate when corrupted data existed
+     (e.g., purchases with remaining_amount > amount). Now wraps tab creation in try/except
+     to catch ValueError during data loading and gracefully enter maintenance mode.
+  2. Database operations could fail mid-operation, leaving partial writes and corrupted data.
+     Added transaction wrapping (with self.db.transaction()) to create_purchase, update_purchase,
+     delete_purchase, and create_redemption in AppFacade. Operations now roll back entirely on
+     failure, ensuring no partial data corruption.
+  
+  Discovered 3 corrupted purchases in production DB (remaining_amount > amount), likely from
+  previous partial operation failure. Transaction wrapping prevents recurrence.
+```
+
 ## 2026-02-01
 
 ```yaml

@@ -105,8 +105,15 @@ class MainWindow(QtWidgets.QMainWindow):
         main_layout.addWidget(self.stack, 1)
         layout.addWidget(self.main_content)
         
-        # Create tabs
-        self._create_tabs()
+        # Create tabs (with error recovery)
+        try:
+            self._create_tabs()
+        except (ValueError, Exception) as e:
+            # Data integrity error during tab creation - enter maintenance mode
+            print(f"[STARTUP] Data error detected during tab creation: {e}")
+            self.maintenance_mode = True
+            self.setWindowTitle("Sezzions - MAINTENANCE MODE")
+            self._create_tabs()  # Re-create in maintenance mode
 
         self.tab_bar.currentChanged.connect(self.stack.setCurrentIndex)
         

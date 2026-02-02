@@ -505,166 +505,168 @@ class AppFacade:
                        card_id: Optional[int] = None,
                        purchase_time: Optional[str] = None,
                        notes: Optional[str] = None) -> Purchase:
-        """Create new purchase."""
-        purchase = self.purchase_service.create_purchase(
-            user_id=user_id,
-            site_id=site_id,
-            amount=amount,
-            sc_received=sc_received,
-            starting_sc_balance=starting_sc_balance,
-            cashback_earned=cashback_earned,
-            purchase_date=purchase_date,
-            card_id=card_id,
-            purchase_time=purchase_time,
-            notes=notes
-        )
-        boundary_date, boundary_time = self._containing_boundary(
-            site_id,
-            user_id,
-            purchase.purchase_date,
-            purchase.purchase_time,
-        )
-        self.recalculation_service.rebuild_fifo_for_pair_from(
-            user_id,
-            site_id,
-            boundary_date.isoformat(),
-            boundary_time,
-        )
-        self.game_session_service.recalculate_closed_sessions_for_pair_from(
-            user_id,
-            site_id,
-            boundary_date,
-            boundary_time,
-        )
-        self.game_session_event_link_service.rebuild_links_for_pair_from(
-            site_id,
-            user_id,
-            boundary_date.isoformat(),
-            boundary_time,
-        )
-        return purchase
+        """Create new purchase with atomic transaction."""
+        with self.db.transaction():
+            purchase = self.purchase_service.create_purchase(
+                user_id=user_id,
+                site_id=site_id,
+                amount=amount,
+                sc_received=sc_received,
+                starting_sc_balance=starting_sc_balance,
+                cashback_earned=cashback_earned,
+                purchase_date=purchase_date,
+                card_id=card_id,
+                purchase_time=purchase_time,
+                notes=notes
+            )
+            boundary_date, boundary_time = self._containing_boundary(
+                site_id,
+                user_id,
+                purchase.purchase_date,
+                purchase.purchase_time,
+            )
+            self.recalculation_service.rebuild_fifo_for_pair_from(
+                user_id,
+                site_id,
+                boundary_date.isoformat(),
+                boundary_time,
+            )
+            self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                user_id,
+                site_id,
+                boundary_date,
+                boundary_time,
+            )
+            self.game_session_event_link_service.rebuild_links_for_pair_from(
+                site_id,
+                user_id,
+                boundary_date.isoformat(),
+                boundary_time,
+            )
+            return purchase
     
     def update_purchase(self, purchase_id: int, force_site_user_change: bool = False, **kwargs) -> Purchase:
-        """Update purchase and trigger scoped rebuild when needed.
+        """Update purchase and trigger scoped rebuild when needed with atomic transaction.
 
         Legacy parity:
         - Allow editing consumed purchases, but protect amount/date unless a full rebuild is performed.
         - Allow site/user change only if explicitly forced (clears derived allocations via rebuild).
         """
-        old_purchase = self.purchase_repo.get_by_id(purchase_id)
-        if not old_purchase:
-            raise ValueError(f"Purchase {purchase_id} not found")
+        with self.db.transaction():
+            old_purchase = self.purchase_repo.get_by_id(purchase_id)
+            if not old_purchase:
+                raise ValueError(f"Purchase {purchase_id} not found")
 
-        updated = self.purchase_service.update_purchase(
-            purchase_id,
-            force_site_user_change=force_site_user_change,
-            **kwargs,
-        )
+            updated = self.purchase_service.update_purchase(
+                purchase_id,
+                force_site_user_change=force_site_user_change,
+                **kwargs,
+            )
 
-        # Determine whether this edit can affect derived data.
-        # Notes-only edits should not trigger expensive rebuilds.
-        derived_fields = {
-            "user_id",
-            "site_id",
-            "amount",
-            "purchase_date",
-            "purchase_time",
-            "sc_received",
-            "starting_sc_balance",
-            "cashback_earned",
-            "card_id",
-        }
+            # Determine whether this edit can affect derived data.
+            # Notes-only edits should not trigger expensive rebuilds.
+            derived_fields = {
+                "user_id",
+                "site_id",
+                "amount",
+                "purchase_date",
+                "purchase_time",
+                "sc_received",
+                "starting_sc_balance",
+                "cashback_earned",
+                "card_id",
+            }
 
-        changed = False
-        for field in derived_fields:
-            if field in kwargs and getattr(old_purchase, field) != getattr(updated, field):
-                changed = True
-                break
+            changed = False
+            for field in derived_fields:
+                if field in kwargs and getattr(old_purchase, field) != getattr(updated, field):
+                    changed = True
+                    break
 
-        if changed:
-            old_pair = (old_purchase.user_id, old_purchase.site_id)
-            new_pair = (updated.user_id, updated.site_id)
+            if changed:
+                old_pair = (old_purchase.user_id, old_purchase.site_id)
+                new_pair = (updated.user_id, updated.site_id)
 
-            if old_pair == new_pair:
-                boundary_date, boundary_time = self._earliest_boundary_with_containing(
-                    old_pair[1],
-                    old_pair[0],
-                    old_purchase.purchase_date,
-                    old_purchase.purchase_time,
-                    updated.purchase_date,
-                    updated.purchase_time,
-                )
-                user_id, site_id = old_pair
-                self.recalculation_service.rebuild_fifo_for_pair_from(
-                    user_id,
-                    site_id,
-                    boundary_date.isoformat(),
-                    boundary_time,
-                )
-                self.game_session_service.recalculate_closed_sessions_for_pair_from(
-                    user_id,
-                    site_id,
-                    boundary_date,
-                    boundary_time,
-                )
-                self.game_session_event_link_service.rebuild_links_for_pair_from(
-                    site_id,
-                    user_id,
-                    boundary_date.isoformat(),
-                    boundary_time,
-                )
-            else:
-                old_date, old_time = self._containing_boundary(
-                    old_pair[1],
-                    old_pair[0],
-                    old_purchase.purchase_date,
-                    old_purchase.purchase_time,
-                )
-                self.recalculation_service.rebuild_fifo_for_pair_from(
-                    old_pair[0],
-                    old_pair[1],
-                    old_date.isoformat(),
-                    old_time,
-                )
-                self.game_session_service.recalculate_closed_sessions_for_pair_from(
-                    old_pair[0],
-                    old_pair[1],
-                    old_date,
-                    old_time,
-                )
-                self.game_session_event_link_service.rebuild_links_for_pair_from(
-                    old_pair[1],
-                    old_pair[0],
-                    old_date.isoformat(),
-                    old_time,
-                )
+                if old_pair == new_pair:
+                    boundary_date, boundary_time = self._earliest_boundary_with_containing(
+                        old_pair[1],
+                        old_pair[0],
+                        old_purchase.purchase_date,
+                        old_purchase.purchase_time,
+                        updated.purchase_date,
+                        updated.purchase_time,
+                    )
+                    user_id, site_id = old_pair
+                    self.recalculation_service.rebuild_fifo_for_pair_from(
+                        user_id,
+                        site_id,
+                        boundary_date.isoformat(),
+                        boundary_time,
+                    )
+                    self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                        user_id,
+                        site_id,
+                        boundary_date,
+                        boundary_time,
+                    )
+                    self.game_session_event_link_service.rebuild_links_for_pair_from(
+                        site_id,
+                        user_id,
+                        boundary_date.isoformat(),
+                        boundary_time,
+                    )
+                else:
+                    old_date, old_time = self._containing_boundary(
+                        old_pair[1],
+                        old_pair[0],
+                        old_purchase.purchase_date,
+                        old_purchase.purchase_time,
+                    )
+                    self.recalculation_service.rebuild_fifo_for_pair_from(
+                        old_pair[0],
+                        old_pair[1],
+                        old_date.isoformat(),
+                        old_time,
+                    )
+                    self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                        old_pair[0],
+                        old_pair[1],
+                        old_date,
+                        old_time,
+                    )
+                    self.game_session_event_link_service.rebuild_links_for_pair_from(
+                        old_pair[1],
+                        old_pair[0],
+                        old_date.isoformat(),
+                        old_time,
+                    )
 
-                new_date, new_time = self._containing_boundary(
-                    new_pair[1],
-                    new_pair[0],
-                    updated.purchase_date,
-                    updated.purchase_time,
-                )
-                self.recalculation_service.rebuild_fifo_for_pair_from(
-                    new_pair[0],
-                    new_pair[1],
-                    new_date.isoformat(),
-                    new_time,
-                )
-                self.game_session_service.recalculate_closed_sessions_for_pair_from(
-                    new_pair[0],
-                    new_pair[1],
-                    new_date,
-                    new_time,
-                )
-                self.game_session_event_link_service.rebuild_links_for_pair_from(
-                    new_pair[1],
-                    new_pair[0],
-                    new_date.isoformat(),
-                    new_time,
-                )
+                    new_date, new_time = self._containing_boundary(
+                        new_pair[1],
+                        new_pair[0],
+                        updated.purchase_date,
+                        updated.purchase_time,
+                    )
+                    self.recalculation_service.rebuild_fifo_for_pair_from(
+                        new_pair[0],
+                        new_pair[1],
+                        new_date.isoformat(),
+                        new_time,
+                    )
+                    self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                        new_pair[0],
+                        new_pair[1],
+                        new_date,
+                        new_time,
+                    )
+                    self.game_session_event_link_service.rebuild_links_for_pair_from(
+                        new_pair[1],
+                        new_pair[0],
+                        new_date.isoformat(),
+                        new_time,
+                    )
 
-        return updated
+            return updated
 
     def recalculate_everything(self) -> Dict[str, Any]:
         """Full legacy-style rebuild: FIFO allocations + realized + session P/L."""
@@ -706,34 +708,35 @@ class AppFacade:
         }
     
     def delete_purchase(self, purchase_id: int) -> None:
-        """Delete purchase (prevents if consumed)."""
-        purchase = self.purchase_repo.get_by_id(purchase_id)
-        self.purchase_service.delete_purchase(purchase_id)
-        if purchase:
-            boundary_date, boundary_time = self._containing_boundary(
-                purchase.site_id,
-                purchase.user_id,
-                purchase.purchase_date,
-                purchase.purchase_time,
-            )
-            self.recalculation_service.rebuild_fifo_for_pair_from(
-                purchase.user_id,
-                purchase.site_id,
-                boundary_date.isoformat(),
-                boundary_time,
-            )
-            self.game_session_service.recalculate_closed_sessions_for_pair_from(
-                purchase.user_id,
-                purchase.site_id,
-                boundary_date,
-                boundary_time,
-            )
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
-                purchase.site_id,
-                purchase.user_id,
-                boundary_date.isoformat(),
-                boundary_time,
-            )
+        """Delete purchase (prevents if consumed) with atomic transaction."""
+        with self.db.transaction():
+            purchase = self.purchase_repo.get_by_id(purchase_id)
+            self.purchase_service.delete_purchase(purchase_id)
+            if purchase:
+                boundary_date, boundary_time = self._containing_boundary(
+                    purchase.site_id,
+                    purchase.user_id,
+                    purchase.purchase_date,
+                    purchase.purchase_time,
+                )
+                self.recalculation_service.rebuild_fifo_for_pair_from(
+                    purchase.user_id,
+                    purchase.site_id,
+                    boundary_date.isoformat(),
+                    boundary_time,
+                )
+                self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                    purchase.user_id,
+                    purchase.site_id,
+                    boundary_date,
+                    boundary_time,
+                )
+                self.game_session_event_link_service.rebuild_links_for_pair_from(
+                    purchase.site_id,
+                    purchase.user_id,
+                    boundary_date.isoformat(),
+                    boundary_time,
+                )
     
     def get_available_purchases_for_fifo(self, user_id: int, site_id: int) -> List[Purchase]:
         """Get purchases available for FIFO allocation."""
@@ -768,47 +771,48 @@ class AppFacade:
                          more_remaining: bool = False,
                          notes: Optional[str] = None,
                          fees: Decimal = Decimal("0.00")) -> Redemption:
-        """Create new redemption with optional FIFO processing."""
-        redemption = self.redemption_service.create_redemption(
-            user_id=user_id,
-            site_id=site_id,
-            amount=amount,
-            fees=fees,
-            redemption_date=redemption_date,
-            apply_fifo=apply_fifo,
-            redemption_method_id=redemption_method_id,
-            redemption_time=redemption_time,
-            receipt_date=receipt_date,
-            processed=processed,
-            more_remaining=more_remaining,
-            notes=notes
-        )
-        boundary_date, boundary_time = self._containing_boundary(
-            site_id,
-            user_id,
-            redemption.redemption_date,
-            redemption.redemption_time,
-        )
-        if apply_fifo:
-            self.recalculation_service.rebuild_fifo_for_pair_from(
+        """Create new redemption with optional FIFO processing, using atomic transaction."""
+        with self.db.transaction():
+            redemption = self.redemption_service.create_redemption(
+                user_id=user_id,
+                site_id=site_id,
+                amount=amount,
+                fees=fees,
+                redemption_date=redemption_date,
+                apply_fifo=apply_fifo,
+                redemption_method_id=redemption_method_id,
+                redemption_time=redemption_time,
+                receipt_date=receipt_date,
+                processed=processed,
+                more_remaining=more_remaining,
+                notes=notes
+            )
+            boundary_date, boundary_time = self._containing_boundary(
+                site_id,
+                user_id,
+                redemption.redemption_date,
+                redemption.redemption_time,
+            )
+            if apply_fifo:
+                self.recalculation_service.rebuild_fifo_for_pair_from(
+                    user_id,
+                    site_id,
+                    boundary_date.isoformat(),
+                    boundary_time,
+                )
+            self.game_session_service.recalculate_closed_sessions_for_pair_from(
                 user_id,
                 site_id,
+                boundary_date,
+                boundary_time,
+            )
+            self.game_session_event_link_service.rebuild_links_for_pair_from(
+                site_id,
+                user_id,
                 boundary_date.isoformat(),
                 boundary_time,
             )
-        self.game_session_service.recalculate_closed_sessions_for_pair_from(
-            user_id,
-            site_id,
-            boundary_date,
-            boundary_time,
-        )
-        self.game_session_event_link_service.rebuild_links_for_pair_from(
-            site_id,
-            user_id,
-            boundary_date.isoformat(),
-            boundary_time,
-        )
-        return redemption
+            return redemption
 
     def update_redemption_reprocess(self, redemption_id: int, **kwargs) -> Redemption:
         """Update redemption and fully reprocess FIFO/realized/session cascades (legacy parity)."""

@@ -31,11 +31,14 @@ Sezzions is a desktop application for tracking casino sweepstakes activity with 
 - `services/`: business logic and orchestration
 - `ui/`: PySide6 UI; must call services, not repositories directly
 
-Key rule: UI must not talk to the database directly.
+Key rules:
+- UI must not talk to the database directly.
+- **Transaction Atomicity**: All multi-step database operations (create/update/delete with cascading recalculations) use `with self.db.transaction()` context manager in `AppFacade` to ensure atomicity. Operations either fully succeed or fully roll back—no partial writes.
 
 ### Primary Entrypoint
 - Run the app via `python3 sezzions.py` (repo root)
 - The app uses `./sezzions.db` by default, or `SEZZIONS_DB_PATH` override.
+- **Startup Safety**: If data integrity violations or loading errors occur during startup, the app automatically enters maintenance mode (Setup tab only) to allow database repair via Tools without crashing.
 
 ### Repo Workflow (Source of Truth)
 The development workflow (including PR expectations and the "Ready for Review" handoff) is defined in `AGENTS.md` and should be treated as the canonical process.
