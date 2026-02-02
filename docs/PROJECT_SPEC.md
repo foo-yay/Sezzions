@@ -524,6 +524,8 @@ Store and compute date-level tax withholding estimates for informational tax pla
 
 `RecalculationService`:
 - `rebuild_all()`: Now includes tax recalculation in full rebuild workflow
+- Calls `TaxWithholdingService.bulk_recalculate()` after syncing daily_sessions
+- **Fixed (Issue #42)**: Tax service is now properly wired through `__init__` parameter and passed from `AppFacade`; worker threads create their own `TaxWithholdingService` with settings from UI thread
 - Uses `end_date` grouping for daily_sessions
 
 `DailySessionsService`:

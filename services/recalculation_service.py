@@ -84,9 +84,10 @@ class RecalculationService:
     code organization, but user-facing operations always do both together.
     """
 
-    def __init__(self, db: DatabaseManager, game_session_service: Optional['GameSessionService'] = None):
+    def __init__(self, db: DatabaseManager, game_session_service: Optional['GameSessionService'] = None, tax_withholding_service=None):
         self.db = db
         self._game_session_service = game_session_service
+        self.tax_withholding_service = tax_withholding_service
 
     @property
     def game_session_service(self) -> 'GameSessionService':

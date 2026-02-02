@@ -32,7 +32,8 @@ class RecalculationWorker(QRunnable):
         site_id: Optional[int] = None,
         entity_type: Optional[str] = None,
         user_ids: Optional[List[int]] = None,
-        site_ids: Optional[List[int]] = None
+        site_ids: Optional[List[int]] = None,
+        settings_dict: Optional[dict] = None
     ):
         super().__init__()
         self.db_path = db_path
@@ -42,6 +43,7 @@ class RecalculationWorker(QRunnable):
         self.entity_type = entity_type
         self.user_ids = user_ids
         self.site_ids = site_ids
+        self.settings_dict = settings_dict or {}
         self.signals = WorkerSignals()
         self._cancelled = False
         
@@ -62,9 +64,14 @@ class RecalculationWorker(QRunnable):
             # Create database connection in this thread (SQLite thread safety)
             from repositories.database import DatabaseManager
             from services.recalculation_service import RecalculationService
+            from services.tax_withholding_service import TaxWithholdingService
             
             db = DatabaseManager(self.db_path)
-            recalc_service = RecalculationService(db)
+            
+            # Create tax withholding service with settings from UI thread
+            tax_service = TaxWithholdingService(db, settings=self.settings_dict)
+            
+            recalc_service = RecalculationService(db, tax_withholding_service=tax_service)
             
             result = None
             
