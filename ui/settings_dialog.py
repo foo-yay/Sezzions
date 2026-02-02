@@ -78,6 +78,11 @@ class SettingsDialog(QtWidgets.QDialog):
         title.setObjectName("PageTitle")
         layout.addRow(title)
         
+        # --- Redemption Notifications ---
+        redemption_section_label = QtWidgets.QLabel("<b>Redemption Notifications</b>")
+        redemption_section_label.setObjectName("SectionLabel")
+        layout.addRow(redemption_section_label)
+        
         # Redemption pending-receipt threshold
         threshold_label = QtWidgets.QLabel("Pending receipt threshold:")
         threshold_label.setToolTip("Redemptions without a receipt date older than this will trigger a notification.")
@@ -95,6 +100,44 @@ class SettingsDialog(QtWidgets.QDialog):
         # Spacer
         layout.addRow(QtWidgets.QLabel(""))
         
+        # --- Backup Notifications ---
+        backup_section_label = QtWidgets.QLabel("<b>Backup Notifications</b>")
+        backup_section_label.setObjectName("SectionLabel")
+        layout.addRow(backup_section_label)
+        
+        # Notify on backup failure
+        failure_label = QtWidgets.QLabel("Notify on backup failure:")
+        failure_label.setToolTip("Show notification when automatic backup fails.")
+        failure_label.setObjectName("FieldLabel")
+        failure_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.backup_notify_failure_checkbox = QtWidgets.QCheckBox()
+        layout.addRow(failure_label, self.backup_notify_failure_checkbox)
+        
+        # Notify when backup overdue
+        overdue_label = QtWidgets.QLabel("Notify when backup overdue:")
+        overdue_label.setToolTip("Show notification when automatic backup is overdue.")
+        overdue_label.setObjectName("FieldLabel")
+        overdue_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.backup_notify_overdue_checkbox = QtWidgets.QCheckBox()
+        self.backup_notify_overdue_checkbox.toggled.connect(self._on_backup_overdue_toggle)
+        layout.addRow(overdue_label, self.backup_notify_overdue_checkbox)
+        
+        # Overdue threshold
+        overdue_threshold_label = QtWidgets.QLabel("Overdue threshold:")
+        overdue_threshold_label.setToolTip("Days past scheduled backup time before showing overdue notification.")
+        overdue_threshold_label.setObjectName("FieldLabel")
+        overdue_threshold_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.backup_overdue_threshold_spin = QtWidgets.QSpinBox()
+        self.backup_overdue_threshold_spin.setMinimum(1)
+        self.backup_overdue_threshold_spin.setMaximum(30)
+        self.backup_overdue_threshold_spin.setSuffix(" day(s)")
+        layout.addRow(overdue_threshold_label, self.backup_overdue_threshold_spin)
+        layout.setAlignment(overdue_threshold_label, QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        layout.setAlignment(self.backup_overdue_threshold_spin, QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        
+        # Spacer
+        layout.addRow(QtWidgets.QLabel(""))
+        
         # Future: enable/disable rules toggles can go here
         info_label = QtWidgets.QLabel(
             "<i>Additional notification preferences will be added here in future updates.</i>"
@@ -104,6 +147,10 @@ class SettingsDialog(QtWidgets.QDialog):
         layout.addRow(info_label)
         
         return widget
+    
+    def _on_backup_overdue_toggle(self, checked):
+        """Enable/disable overdue threshold spinbox based on checkbox state."""
+        self.backup_overdue_threshold_spin.setEnabled(checked)
     
     def _build_display_section(self):
         """Build Display settings section (theme selection)."""
@@ -223,6 +270,17 @@ class SettingsDialog(QtWidgets.QDialog):
         threshold_days = self.settings.settings.get("redemption_pending_receipt_threshold_days", 14)
         self.redemption_threshold_spin.setValue(threshold_days)
         
+        # Backup notification settings
+        backup_config = self.settings.get_automatic_backup_config()
+        notify_failure = backup_config.get('notify_on_failure', True)
+        notify_overdue = backup_config.get('notify_when_overdue', True)
+        overdue_threshold = backup_config.get('overdue_threshold_days', 1)
+        
+        self.backup_notify_failure_checkbox.setChecked(notify_failure)
+        self.backup_notify_overdue_checkbox.setChecked(notify_overdue)
+        self.backup_overdue_threshold_spin.setValue(overdue_threshold)
+        self.backup_overdue_threshold_spin.setEnabled(notify_overdue)
+        
         # Theme selection
         current_theme = self.settings.settings.get("theme", "Light")
         theme_index = self.theme_combo.findText(current_theme)
@@ -241,6 +299,13 @@ class SettingsDialog(QtWidgets.QDialog):
         """Save settings and close dialog."""
         # Write notification settings
         self.settings.settings["redemption_pending_receipt_threshold_days"] = self.redemption_threshold_spin.value()
+        
+        # Write backup notification settings
+        backup_config = self.settings.get_automatic_backup_config()
+        backup_config['notify_on_failure'] = self.backup_notify_failure_checkbox.isChecked()
+        backup_config['notify_when_overdue'] = self.backup_notify_overdue_checkbox.isChecked()
+        backup_config['overdue_threshold_days'] = self.backup_overdue_threshold_spin.value()
+        self.settings.set_automatic_backup_config(backup_config)
         
         # Write display settings
         selected_theme = self.theme_combo.currentText()

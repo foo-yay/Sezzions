@@ -37,9 +37,14 @@ class Settings:
                 'enabled': False,
                 'directory': '',
                 'frequency_hours': 24,
-                'last_backup_time': None
+                'last_backup_time': None,
+                # Notification settings (Issue #35)
+                'notify_on_failure': True,
+                'notify_when_overdue': True,
+                'overdue_threshold_days': 1
             }
         }
+
     
     def save(self):
         """Save settings to file"""
