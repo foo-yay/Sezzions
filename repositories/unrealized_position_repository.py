@@ -68,7 +68,7 @@ class UnrealizedPositionRepository:
             if remaining_basis < Decimal("0.01"):
                 continue
             
-            # Get current SC balance from last game session
+            # Get current SC balance - estimate from last session + transactions since
             session_query = """
                 SELECT ending_redeemable, ending_balance, session_date, session_time, end_date, end_time
                 FROM game_sessions
@@ -81,13 +81,99 @@ class UnrealizedPositionRepository:
             last_session = self.db.fetch_one(session_query, (site_id, user_id))
             
             if last_session:
-                # Use redeemable SC, fallback to total balance
-                current_sc = Decimal(str(last_session['ending_redeemable'] or last_session['ending_balance'] or 0))
-                last_activity = last_session['end_date'] or last_session['session_date']
-                last_activity_time = last_session['end_time'] or last_session['session_time']
-                last_activity_dt = self._to_dt(last_activity, last_activity_time)
+                # Baseline: last session ending balances
+                # Use ending_balance for total SC baseline (represents all SC, not just redeemable)
+                baseline_total = Decimal(str(last_session['ending_balance'] or 0))
+                baseline_redeemable = Decimal(str(last_session['ending_redeemable'] or 0))
+                session_end_date = last_session['end_date'] or last_session['session_date']
+                session_end_time = last_session['end_time'] or last_session['session_time']
+                session_end_dt = self._to_dt(session_end_date, session_end_time)
+                
+                # Get purchases after this session
+                purchases_after_query = """
+                    SELECT COALESCE(SUM(sc_received), 0) as total_sc
+                    FROM purchases
+                    WHERE site_id = ? AND user_id = ?
+                      AND (status IS NULL OR status = 'active')
+                      AND (
+                          purchase_date > ? 
+                          OR (purchase_date = ? AND COALESCE(purchase_time,'00:00:00') > ?)
+                      )
+                """
+                purchases_after = self.db.fetch_one(
+                    purchases_after_query,
+                    (site_id, user_id, session_end_date, session_end_date, session_end_time or '00:00:00')
+                )
+                purchases_since = Decimal(str(purchases_after['total_sc'] or 0))
+                
+                # Get redemptions after this session
+                redemptions_after_query = """
+                    SELECT COALESCE(SUM(amount), 0) as total_redeemed
+                    FROM redemptions
+                    WHERE site_id = ? AND user_id = ?
+                      AND (
+                          redemption_date > ?
+                          OR (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') > ?)
+                      )
+                """
+                redemptions_after = self.db.fetch_one(
+                    redemptions_after_query,
+                    (site_id, user_id, session_end_date, session_end_date, session_end_time or '00:00:00')
+                )
+                redemptions_since = Decimal(str(redemptions_after['total_redeemed'] or 0))
+                
+                # Estimated current balances (purchases add to both, redemptions reduce both)
+                estimated_total_sc = baseline_total + purchases_since - redemptions_since
+                
+                # Use total SC for value/P&L calculations.
+                # Redeemable SC: only show if session is part of current position (session end >= position start)
+                # Otherwise show 0 (position predates this session, e.g., fully closed then repurchased)
+                total_sc = estimated_total_sc
+                position_start_date = basis_data['start_date']
+                position_start_dt = self._to_dt(position_start_date, '00:00:00')
+                
+                if session_end_dt and session_end_dt >= position_start_dt:
+                    # Session is part of current open position
+                    redeemable_sc = baseline_redeemable
+                else:
+                    # Session predates current position's basis (old closed position)
+                    redeemable_sc = Decimal("0.00")
+                
+                # Determine last activity date (most recent of session end, purchase, redemption)
+                last_activity_candidates = [(session_end_date, session_end_time or '00:00:00')]
+                
+                if purchases_since > 0:
+                    last_purchase_query = """
+                        SELECT purchase_date, COALESCE(purchase_time, '00:00:00') as purchase_time
+                        FROM purchases
+                        WHERE site_id = ? AND user_id = ?
+                          AND (status IS NULL OR status = 'active')
+                        ORDER BY purchase_date DESC, COALESCE(purchase_time,'00:00:00') DESC, id DESC
+                        LIMIT 1
+                    """
+                    last_purchase = self.db.fetch_one(last_purchase_query, (site_id, user_id))
+                    if last_purchase:
+                        last_activity_candidates.append((last_purchase['purchase_date'], last_purchase['purchase_time']))
+                
+                if redemptions_since > 0:
+                    last_redemption_query = """
+                        SELECT redemption_date, COALESCE(redemption_time, '00:00:00') as redemption_time
+                        FROM redemptions
+                        WHERE site_id = ? AND user_id = ?
+                        ORDER BY redemption_date DESC, COALESCE(redemption_time,'00:00:00') DESC, id DESC
+                        LIMIT 1
+                    """
+                    last_redemption = self.db.fetch_one(last_redemption_query, (site_id, user_id))
+                    if last_redemption:
+                        last_activity_candidates.append((last_redemption['redemption_date'], last_redemption['redemption_time']))
+                
+                # Find most recent activity
+                last_activity_dts = [self._to_dt(d, t) for d, t in last_activity_candidates if d]
+                last_activity_dt = max(last_activity_dts) if last_activity_dts else session_end_dt
+                last_activity = last_activity_dt.date() if last_activity_dt else session_end_date
+                
             else:
-                # No sessions yet - check for purchases
+                # No sessions yet - sum all purchases (both total and redeemable are same)
                 purchase_sum_query = """
                     SELECT COALESCE(SUM(sc_received), 0) as total_sc
                     FROM purchases
@@ -95,7 +181,10 @@ class UnrealizedPositionRepository:
                       AND (status IS NULL OR status = 'active')
                 """
                 purchase_data = self.db.fetch_one(purchase_sum_query, (site_id, user_id))
-                current_sc = Decimal(str(purchase_data['total_sc'] or 0))
+                total_sc = Decimal(str(purchase_data['total_sc'] or 0))
+                # No sessions means we have no tracked redeemable split; show 0 as last-known.
+                redeemable_sc = Decimal("0.00")
+                
                 last_purchase_query = """
                     SELECT purchase_date, COALESCE(purchase_time, '00:00:00') as purchase_time
                     FROM purchases
@@ -118,8 +207,8 @@ class UnrealizedPositionRepository:
             site_data = self.db.fetch_one(site_query, (site_id,))
             sc_rate = Decimal(str(site_data['sc_rate'] if site_data and site_data['sc_rate'] else 1.0))
             
-            # Calculate current value and unrealized P/L
-            current_value = current_sc * sc_rate
+            # Calculate current value and unrealized P/L from total SC (not redeemable)
+            current_value = total_sc * sc_rate
             unrealized_pl = current_value - remaining_basis
             
             position = UnrealizedPosition(
@@ -129,7 +218,8 @@ class UnrealizedPositionRepository:
                 user_name=pair['user_name'],
                 start_date=basis_data['start_date'],
                 purchase_basis=remaining_basis,
-                current_sc=current_sc,
+                total_sc=total_sc,
+                redeemable_sc=redeemable_sc,
                 current_value=current_value,
                 unrealized_pl=unrealized_pl,
                 last_activity=last_activity,

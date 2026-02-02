@@ -12,6 +12,74 @@ Rules:
 ## 2026-02-02
 
 ```yaml
+id: 2026-02-02-06
+type: fix
+areas: [unrealized, repositories, ui]
+summary: "Unrealized tab: scope Redeemable SC to current position only"
+files_changed:
+  - repositories/unrealized_position_repository.py (redeemable_sc scoped to position start)
+  - ui/tabs/unrealized_tab.py (clarify column header)
+  - tests/integration/test_issue_44_unrealized_live_balances.py (update expectations)
+  - docs/PROJECT_SPEC.md (document semantics)
+branch: fix/issue-44-unrealized-live-balances
+commits: [a5915f5, 31af440]
+issue: "#44"
+pull_request: "#45"
+notes: |
+  Fixed Unrealized tab Redeemable SC to only show values from sessions within the current position:
+  - Redeemable SC now only shown if last session end >= position start_date (oldest purchase with remaining basis)
+  - If session predates position (e.g., fully redeemed old position, then repurchased), shows 0.00
+  - Prevents misleading scenario where old session redeemable leaks into new position
+  - Column renamed: "Redeemable SC (Last Session)" → "Redeemable SC (Position)"
+  - Total SC (Est.) remains the basis for Current Value and Est. Unrealized P/L.
+status: complete
+```
+
+```yaml
+id: 2026-02-02-05
+type: fix
+areas: [unrealized, repositories, ui]
+summary: "Fix Issue #44: Unrealized tab now reflects purchases/redemptions after last session"
+files_changed:
+  - repositories/unrealized_position_repository.py (incorporate transactions after last session)
+  - ui/tabs/unrealized_tab.py (update column headers for clarity)
+  - tests/integration/test_issue_44_unrealized_live_balances.py (new comprehensive tests)
+  - models/unrealized_position.py (add total_sc and redeemable_sc fields)
+branch: fix/issue-44-unrealized-live-balances
+commits: [61ba86e, a599408, 2f28164]
+issue: "#44"
+pull_request: "#45"
+notes: |
+  Fixed bug where Unrealized tab "Current SC / Current Value / Unrealized P/L" columns
+  remained stuck at last session values even after new purchases or redemptions.
+  
+  Root cause: once any session existed, current_sc was pulled from the most recent
+  session's ending balance and ignored all subsequent transactions.
+  
+  Solution: estimate current balances by taking last session as baseline and applying
+  purchases/redemptions that occurred after that session:
+  - estimated_total_sc = session_ending_balance + purchases_since - redemptions_since
+  - estimated_redeemable_sc = session_ending_redeemable + purchases_since - redemptions_since
+  - current_value = estimated_total_sc * sc_rate (uses total, not redeemable)
+  - unrealized_pl = current_value - remaining_basis
+  
+  Semantic clarification (per Issue #44 review discussion):
+  - Unrealized P/L represents "money out vs current potential value" (total SC semantics)
+  - Use ending_balance (total SC) as baseline when sessions exist, not ending_redeemable
+  - Both Total SC and Redeemable SC are shown; Redeemable is informational only
+  
+  Updated column headers and added columns:
+  - "Purchase Basis" → "Remaining Basis"
+  - "Current SC" → "Total SC (Est.)" and "Redeemable SC" (two columns)
+  - "Unrealized P/L" → "Est. Unrealized P/L"
+  
+  Added 6 new integration tests covering purchase-after-session, redemption-after-session,
+  multiple transactions, no-sessions, last-activity tracking, and basis invariants.
+  All 597 tests passing.
+status: complete
+```
+
+```yaml
 id: 2026-02-02-04
 type: fix
 areas: [tax, recalculation, services]

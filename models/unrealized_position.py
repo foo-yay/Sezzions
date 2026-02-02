@@ -19,8 +19,9 @@ class UnrealizedPosition:
     user_name: str
     start_date: date  # Oldest purchase with remaining basis
     purchase_basis: Decimal  # Sum of remaining_amount from purchases
-    current_sc: Decimal  # Current redeemable SC balance
-    current_value: Decimal  # current_sc * sc_rate (typically 1:1)
+    total_sc: Decimal  # Current total SC balance (estimated from last session + transactions)
+    redeemable_sc: Decimal  # Current redeemable SC balance (estimated, informational only)
+    current_value: Decimal  # total_sc * sc_rate (typically 1:1)
     unrealized_pl: Decimal  # current_value - purchase_basis
     last_activity: Optional[date] = None
     notes: str = ""
@@ -36,7 +37,7 @@ class UnrealizedPosition:
             self.last_activity = datetime.strptime(self.last_activity, "%Y-%m-%d").date()
         
         # Convert to Decimal
-        for field in ['purchase_basis', 'current_sc', 'current_value', 'unrealized_pl']:
+        for field in ['purchase_basis', 'total_sc', 'redeemable_sc', 'current_value', 'unrealized_pl']:
             value = getattr(self, field)
             if not isinstance(value, Decimal):
                 setattr(self, field, Decimal(str(value)))
