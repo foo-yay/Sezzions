@@ -22,7 +22,7 @@ files_changed:
   - tests/integration/test_issue_44_unrealized_live_balances.py (update expectations)
   - docs/PROJECT_SPEC.md (document semantics)
 branch: fix/issue-44-unrealized-live-balances
-commits: [a5915f5, TBD]
+commits: [a5915f5, 31af440]
 issue: "#44"
 pull_request: "#45"
 notes: |
