@@ -456,12 +456,17 @@ class RedemptionsTab(QtWidgets.QWidget):
             try:
                 # Determine if this is a metadata-only edit (receipt_date, processed flag, notes)
                 # Metadata-only edits don't require balance validation or FIFO reprocessing
+                
+                # Normalize redemption_time for comparison (None and "00:00:00" are equivalent)
+                old_time = redemption.redemption_time or "00:00:00"
+                new_time = dialog.get_time() or "00:00:00"
+                
                 accounting_fields_changed = (
                     redemption.user_id != dialog.user_id or
                     redemption.site_id != dialog.site_id or
                     redemption.amount != dialog.get_amount() or
                     redemption.redemption_date != dialog.get_date() or
-                    redemption.redemption_time != (dialog.get_time() or "00:00:00") or
+                    old_time != new_time or
                     redemption.more_remaining != dialog.is_partial_selected() or
                     redemption.fees != dialog.get_fees() or
                     redemption.redemption_method_id != dialog.method_id
