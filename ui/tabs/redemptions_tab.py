@@ -492,41 +492,6 @@ class RedemptionsTab(QtWidgets.QWidget):
                 logger.info(f"accounting_fields_changed: {accounting_fields_changed}")
                 logger.info("===========================")
                 
-                # Show debug popup
-                if True:  # Always show for now
-                    debug_lines = []
-                    if redemption.user_id != dialog.user_id:
-                        debug_lines.append(f"✗ user_id: {redemption.user_id} → {dialog.user_id}")
-                    if redemption.site_id != dialog.site_id:
-                        debug_lines.append(f"✗ site_id: {redemption.site_id} → {dialog.site_id}")
-                    if redemption.amount != dialog.get_amount():
-                        debug_lines.append(f"✗ amount: {redemption.amount} → {dialog.get_amount()}")
-                    if redemption.redemption_date != dialog.get_date():
-                        debug_lines.append(f"✗ date: {redemption.redemption_date} → {dialog.get_date()}")
-                    if old_time != new_time:
-                        debug_lines.append(f"✗ time: {repr(old_time)} → {repr(new_time)}")
-                    if redemption.more_remaining != dialog.is_partial_selected():
-                        debug_lines.append(f"✗ more_remaining: {redemption.more_remaining} → {dialog.is_partial_selected()}")
-                    if redemption.fees != dialog.get_fees():
-                        debug_lines.append(f"✗ fees: {redemption.fees} → {dialog.get_fees()}")
-                    if redemption.redemption_method_id != dialog.method_id:
-                        debug_lines.append(f"✗ method_id: {redemption.redemption_method_id} → {dialog.method_id}")
-                    
-                    if debug_lines:
-                        QtWidgets.QMessageBox.warning(
-                            self,
-                            "DEBUG: Fields Changed",
-                            f"Accounting fields that changed:\n\n" + "\n".join(debug_lines) + 
-                            f"\n\naccounting_fields_changed = {accounting_fields_changed}"
-                        )
-                    else:
-                        QtWidgets.QMessageBox.information(
-                            self,
-                            "DEBUG: No Accounting Changes",
-                            f"Only metadata changed (receipt_date, processed, notes).\n\n" +
-                            f"accounting_fields_changed = {accounting_fields_changed}"
-                        )
-                
                 if accounting_fields_changed:
                     # Accounting fields changed - use full reprocess path with validation
                     if redemption.has_fifo_allocation:
@@ -1763,34 +1728,48 @@ class RedemptionDialog(QtWidgets.QDialog):
                 return
             
             # Check if redemption exceeds verified balance
-            expected_total, expected_redeemable = self.facade.compute_expected_balances(
-                self.user_id,
-                self.site_id,
-                redemption_date,
-                redemption_time
-            )
-            site = self.facade.get_site(self.site_id)
-            sc_rate = Decimal(str(site.sc_rate if site else 1.0))
-            expected_balance = (expected_redeemable or Decimal("0.00")) * sc_rate
+            # SKIP THIS CHECK if we're editing and accounting fields haven't changed
+            skip_balance_check = False
+            if self.redemption:  # Editing mode
+                # Check if accounting fields are unchanged
+                amount_unchanged = self.redemption.amount == amount
+                user_unchanged = self.redemption.user_id == self.user_id
+                site_unchanged = self.redemption.site_id == self.site_id
+                date_unchanged = self.redemption.redemption_date == redemption_date
+                time_unchanged = (self.redemption.redemption_time or "00:00:00") == redemption_time
+                
+                skip_balance_check = (amount_unchanged and user_unchanged and 
+                                     site_unchanged and date_unchanged and time_unchanged)
             
-            if amount > expected_balance:
-                unsessioned_amount = amount - expected_balance
-                QtWidgets.QMessageBox.warning(
-                    self,
-                    "Redemption Exceeds Session Balance",
-                    "This redemption exceeds the balance we can verify from recorded sessions.\n\n"
-                    f"Redemption amount: ${float(amount):,.2f}\n"
-                    f"Expected sessioned balance: {float(expected_balance):,.2f} SC\n"
-                    f"Unsessioned amount: {float(unsessioned_amount):,.2f} SC\n\n"
-                    "What this means:\n"
-                    "• Your redemption is higher than the verified balance from game sessions.\n"
-                    "• This helps keep your session-based totals accurate.\n\n"
-                    "What to do:\n"
-                    "1) Create/close a Game Session showing your current balance.\n"
-                    "2) Then try the redemption again.\n\n"
-                    "If this was a bonus or freeplay not captured in sessions, record it in a Game Session first."
+            if not skip_balance_check:
+                expected_total, expected_redeemable = self.facade.compute_expected_balances(
+                    self.user_id,
+                    self.site_id,
+                    redemption_date,
+                    redemption_time
                 )
-                return
+                site = self.facade.get_site(self.site_id)
+                sc_rate = Decimal(str(site.sc_rate if site else 1.0))
+                expected_balance = (expected_redeemable or Decimal("0.00")) * sc_rate
+                
+                if amount > expected_balance:
+                    unsessioned_amount = amount - expected_balance
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Redemption Exceeds Session Balance",
+                        "This redemption exceeds the balance we can verify from recorded sessions.\n\n"
+                        f"Redemption amount: ${float(amount):,.2f}\n"
+                        f"Expected sessioned balance: {float(expected_balance):,.2f} SC\n"
+                        f"Unsessioned amount: {float(unsessioned_amount):,.2f} SC\n\n"
+                        "What this means:\n"
+                        "• Your redemption is higher than the verified balance from game sessions.\n"
+                        "• This helps keep your session-based totals accurate.\n\n"
+                        "What to do:\n"
+                        "1) Create/close a Game Session showing your current balance.\n"
+                        "2) Then try the redemption again.\n\n"
+                        "If this was a bonus or freeplay not captured in sessions, record it in a Game Session first."
+                    )
+                    return
 
         self.accept()
 
