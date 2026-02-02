@@ -263,3 +263,81 @@ class TestUnrealizedInvariantBasis:
         
         # Basis should be sum of remaining amounts
         assert pos.purchase_basis == Decimal("125.00")  # 75 + 50
+
+
+class TestUnrealizedRedeemableScopedToPosition:
+    """Test that redeemable SC is only shown from sessions within current position"""
+    
+    def test_redeemable_zero_when_session_predates_position(self, db, repo):
+        """
+        Scenario: Fully redeemed old position, then repurchased.
+        Session from old position should not leak redeemable into new position.
+        """
+        # Old position: purchase + session + full redemption (closes position)
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 0.00)
+        """)
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    100.00, 120.00, 80.00, 'completed')
+        """)
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, processed)
+            VALUES (1, 1, '2024-01-02', '10:00:00', 120.00, 1)
+        """)
+        db.commit()
+        
+        # New position starts: purchase after redemption
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-02-01', '10:00:00', 50.00, 50.00, 50.00)
+        """)
+        db.commit()
+        
+        # Check unrealized position
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Position should reflect new purchase only
+        assert pos.start_date == date(2024, 2, 1)  # New purchase start
+        assert pos.purchase_basis == Decimal("50.00")
+        # No sessions after new purchase, so total_sc is just sum of purchases
+        assert pos.total_sc == Decimal("50.00")  # New purchase only (no session after it)
+        
+        # Redeemable should be 0 (old session predates current position basis)
+        assert pos.redeemable_sc == Decimal("0.00")
+    
+    def test_redeemable_shown_when_session_within_position(self, db, repo):
+        """
+        Scenario: Purchase + session within same position.
+        Redeemable should be shown from the session.
+        """
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 60.00)
+        """)
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    100.00, 120.00, 80.00, 'completed')
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Session is same day as position start, so redeemable should show
+        assert pos.start_date == date(2024, 1, 1)
+        assert pos.redeemable_sc == Decimal("80.00")  # From session

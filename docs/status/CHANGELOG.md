@@ -15,21 +15,22 @@ Rules:
 id: 2026-02-02-06
 type: fix
 areas: [unrealized, repositories, ui]
-summary: "Unrealized tab: show Redeemable SC as last-known session value"
+summary: "Unrealized tab: scope Redeemable SC to current position only"
 files_changed:
-  - repositories/unrealized_position_repository.py (redeemable_sc is last-session only)
+  - repositories/unrealized_position_repository.py (redeemable_sc scoped to position start)
   - ui/tabs/unrealized_tab.py (clarify column header)
   - tests/integration/test_issue_44_unrealized_live_balances.py (update expectations)
   - docs/PROJECT_SPEC.md (document semantics)
 branch: fix/issue-44-unrealized-live-balances
-commits: [a5915f5]
+commits: [a5915f5, TBD]
 issue: "#44"
 pull_request: "#45"
 notes: |
-  Clarified Unrealized tab semantics for Redeemable SC:
-  - Redeemable SC is informational-only and shown as the last known redeemable balance
-    from the most recent session ending.
-  - If no sessions exist, redeemable is shown as 0.00 (unknown split).
+  Fixed Unrealized tab Redeemable SC to only show values from sessions within the current position:
+  - Redeemable SC now only shown if last session end >= position start_date (oldest purchase with remaining basis)
+  - If session predates position (e.g., fully redeemed old position, then repurchased), shows 0.00
+  - Prevents misleading scenario where old session redeemable leaks into new position
+  - Column renamed: "Redeemable SC (Last Session)" → "Redeemable SC (Position)"
   - Total SC (Est.) remains the basis for Current Value and Est. Unrealized P/L.
 status: complete
 ```

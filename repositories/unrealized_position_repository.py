@@ -126,10 +126,18 @@ class UnrealizedPositionRepository:
                 estimated_total_sc = baseline_total + purchases_since - redemptions_since
                 
                 # Use total SC for value/P&L calculations.
-                # Redeemable SC is informational-only and represents the last known
-                # redeemable balance from the most recent session (no post-session estimation).
+                # Redeemable SC: only show if session is part of current position (session end >= position start)
+                # Otherwise show 0 (position predates this session, e.g., fully closed then repurchased)
                 total_sc = estimated_total_sc
-                redeemable_sc = baseline_redeemable
+                position_start_date = basis_data['start_date']
+                position_start_dt = self._to_dt(position_start_date, '00:00:00')
+                
+                if session_end_dt and session_end_dt >= position_start_dt:
+                    # Session is part of current open position
+                    redeemable_sc = baseline_redeemable
+                else:
+                    # Session predates current position's basis (old closed position)
+                    redeemable_sc = Decimal("0.00")
                 
                 # Determine last activity date (most recent of session end, purchase, redemption)
                 last_activity_candidates = [(session_end_date, session_end_time or '00:00:00')]
