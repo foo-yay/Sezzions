@@ -20,7 +20,7 @@ files_changed:
   - ui/tabs/redemptions_tab.py (detect accounting vs metadata field changes in _edit_redemption)
   - tests/integration/test_issue_40_redemption_receipt_date.py (NEW: 5 integration tests)
 branch: fix/issue-40-redemption-receipt-date-warning
-commits: [b09081c, b660061]
+commits: [b09081c, b660061, f33ebbf, 2a6269f]
 issue: "#40"
 pull_request: "#41"
 notes: |
@@ -36,6 +36,9 @@ notes: |
   Route edits appropriately:
   - Accounting changes → update_redemption_reprocess (full validation + FIFO rebuild)
   - Metadata-only changes → update_redemption (lightweight, no validation)
+  
+  Bug fix (2a6269f): Normalize redemption_time comparison (None vs "00:00:00") to prevent
+  false positives when comparing redemption.redemption_time (None) with dialog.get_time() or "00:00:00".
   
   Tests cover happy path, edge cases with complex purchase timelines, and verify both paths.
 ```
