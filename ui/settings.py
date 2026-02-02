@@ -76,7 +76,11 @@ class Settings:
     def get_automatic_backup_config(self) -> Dict[str, Any]:
         """Get automatic backup configuration"""
         default_config = self._default_settings()['automatic_backup']
-        return self.get('automatic_backup', default_config)
+        stored_config = self.get('automatic_backup', {})
+        # Merge stored config with defaults to ensure new keys have default values
+        merged = default_config.copy()
+        merged.update(stored_config)
+        return merged
     
     def set_automatic_backup_config(self, config: Dict[str, Any]):
         """Set automatic backup configuration"""
