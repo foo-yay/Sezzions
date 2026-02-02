@@ -12,6 +12,44 @@ Rules:
 ## 2026-02-02
 
 ```yaml
+id: 2026-02-02-02
+type: fix
+areas: [redemptions, ui, validation]
+summary: "Fix Issue #40: Receipt-date-only redemption updates skip unnecessary balance validation"
+files_changed:
+  - ui/tabs/redemptions_tab.py (skip balance check in dialog when accounting fields unchanged; detect metadata-only changes in tab)
+  - tests/integration/test_issue_40_redemption_receipt_date.py (NEW: 5 integration tests)
+branch: fix/issue-40-redemption-receipt-date-warning
+commits: [b09081c, b660061, f33ebbf, 2a6269f, c5bb89c, fe866bf]
+issue: "#40"
+pull_request: "#41"
+notes: |
+  Fixed bug where updating only metadata fields (receipt_date, processed flag, notes) on a
+  redemption would trigger full FIFO reprocessing and balance validation, even though no
+  accounting changes occurred. This caused false warnings about session balance mismatches
+  when purchases existed after the redemption date.
+  
+  Root cause: Balance validation was happening in TWO places:
+  1. In the dialog's _validate_and_accept() method (runs when user clicks OK)
+  2. In the tab's _edit_redemption() method (runs after dialog closes)
+  
+  The dialog validation was running FIRST and blocking the update before we could detect
+  metadata-only changes in the tab.
+  
+  Solution implemented in two layers:
+  
+  Layer 1 (Dialog - fe866bf): In RedemptionDialog._validate_and_accept(), skip balance
+  validation when editing and accounting fields (amount, user, site, date, time) are unchanged.
+  This prevents the session balance warning when only metadata fields change.
+  
+  Layer 2 (Tab - 2a6269f, earlier commits): In RedemptionsTab._edit_redemption(), detect
+  metadata-only changes and route to lightweight update_redemption() instead of 
+  update_redemption_reprocess(). Normalize redemption_time comparison (None vs "00:00:00").
+  
+  Tests cover happy path, edge cases with complex purchase timelines, and verify both paths.
+```
+
+```yaml
 id: 2026-02-02-01
 type: fix
 areas: [startup, transactions, data-integrity, ui]
