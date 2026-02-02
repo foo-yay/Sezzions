@@ -97,7 +97,7 @@ class UnrealizedTab(QtWidgets.QWidget):
         self.table.setColumnCount(10)
         self.table.setHorizontalHeaderLabels([
             "Site", "User", "Start Date", "Remaining Basis", 
-            "Total SC (Est.)", "Redeemable SC", "Current Value", "Est. Unrealized P/L", 
+            "Total SC (Est.)", "Redeemable SC (Last Session)", "Current Value", "Est. Unrealized P/L", 
             "Last Activity", "Notes"
         ])
         header = self.table.horizontalHeader()

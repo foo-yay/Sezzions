@@ -124,11 +124,12 @@ class UnrealizedPositionRepository:
                 
                 # Estimated current balances (purchases add to both, redemptions reduce both)
                 estimated_total_sc = baseline_total + purchases_since - redemptions_since
-                estimated_redeemable_sc = baseline_redeemable + purchases_since - redemptions_since
                 
-                # Use total SC for value/P&L calculations
+                # Use total SC for value/P&L calculations.
+                # Redeemable SC is informational-only and represents the last known
+                # redeemable balance from the most recent session (no post-session estimation).
                 total_sc = estimated_total_sc
-                redeemable_sc = estimated_redeemable_sc
+                redeemable_sc = baseline_redeemable
                 
                 # Determine last activity date (most recent of session end, purchase, redemption)
                 last_activity_candidates = [(session_end_date, session_end_time or '00:00:00')]
@@ -173,7 +174,8 @@ class UnrealizedPositionRepository:
                 """
                 purchase_data = self.db.fetch_one(purchase_sum_query, (site_id, user_id))
                 total_sc = Decimal(str(purchase_data['total_sc'] or 0))
-                redeemable_sc = total_sc  # Before any sessions, all SC is redeemable
+                # No sessions means we have no tracked redeemable split; show 0 as last-known.
+                redeemable_sc = Decimal("0.00")
                 
                 last_purchase_query = """
                     SELECT purchase_date, COALESCE(purchase_time, '00:00:00') as purchase_time

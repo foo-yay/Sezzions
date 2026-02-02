@@ -57,7 +57,7 @@ class TestUnrealizedBalancesAfterSession:
         assert len(positions) == 1
         pos = positions[0]
         assert pos.total_sc == Decimal("50.00")  # From session ending
-        assert pos.redeemable_sc == Decimal("50.00")  # Same as total initially
+        assert pos.redeemable_sc == Decimal("50.00")  # Last-known from session ending
         assert pos.purchase_basis == Decimal("100.00")  # Remaining basis
         
         # Add another purchase after the session
@@ -75,7 +75,7 @@ class TestUnrealizedBalancesAfterSession:
         
         # Current SC should now include the new purchase
         assert pos.total_sc == Decimal("75.00")  # 50 (session end) + 25 (new purchase)
-        assert pos.redeemable_sc == Decimal("75.00")  # Same as total
+        assert pos.redeemable_sc == Decimal("50.00")  # Last-known from session ending
         assert pos.purchase_basis == Decimal("125.00")  # 100 + 25 remaining
         assert pos.current_value == Decimal("75.00")  # total_sc * 1.0 rate
         assert pos.unrealized_pl == Decimal("-50.00")  # 75 - 125
@@ -120,7 +120,7 @@ class TestUnrealizedBalancesAfterSession:
         
         # Current SC should reflect the redemption
         assert pos.total_sc == Decimal("50.00")  # 80 - 30
-        assert pos.redeemable_sc == Decimal("50.00")
+        assert pos.redeemable_sc == Decimal("80.00")  # Last-known from session ending
         assert pos.purchase_basis == Decimal("50.00")  # Remaining basis unchanged
         assert pos.current_value == Decimal("50.00")
         assert pos.unrealized_pl == Decimal("0.00")  # 50 - 50
@@ -169,7 +169,7 @@ class TestUnrealizedBalancesAfterSession:
         
         # Current SC: 120 (session end total) + 50 + 25 (purchases) - 20 (redemption)
         assert pos.total_sc == Decimal("175.00")
-        assert pos.redeemable_sc == Decimal("155.00")  # 100 (session end redeemable) + 50 + 25 - 20
+        assert pos.redeemable_sc == Decimal("100.00")  # Last-known from session ending
         assert pos.purchase_basis == Decimal("135.00")  # 60 + 50 + 25
         assert pos.unrealized_pl == Decimal("40.00")  # 175 - 135
 
@@ -196,7 +196,7 @@ class TestUnrealizedBalancesNoSession:
         pos = positions[0]
         
         assert pos.total_sc == Decimal("150.00")  # Sum of all purchases
-        assert pos.redeemable_sc == Decimal("150.00")  # Same as total when no sessions
+        assert pos.redeemable_sc == Decimal("0.00")  # No sessions => no last-known redeemable
         assert pos.purchase_basis == Decimal("150.00")
         assert pos.unrealized_pl == Decimal("0.00")
 
