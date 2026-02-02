@@ -12,6 +12,28 @@ Rules:
 ## 2026-02-01
 
 ```yaml
+id: 2026-02-01-04
+type: feature
+areas: [data-integrity, services, ui, startup]
+summary: "Feature Issue #38: Maintenance mode for data integrity violations at startup"
+files_changed:
+  - services/data_integrity_service.py (NEW: detect violations with quick mode)
+  - ui/maintenance_mode_dialog.py (NEW: user-friendly dialog with violation summary)
+  - ui/main_window.py (integrity check before tab creation, restricted tab access)
+branch: feature/issue-38-maintenance-mode
+commits: [5f41b5e, c502e93]
+pr: "#38"
+issue: "#38"
+notes: |
+  Prevents app crashes from data integrity violations (e.g., remaining_amount > amount from
+  incomplete CSV imports). At startup, runs quick integrity check and shows user-friendly
+  dialog if violations detected. Restricts access to Setup tab only (maintenance mode) until
+  user completes imports and runs recalculate. Supports 3 check types: invalid remaining_amount,
+  negative amounts, orphaned FKs. Fixed refresh_all_tabs() AttributeError in maintenance mode.
+  Critical for multi-session CSV import workflows.
+```
+
+```yaml
 id: 2026-02-01-03
 type: fix
 areas: [csv-import, services, tests]

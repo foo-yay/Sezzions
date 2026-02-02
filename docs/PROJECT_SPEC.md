@@ -379,7 +379,36 @@ Tools are accessible via Setup → Tools sub-tab and provide "production readine
 - CSV imports without recalculation: May create temporary data inconsistencies (e.g., `remaining_amount > amount`)
   - Expected during multi-session imports (user hasn't imported all data yet)
   - Solution: Run "Recalculate Everything" after completing all imports
-  - Future: Maintenance mode (Issue #38) will detect and handle integrity violations gracefully
+  - **Maintenance Mode (Issue #38)**: Automatically detects integrity violations at startup and restricts UI access
+
+### 6.3 Data Integrity & Maintenance Mode (Issue #38)
+
+**Purpose:**
+Prevent app crashes from data integrity violations (common during multi-session CSV imports) by detecting issues at startup and restricting access until resolved.
+
+**Implementation:**
+- `services/data_integrity_service.py`: Detects violations with quick mode (stops at first violation for performance)
+  - `check_integrity(quick=bool)`: Returns `IntegrityCheckResult` with violations list
+  - **Checks**: Invalid remaining_amount (> purchase amount), negative amounts, orphaned FKs, null required fields
+  - **Fix methods**: Auto-fix for simple cases (e.g., cap remaining_amount at amount)
+- `ui/maintenance_mode_dialog.py`: User-friendly dialog explaining violations and remediation options
+  - Shows summary (count by type) and details (first 50 violations)
+  - Buttons: "Continue in Maintenance Mode" (access Setup/Tools only) or "Exit Application"
+- `ui/main_window.py`: Integrity check before tab creation
+  - If violations detected: sets `maintenance_mode=True`, shows dialog, restricts to Setup tab only
+  - Warning banner at top: "⚠️ MAINTENANCE MODE - Data integrity issues detected"
+  - Normal mode: creates all 8 tabs as usual
+
+**User Workflow:**
+1. App detects violations at startup (e.g., 29 purchases with invalid remaining_amount)
+2. Dialog appears with violation summary and instructions
+3. User clicks "Continue in Maintenance Mode" to access Tools/Setup tab
+4. User completes CSV imports and/or runs "Recalculate Everything"
+5. User restarts app → violations resolved → normal mode resumes
+
+**Performance:**
+- Quick mode enabled by default (stops at first violation)
+- Full scan available for comprehensive reporting
 
 Helpful maintenance scripts:
 - Validate schema vs spec: `python3 tools/validate_schema.py`
