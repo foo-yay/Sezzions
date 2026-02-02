@@ -20,9 +20,9 @@ files_changed:
   - ui/tabs/redemptions_tab.py (detect accounting vs metadata field changes in _edit_redemption)
   - tests/integration/test_issue_40_redemption_receipt_date.py (NEW: 5 integration tests)
 branch: fix/issue-40-redemption-receipt-date-warning
-commits: [b09081c]
+commits: [b09081c, b660061]
 issue: "#40"
-pull_request: "pending"
+pull_request: "#41"
 notes: |
   Fixed bug where updating only metadata fields (receipt_date, processed flag, notes) on a
   redemption would trigger full FIFO reprocessing and balance validation, even though no
