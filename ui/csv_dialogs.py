@@ -183,7 +183,8 @@ class ImportPreviewDialog(QDialog):
         
         # Get columns from first record
         first_record = records[0]
-        columns = list(first_record.keys())
+        # Exclude internal CSV name tracking columns from display
+        columns = [col for col in first_record.keys() if not col.startswith('_csv_name_') and not col.startswith('_existing_')]
         
         table.setColumnCount(len(columns))
         table.setRowCount(len(records))
@@ -192,7 +193,17 @@ class ImportPreviewDialog(QDialog):
         # Populate table
         for row_idx, record in enumerate(records):
             for col_idx, col_name in enumerate(columns):
+                # Skip internal CSV name tracking columns (used for display elsewhere)
+                if col_name.startswith('_csv_name_'):
+                    continue
+                    
                 value = record.get(col_name, "")
+                
+                # For foreign key columns, prefer displaying the original CSV name if available
+                csv_name_key = f'_csv_name_{col_name}'
+                if csv_name_key in record and record[csv_name_key]:
+                    value = record[csv_name_key]
+                
                 item = QTableWidgetItem(str(value) if value is not None else "")
                 
                 # Color code the row

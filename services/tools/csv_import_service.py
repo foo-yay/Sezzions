@@ -228,12 +228,17 @@ class CSVImportService:
             records_to_insert = self._sort_chronologically(records_to_insert, schema)
             records_to_update = self._sort_chronologically(records_to_update, schema)
         
+        # Strip tracking fields before DB operations (_csv_name_*, _existing_*)
+        def strip_tracking_fields(record: Dict[str, Any]) -> Dict[str, Any]:
+            return {k: v for k, v in record.items() 
+                   if not k.startswith('_csv_name_') and not k.startswith('_existing_')}
+        
         # Convert Decimals to floats for SQLite compatibility
         def convert_decimals(record: Dict[str, Any]) -> Dict[str, Any]:
             return {k: float(v) if isinstance(v, Decimal) else v for k, v in record.items()}
         
-        records_to_insert = [convert_decimals(rec) for rec in records_to_insert]
-        records_to_update = [convert_decimals(rec) for rec in records_to_update]
+        records_to_insert = [convert_decimals(strip_tracking_fields(rec)) for rec in records_to_insert]
+        records_to_update = [convert_decimals(strip_tracking_fields(rec)) for rec in records_to_update]
         
         # Execute atomic import
         try:
@@ -409,6 +414,8 @@ class CSVImportService:
                 fk_result = self.fk_resolver.resolve_fk(parsed_value, field.foreign_key.table, scope=scope)
                 if fk_result.success:
                     record[field.db_column] = fk_result.resolved_id
+                    # Preserve original CSV name for display purposes (human readability in preview dialog)
+                    record[f'_csv_name_{field.db_column}'] = parsed_value
                 else:
                     errors.append(ValidationError(
                         row_number=row_num,
@@ -525,7 +532,8 @@ class CSVImportService:
     ) -> bool:
         """Check if record exactly matches existing (all non-ID fields)."""
         for key, value in record.items():
-            if key == 'id':
+            # Skip ID and tracking fields
+            if key == 'id' or key.startswith('_csv_name_') or key.startswith('_existing_'):
                 continue
             
             exist_val = existing.get(key)
