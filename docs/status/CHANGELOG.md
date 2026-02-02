@@ -20,10 +20,11 @@ files_changed:
   - repositories/unrealized_position_repository.py (incorporate transactions after last session)
   - ui/tabs/unrealized_tab.py (update column headers for clarity)
   - tests/integration/test_issue_44_unrealized_live_balances.py (new comprehensive tests)
+  - models/unrealized_position.py (add total_sc and redeemable_sc fields)
 branch: fix/issue-44-unrealized-live-balances
-commits: [61ba86e]
+commits: [61ba86e, a599408, 2f28164]
 issue: "#44"
-pull_request: "TBD"
+pull_request: "#45"
 notes: |
   Fixed bug where Unrealized tab "Current SC / Current Value / Unrealized P/L" columns
   remained stuck at last session values even after new purchases or redemptions.
@@ -33,13 +34,19 @@ notes: |
   
   Solution: estimate current balances by taking last session as baseline and applying
   purchases/redemptions that occurred after that session:
+  - estimated_total_sc = session_ending_balance + purchases_since - redemptions_since
   - estimated_redeemable_sc = session_ending_redeemable + purchases_since - redemptions_since
-  - current_value = estimated_redeemable_sc * sc_rate
+  - current_value = estimated_total_sc * sc_rate (uses total, not redeemable)
   - unrealized_pl = current_value - remaining_basis
   
-  Updated column headers to reflect estimated nature and clarify semantics:
+  Semantic clarification (per Issue #44 review discussion):
+  - Unrealized P/L represents "money out vs current potential value" (total SC semantics)
+  - Use ending_balance (total SC) as baseline when sessions exist, not ending_redeemable
+  - Both Total SC and Redeemable SC are shown; Redeemable is informational only
+  
+  Updated column headers and added columns:
   - "Purchase Basis" → "Remaining Basis"
-  - "Current SC" → "Current Redeemable SC"
+  - "Current SC" → "Total SC (Est.)" and "Redeemable SC" (two columns)
   - "Unrealized P/L" → "Est. Unrealized P/L"
   
   Added 6 new integration tests covering purchase-after-session, redemption-after-session,

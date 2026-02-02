@@ -79,7 +79,12 @@ This distinction is intentionally “business semantic” and must be preserved.
 
 - Cashflow P/L is primarily produced from redemptions (payout vs basis).
 - Unrealized positions represent remaining basis/SC not yet realized.
-- **Issue #44 (2026-02-02):** Unrealized tab now estimates current balances by incorporating purchases/redemptions after the most recent session. Formula: `estimated_redeemable_sc = last_session_redeemable + purchases_since - redemptions_since`. This provides a "mostly accurate" current view (freebies/bonuses not tracked in real-time).
+- **Issue #44 (2026-02-02):** Unrealized tab now estimates current balances by incorporating purchases/redemptions after the most recent session. 
+  - Formula: `estimated_total_sc = last_session_ending_balance + purchases_since - redemptions_since` (uses ending_balance for total SC baseline)
+  - Formula: `estimated_redeemable_sc = last_session_ending_redeemable + purchases_since - redemptions_since` (informational only)
+  - **Unrealized P/L calculation:** Uses total SC × sc_rate for current value (not redeemable SC). Represents "money out vs current potential value."
+  - This provides a "mostly accurate" current view (freebies/bonuses not tracked in real-time).
+  - Columns: "Total SC (Est.)", "Redeemable SC", "Est. Unrealized P/L"
 
 ### 4.3 Taxable P/L (Gameplay Sessions)
 
