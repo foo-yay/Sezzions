@@ -12,6 +12,35 @@ Rules:
 ## 2026-02-02
 
 ```yaml
+id: 2026-02-02-02
+type: fix
+areas: [redemptions, ui, validation]
+summary: "Fix Issue #40: Receipt-date-only redemption updates skip unnecessary balance validation"
+files_changed:
+  - ui/tabs/redemptions_tab.py (detect accounting vs metadata field changes in _edit_redemption)
+  - tests/integration/test_issue_40_redemption_receipt_date.py (NEW: 5 integration tests)
+branch: fix/issue-40-redemption-receipt-date-warning
+commits: [b09081c]
+issue: "#40"
+pull_request: "pending"
+notes: |
+  Fixed bug where updating only metadata fields (receipt_date, processed flag, notes) on a
+  redemption would trigger full FIFO reprocessing and balance validation, even though no
+  accounting changes occurred. This caused false warnings about session balance mismatches
+  when purchases existed after the redemption date.
+  
+  Solution: In RedemptionsTab._edit_redemption(), detect which fields changed:
+  - Accounting fields: user_id, site_id, amount, redemption_date/time, fees, method_id, more_remaining
+  - Metadata fields: receipt_date, processed, notes
+  
+  Route edits appropriately:
+  - Accounting changes → update_redemption_reprocess (full validation + FIFO rebuild)
+  - Metadata-only changes → update_redemption (lightweight, no validation)
+  
+  Tests cover happy path, edge cases with complex purchase timelines, and verify both paths.
+```
+
+```yaml
 id: 2026-02-02-01
 type: fix
 areas: [startup, transactions, data-integrity, ui]
