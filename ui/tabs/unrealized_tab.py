@@ -146,33 +146,51 @@ class UnrealizedTab(QtWidgets.QWidget):
     
     def _populate_table(self, positions):
         """Populate table with position data"""
-        self.table.setRowCount(len(positions))
+        sorting_was_enabled = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        self.table.setUpdatesEnabled(False)
+        self.table.blockSignals(True)
+        try:
+            self.table.clearContents()
+            self.table.setRowCount(len(positions))
         
-        for row, pos in enumerate(positions):
-            # Store position data
-            site_item = QtWidgets.QTableWidgetItem(pos.site_name)
-            site_item.setData(QtCore.Qt.UserRole, (pos.site_id, pos.user_id))
-            self.table.setItem(row, 0, site_item)
-            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(pos.user_name))
-            self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(str(pos.start_date)))
-            self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(f"${pos.purchase_basis:,.2f}"))
-            self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(f"{pos.current_sc:,.2f}"))
-            self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(f"${pos.current_value:,.2f}"))
-            
-            # Color P/L
-            pl_item = QtWidgets.QTableWidgetItem(f"${pos.unrealized_pl:,.2f}")
-            if pos.unrealized_pl > 0:
-                pl_item.setForeground(QtGui.QBrush(QtGui.QColor(0, 150, 0)))  # Green
-            elif pos.unrealized_pl < 0:
-                pl_item.setForeground(QtGui.QBrush(QtGui.QColor(200, 0, 0)))  # Red
-            self.table.setItem(row, 6, pl_item)
-            
-            self.table.setItem(row, 7, QtWidgets.QTableWidgetItem(str(pos.last_activity) if pos.last_activity else ""))
-            self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(pos.notes))
-            
-            # Right-align numbers
-            for col in [3, 4, 5, 6]:
-                self.table.item(row, col).setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            for row, pos in enumerate(positions):
+                # Store position data
+                site_item = QtWidgets.QTableWidgetItem(pos.site_name)
+                site_item.setData(QtCore.Qt.UserRole, (pos.site_id, pos.user_id))
+                self.table.setItem(row, 0, site_item)
+                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(pos.user_name))
+                self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(str(pos.start_date)))
+                self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(f"${pos.purchase_basis:,.2f}"))
+                self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(f"{pos.current_sc:,.2f}"))
+                self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(f"${pos.current_value:,.2f}"))
+                
+                # Color P/L
+                pl_item = QtWidgets.QTableWidgetItem(f"${pos.unrealized_pl:,.2f}")
+                if pos.unrealized_pl > 0:
+                    pl_item.setForeground(QtGui.QBrush(QtGui.QColor(0, 150, 0)))  # Green
+                elif pos.unrealized_pl < 0:
+                    pl_item.setForeground(QtGui.QBrush(QtGui.QColor(200, 0, 0)))  # Red
+                self.table.setItem(row, 6, pl_item)
+                
+                self.table.setItem(row, 7, QtWidgets.QTableWidgetItem(str(pos.last_activity) if pos.last_activity else ""))
+                self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(pos.notes))
+                
+                # Right-align numbers
+                for col in [3, 4, 5, 6]:
+                    self.table.item(row, col).setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+
+        finally:
+            self.table.blockSignals(False)
+            self.table.setUpdatesEnabled(True)
+
+        if getattr(self, "table_filter", None) is not None and self.table_filter.sort_column is not None:
+            self.table_filter.sort_by_column(self.table_filter.sort_column, self.table_filter.sort_order)
+        else:
+            self.table.setSortingEnabled(sorting_was_enabled)
+            header = self.table.horizontalHeader()
+            if header is not None:
+                header.setSortIndicatorShown(False)
 
         self.table_filter.apply_filters()
     

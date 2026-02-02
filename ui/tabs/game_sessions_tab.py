@@ -258,60 +258,78 @@ class GameSessionsTab(QWidget):
             sites = {s.id: s.name for s in self.facade.get_all_sites()}
             games = {g.id: g for g in self.facade.list_all_games()}
 
-            self.table.setRowCount(len(rows))
+            sorting_was_enabled = self.table.isSortingEnabled()
+            self.table.setSortingEnabled(False)
+            self.table.setUpdatesEnabled(False)
+            self.table.blockSignals(True)
+            try:
+                self.table.clearContents()
+                self.table.setRowCount(len(rows))
 
-            for row, session in enumerate(rows):
-                time_val = session.session_time or "00:00:00"
-                if time_val and len(time_val) > 5:
-                    time_val = time_val[:5]
-                date_time = f"{session.session_date} {time_val}".strip()
-                
-                # Add multi-day indicator if session spans multiple days
-                if session.end_date and session.end_date != session.session_date:
-                    date_time += " (+1d)"
+                for row, session in enumerate(rows):
+                    time_val = session.session_time or "00:00:00"
+                    if time_val and len(time_val) > 5:
+                        time_val = time_val[:5]
+                    date_time = f"{session.session_date} {time_val}".strip()
+                    
+                    # Add multi-day indicator if session spans multiple days
+                    if session.end_date and session.end_date != session.session_date:
+                        date_time += " (+1d)"
 
-                game = games.get(session.game_id)
-                game_name = game.name if game else "—"
+                    game = games.get(session.game_id)
+                    game_name = game.name if game else "—"
 
-                values = [
-                    date_time,
-                    sites.get(session.site_id, "—"),
-                    users.get(session.user_id, "—"),
-                    game_name,
-                    f"{session.starting_balance:,.2f}",
-                ]
+                    values = [
+                        date_time,
+                        sites.get(session.site_id, "—"),
+                        users.get(session.user_id, "—"),
+                        game_name,
+                        f"{session.starting_balance:,.2f}",
+                    ]
 
-                if session.status == "Active":
-                    values.extend(["—", f"{session.starting_redeemable:,.2f}", "—", "—", "—", "—", "Active", session.notes or ""])
-                else:
-                    delta_redeem = session.delta_redeem if session.delta_redeem is not None else Decimal("0.00")
-                    basis = session.basis_consumed if session.basis_consumed is not None else Decimal("0.00")
-                    net_pl = session.net_taxable_pl if session.net_taxable_pl is not None else Decimal("0.00")
-                    values.extend([
-                        f"{session.ending_balance:,.2f}",
-                        f"{session.starting_redeemable:,.2f}",
-                        f"{session.ending_redeemable:,.2f}",
-                        f"{delta_redeem:,.2f}",
-                        f"${basis:,.2f}",
-                        f"${net_pl:,.2f}",
-                        session.status or "Closed",
-                        session.notes or ""
-                    ])
+                    if session.status == "Active":
+                        values.extend(["—", f"{session.starting_redeemable:,.2f}", "—", "—", "—", "—", "Active", session.notes or ""])
+                    else:
+                        delta_redeem = session.delta_redeem if session.delta_redeem is not None else Decimal("0.00")
+                        basis = session.basis_consumed if session.basis_consumed is not None else Decimal("0.00")
+                        net_pl = session.net_taxable_pl if session.net_taxable_pl is not None else Decimal("0.00")
+                        values.extend([
+                            f"{session.ending_balance:,.2f}",
+                            f"{session.starting_redeemable:,.2f}",
+                            f"{session.ending_redeemable:,.2f}",
+                            f"{delta_redeem:,.2f}",
+                            f"${basis:,.2f}",
+                            f"${net_pl:,.2f}",
+                            session.status or "Closed",
+                            session.notes or ""
+                        ])
 
-                for col, value in enumerate(values):
-                    item = QTableWidgetItem(value)
-                    if col == 0:
-                        item.setData(Qt.UserRole, session.id)
-                    self.table.setItem(row, col, item)
+                    for col, value in enumerate(values):
+                        item = QTableWidgetItem(value)
+                        if col == 0:
+                            item.setData(Qt.UserRole, session.id)
+                        self.table.setItem(row, col, item)
 
-                if session.status != "Active":
-                    net_pl = session.net_taxable_pl if session.net_taxable_pl is not None else Decimal("0.00")
-                    pl_item = self.table.item(row, 10)
-                    if pl_item:
-                        if net_pl > 0:
-                            pl_item.setForeground(QColor(0, 128, 0))
-                        elif net_pl < 0:
-                            pl_item.setForeground(QColor(200, 0, 0))
+                    if session.status != "Active":
+                        net_pl = session.net_taxable_pl if session.net_taxable_pl is not None else Decimal("0.00")
+                        pl_item = self.table.item(row, 10)
+                        if pl_item:
+                            if net_pl > 0:
+                                pl_item.setForeground(QColor(0, 128, 0))
+                            elif net_pl < 0:
+                                pl_item.setForeground(QColor(200, 0, 0))
+
+            finally:
+                self.table.blockSignals(False)
+                self.table.setUpdatesEnabled(True)
+
+            if getattr(self, "table_filter", None) is not None and self.table_filter.sort_column is not None:
+                self.table_filter.sort_by_column(self.table_filter.sort_column, self.table_filter.sort_order)
+            else:
+                self.table.setSortingEnabled(sorting_was_enabled)
+                header = self.table.horizontalHeader()
+                if header is not None:
+                    header.setSortIndicatorShown(False)
             self.table.resizeColumnToContents(0)
             self.table_filter.apply_filters()
         except Exception as e:

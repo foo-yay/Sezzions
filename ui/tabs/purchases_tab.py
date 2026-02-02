@@ -167,67 +167,85 @@ class PurchasesTab(QtWidgets.QWidget):
         # Sort by date/time descending
         filtered.sort(key=lambda p: p.datetime_str, reverse=True)
         
-        self.table.setRowCount(len(filtered))
+        sorting_was_enabled = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        self.table.setUpdatesEnabled(False)
+        self.table.blockSignals(True)
+        try:
+            self.table.clearContents()
+            self.table.setRowCount(len(filtered))
         
-        for row, purchase in enumerate(filtered):
-            # Date/Time
-            time_val = purchase.purchase_time or ""
-            if time_val and len(time_val) > 5:
-                time_val = time_val[:5]
-            date_time = f"{purchase.purchase_date} {time_val}".strip()
-            date_item = QtWidgets.QTableWidgetItem(date_time)
-            date_item.setData(QtCore.Qt.UserRole, purchase.id)
-            self.table.setItem(row, 0, date_item)
+            for row, purchase in enumerate(filtered):
+                # Date/Time
+                time_val = purchase.purchase_time or ""
+                if time_val and len(time_val) > 5:
+                    time_val = time_val[:5]
+                date_time = f"{purchase.purchase_date} {time_val}".strip()
+                date_item = QtWidgets.QTableWidgetItem(date_time)
+                date_item.setData(QtCore.Qt.UserRole, purchase.id)
+                self.table.setItem(row, 0, date_item)
 
-            # User
-            user = getattr(purchase, 'user_name', None) or "—"
-            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(user))
+                # User
+                user = getattr(purchase, 'user_name', None) or "—"
+                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(user))
 
-            # Site
-            site = getattr(purchase, 'site_name', None) or "—"
-            self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(site))
+                # Site
+                site = getattr(purchase, 'site_name', None) or "—"
+                self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(site))
 
-            # Amount
-            amount_str = f"${float(purchase.amount):.2f}"
-            amount_item = QtWidgets.QTableWidgetItem(amount_str)
-            amount_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            self.table.setItem(row, 3, amount_item)
+                # Amount
+                amount_str = f"${float(purchase.amount):.2f}"
+                amount_item = QtWidgets.QTableWidgetItem(amount_str)
+                amount_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row, 3, amount_item)
 
-            # SC Received
-            sc_str = f"{float(purchase.sc_received):.2f}"
-            sc_item = QtWidgets.QTableWidgetItem(sc_str)
-            sc_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            self.table.setItem(row, 4, sc_item)
+                # SC Received
+                sc_str = f"{float(purchase.sc_received):.2f}"
+                sc_item = QtWidgets.QTableWidgetItem(sc_str)
+                sc_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row, 4, sc_item)
 
-            # Starting SC
-            start_sc_str = f"{float(purchase.starting_sc_balance):.2f}"
-            start_sc_item = QtWidgets.QTableWidgetItem(start_sc_str)
-            start_sc_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            self.table.setItem(row, 5, start_sc_item)
+                # Starting SC
+                start_sc_str = f"{float(purchase.starting_sc_balance):.2f}"
+                start_sc_item = QtWidgets.QTableWidgetItem(start_sc_str)
+                start_sc_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row, 5, start_sc_item)
 
-            # Card
-            card = getattr(purchase, 'card_name', None) or "—"
-            self.table.setItem(row, 6, QtWidgets.QTableWidgetItem(card))
+                # Card
+                card = getattr(purchase, 'card_name', None) or "—"
+                self.table.setItem(row, 6, QtWidgets.QTableWidgetItem(card))
 
-            # Cashback
-            cashback_str = f"${float(purchase.cashback_earned):.2f}"
-            cashback_item = QtWidgets.QTableWidgetItem(cashback_str)
-            cashback_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            self.table.setItem(row, 7, cashback_item)
+                # Cashback
+                cashback_str = f"${float(purchase.cashback_earned):.2f}"
+                cashback_item = QtWidgets.QTableWidgetItem(cashback_str)
+                cashback_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row, 7, cashback_item)
 
-            # Remaining (FIFO indicator)
-            remaining_str = f"${float(purchase.remaining_amount):.2f}"
-            remaining_item = QtWidgets.QTableWidgetItem(remaining_str)
-            remaining_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            if purchase.is_fully_consumed:
-                remaining_item.setForeground(QtGui.QColor("#999"))
-            elif purchase.consumed_amount > 0:
-                remaining_item.setForeground(QtGui.QColor("#ff9800"))
-            self.table.setItem(row, 8, remaining_item)
+                # Remaining (FIFO indicator)
+                remaining_str = f"${float(purchase.remaining_amount):.2f}"
+                remaining_item = QtWidgets.QTableWidgetItem(remaining_str)
+                remaining_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                if purchase.is_fully_consumed:
+                    remaining_item.setForeground(QtGui.QColor("#999"))
+                elif purchase.consumed_amount > 0:
+                    remaining_item.setForeground(QtGui.QColor("#ff9800"))
+                self.table.setItem(row, 8, remaining_item)
 
-            # Notes
-            notes = (purchase.notes or "")[:100]
-            self.table.setItem(row, 9, QtWidgets.QTableWidgetItem(notes))
+                # Notes
+                notes = (purchase.notes or "")[:100]
+                self.table.setItem(row, 9, QtWidgets.QTableWidgetItem(notes))
+
+        finally:
+            self.table.blockSignals(False)
+            self.table.setUpdatesEnabled(True)
+
+        if getattr(self, "table_filter", None) is not None and self.table_filter.sort_column is not None:
+            self.table_filter.sort_by_column(self.table_filter.sort_column, self.table_filter.sort_order)
+        else:
+            self.table.setSortingEnabled(sorting_was_enabled)
+            header = self.table.horizontalHeader()
+            if header is not None:
+                header.setSortIndicatorShown(False)
         
         self._apply_header_sizing()
         self.table_filter.apply_filters()

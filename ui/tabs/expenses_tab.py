@@ -185,19 +185,38 @@ class ExpensesTab(QtWidgets.QWidget):
             filtered = self.expenses
 
         filtered.sort(key=lambda e: e.expense_date, reverse=True)
-        self.table.setRowCount(len(filtered))
 
-        for row, expense in enumerate(filtered):
-            date_item = QtWidgets.QTableWidgetItem(str(expense.expense_date))
-            date_item.setData(QtCore.Qt.UserRole, expense.id)
-            self.table.setItem(row, 0, date_item)
-            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(expense.category or ""))
-            self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(expense.vendor or ""))
-            self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(expense.user_name or ""))
-            amount_item = QtWidgets.QTableWidgetItem(f"${expense.amount:,.2f}")
-            amount_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            self.table.setItem(row, 4, amount_item)
-            self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(expense.description or ""))
+        sorting_was_enabled = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        self.table.setUpdatesEnabled(False)
+        self.table.blockSignals(True)
+        try:
+            self.table.clearContents()
+            self.table.setRowCount(len(filtered))
+
+            for row, expense in enumerate(filtered):
+                date_item = QtWidgets.QTableWidgetItem(str(expense.expense_date))
+                date_item.setData(QtCore.Qt.UserRole, expense.id)
+                self.table.setItem(row, 0, date_item)
+                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(expense.category or ""))
+                self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(expense.vendor or ""))
+                self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(expense.user_name or ""))
+                amount_item = QtWidgets.QTableWidgetItem(f"${expense.amount:,.2f}")
+                amount_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row, 4, amount_item)
+                self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(expense.description or ""))
+
+        finally:
+            self.table.blockSignals(False)
+            self.table.setUpdatesEnabled(True)
+
+        if getattr(self, "table_filter", None) is not None and self.table_filter.sort_column is not None:
+            self.table_filter.sort_by_column(self.table_filter.sort_column, self.table_filter.sort_order)
+        else:
+            self.table.setSortingEnabled(sorting_was_enabled)
+            header = self.table.horizontalHeader()
+            if header is not None:
+                header.setSortIndicatorShown(False)
 
         self.table_filter.apply_filters()
 

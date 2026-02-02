@@ -127,27 +127,45 @@ class RedemptionMethodsTab(QtWidgets.QWidget):
         else:
             filtered = self.methods
 
-        self.table.setRowCount(len(filtered))
+        sorting_was_enabled = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        self.table.setUpdatesEnabled(False)
+        self.table.blockSignals(True)
+        try:
+            self.table.clearContents()
+            self.table.setRowCount(len(filtered))
 
-        for row, method in enumerate(filtered):
-            name_item = QtWidgets.QTableWidgetItem(method.name)
-            name_item.setData(QtCore.Qt.UserRole, method.id)
-            self.table.setItem(row, 0, name_item)
+            for row, method in enumerate(filtered):
+                name_item = QtWidgets.QTableWidgetItem(method.name)
+                name_item.setData(QtCore.Qt.UserRole, method.id)
+                self.table.setItem(row, 0, name_item)
 
-            method_type = method.method_type or "—"
-            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(method_type))
+                method_type = method.method_type or "—"
+                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(method_type))
 
-            user_name = getattr(method, 'user_name', None) or "—"
-            self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(user_name))
+                user_name = getattr(method, 'user_name', None) or "—"
+                self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(user_name))
 
-            status = "Active" if method.is_active else "Inactive"
-            status_item = QtWidgets.QTableWidgetItem(status)
-            if not method.is_active:
-                status_item.setForeground(QtGui.QColor("#999"))
-            self.table.setItem(row, 3, status_item)
+                status = "Active" if method.is_active else "Inactive"
+                status_item = QtWidgets.QTableWidgetItem(status)
+                if not method.is_active:
+                    status_item.setForeground(QtGui.QColor("#999"))
+                self.table.setItem(row, 3, status_item)
 
-            notes = (method.notes or "")[:100]
-            self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(notes))
+                notes = (method.notes or "")[:100]
+                self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(notes))
+
+        finally:
+            self.table.blockSignals(False)
+            self.table.setUpdatesEnabled(True)
+
+        if getattr(self, "table_filter", None) is not None and self.table_filter.sort_column is not None:
+            self.table_filter.sort_by_column(self.table_filter.sort_column, self.table_filter.sort_order)
+        else:
+            self.table.setSortingEnabled(sorting_was_enabled)
+            header = self.table.horizontalHeader()
+            if header is not None:
+                header.setSortIndicatorShown(False)
 
         self.table_filter.apply_filters()
 

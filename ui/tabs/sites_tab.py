@@ -131,33 +131,51 @@ class SitesTab(QtWidgets.QWidget):
         else:
             filtered = self.sites
         
-        self.table.setRowCount(len(filtered))
+        sorting_was_enabled = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        self.table.setUpdatesEnabled(False)
+        self.table.blockSignals(True)
+        try:
+            self.table.clearContents()
+            self.table.setRowCount(len(filtered))
         
-        for row, site in enumerate(filtered):
-            # Name
-            name_item = QtWidgets.QTableWidgetItem(site.name)
-            name_item.setData(QtCore.Qt.UserRole, site.id)
-            self.table.setItem(row, 0, name_item)
-            
-            # URL
-            url = site.url or ""
-            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(url))
-            
-            # SC Rate
-            rate_item = QtWidgets.QTableWidgetItem(f"{site.sc_rate:.4f}")
-            rate_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            self.table.setItem(row, 2, rate_item)
-            
-            # Status
-            status = "Active" if site.is_active else "Inactive"
-            status_item = QtWidgets.QTableWidgetItem(status)
-            if not site.is_active:
-                status_item.setForeground(QtGui.QColor("#999"))
-            self.table.setItem(row, 3, status_item)
-            
-            # Notes
-            notes = (site.notes or "")[:100]
-            self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(notes))
+            for row, site in enumerate(filtered):
+                # Name
+                name_item = QtWidgets.QTableWidgetItem(site.name)
+                name_item.setData(QtCore.Qt.UserRole, site.id)
+                self.table.setItem(row, 0, name_item)
+                
+                # URL
+                url = site.url or ""
+                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(url))
+                
+                # SC Rate
+                rate_item = QtWidgets.QTableWidgetItem(f"{site.sc_rate:.4f}")
+                rate_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row, 2, rate_item)
+                
+                # Status
+                status = "Active" if site.is_active else "Inactive"
+                status_item = QtWidgets.QTableWidgetItem(status)
+                if not site.is_active:
+                    status_item.setForeground(QtGui.QColor("#999"))
+                self.table.setItem(row, 3, status_item)
+                
+                # Notes
+                notes = (site.notes or "")[:100]
+                self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(notes))
+
+        finally:
+            self.table.blockSignals(False)
+            self.table.setUpdatesEnabled(True)
+
+        if getattr(self, "table_filter", None) is not None and self.table_filter.sort_column is not None:
+            self.table_filter.sort_by_column(self.table_filter.sort_column, self.table_filter.sort_order)
+        else:
+            self.table.setSortingEnabled(sorting_was_enabled)
+            header = self.table.horizontalHeader()
+            if header is not None:
+                header.setSortIndicatorShown(False)
         
         # Column sizing handled by header resize mode
         self.table_filter.apply_filters()

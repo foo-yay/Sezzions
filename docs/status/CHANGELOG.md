@@ -12,6 +12,38 @@ Rules:
 ## 2026-02-02
 
 ```yaml
+id: 2026-02-02-03
+type: fix
+areas: [ui, tables]
+summary: "Fix table rows showing wrong/duplicate data after sorting + refresh/search"
+files_changed:
+  - ui/tabs/redemptions_tab.py (disable sorting during repopulation; reapply header sort after items are set)
+  - ui/tabs/purchases_tab.py (same)
+  - ui/tabs/game_sessions_tab.py (same)
+  - ui/tabs/unrealized_tab.py (same)
+  - ui/tabs/expenses_tab.py (same)
+  - ui/tabs/sites_tab.py (same)
+  - ui/tabs/cards_tab.py (same)
+  - ui/tabs/users_tab.py (same)
+  - ui/tabs/games_tab.py (same)
+  - ui/tabs/game_types_tab.py (same)
+  - ui/tabs/redemption_methods_tab.py (same)
+  - ui/tabs/redemption_method_types_tab.py (same)
+  - tests/unit/test_redemptions_table_sort_repopulate_consistency.py (NEW: regression test)
+branch: main
+commits: [pending]
+issue: "N/A (user-reported UI data display corruption)"
+notes: |
+  Fixed a QTableWidget gotcha where leaving sorting enabled (via the header sort menu)
+  while repopulating rows can cause the widget to reorder rows mid-population.
+  That manifests as mixed columns (e.g., wrong Amount for a Site) and apparent duplicates
+  that don't exist in the database.
+
+  The fix temporarily disables sorting + UI updates while setting items, then reapplies
+  the active header sort once the table is fully populated.
+```
+
+```yaml
 id: 2026-02-02-02
 type: fix
 areas: [redemptions, ui, validation]

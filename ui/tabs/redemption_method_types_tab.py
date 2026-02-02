@@ -120,21 +120,39 @@ class RedemptionMethodTypesTab(QtWidgets.QWidget):
         else:
             filtered = self.types
 
-        self.table.setRowCount(len(filtered))
+        sorting_was_enabled = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        self.table.setUpdatesEnabled(False)
+        self.table.blockSignals(True)
+        try:
+            self.table.clearContents()
+            self.table.setRowCount(len(filtered))
 
-        for row, method_type in enumerate(filtered):
-            name_item = QtWidgets.QTableWidgetItem(method_type.name)
-            name_item.setData(QtCore.Qt.UserRole, method_type.id)
-            self.table.setItem(row, 0, name_item)
+            for row, method_type in enumerate(filtered):
+                name_item = QtWidgets.QTableWidgetItem(method_type.name)
+                name_item.setData(QtCore.Qt.UserRole, method_type.id)
+                self.table.setItem(row, 0, name_item)
 
-            status = "Active" if method_type.is_active else "Inactive"
-            status_item = QtWidgets.QTableWidgetItem(status)
-            if not method_type.is_active:
-                status_item.setForeground(QtGui.QColor("#999"))
-            self.table.setItem(row, 1, status_item)
+                status = "Active" if method_type.is_active else "Inactive"
+                status_item = QtWidgets.QTableWidgetItem(status)
+                if not method_type.is_active:
+                    status_item.setForeground(QtGui.QColor("#999"))
+                self.table.setItem(row, 1, status_item)
 
-            notes = (method_type.notes or "")[:100]
-            self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(notes))
+                notes = (method_type.notes or "")[:100]
+                self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(notes))
+
+        finally:
+            self.table.blockSignals(False)
+            self.table.setUpdatesEnabled(True)
+
+        if getattr(self, "table_filter", None) is not None and self.table_filter.sort_column is not None:
+            self.table_filter.sort_by_column(self.table_filter.sort_column, self.table_filter.sort_order)
+        else:
+            self.table.setSortingEnabled(sorting_was_enabled)
+            header = self.table.horizontalHeader()
+            if header is not None:
+                header.setSortIndicatorShown(False)
 
         # Column sizing handled by header resize mode
         self.table_filter.apply_filters()

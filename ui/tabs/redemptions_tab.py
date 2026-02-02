@@ -136,87 +136,108 @@ class RedemptionsTab(QtWidgets.QWidget):
         start_date, end_date = self.date_filter.get_date_range()
         self.redemptions = self.facade.get_all_redemptions(start_date=start_date, end_date=end_date)
         self._populate_table()
-        self.table_filter.apply_filters()
     
     def _populate_table(self):
         """Populate table with redemptions"""
         filtered = self._get_filtered_redemptions()
-        
-        self.table.setRowCount(len(filtered))
-        
-        for row, redemption in enumerate(filtered):
-            time_val = redemption.redemption_time or "00:00:00"
-            if time_val and len(time_val) > 5:
-                time_val = time_val[:5]
-            date_time = f"{redemption.redemption_date} {time_val}".strip()
 
-            is_total_loss = float(redemption.amount) == 0
-            receipt_date = redemption.receipt_date.isoformat() if redemption.receipt_date else ""
-            is_pending = receipt_date == ""
-            if is_total_loss:
-                receipt_display = str(redemption.redemption_date)
-            elif is_pending:
-                receipt_display = "PENDING"
-            else:
-                receipt_display = receipt_date
+        # Important: QTableWidget will actively reorder rows while we call setItem()
+        # if sorting is enabled. That can lead to “mixed” rows (wrong amounts/sites)
+        # and apparent duplicates depending on sort/filter/search.
+        sorting_was_enabled = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        self.table.setUpdatesEnabled(False)
+        self.table.blockSignals(True)
+        try:
+            self.table.clearContents()
+            self.table.setRowCount(len(filtered))
 
-            method_display = "Loss" if is_total_loss else (getattr(redemption, 'method_name', None) or "")
+            for row, redemption in enumerate(filtered):
+                time_val = redemption.redemption_time or "00:00:00"
+                if time_val and len(time_val) > 5:
+                    time_val = time_val[:5]
+                date_time = f"{redemption.redemption_date} {time_val}".strip()
 
-            status = "total_loss" if is_total_loss else ("pending" if is_pending else "normal")
+                is_total_loss = float(redemption.amount) == 0
+                receipt_date = redemption.receipt_date.isoformat() if redemption.receipt_date else ""
+                is_pending = receipt_date == ""
+                if is_total_loss:
+                    receipt_display = str(redemption.redemption_date)
+                elif is_pending:
+                    receipt_display = "PENDING"
+                else:
+                    receipt_display = receipt_date
 
-            # Date/Time
-            date_item = QtWidgets.QTableWidgetItem(date_time)
-            date_item.setData(QtCore.Qt.UserRole, redemption.id)
-            self.table.setItem(row, 0, date_item)
+                method_display = "Loss" if is_total_loss else (getattr(redemption, 'method_name', None) or "")
 
-            # User
-            user = getattr(redemption, 'user_name', None) or "—"
-            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(user))
+                status = "total_loss" if is_total_loss else ("pending" if is_pending else "normal")
 
-            # Site
-            site = getattr(redemption, 'site_name', None) or "—"
-            self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(site))
+                # Date/Time
+                date_item = QtWidgets.QTableWidgetItem(date_time)
+                date_item.setData(QtCore.Qt.UserRole, redemption.id)
+                self.table.setItem(row, 0, date_item)
 
-            # Amount
-            amount_str = f"${float(redemption.amount):.2f}"
-            amount_item = QtWidgets.QTableWidgetItem(amount_str)
-            amount_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            self.table.setItem(row, 3, amount_item)
+                # User
+                user = getattr(redemption, 'user_name', None) or "—"
+                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(user))
 
-            # Type (Full/Partial)
-            type_display = "Full" if not redemption.more_remaining else "Partial"
-            type_item = QtWidgets.QTableWidgetItem(type_display)
-            type_item.setTextAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter)
-            self.table.setItem(row, 4, type_item)
+                # Site
+                site = getattr(redemption, 'site_name', None) or "—"
+                self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(site))
 
-            # Receipt
-            receipt_item = QtWidgets.QTableWidgetItem(receipt_display)
-            self.table.setItem(row, 5, receipt_item)
+                # Amount
+                amount_str = f"${float(redemption.amount):.2f}"
+                amount_item = QtWidgets.QTableWidgetItem(amount_str)
+                amount_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row, 3, amount_item)
 
-            # Method
-            self.table.setItem(row, 6, QtWidgets.QTableWidgetItem(method_display))
+                # Type (Full/Partial)
+                type_display = "Full" if not redemption.more_remaining else "Partial"
+                type_item = QtWidgets.QTableWidgetItem(type_display)
+                type_item.setTextAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row, 4, type_item)
 
-            # Processed
-            processed_item = QtWidgets.QTableWidgetItem("✓" if redemption.processed else "")
-            processed_item.setTextAlignment(QtCore.Qt.AlignCenter)
-            self.table.setItem(row, 7, processed_item)
+                # Receipt
+                receipt_item = QtWidgets.QTableWidgetItem(receipt_display)
+                self.table.setItem(row, 5, receipt_item)
 
-            # Notes
-            notes = (redemption.notes or "")[:100]
-            self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(notes))
+                # Method
+                self.table.setItem(row, 6, QtWidgets.QTableWidgetItem(method_display))
 
-            if status == "total_loss":
-                color = QtGui.QColor("#c0392b")
-            elif status == "pending":
-                color = QtGui.QColor("#e67e22")
-            else:
-                color = None
+                # Processed
+                processed_item = QtWidgets.QTableWidgetItem("✓" if redemption.processed else "")
+                processed_item.setTextAlignment(QtCore.Qt.AlignCenter)
+                self.table.setItem(row, 7, processed_item)
 
-            if color:
-                for col in range(0, 8):
-                    item = self.table.item(row, col)
-                    if item:
-                        item.setForeground(QtGui.QBrush(color))
+                # Notes
+                notes = (redemption.notes or "")[:100]
+                self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(notes))
+
+                if status == "total_loss":
+                    color = QtGui.QColor("#c0392b")
+                elif status == "pending":
+                    color = QtGui.QColor("#e67e22")
+                else:
+                    color = None
+
+                if color:
+                    for col in range(0, 8):
+                        item = self.table.item(row, col)
+                        if item:
+                            item.setForeground(QtGui.QBrush(color))
+
+        finally:
+            self.table.blockSignals(False)
+            self.table.setUpdatesEnabled(True)
+
+        # Re-apply any active header sort now that all items are in place.
+        if getattr(self, "table_filter", None) is not None and self.table_filter.sort_column is not None:
+            self.table_filter.sort_by_column(self.table_filter.sort_column, self.table_filter.sort_order)
+        else:
+            self.table.setSortingEnabled(sorting_was_enabled)
+            header = self.table.horizontalHeader()
+            if header is not None:
+                header.setSortIndicatorShown(False)
         
         self._apply_header_sizing()
         self.table_filter.apply_filters()

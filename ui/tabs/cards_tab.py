@@ -133,38 +133,56 @@ class CardsTab(QtWidgets.QWidget):
         else:
             filtered = self.cards
         
-        self.table.setRowCount(len(filtered))
+        sorting_was_enabled = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        self.table.setUpdatesEnabled(False)
+        self.table.blockSignals(True)
+        try:
+            self.table.clearContents()
+            self.table.setRowCount(len(filtered))
         
-        for row, card in enumerate(filtered):
-            # Name
-            name_item = QtWidgets.QTableWidgetItem(card.name)
-            name_item.setData(QtCore.Qt.UserRole, card.id)
-            self.table.setItem(row, 0, name_item)
-            
-            # User
-            user = getattr(card, 'user_name', None) or "—"
-            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(user))
-            
-            # Last Four
-            last_four = card.last_four or "—"
-            self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(last_four))
+            for row, card in enumerate(filtered):
+                # Name
+                name_item = QtWidgets.QTableWidgetItem(card.name)
+                name_item.setData(QtCore.Qt.UserRole, card.id)
+                self.table.setItem(row, 0, name_item)
+                
+                # User
+                user = getattr(card, 'user_name', None) or "—"
+                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(user))
+                
+                # Last Four
+                last_four = card.last_four or "—"
+                self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(last_four))
 
-            # Cashback %
-            cashback_str = f"{float(card.cashback_rate):.2f}%"
-            cashback_item = QtWidgets.QTableWidgetItem(cashback_str)
-            cashback_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            self.table.setItem(row, 3, cashback_item)
-            
-            # Status
-            status = "Active" if card.is_active else "Inactive"
-            status_item = QtWidgets.QTableWidgetItem(status)
-            if not card.is_active:
-                status_item.setForeground(QtGui.QColor("#999"))
-            self.table.setItem(row, 4, status_item)
-            
-            # Notes
-            notes = (card.notes or "")[:100]
-            self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(notes))
+                # Cashback %
+                cashback_str = f"{float(card.cashback_rate):.2f}%"
+                cashback_item = QtWidgets.QTableWidgetItem(cashback_str)
+                cashback_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row, 3, cashback_item)
+                
+                # Status
+                status = "Active" if card.is_active else "Inactive"
+                status_item = QtWidgets.QTableWidgetItem(status)
+                if not card.is_active:
+                    status_item.setForeground(QtGui.QColor("#999"))
+                self.table.setItem(row, 4, status_item)
+                
+                # Notes
+                notes = (card.notes or "")[:100]
+                self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(notes))
+
+        finally:
+            self.table.blockSignals(False)
+            self.table.setUpdatesEnabled(True)
+
+        if getattr(self, "table_filter", None) is not None and self.table_filter.sort_column is not None:
+            self.table_filter.sort_by_column(self.table_filter.sort_column, self.table_filter.sort_order)
+        else:
+            self.table.setSortingEnabled(sorting_was_enabled)
+            header = self.table.horizontalHeader()
+            if header is not None:
+                header.setSortIndicatorShown(False)
         
         # Column sizing handled by header resize mode
         self.table_filter.apply_filters()

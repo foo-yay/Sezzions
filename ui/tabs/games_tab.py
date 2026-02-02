@@ -126,34 +126,52 @@ class GamesTab(QtWidgets.QWidget):
         else:
             filtered = self.games
 
-        self.table.setRowCount(len(filtered))
-        for row, game in enumerate(filtered):
-            name_item = QtWidgets.QTableWidgetItem(game.name)
-            name_item.setData(QtCore.Qt.UserRole, game.id)
-            self.table.setItem(row, 0, name_item)
+        sorting_was_enabled = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        self.table.setUpdatesEnabled(False)
+        self.table.blockSignals(True)
+        try:
+            self.table.clearContents()
+            self.table.setRowCount(len(filtered))
+            for row, game in enumerate(filtered):
+                name_item = QtWidgets.QTableWidgetItem(game.name)
+                name_item.setData(QtCore.Qt.UserRole, game.id)
+                self.table.setItem(row, 0, name_item)
 
-            game_type_name = game_types.get(game.game_type_id, "—")
-            self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(game_type_name))
+                game_type_name = game_types.get(game.game_type_id, "—")
+                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(game_type_name))
 
-            rtp_display = f"{game.rtp:.2f}%" if game.rtp is not None else "—"
-            rtp_item = QtWidgets.QTableWidgetItem(rtp_display)
-            rtp_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            self.table.setItem(row, 2, rtp_item)
+                rtp_display = f"{game.rtp:.2f}%" if game.rtp is not None else "—"
+                rtp_item = QtWidgets.QTableWidgetItem(rtp_display)
+                rtp_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row, 2, rtp_item)
 
-            actual_rtp = getattr(game, "actual_rtp", None)
-            actual_display = f"{float(actual_rtp):.2f}%" if actual_rtp is not None else "—"
-            actual_item = QtWidgets.QTableWidgetItem(actual_display)
-            actual_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            self.table.setItem(row, 3, actual_item)
+                actual_rtp = getattr(game, "actual_rtp", None)
+                actual_display = f"{float(actual_rtp):.2f}%" if actual_rtp is not None else "—"
+                actual_item = QtWidgets.QTableWidgetItem(actual_display)
+                actual_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row, 3, actual_item)
 
-            status = "Active" if game.is_active else "Inactive"
-            status_item = QtWidgets.QTableWidgetItem(status)
-            if not game.is_active:
-                status_item.setForeground(QtGui.QColor("#999"))
-            self.table.setItem(row, 4, status_item)
+                status = "Active" if game.is_active else "Inactive"
+                status_item = QtWidgets.QTableWidgetItem(status)
+                if not game.is_active:
+                    status_item.setForeground(QtGui.QColor("#999"))
+                self.table.setItem(row, 4, status_item)
 
-            notes = (game.notes or "")[:100]
-            self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(notes))
+                notes = (game.notes or "")[:100]
+                self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(notes))
+
+        finally:
+            self.table.blockSignals(False)
+            self.table.setUpdatesEnabled(True)
+
+        if getattr(self, "table_filter", None) is not None and self.table_filter.sort_column is not None:
+            self.table_filter.sort_by_column(self.table_filter.sort_column, self.table_filter.sort_order)
+        else:
+            self.table.setSortingEnabled(sorting_was_enabled)
+            header = self.table.horizontalHeader()
+            if header is not None:
+                header.setSortIndicatorShown(False)
 
         self.table_filter.apply_filters()
 
