@@ -1730,33 +1730,35 @@ class ToolsTab(QWidget):
         self.auto_backup_enabled_checkbox.blockSignals(True)
         self.auto_backup_frequency_spinbox.blockSignals(True)
         
-        # Apply settings to UI
-        enabled = config.get('enabled', False)
-        self.auto_backup_enabled_checkbox.setChecked(enabled)
-        
-        directory = config.get('directory', '')
-        if directory:
-            self._set_backup_location_display(directory)
-            self.backup_dir = directory
-            self.backup_now_btn.setEnabled(True)
-        
-        # Convert hours to days for spinbox display
-        frequency_hours = config.get('frequency_hours', 24)
-        frequency_days = max(1, frequency_hours // 24)  # At least 1 day
-        self.auto_backup_frequency_spinbox.setValue(frequency_days)
-        
-        # Set spinbox enabled state based on checkbox (while signals still blocked)
-        self.auto_backup_frequency_spinbox.setEnabled(enabled)
-        
-        # Enable/disable spinbox based on checkbox
-        self.auto_backup_frequency_spinbox.setEnabled(config.get('enabled', False))
-        
-        # Update last backup label
-        self._update_last_backup_display()
-        
-        # Start timer if enabled
-        if config.get('enabled', False) and directory:
-            self.backup_check_timer.start()
+        try:
+            # Apply settings to UI
+            enabled = config.get('enabled', False)
+            self.auto_backup_enabled_checkbox.setChecked(enabled)
+            
+            directory = config.get('directory', '')
+            if directory:
+                self._set_backup_location_display(directory)
+                self.backup_dir = directory
+                self.backup_now_btn.setEnabled(True)
+            
+            # Convert hours to days for spinbox display
+            frequency_hours = config.get('frequency_hours', 24)
+            frequency_days = max(1, frequency_hours // 24)  # At least 1 day
+            self.auto_backup_frequency_spinbox.setValue(frequency_days)
+            
+            # Set spinbox enabled state based on checkbox (while signals still blocked)
+            self.auto_backup_frequency_spinbox.setEnabled(enabled)
+            
+            # Update last backup label
+            self._update_last_backup_display()
+            
+            # Start timer if enabled
+            if enabled and directory:
+                self.backup_check_timer.start()
+        finally:
+            # Always unblock signals
+            self.auto_backup_enabled_checkbox.blockSignals(False)
+            self.auto_backup_frequency_spinbox.blockSignals(False)
     
     def _save_automatic_backup_settings(self):
         """Save automatic backup settings to JSON"""
