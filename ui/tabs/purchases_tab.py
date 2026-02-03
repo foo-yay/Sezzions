@@ -13,6 +13,26 @@ from ui.spreadsheet_ux import SpreadsheetUXController
 from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 
 
+def _balance_check_cutoff(purchase_date: date, purchase_time: str) -> tuple[date, str]:
+    """Return a (date, time_str) representing the moment just before a purchase.
+
+    This is used for balance checks so the purchase being added/edited is not
+    included in the expected pre-purchase balance.
+    """
+
+    try:
+        time_str = purchase_time or "00:00:00"
+        if len(time_str) == 5:
+            time_str = f"{time_str}:00"
+        purchase_dt = datetime.combine(
+            purchase_date, datetime.strptime(time_str, "%H:%M:%S").time()
+        )
+        cutoff_dt = purchase_dt - timedelta(seconds=1)
+        return cutoff_dt.date(), cutoff_dt.strftime("%H:%M:%S")
+    except Exception:
+        return purchase_date, purchase_time
+
+
 class PurchasesTab(QtWidgets.QWidget):
     """Tab for managing purchases"""
     
@@ -324,20 +344,15 @@ class PurchasesTab(QtWidgets.QWidget):
                 # Get time once and reuse it - don't call get_time() multiple times
                 # because it returns datetime.now() each time if field is empty!
                 purchase_time = dialog.get_time()
-                
-                # For balance check, we need to compute expected balance BEFORE this purchase
-                # So we subtract 1 second from the purchase time to get the moment just before
-                from datetime import datetime, timedelta
-                try:
-                    purchase_dt = datetime.strptime(purchase_time, "%H:%M:%S")
-                    balance_check_time = (purchase_dt - timedelta(seconds=1)).strftime("%H:%M:%S")
-                except:
-                    balance_check_time = purchase_time
+
+                balance_check_date, balance_check_time = _balance_check_cutoff(
+                    purchase_date, purchase_time
+                )
                 
                 expected_total, _expected_redeem = self.facade.compute_expected_balances(
                     user_id=dialog.user_id,
                     site_id=dialog.site_id,
-                    session_date=purchase_date,
+                    session_date=balance_check_date,
                     session_time=balance_check_time,
                 )
                 starting_sc = dialog.get_starting_sc_balance()
@@ -433,11 +448,14 @@ class PurchasesTab(QtWidgets.QWidget):
 
                 purchase_date = dialog.get_date()
                 purchase_time = dialog.get_time()
+                balance_check_date, balance_check_time = _balance_check_cutoff(
+                    purchase_date, purchase_time
+                )
                 expected_total, _expected_redeem = self.facade.compute_expected_balances(
                     user_id=dialog.user_id,
                     site_id=dialog.site_id,
-                    session_date=purchase_date,
-                    session_time=purchase_time,
+                    session_date=balance_check_date,
+                    session_time=balance_check_time,
                 )
                 starting_sc = dialog.get_starting_sc_balance()
                 sc_received = dialog.get_sc_received()
@@ -1397,11 +1415,15 @@ class PurchaseDialog(QtWidgets.QDialog):
 
         user_id = self._user_lookup[user_text.lower()]
         site_id = self._site_lookup[site_text.lower()]
+
+        balance_check_date, balance_check_time = _balance_check_cutoff(
+            parsed_date, parsed_time
+        )
         expected_total, _expected_redeem = self.facade.compute_expected_balances(
             user_id=user_id,
             site_id=site_id,
-            session_date=parsed_date,
-            session_time=parsed_time,
+            session_date=balance_check_date,
+            session_time=balance_check_time,
         )
 
         # Get SC received to calculate pre-purchase balance
