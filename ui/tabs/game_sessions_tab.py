@@ -2556,21 +2556,6 @@ class EditClosedSessionDialog(QDialog):
         
         notes = self.notes_edit.toPlainText().strip()
         
-        # Capture tax withholding fields (optional custom rate)
-        tax_rate_pct = None
-        tax_is_custom = False
-        if hasattr(self, 'tax_rate_edit'):
-            rate_text = self.tax_rate_edit.text().strip()
-            if rate_text:
-                try:
-                    rate_val = Decimal(rate_text)
-                    if rate_val < 0 or rate_val > 100:
-                        return None, "Tax withholding rate must be between 0 and 100."
-                    tax_rate_pct = rate_val
-                    tax_is_custom = True
-                except Exception:
-                    return None, "Invalid tax withholding rate."
-        
         return {
             "session_date": start_date,
             "start_time": start_time,
@@ -2586,8 +2571,6 @@ class EditClosedSessionDialog(QDialog):
             "ending_redeemable_sc": Decimal(str(end_redeem)),
             "wager_amount": wager_amount,
             "notes": notes,
-            "tax_withholding_rate_pct": tax_rate_pct,
-            "tax_withholding_is_custom": tax_is_custom,
         }, None
     
     def _validate_inline(self):

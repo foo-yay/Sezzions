@@ -9,6 +9,27 @@ Rules:
 
 ---
 
+## 2026-02-03
+
+```yaml
+id: 2026-02-03-01
+type: fix
+areas: [ui, cleanup]
+summary: "Remove dead per-session tax withholding code from EditClosedSessionDialog."
+files_changed:
+  - ui/tabs/game_sessions_tab.py
+commits: TBD
+```
+
+Notes:
+- **Problem:** `EditClosedSessionDialog.collect_data()` contained orphaned code referencing `self.tax_rate_edit`, a field that never existed in the dialog's `__init__`.
+- **Root cause:** Template/copy-paste leftover from the 2026-01-31 tax withholding refactor (commit `153cdf0`), where all per-session tax UI was intentionally removed.
+- **Context:** Tax withholding moved entirely to daily-level (not per-session) to fix incorrect totaling. Individual game sessions no longer have tax fields.
+- **Previous defensive fix (2026-02-03):** Added `hasattr(self, 'tax_rate_edit')` check to prevent AttributeError crash when editing closed sessions.
+- **Proper fix:** Remove entire dead code block (18 lines) including tax variable declarations and return dict fields.
+- **Impact:** Cleaner code, removes maintenance burden, prevents future confusion about per-session tax semantics.
+- **Validation:** All tests pass (609 total).
+
 ## 2026-02-02
 
 ```yaml
