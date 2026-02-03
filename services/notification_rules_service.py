@@ -34,6 +34,7 @@ class NotificationRulesService:
             # Dismiss any existing backup notifications
             self.notification_service.dismiss_by_type('backup_directory_missing')
             self.notification_service.dismiss_by_type('backup_due')
+            self.notification_service.dismiss_by_type('backup_failed')
             return
         
         # Check if backup directory is configured
@@ -52,51 +53,68 @@ class NotificationRulesService:
             # Directory configured, dismiss any "missing directory" notification
             self.notification_service.dismiss_by_type('backup_directory_missing')
             
-            # Check if backup is due
+            # Check if overdue notifications are enabled
+            notify_when_overdue = backup_config.get('notify_when_overdue', True)
+            if not notify_when_overdue:
+                # User has disabled overdue notifications
+                self.notification_service.dismiss_by_type('backup_due')
+                return
+            
+            # Check if backup is overdue
             last_backup_time_str = backup_config.get('last_backup_time')
             frequency_hours = backup_config.get('frequency_hours', 24)
+            overdue_threshold_days = backup_config.get('overdue_threshold_days', 1)
+            overdue_threshold_hours = overdue_threshold_days * 24
             
             if last_backup_time_str:
                 try:
                     last_backup_time = datetime.fromisoformat(last_backup_time_str)
                     hours_since_backup = (datetime.now() - last_backup_time).total_seconds() / 3600
+                    hours_overdue = hours_since_backup - frequency_hours
                     
-                    if hours_since_backup >= frequency_hours:
-                        # Backup is due
-                        hours_overdue = int(hours_since_backup - frequency_hours)
-                        overdue_msg = f" (overdue by {hours_overdue} hours)" if hours_overdue > 0 else ""
+                    # Only notify if overdue by threshold
+                    if hours_overdue >= overdue_threshold_hours:
+                        days_overdue = int(hours_overdue / 24)
+                        overdue_msg = f" (overdue by {days_overdue} day{'s' if days_overdue != 1 else ''})"
                         
                         self.notification_service.create_or_update(
                             type='backup_due',
-                            title='Database Backup Due',
-                            body=f'A database backup is due{overdue_msg}. Last backup was {int(hours_since_backup)} hours ago.',
+                            title='Database Backup Overdue',
+                            body=f'A database backup is overdue{overdue_msg}. Last backup was {int(hours_since_backup / 24)} day(s) ago.',
                             severity=NotificationSeverity.WARNING,
                             action_key='open_tools',
                             action_payload={'tab': 'database_tools'}
                         )
                     else:
-                        # Backup is not due yet
+                        # Backup is not overdue by threshold yet
                         self.notification_service.dismiss_by_type('backup_due')
                 except (ValueError, TypeError):
-                    # Could not parse last backup time, consider backup due
+                    # Could not parse last backup time, consider backup due if overdue threshold is 0
+                    if overdue_threshold_days == 0:
+                        self.notification_service.create_or_update(
+                            type='backup_due',
+                            title='Database Backup Recommended',
+                            body='A database backup is recommended. No recent backup timestamp found.',
+                            severity=NotificationSeverity.WARNING,
+                            action_key='open_tools',
+                            action_payload={'tab': 'database_tools'}
+                        )
+                    else:
+                        self.notification_service.dismiss_by_type('backup_due')
+            else:
+                # No last backup time recorded, only notify if overdue threshold allows
+                if overdue_threshold_days == 0:
                     self.notification_service.create_or_update(
                         type='backup_due',
                         title='Database Backup Recommended',
-                        body='A database backup is recommended. No recent backup timestamp found.',
+                        body='A database backup is recommended. No previous backups recorded.',
                         severity=NotificationSeverity.WARNING,
                         action_key='open_tools',
                         action_payload={'tab': 'database_tools'}
                     )
-            else:
-                # No last backup time recorded, consider backup due
-                self.notification_service.create_or_update(
-                    type='backup_due',
-                    title='Database Backup Recommended',
-                    body='A database backup is recommended. No previous backups recorded.',
-                    severity=NotificationSeverity.WARNING,
-                    action_key='open_tools',
-                    action_payload={'tab': 'database_tools'}
-                )
+                else:
+                    # Don't nag user immediately - wait for threshold
+                    self.notification_service.dismiss_by_type('backup_due')
     
     def evaluate_redemption_pending_rules(self):
         """Evaluate redemption pending-receipt notification rules"""
@@ -171,9 +189,25 @@ class NotificationRulesService:
             print(f"Warning: Could not evaluate redemption pending rules: {e}")
     
     def on_backup_completed(self):
-        """Called when a backup completes successfully. Dismisses backup due notifications."""
+        """Called when a backup completes successfully. Dismisses backup due and failed notifications."""
         self.notification_service.dismiss_by_type('backup_due')
         self.notification_service.dismiss_by_type('backup_directory_missing')
+        self.notification_service.dismiss_by_type('backup_failed')
+    
+    def on_backup_failed(self, error_msg: str):
+        """Called when a backup fails. Creates failure notification if enabled."""
+        backup_config = self.settings.get_automatic_backup_config()
+        notify_on_failure = backup_config.get('notify_on_failure', True)
+        
+        if notify_on_failure:
+            self.notification_service.create_or_update(
+                type='backup_failed',
+                title='Automatic Backup Failed',
+                body=f'The automatic backup failed: {error_msg}',
+                severity=NotificationSeverity.ERROR,
+                action_key='open_tools',
+                action_payload={'tab': 'database_tools'}
+            )
     
     def on_redemption_received(self, redemption_id: int):
         """Called when a redemption is marked as received. Dismisses pending notification."""

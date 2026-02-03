@@ -12,6 +12,39 @@ Rules:
 ## 2026-02-02
 
 ```yaml
+id: 2026-02-02-07
+type: feature
+areas: [backup, notifications, settings, ui]
+summary: "Issue #35: Automatic backup checkbox persistence + notification settings"
+files_changed:
+  - ui/tabs/tools_tab.py (unblock signals after loading settings, emit notifications on success/failure)
+  - ui/settings.py (add backup notification settings to default config, merge with stored values)
+  - ui/settings_dialog.py (add backup notification UI controls)
+  - services/notification_rules_service.py (respect user notification preferences, add on_backup_failed)
+  - tests/unit/test_backup_notification_settings.py (4 new tests for settings persistence)
+  - tests/unit/test_backup_notification_rules.py (6 new tests for notification logic)
+branch: fix/issue-35-backup-checkbox-and-notifications
+commits: [e7f4d23, 9b8b419, 4352fb5, 3606a40]
+issue: "#35"
+notes: |
+  Fixed automatic backup checkbox not persisting (signals were blocked but never unblocked).
+  Added user-configurable backup notification settings:
+  - Notify on backup failure (on/off)
+  - Notify when backup overdue (on/off)
+  - Overdue threshold (days before showing overdue notification)
+  
+  Default behavior: notify on failure, notify when overdue by 1+ day.
+  
+  Notification logic now respects user preferences:
+  - Overdue notifications only shown if user has enabled them and backup is overdue by threshold
+  - Failure notifications only shown if user has enabled them
+  - All backup notifications dismissed when backup completes successfully
+  
+  All 609 tests passing (10 new tests added).
+status: complete
+```
+
+```yaml
 id: 2026-02-02-06
 type: fix
 areas: [unrealized, repositories, ui]

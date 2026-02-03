@@ -241,6 +241,11 @@ Tools are accessible via Setup → Tools sub-tab and provide "production readine
 **Backup Operations:**
 - Manual backup: User selects directory, creates timestamped backup files
 - Automatic backup: Configurable scheduling (1-168 hours), JSON-based settings, non-blocking QTimer execution
+  - Settings: `enabled`, `directory`, `frequency_hours`, `last_backup_time`
+  - Notification settings (Issue #35): `notify_on_failure`, `notify_when_overdue`, `overdue_threshold_days`
+  - Timer checks every 5 minutes if backup is due
+  - Automatic backups create notifications on failure (if enabled) and when overdue (if enabled and past threshold)
+  - Checkbox state persists correctly (signals properly unblocked after load)
 - Backup format: `backup_YYYYMMDD_HHMMSS.db` or `auto_backup_YYYYMMDD_HHMMSS.db`
 - Uses SQLite online backup API for consistency
 - Optional audit log exclusion during backup
@@ -457,17 +462,22 @@ Provide passive, persistent notifications for important app events without inter
 
 **Notification Rules Service:**
 - `evaluate_all_rules()`: Entry point called by QTimer (hourly) and on app startup
-- **Backup rules**:
+- **Backup rules** (Issue #35):
   - `backup_directory_missing`: automatic_backup enabled but directory not configured
-  - `backup_due`: last backup > frequency threshold (warning severity)
-  - `backup_overdue`: last backup > 2x frequency threshold (error severity)
-  - Rules auto-dismiss when conditions resolve
+  - `backup_due`: last backup > frequency + overdue_threshold (warning severity)
+    - Respects user settings: only shown if `notify_when_overdue` enabled
+    - Threshold configurable: `overdue_threshold_days` (default: 1 day)
+    - Shows days overdue in notification body
+  - `backup_failed`: automatic backup failed (error severity)
+    - Respects user settings: only shown if `notify_on_failure` enabled
+    - Dismisses on successful backup
+  - Rules auto-dismiss when conditions resolve or backup completes
 - **Redemption pending-receipt rules**:
   - Queries: `SELECT * FROM redemptions WHERE receipt_date IS NULL AND redemption_date <= ?`
   - Creates one notification per pending redemption (subject_id = redemption_id)
   - Severity: INFO if < 30 days, WARNING if ≥ 30 days
   - Auto-dismisses when redemption_service marks receipt_date
-- Event handlers: `on_backup_completed()`, `on_redemption_received(redemption_id)` called by Tools/Redemptions tabs
+- Event handlers: `on_backup_completed()`, `on_backup_failed(error_msg)`, `on_redemption_received(redemption_id)` called by Tools/Redemptions tabs
 
 **UI Components:**
 - **NotificationBellWidget**: lightweight overlay button with badge count; pinned to the top-right of the main content inset
@@ -613,7 +623,13 @@ Provide a first-class, always-available Settings entry point for managing notifi
   - Modal dialog, minimum 700x500
   - Left nav: "Notifications", "Taxes" (expandable for future sections)
   - Content sections:
-    - **Notifications**: `redemption_pending_receipt_threshold_days` spinner (0..365 days, suffix " days")
+    - **Notifications**: 
+      - Redemption section: `redemption_pending_receipt_threshold_days` spinner (0..365 days, suffix " days")
+      - Backup section (Issue #35):
+        - "Notify on backup failure" checkbox (default: enabled)
+        - "Notify when backup overdue" checkbox (default: enabled)
+        - "Overdue threshold" spinner (1..30 days, enabled only when overdue notifications enabled)
+    - **Display**: Theme selection dropdown (Light/Dark/Blue), changes take effect immediately after saving
     - **Taxes**: Enable toggle, default rate percentage, "Recalculate Tax Withholding" button (launches `TaxRecalcDialog`)
   - Save button: persists settings to settings.json, triggers notification rule re-evaluation
   - ESC key: closes dialog without saving
