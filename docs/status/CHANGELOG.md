@@ -12,6 +12,24 @@ Rules:
 ## 2026-02-03
 
 ```yaml
+id: 2026-02-03-02
+type: fix
+areas: [ui]
+summary: "Fix purchase edit balance check to exclude the edited purchase from expected balances."
+files_changed:
+  - ui/tabs/purchases_tab.py
+  - tests/integration/test_purchase_edit_balance_check.py
+issue: "#47"
+commits: c6b39b0
+```
+
+Notes:
+- **Problem:** Editing a purchase showed a different (smaller) SC balance mismatch than adding the same purchase.
+- **Root cause:** Edit/dialog balance-check computed expected balances at the purchase timestamp; `compute_expected_balances()` includes purchases where `purchase_dt <= cutoff`, so the purchase being edited self-included.
+- **Fix:** Standardize purchase balance-check cutoff to “1 second before purchase” (date+time safe, handles midnight rollover) for both edit flow and live dialog checks.
+- **Validation:** Added a headless regression test reproducing the Zula example; full pytest suite passes.
+
+```yaml
 id: 2026-02-03-01
 type: fix
 areas: [ui, cleanup]
