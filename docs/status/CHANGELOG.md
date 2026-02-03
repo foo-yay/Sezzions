@@ -18,7 +18,7 @@ areas: [ui, cleanup]
 summary: "Remove dead per-session tax withholding code from EditClosedSessionDialog."
 files_changed:
   - ui/tabs/game_sessions_tab.py
-commits: TBD
+commits: 70cfd53
 ```
 
 Notes:
