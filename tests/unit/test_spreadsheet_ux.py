@@ -3,6 +3,13 @@
 import pytest
 from decimal import Decimal
 from ui.spreadsheet_ux import SpreadsheetUXController, SelectionStats
+from PySide6.QtWidgets import (
+    QApplication,
+    QAbstractItemView,
+    QTableWidget,
+    QTableWidgetItem,
+    QTableWidgetSelectionRange,
+)
 
 
 class TestNumericParsing:
@@ -209,3 +216,28 @@ class TestSelectionStats:
         assert abs(stats.avg - Decimal("16.67")) < Decimal("0.01")
         assert stats.min_val == Decimal("-100")
         assert stats.max_val == Decimal("200")
+
+
+class TestTableSelectionExtraction:
+    def test_hidden_rows_in_range_selection_are_ignored(self):
+        app = QApplication.instance() or QApplication([])
+        _ = app  # Keep reference for test lifetime
+
+        table = QTableWidget(3, 1)
+        table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        table.setSelectionBehavior(QAbstractItemView.SelectItems)
+
+        table.setItem(0, 0, QTableWidgetItem("8.99"))
+        table.setItem(1, 0, QTableWidgetItem("17.99"))
+        table.setItem(2, 0, QTableWidgetItem("17.99"))
+
+        table.setRowHidden(1, True)
+
+        # Simulate shift-click style range selection spanning a hidden row.
+        table.setRangeSelected(QTableWidgetSelectionRange(0, 0, 2, 0), True)
+
+        grid = SpreadsheetUXController.extract_selection_grid(table)
+        stats = SpreadsheetUXController.compute_stats(grid)
+
+        assert stats.numeric_count == 2
+        assert stats.sum == Decimal("26.98")
