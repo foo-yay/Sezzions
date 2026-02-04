@@ -92,7 +92,11 @@ class ExpensesTab(QtWidgets.QWidget):
         info.setStyleSheet("color: #666; font-style: italic;")
         layout.addWidget(info)
 
-        self.date_filter = DateFilterWidget()
+        year_start = date(date.today().year, 1, 1)
+        self.date_filter = DateFilterWidget(
+            default_start=year_start,
+            default_end=date.today(),
+        )
         self.date_filter.filter_changed.connect(self.refresh_data)
         layout.addWidget(self.date_filter)
 

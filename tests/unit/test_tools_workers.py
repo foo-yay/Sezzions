@@ -28,6 +28,8 @@ class TestExclusiveOperationLock:
         
         facade.release_tools_lock()
         assert facade.is_tools_operation_active() is False
+
+        facade.db.close()
     
     def test_cannot_acquire_lock_when_active(self):
         """Lock cannot be acquired when operation is already active."""
@@ -45,6 +47,8 @@ class TestExclusiveOperationLock:
         assert facade.acquire_tools_lock() is True
         
         facade.release_tools_lock()
+
+        facade.db.close()
     
     def test_lock_is_thread_safe(self):
         """Lock operations are thread-safe."""
@@ -74,6 +78,8 @@ class TestExclusiveOperationLock:
         assert True in results  # At least one succeeded
         assert False in results  # At least one failed
 
+        facade.db.close()
+
 
 class TestDatabaseBackupWorker:
     """Test DatabaseBackupWorker creates read-only connection."""
@@ -86,6 +92,7 @@ class TestDatabaseBackupWorker:
         # Create a simple database
         from repositories.database import DatabaseManager
         db = DatabaseManager(db_path)
+        db.close()
         
         # Create worker with db_path (not db_connection)
         worker = DatabaseBackupWorker(db_path, backup_path, include_audit_log=True)
@@ -177,6 +184,8 @@ class TestAppFacadeWorkerCreation:
         assert worker.db_path == facade.db_path
         assert worker.backup_path == backup_path
         assert worker.include_audit_log is False
+
+        facade.db.close()
     
     def test_create_restore_worker(self):
         """Facade creates restore worker with correct parameters."""
@@ -189,6 +198,8 @@ class TestAppFacadeWorkerCreation:
         assert worker.db_path == facade.db_path
         assert worker.backup_path == backup_path
         assert worker.restore_mode == RestoreMode.MERGE_ALL
+
+        facade.db.close()
     
     def test_create_reset_worker(self):
         """Facade creates reset worker with correct parameters."""
@@ -200,6 +211,8 @@ class TestAppFacadeWorkerCreation:
         assert worker.db_path == facade.db_path
         assert worker.keep_setup_data is True
         assert worker.keep_audit_log is False
+
+        facade.db.close()
 
 
 class TestWorkerIndependence:

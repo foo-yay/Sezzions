@@ -57,7 +57,10 @@ class UnrealizedTab(QtWidgets.QWidget):
         layout.addWidget(info)
         
         # Date Filter
-        self.date_filter = DateFilterWidget()
+        self.date_filter = DateFilterWidget(
+            default_start=date(2000, 1, 1),
+            default_end=date.today(),
+        )
         self.date_filter.filter_changed.connect(self.refresh_data)
         layout.addWidget(self.date_filter)
         

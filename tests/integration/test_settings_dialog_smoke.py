@@ -70,3 +70,4 @@ def test_settings_gear_and_dialog_open_close(qtbot, temp_db_path):
     
     # Cleanup
     window.close()
+    facade.db.close()

@@ -110,6 +110,14 @@ UI rules:
 - Prefer View-first dialog flows; edits are deliberate.
 - Bulk actions and destructive actions require confirmation.
 
+### Default Date Filter Presets
+
+Many primary tabs use `DateFilterWidget` as the first-level time scoping control.
+
+Default presets (on initial tab load):
+- Purchases / Redemptions / Game Sessions / Daily Sessions / Realized / Expenses: **current calendar year**
+- Unrealized: **all time** (implemented as 2000-01-01 → today)
+
 ### 5.1 Spreadsheet UX (Issue #14, Phase 1)
 
 **Purpose:**
@@ -228,6 +236,7 @@ Tools are accessible via Setup → Tools sub-tab and provide "production readine
 - `DatabaseResetWorker`: Resets database in background thread with own DB connection
 - All workers use `QRunnable` pattern with `WorkerSignals` for progress/completion/error
 - Workers receive `db_path` (not connection object) to create thread-local connections
+- Workers must close their thread-local database connections in a `finally:` block to avoid leaked resources and test warning noise
 - AppFacade provides worker factory methods with exclusive lock management
 
 **Exclusive Operation Lock:**
