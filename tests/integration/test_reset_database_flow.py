@@ -32,7 +32,7 @@ def app_facade(tmp_path):
     db_path = str(tmp_path / "test_reset.db")
     facade = AppFacade(db_path)
     yield facade
-    # Cleanup happens on __del__
+    facade.db.close()
 
 
 @pytest.fixture

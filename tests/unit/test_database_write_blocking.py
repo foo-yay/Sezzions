@@ -18,6 +18,8 @@ def test_writes_are_blocked_when_enabled():
     with pytest.raises(DatabaseWritesBlockedError):
         db.execute_no_commit("UPDATE users SET name = name")
 
+    db.close()
+
 
 def test_writes_work_again_after_unblocked():
     db = DatabaseManager(":memory:")
@@ -32,3 +34,5 @@ def test_writes_work_again_after_unblocked():
     row = db.fetch_one("SELECT name FROM users WHERE name = ?", ("ok",))
     assert row is not None
     assert row["name"] == "ok"
+
+    db.close()

@@ -60,6 +60,7 @@ class RecalculationWorker(QRunnable):
     @Slot()
     def run(self):
         """Execute the recalculation operation"""
+        db = None
         try:
             # Create database connection in this thread (SQLite thread safety)
             from repositories.database import DatabaseManager
@@ -115,6 +116,12 @@ class RecalculationWorker(QRunnable):
         except Exception as e:
             error_msg = f"{type(e).__name__}: {str(e)}\n\n{traceback.format_exc()}"
             self.signals.error.emit(error_msg)
+        finally:
+            if db is not None:
+                try:
+                    db.close()
+                except Exception:
+                    pass
 
 
 class CSVImportWorker(QRunnable):

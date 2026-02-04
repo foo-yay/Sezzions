@@ -66,8 +66,11 @@ class TestRecalculationWorkerOperationPropagation:
         """Create temporary database for worker tests"""
         db_file = tmp_path / "test.db"
         db = DatabaseManager(str(db_file))
-        # Minimal setup for worker to run
-        return str(db_file)
+        try:
+            # Minimal setup for worker to run
+            return str(db_file)
+        finally:
+            db.close()
     
     def test_worker_all_operation_includes_operation_in_result(self, db_path):
         """Worker with operation='all' should produce result with operation='all'"""
@@ -86,9 +89,12 @@ class TestRecalculationWorkerOperationPropagation:
         """Worker with operation='pair' should produce result with operation='pair'"""
         # Setup minimal user/site data
         db = DatabaseManager(db_path)
-        db._connection.execute("INSERT INTO users (id, name) VALUES (1, 'Test')")
-        db._connection.execute("INSERT INTO sites (id, name) VALUES (1, 'Site')")
-        db._connection.commit()
+        try:
+            db._connection.execute("INSERT INTO users (id, name) VALUES (1, 'Test')")
+            db._connection.execute("INSERT INTO sites (id, name) VALUES (1, 'Site')")
+            db._connection.commit()
+        finally:
+            db.close()
         
         worker = RecalculationWorker(
             db_path,
@@ -121,7 +127,8 @@ class TestToolsTabCompletionHandling:
         db_file = tmp_path / "test.db"
         # AppFacade expects db_path string, not DatabaseManager instance
         facade = AppFacade(str(db_file))
-        return facade
+        yield facade
+        facade.db.close()
     
     def test_on_recalculation_finished_with_operation_field(self, qapp, facade):
         """_on_recalculation_finished should handle result.operation correctly"""
@@ -235,7 +242,8 @@ class TestGamesTabAutoRefresh:
         db_file = tmp_path / "test.db"
         # AppFacade expects db_path string, not DatabaseManager instance
         facade = AppFacade(str(db_file))
-        return facade
+        yield facade
+        facade.db.close()
     
     def test_games_tab_has_refresh_data_method(self, qapp, facade):
         """Games tab should implement refresh_data() for event-driven refresh"""

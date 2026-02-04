@@ -9,6 +9,39 @@ Rules:
 
 ---
 
+## 2026-02-04
+
+```yaml
+id: 2026-02-04-01
+type: feature
+areas: [ui, tests, cleanup]
+summary: "Default date filter presets per tab + close SQLite resources in workers/tests."
+files_changed:
+  - ui/tabs/purchases_tab.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/game_sessions_tab.py
+  - ui/tabs/expenses_tab.py
+  - ui/tabs/unrealized_tab.py
+  - ui/tools_workers.py
+  - tests/integration/test_default_date_filter_presets.py
+  - tests/integration/test_issue_20_recalc_completion.py
+  - tests/integration/test_issue_9_global_refresh.py
+  - tests/integration/test_reset_database_flow.py
+  - tests/integration/test_settings_dialog_smoke.py
+  - tests/integration/test_csv_import_integration.py
+  - tests/integration/test_csv_import_user_scoped_methods.py
+  - tests/unit/test_database_write_blocking.py
+  - tests/unit/test_tools_workers.py
+issue: null
+```
+
+Notes:
+- **UX:** Tabs now start with consistent default date ranges:
+  - Purchases / Redemptions / Game Sessions / Expenses: current calendar year
+  - Unrealized: all time (2000-01-01 → today)
+- **Regression coverage:** Added a headless integration test asserting these tab defaults.
+- **Test hygiene:** Ensured worker and test-created SQLite connections/temp files are closed deterministically to avoid `ResourceWarning` noise under newer Python versions.
+
 ## 2026-02-03
 
 ```yaml

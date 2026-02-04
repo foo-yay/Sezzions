@@ -25,7 +25,7 @@ def app_facade(tmp_path):
     db_path = str(tmp_path / "test.db")
     facade = AppFacade(db_path)
     yield facade
-    # AppFacade doesn't have close method - DB closes on __del__
+    facade.db.close()
 
 
 @pytest.fixture

@@ -132,8 +132,13 @@ def import_service(db):
 def temp_csv():
     """Create temporary CSV file."""
     temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv', newline='')
-    yield temp_file.name
-    Path(temp_file.name).unlink(missing_ok=True)
+    try:
+        temp_path = temp_file.name
+    finally:
+        temp_file.close()
+
+    yield temp_path
+    Path(temp_path).unlink(missing_ok=True)
 
 
 class TestCSVImportWorkflow:
