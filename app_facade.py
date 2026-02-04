@@ -1153,13 +1153,20 @@ class AppFacade:
         return self.game_session_service.get_active_session(user_id, site_id)
 
     def compute_expected_balances(self, user_id: int, site_id: int,
-                                 session_date: date, session_time: str) -> Tuple[Decimal, Decimal]:
-        """Compute expected starting balances for a new session."""
+                                 session_date: date, session_time: str,
+                                 exclude_purchase_id: Optional[int] = None) -> Tuple[Decimal, Decimal]:
+        """Compute expected starting balances for a new session.
+        
+        Args:
+            exclude_purchase_id: Optional purchase ID to exclude from the calculation.
+                Used when editing a purchase to avoid including it in its own expected balance.
+        """
         return self.game_session_service.compute_expected_balances(
             user_id=user_id,
             site_id=site_id,
             session_date=session_date,
-            session_time=session_time
+            session_time=session_time,
+            exclude_purchase_id=exclude_purchase_id
         )
     
     def get_game_session(self, session_id: int) -> Optional[GameSession]:

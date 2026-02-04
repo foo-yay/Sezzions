@@ -13,26 +13,6 @@ from ui.spreadsheet_ux import SpreadsheetUXController
 from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 
 
-def _balance_check_cutoff(purchase_date: date, purchase_time: str) -> tuple[date, str]:
-    """Return a (date, time_str) representing the moment just before a purchase.
-
-    This is used for balance checks so the purchase being added/edited is not
-    included in the expected pre-purchase balance.
-    """
-
-    try:
-        time_str = purchase_time or "00:00:00"
-        if len(time_str) == 5:
-            time_str = f"{time_str}:00"
-        purchase_dt = datetime.combine(
-            purchase_date, datetime.strptime(time_str, "%H:%M:%S").time()
-        )
-        cutoff_dt = purchase_dt - timedelta(seconds=1)
-        return cutoff_dt.date(), cutoff_dt.strftime("%H:%M:%S")
-    except Exception:
-        return purchase_date, purchase_time
-
-
 class PurchasesTab(QtWidgets.QWidget):
     """Tab for managing purchases"""
     
@@ -1420,14 +1400,15 @@ class PurchaseDialog(QtWidgets.QDialog):
         user_id = self._user_lookup[user_text.lower()]
         site_id = self._site_lookup[site_text.lower()]
 
-        balance_check_date, balance_check_time = _balance_check_cutoff(
-            parsed_date, parsed_time
-        )
+        # When editing, exclude the purchase being edited from expected balance calculation
+        exclude_purchase_id = self.purchase.id if self.purchase else None
+        
         expected_total, _expected_redeem = self.facade.compute_expected_balances(
             user_id=user_id,
             site_id=site_id,
-            session_date=balance_check_date,
-            session_time=balance_check_time,
+            session_date=parsed_date,
+            session_time=parsed_time,
+            exclude_purchase_id=exclude_purchase_id
         )
 
         # Get SC received to calculate pre-purchase balance

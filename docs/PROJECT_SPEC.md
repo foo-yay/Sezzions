@@ -75,7 +75,24 @@ Derived invariants:
 
 This distinction is intentionally “business semantic” and must be preserved.
 
-### 4.2 Cashflow P/L
+### 4.2 Expected Balance Checks (Purchase/Session Editing)
+
+When editing a purchase or creating/editing a game session, the system computes "expected" SC balances as of that timestamp to validate user-entered starting balances. This helps catch data entry errors and ensure balance continuity.
+
+**Balance computation logic (`GameSessionService.compute_expected_balances`):**
+- Takes a user/site/timestamp cutoff (and optionally an `exclude_purchase_id`)
+- Sums all purchases/redemptions up to and including that timestamp
+- Uses the last closed session before the cutoff as a checkpoint (if available)
+- Returns (expected_total, expected_redeemable)
+
+**Exclusion parameter (Issue #49, 2026-02-04):**
+- When editing a purchase, the system must exclude that purchase from its own expected balance calculation to avoid circular inclusion.
+- Originally implemented as a "1 second before purchase" time cutoff, which failed when multiple purchases shared the same timestamp.
+- Now uses explicit `exclude_purchase_id` parameter passed through the call chain:
+  - `PurchasesTab._update_balance_check()` → `AppFacade.compute_expected_balances()` → `GameSessionService.compute_expected_balances()`
+- **Behavior:** At a given timestamp, all purchases/redemptions at that timestamp are included in the expected balance **except** the one being edited. This ensures stable, deterministic balance checks even when multiple purchases share the same timestamp.
+
+### 4.3 Cashflow P/L
 
 - Cashflow P/L is primarily produced from redemptions (payout vs basis).
 - Unrealized positions represent remaining basis/SC not yet realized.

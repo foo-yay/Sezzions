@@ -12,6 +12,29 @@ Rules:
 ## 2026-02-04
 
 ```yaml
+id: 2026-02-04-02
+type: fix
+areas: [services, ui, tests]
+summary: "Exclude edited purchase by ID in balance checks (replaces 1-second time epsilon)."
+files_changed:
+  - services/game_session_service.py
+  - app_facade.py
+  - ui/tabs/purchases_tab.py
+  - tests/integration/test_issue_49_purchase_exclusion.py
+issue: "#49"
+```
+
+Notes:
+- **Problem:** Purchase balance checks used a "1 second before purchase" cutoff to avoid including the edited purchase itself. This broke when two purchases shared the same timestamp.
+- **Solution:** Added `exclude_purchase_id` parameter throughout the balance check call chain:
+  - `GameSessionService.compute_expected_balances()`: Skip purchase by ID instead of timestamp cutoff
+  - `AppFacade.compute_expected_balances()`: Pass through parameter
+  - `PurchasesTab._update_balance_check()`: Pass `self.purchase.id` when editing
+- **Behavior change:** Balance checks now correctly exclude only the edited purchase, even when multiple purchases share the same timestamp. No more false positives or false negatives due to time-based approximations.
+- **Test coverage:** Added regression test suite (`test_issue_49_purchase_exclusion.py`) covering same-timestamp scenarios and edge cases.
+- **Removed code:** Deleted obsolete `_balance_check_cutoff()` helper function from `purchases_tab.py`.
+
+```yaml
 id: 2026-02-04-01
 type: feature
 areas: [ui, tests, cleanup]

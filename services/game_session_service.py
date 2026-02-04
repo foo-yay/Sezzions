@@ -319,9 +319,15 @@ class GameSessionService:
         user_id: int,
         site_id: int,
         session_date: date,
-        session_time: str
+        session_time: str,
+        exclude_purchase_id: Optional[int] = None
     ) -> Tuple[Decimal, Decimal]:
-        """Compute expected starting total/redeemable balances for a session"""
+        """Compute expected starting total/redeemable balances for a session
+        
+        Args:
+            exclude_purchase_id: Optional purchase ID to exclude from the calculation.
+                Used when editing a purchase to avoid including it in its own expected balance.
+        """
         expected_total = Decimal("0.00")
         expected_redeemable = Decimal("0.00")
 
@@ -363,6 +369,9 @@ class GameSessionService:
         if self.purchase_repo is not None:
             purchases = self.purchase_repo.get_by_user_and_site(user_id, site_id)
             for p in purchases:
+                # Skip the excluded purchase if specified
+                if exclude_purchase_id is not None and p.id == exclude_purchase_id:
+                    continue
                 p_dt = to_dt(p.purchase_date, p.purchase_time)
                 if p_dt <= cutoff and (checkpoint_dt is None or p_dt > checkpoint_dt):
                     sc_amount = Decimal(str(p.sc_received))
