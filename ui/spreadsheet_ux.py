@@ -142,20 +142,32 @@ class SpreadsheetUXController(QObject):
         min_col = min(r.leftColumn() for r in selected_ranges)
         max_col = max(r.rightColumn() for r in selected_ranges)
         
+        visible_rows = [
+            row for row in range(min_row, max_row + 1)
+            if not table.isRowHidden(row)
+        ]
+        visible_cols = [
+            col for col in range(min_col, max_col + 1)
+            if not table.isColumnHidden(col)
+        ]
+
+        if not visible_rows or not visible_cols:
+            return []
+
         grid = []
         
         # Add headers if requested
         if include_headers:
             header_row = []
-            for col in range(min_col, max_col + 1):
+            for col in visible_cols:
                 header_item = table.horizontalHeaderItem(col)
                 header_row.append(header_item.text() if header_item else f"Column {col}")
             grid.append(header_row)
         
         # Extract selected cells
-        for row in range(min_row, max_row + 1):
+        for row in visible_rows:
             row_data = []
-            for col in range(min_col, max_col + 1):
+            for col in visible_cols:
                 # Check if this cell is in any selected range
                 is_selected = any(
                     r.topRow() <= row <= r.bottomRow() and
@@ -188,16 +200,23 @@ class SpreadsheetUXController(QObject):
         selected_indexes = selection_model.selectedIndexes()
         if not selected_indexes:
             return []
+
+        visible_indexes = [
+            idx for idx in selected_indexes
+            if not view.isRowHidden(idx.row()) and not view.isColumnHidden(idx.column())
+        ]
+        if not visible_indexes:
+            return []
         
         # Find bounding box of selection
-        min_row = min(idx.row() for idx in selected_indexes)
-        max_row = max(idx.row() for idx in selected_indexes)
-        min_col = min(idx.column() for idx in selected_indexes)
-        max_col = max(idx.column() for idx in selected_indexes)
+        min_row = min(idx.row() for idx in visible_indexes)
+        max_row = max(idx.row() for idx in visible_indexes)
+        min_col = min(idx.column() for idx in visible_indexes)
+        max_col = max(idx.column() for idx in visible_indexes)
         
         # Build map of (row, col) -> data
         cell_map = {}
-        for idx in selected_indexes:
+        for idx in visible_indexes:
             cell_map[(idx.row(), idx.column())] = idx.data(Qt.DisplayRole) or ""
         
         grid = []
@@ -206,15 +225,33 @@ class SpreadsheetUXController(QObject):
         if include_headers:
             header_row = []
             model = view.model()
-            for col in range(min_col, max_col + 1):
+            visible_cols = [
+                col for col in range(min_col, max_col + 1)
+                if not view.isColumnHidden(col)
+            ]
+            if not visible_cols:
+                return []
+
+            for col in visible_cols:
                 header_data = model.headerData(col, Qt.Horizontal, Qt.DisplayRole)
                 header_row.append(str(header_data) if header_data else f"Column {col}")
             grid.append(header_row)
         
         # Extract selected cells in rectangular grid
-        for row in range(min_row, max_row + 1):
+        visible_rows = [
+            row for row in range(min_row, max_row + 1)
+            if not view.isRowHidden(row)
+        ]
+        visible_cols = [
+            col for col in range(min_col, max_col + 1)
+            if not view.isColumnHidden(col)
+        ]
+        if not visible_rows or not visible_cols:
+            return []
+
+        for row in visible_rows:
             row_data = []
-            for col in range(min_col, max_col + 1):
+            for col in visible_cols:
                 if (row, col) in cell_map:
                     row_data.append(str(cell_map[(row, col)]))
                 else:

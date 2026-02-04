@@ -12,6 +12,23 @@ Rules:
 ## 2026-02-03
 
 ```yaml
+id: 2026-02-03-03
+type: fix
+areas: [ui]
+summary: "Fix spreadsheet selection stats to ignore hidden rows/columns (filtered table selections)."
+files_changed:
+  - ui/spreadsheet_ux.py
+  - tests/unit/test_spreadsheet_ux.py
+issue: "#50"
+```
+
+Notes:
+- **Problem:** After filtering/searching (hidden rows), selection stats could sum values from hidden rows when using range selection.
+- **Root cause:** `SpreadsheetUXController._extract_table_selection()` treated any cell inside a selected range as selected, even if its row/column was hidden.
+- **Fix:** Exclude hidden rows/columns when extracting selection grids for both QTableWidget and QTableView.
+- **Validation:** Added a regression unit test for the hidden-row-in-range case; full pytest suite passes.
+
+```yaml
 id: 2026-02-03-02
 type: fix
 areas: [ui]
