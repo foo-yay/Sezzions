@@ -1470,13 +1470,19 @@ class StartSessionDialog(QDialog):
             self.rtp_display.setText("—")
             return
         game = self._game_lookup.get((game_type.lower(), game_name.lower()))
-        if game and game.rtp is not None:
-            exp_str = f"{float(game.rtp):.2f}%"
-            if getattr(game, "actual_rtp", None) is not None:
-                act_str = f"{float(game.actual_rtp):.2f}%"
-                self.rtp_display.setText(f"Exp: {exp_str} / Act: {act_str}")
-            else:
-                self.rtp_display.setText(f"Exp: {exp_str}")
+        if not game:
+            self.rtp_display.setText("—")
+            return
+        
+        # Build RTP display from available data (expected and/or actual)
+        parts = []
+        if game.rtp is not None:
+            parts.append(f"Exp: {float(game.rtp):.2f}%")
+        if getattr(game, "actual_rtp", None) is not None:
+            parts.append(f"Act: {float(game.actual_rtp):.2f}%")
+        
+        if parts:
+            self.rtp_display.setText(" / ".join(parts))
         else:
             self.rtp_display.setText("—")
 
@@ -2197,15 +2203,18 @@ class EditClosedSessionDialog(QDialog):
         key = (game_type_text.lower(), game_name_text.lower())
         game = self._game_lookup.get(key)
         
-        if not game or game.rtp is None:
+        if not game:
             self.rtp_display.setText("—")
             return
         
+        # Build RTP display from available data (expected, actual, and/or session)
+        parts = []
+        
         # Part 1: Expected RTP (static from game setup)
-        exp_str = f"{float(game.rtp):.2f}%"
+        if game.rtp is not None:
+            parts.append(f"Exp: {float(game.rtp):.2f}%")
         
         # Part 2: Actual RTP (current aggregate, excluding this session)
-        act_str = "N/A"
         try:
             # Use facade's database connection
             conn = self.facade.game_session_service.session_repo.db._connection
@@ -2233,16 +2242,13 @@ class EditClosedSessionDialog(QDialog):
                 
                 if act_total_wager > 0:
                     actual_rtp = ((act_total_wager + act_total_delta) / act_total_wager) * 100.0
-                    act_str = f"{actual_rtp:.2f}%"
-                else:
-                    act_str = "N/A"
-        except Exception as e:
+                    parts.append(f"Act: {actual_rtp:.2f}%")
+        except Exception:
             # Fallback to game's stored actual_rtp
             if getattr(game, "actual_rtp", None) is not None:
-                act_str = f"{float(game.actual_rtp):.2f}%"
+                parts.append(f"Act: {float(game.actual_rtp):.2f}%")
         
         # Part 3: Session RTP (this session only, real-time calculation)
-        session_str = "N/A"
         wager_text = self.wager_edit.text().strip()
         start_total_text = self.start_total_edit.text().strip()
         end_total_text = self.end_total_edit.text().strip()
@@ -2262,10 +2268,13 @@ class EditClosedSessionDialog(QDialog):
                         
                         # Session RTP formula: ((wager + delta_total) / wager) * 100
                         session_rtp = ((wager_amount + delta_total) / wager_amount) * 100.0
-                        session_str = f"{session_rtp:.2f}%"
+                        parts.append(f"Session: {session_rtp:.2f}%")
         
         # Build final display string
-        self.rtp_display.setText(f"Exp: {exp_str} / Act: {act_str} / Session: {session_str}")
+        if parts:
+            self.rtp_display.setText(" / ".join(parts))
+        else:
+            self.rtp_display.setText("—")
     
     def _update_balance_check(self):
         """Update balance check display with proper calculation"""
@@ -3286,20 +3295,23 @@ class ViewSessionDialog(QDialog):
 
     def _calculate_rtp_display(self, game):
         """Calculate and format RTP display"""
-        if not game or not game.rtp:
+        if not game:
             return "—"
         
-        exp_rtp = float(game.rtp)
+        # Build RTP display from available data (expected, actual, and/or session)
+        parts = []
+        if game.rtp is not None:
+            parts.append(f"Exp: {float(game.rtp):.2f}%")
+        
         act_rtp = float(game.actual_rtp) if getattr(game, "actual_rtp", None) is not None else None
-        session_rtp = float(self.session.rtp) if self.session.rtp is not None else None
-
-        parts = [f"Exp: {exp_rtp:.2f}%"]
         if act_rtp is not None:
             parts.append(f"Act: {act_rtp:.2f}%")
+        
+        session_rtp = float(self.session.rtp) if self.session.rtp is not None else None
         if session_rtp is not None:
             parts.append(f"Session: {session_rtp:.2f}%")
         
-        return " / ".join(parts)
+        return " / ".join(parts) if parts else "—"
 
     def _create_related_tab(self):
         widget = QWidget()
@@ -3996,19 +4008,19 @@ class EndSessionDialog(QDialog):
     def _update_rtp_display(self, delta_total, wager):
         """Update RTP display: Exp / Act / Session (real-time) - reuses logic from Edit Closed Session
         
-        Shows all three metrics if game_id exists, otherwise shows only Session RTP
+        Shows all available metrics (expected, actual, and/or session)
         """
-        exp_str = "—"
-        act_str = "—"
-        session_str = "N/A"
+        parts = []
         
         # Part 1 & 2: Expected and Actual RTP (only if we have a game_id)
         if self.session.game_id:
             # Get game data using facade
             try:
                 game = self.facade.game_repo.get_by_id(self.session.game_id) if self.facade.game_repo else None
-                if game and game.rtp is not None:
-                    exp_str = f"{float(game.rtp):.2f}%"
+                if game:
+                    # Expected RTP
+                    if game.rtp is not None:
+                        parts.append(f"Exp: {float(game.rtp):.2f}%")
                     
                     # Actual RTP from aggregates
                     try:
@@ -4028,10 +4040,10 @@ class EndSessionDialog(QDialog):
                             total_delta = float(agg_row["total_delta"] or 0)
                             if total_wager > 0:
                                 actual_rtp = ((total_wager + total_delta) / total_wager) * 100.0
-                                act_str = f"{actual_rtp:.2f}%"
+                                parts.append(f"Act: {actual_rtp:.2f}%")
                     except Exception:
                         if getattr(game, "actual_rtp", None) is not None:
-                            act_str = f"{float(game.actual_rtp):.2f}%"
+                            parts.append(f"Act: {float(game.actual_rtp):.2f}%")
             except:
                 pass
         
@@ -4042,11 +4054,14 @@ class EndSessionDialog(QDialog):
                 delta_total_float = float(delta_total)
                 if wager_float > 0:
                     session_rtp = ((wager_float + delta_total_float) / wager_float) * 100.0
-                    session_str = f"{session_rtp:.2f}%"
+                    parts.append(f"Session: {session_rtp:.2f}%")
             except (ValueError, TypeError, ZeroDivisionError):
-                session_str = "N/A"
+                pass
 
-        self.rtp_display.setText(f"Exp: {exp_str} / Act: {act_str} / Session: {session_str}")
+        if parts:
+            self.rtp_display.setText(" / ".join(parts))
+        else:
+            self.rtp_display.setText("—")
         self.rtp_display.setProperty("status", "neutral")
         self.rtp_display.style().unpolish(self.rtp_display)
         self.rtp_display.style().polish(self.rtp_display)
