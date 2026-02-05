@@ -92,15 +92,15 @@ When editing a purchase or creating/editing a game session, the system computes 
   - `PurchasesTab._update_balance_check()` → `AppFacade.compute_expected_balances()` → `GameSessionService.compute_expected_balances()`
 - **Behavior:** At a given timestamp, all purchases/redemptions at that timestamp are included in the expected balance **except** the one being edited. This ensures stable, deterministic balance checks even when multiple purchases share the same timestamp.
 
-**Delta-based warnings (Issue #66, 2026-02-05):**
-- Purchase dialogs now use delta-based warnings to reduce repeated warnings about persistent balance imbalances.
-- **Basis Period:** Bounded by FULL redemptions (`more_remaining=0`). Period start = instant after most recent FULL redemption. Period end = next FULL redemption or open-ended.
-- **Delta Calculation:**
-  - `total_extra = actual_pre - expected_pre` (quantized to 0.01)
-  - `delta_extra = total_extra(current) - total_extra(previous_purchase_in_period)`
-  - Warn if: (1) `total_extra < 0` (negative always warns), OR (2) `delta_extra > 0` (positive increase)
-- **Warning behavior:** Shows both total_extra and delta when previous purchase exists in the same basis period. This helps users distinguish new imbalances (delta increase) from persistent ones (delta ~0).
-- **UI visibility:** Purchase View dialog's Related tab includes a "Basis Period Purchases" section showing all purchases in the current basis period with their amounts, SC received, and post-purchase balances.
+**Balance chain warnings (Issue #66, 2026-02-05):**
+- Purchase dialogs now track balance chains through basis periods to detect balance mismatches accurately.
+- **Basis Period:** Bounded by FULL redemptions (`more_remaining=0`). Partial redemptions (`more_remaining>0`) do NOT start new period. Example: Redeem 2500 SC but leave 200 SC → period continues.
+- **Balance Chain Logic:**
+  - If previous purchase exists in basis period: `expected_pre = prev_purchase.starting_sc_balance` (uses actual balance chain)
+  - If first purchase in period: `expected_pre = compute_expected_balances()` (sums SC received from sessions)
+  - `total_extra = (actual_pre - expected_pre).quantize(Decimal("0.01"))`
+- **Warning behavior:** Warns on ANY non-zero `total_extra` (no tolerance). Real-time label shows "✓ Balance Check: OK" or "✗ Balance Check: X.XX SC HIGHER/LOWER than expected (Y.YY SC)".
+- **UI visibility:** Purchase View dialog's Related tab includes a "Full Basis Period" section showing ALL purchases (past, current, future) in the basis period. Current purchase shown in **bold**. View Purchase buttons enable easy navigation through the purchase chain.
 
 ### 4.3 Cashflow P/L
 
