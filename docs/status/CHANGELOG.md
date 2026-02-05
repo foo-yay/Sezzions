@@ -12,6 +12,24 @@ Rules:
 ## 2026-02-04
 
 ```yaml
+id: 2026-02-04-08
+type: feature
+areas: [repositories, tests, docs]
+summary: "Unrealized Total SC estimation now uses purchase snapshots and session starts as checkpoints (Issue #61)."
+files_changed:
+  - repositories/unrealized_position_repository.py
+  - tests/integration/test_issue_44_unrealized_live_balances.py
+  - docs/PROJECT_SPEC.md
+issue: 61
+```
+
+Notes:
+- **Problem:** Total SC (Est.) only used last closed session ending balance as checkpoint, ignoring dailies/bonuses added before first session start or between sessions. Purchases with `starting_sc_balance` (snapshots) and Active session starting balances were not recognized as valid checkpoints.
+- **Fix:** Expanded checkpoint sources to three types: (1) purchase snapshots (WHERE `starting_sc_balance > 0.001`), (2) session starts (`starting_balance` from any session), (3) session ends (`ending_balance` from Closed sessions only). Checkpoint selection: most recent by datetime. Formula: `Total SC = checkpoint_total_sc + purchases_since_checkpoint - redemptions_since_checkpoint`.
+- **No-double-counting:** When checkpoint is a purchase snapshot, that purchase's `sc_received` is excluded from "purchases since checkpoint" delta to prevent adding the same SC twice.
+- **Validation:** Added 7 regression tests covering purchase snapshot precedence, session start checkpoints, session end checkpoints, checkpoint source ordering, no-double-counting invariant, multiple purchases with snapshots, and redemptions after snapshots. Updated 1 existing test expectation to reflect new Active session starting_balance checkpoint behavior.
+
+```yaml
 id: 2026-02-04-07
 type: feature
 areas: [repositories, tests, docs]

@@ -201,15 +201,14 @@ class TestUnrealizedBalancesNoSession:
         assert pos.unrealized_pl == Decimal("0.00")
 
     def test_active_session_does_not_zero_out_total_sc(self, db, repo):
-        """An Active session (ending_balance default 0.00) should not be used as the baseline."""
+        """Active session starting_balance is now used as a checkpoint (Issue #61), so Total SC reflects it."""
         db.execute("""
             INSERT INTO purchases
             (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
             VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 100.00)
         """)
 
-        # Mimic how the app starts a session: status Active + ending_balance 0.00.
-        # This should NOT become the "last session" baseline for Unrealized.
+        # Active session at 11:00 with starting_balance 101.00 (user got daily)
         db.execute("""
             INSERT INTO game_sessions
             (user_id, site_id, game_id, session_date, session_time,
@@ -223,9 +222,185 @@ class TestUnrealizedBalancesNoSession:
         assert len(positions) == 1
         pos = positions[0]
 
-        # With no closed session checkpoint, Total SC should reflect purchases (not be forced to 0).
-        assert pos.total_sc == Decimal("100.00")
+        # With Issue #61, session start is a checkpoint, so Total SC = session starting_balance (101.00)
+        assert pos.total_sc == Decimal("101.00"), "Should use Active session starting_balance as checkpoint"
         assert pos.purchase_basis == Decimal("100.00")
+
+
+class TestIssue61UnrealizedCheckpoints:
+    """Test Issue #61: Unrealized uses purchase/session-start checkpoints for Total SC (Est.)"""
+    
+    def test_purchase_snapshot_overrides_sc_received_sum(self, db, repo):
+        """When purchase has starting_sc_balance snapshot, use it as baseline (includes dailies)."""
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 105.00, 100.00)
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Total SC should use the snapshot (105.00), not just sc_received (100.00)
+        assert pos.total_sc == Decimal("105.00"), "Should use purchase snapshot as baseline"
+        assert pos.purchase_basis == Decimal("100.00")
+        assert pos.unrealized_pl == Decimal("5.00")  # 105 - 100
+    
+    def test_session_start_snapshot_overrides_purchase(self, db, repo):
+        """Session start snapshot is newer than purchase, so it becomes the checkpoint."""
+        # Purchase at 10:00
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 105.00, 100.00)
+        """)
+        
+        # Session start at 11:00 with higher starting balance (user got daily SC between purchase and session)
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time,
+             starting_balance, ending_balance, starting_redeemable, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00',
+                    107.00, 0.00, 1.00, 0.00, 'Active')
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Total SC should use session start snapshot (107.00), not purchase snapshot (105.00)
+        assert pos.total_sc == Decimal("107.00"), "Session start snapshot should override purchase snapshot"
+        assert pos.redeemable_sc == Decimal("1.00"), "Should show session start redeemable"
+        assert pos.purchase_basis == Decimal("100.00")
+    
+    def test_session_end_still_beats_session_start(self, db, repo):
+        """Closed session end is the newest checkpoint, so it wins."""
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 105.00, 50.00)
+        """)
+        
+        # Session runs from 11:00 to 12:00
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, starting_redeemable, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    107.00, 80.00, 1.00, 80.00, 'Closed')
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Total SC should use session end (most recent checkpoint)
+        assert pos.total_sc == Decimal("80.00"), "Session end is newest checkpoint"
+        assert pos.redeemable_sc == Decimal("80.00")
+        assert pos.purchase_basis == Decimal("50.00")
+    
+    def test_purchases_after_session_start_checkpoint(self, db, repo):
+        """Purchase after session-start checkpoint adds to Total SC (Est.)."""
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 100.00, 100.00)
+        """)
+        
+        # Active session at 11:00
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time,
+             starting_balance, ending_balance, starting_redeemable, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00',
+                    100.00, 0.00, 0.00, 0.00, 'Active')
+        """)
+        
+        # Purchase after session start
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-02', '10:00:00', 50.00, 50.00, 50.00)
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Total SC = session start (100) + purchase after (50) = 150
+        assert pos.total_sc == Decimal("150.00"), "Purchase after session start should add to checkpoint"
+        assert pos.purchase_basis == Decimal("150.00")
+    
+    def test_no_double_counting_when_checkpoint_is_purchase(self, db, repo):
+        """Invariant: if checkpoint is from a purchase, don't also count its sc_received in deltas."""
+        # Purchase with snapshot
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 105.00, 100.00)
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Must be exactly 105 (snapshot), NOT 105 + 100 = 205 (double counting)
+        assert pos.total_sc == Decimal("105.00"), "Must not double-count checkpoint purchase's sc_received"
+    
+    def test_multiple_purchases_some_with_snapshots(self, db, repo):
+        """Newest purchase snapshot wins; older purchases without snapshots are ignored as checkpoints."""
+        # Old purchase with no snapshot
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 50.00, 50.00, 50.00)
+        """)
+        
+        # Newer purchase with snapshot (this becomes checkpoint)
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-02', '10:00:00', 100.00, 100.00, 155.00, 100.00)
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Total SC should be 155 (latest snapshot), not 50+100=150 or 155+50=205
+        assert pos.total_sc == Decimal("155.00"), "Should use newest purchase snapshot"
+        assert pos.purchase_basis == Decimal("150.00")  # Both purchases' remaining amounts
+    
+    def test_redemptions_after_purchase_snapshot_checkpoint(self, db, repo):
+        """Redemption after checkpoint reduces Total SC (Est.)."""
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 105.00, 50.00)
+        """)
+        
+        # Redemption after checkpoint
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, processed)
+            VALUES (1, 1, '2024-01-02', '10:00:00', 30.00, 1)
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Total SC = 105 (checkpoint) - 30 (redemption) = 75
+        assert pos.total_sc == Decimal("75.00"), "Redemption after checkpoint should reduce Total SC"
+        assert pos.purchase_basis == Decimal("50.00")
 
 
 class TestUnrealizedLastActivity:
