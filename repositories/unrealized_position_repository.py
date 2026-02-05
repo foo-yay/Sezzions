@@ -168,7 +168,7 @@ class UnrealizedPositionRepository:
                     )
                 purchases_since = Decimal(str(purchases_after['total_sc'] or 0))
                 
-                # Get redemptions after checkpoint
+                # Get redemptions after checkpoint (all redemptions affect total SC)
                 redemptions_after_query = """
                     SELECT COALESCE(SUM(amount), 0) as total_redeemed
                     FROM redemptions
@@ -184,13 +184,30 @@ class UnrealizedPositionRepository:
                 )
                 redemptions_since = Decimal(str(redemptions_after['total_redeemed'] or 0))
                 
+                # Get redeemable redemptions after checkpoint (only non-free-SC redemptions affect redeemable balance)
+                redeemable_redemptions_after_query = """
+                    SELECT COALESCE(SUM(amount), 0) as redeemable_redeemed
+                    FROM redemptions
+                    WHERE site_id = ? AND user_id = ?
+                      AND is_free_sc = 0
+                      AND (
+                          redemption_date > ?
+                          OR (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') > ?)
+                      )
+                """
+                redeemable_redemptions_after = self.db.fetch_one(
+                    redeemable_redemptions_after_query,
+                    (site_id, user_id, checkpoint_date, checkpoint_date, checkpoint_time)
+                )
+                redeemable_redemptions_since = Decimal(str(redeemable_redemptions_after['redeemable_redeemed'] or 0))
+                
                 # Compute estimated SC
                 total_sc = baseline_total + purchases_since - redemptions_since
                 
-                # Redeemable: use checkpoint redeemable if checkpoint is within current position
+                # Redeemable: use checkpoint redeemable minus redemptions if checkpoint is within current position
                 position_start_dt = self._to_dt(position_start_date, '00:00:00')
                 if checkpoint_dt and position_start_dt and checkpoint_dt >= position_start_dt:
-                    redeemable_sc = baseline_redeemable
+                    redeemable_sc = baseline_redeemable - redeemable_redemptions_since
                 else:
                     redeemable_sc = Decimal("0.00")
                 

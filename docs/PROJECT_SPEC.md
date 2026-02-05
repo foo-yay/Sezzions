@@ -103,7 +103,7 @@ When editing a purchase or creating/editing a game session, the system computes 
   3. **Session ends** (`ending_balance` + `ending_redeemable`) — Closed sessions only
   - Formula: `estimated_total_sc = checkpoint_total_sc + purchases_since_checkpoint - redemptions_since_checkpoint`
   - When checkpoint is a purchase snapshot, that purchase's `sc_received` is **not** double-counted in the deltas.
-  - Redeemable SC is shown as **last-known from the checkpoint** (if checkpoint is within current position start_date), informational only.
+  - Redeemable SC formula: `estimated_redeemable_sc = checkpoint_redeemable_sc - redeemable_redemptions_since_checkpoint` (if checkpoint is within current position start_date). Informational only; free SC redemptions (`is_free_sc=1`) are excluded from this calculation as they don't affect redeemable balance.
   - **Unrealized P/L calculation:** Uses total SC × sc_rate for current value (not redeemable SC). Represents "money out vs current potential value."
   - This provides a "site-realistic" current view (dailies/bonuses captured via snapshots).
   - Columns: "Total SC (Est.)", "Redeemable SC (Position)", "Est. Unrealized P/L"

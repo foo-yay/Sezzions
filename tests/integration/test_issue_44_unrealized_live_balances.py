@@ -120,7 +120,7 @@ class TestUnrealizedBalancesAfterSession:
         
         # Current SC should reflect the redemption
         assert pos.total_sc == Decimal("50.00")  # 80 - 30
-        assert pos.redeemable_sc == Decimal("80.00")  # Last-known from session ending
+        assert pos.redeemable_sc == Decimal("50.00")  # 80 (checkpoint) - 30 (redemption)
         assert pos.purchase_basis == Decimal("50.00")  # Remaining basis unchanged
         assert pos.current_value == Decimal("50.00")
         assert pos.unrealized_pl == Decimal("0.00")  # 50 - 50
@@ -169,7 +169,7 @@ class TestUnrealizedBalancesAfterSession:
         
         # Current SC: 120 (session end total) + 50 + 25 (purchases) - 20 (redemption)
         assert pos.total_sc == Decimal("175.00")
-        assert pos.redeemable_sc == Decimal("100.00")  # Last-known from session ending
+        assert pos.redeemable_sc == Decimal("80.00")  # 100 (checkpoint) - 20 (redemption)
         assert pos.purchase_basis == Decimal("135.00")  # 60 + 50 + 25
         assert pos.unrealized_pl == Decimal("40.00")  # 175 - 135
 
@@ -657,3 +657,93 @@ class TestIssue58RemainingBasisZeroButSCExists:
         
         # Position should NOT appear (explicitly closed by user)
         assert len(positions) == 0, "Position with 'Balance Closed' marker should not be listed"
+
+
+class TestRedeemableScPositionEstimate:
+    """Tests for Redeemable SC (Position) estimation after redemptions"""
+    
+    def test_redeemable_sc_decreases_after_redemption(self, db, repo):
+        """
+        Regression test: Redeemable SC (Position) should subtract redemptions after checkpoint.
+        
+        Scenario (user-reported bug):
+        - Purchase $40 for 40 SC, starting_sc_balance = 94.33
+        - Free spins get balance up to 100.93 SC
+        - Session starts at 100.93 SC (57.08 redeemable), ends at 100.43 SC (100.43 redeemable)
+        - Redeem $100, leaving 0.43 SC on site
+        - Expected Redeemable SC (Position): 0.43
+        - Bug: showed 100.43 (checkpoint value without subtracting redemption)
+        """
+        # Purchase with snapshot (94.33 SC already on site before purchase)
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2026-01-25', '19:00:00', 40.00, 40.00, 94.33, 40.00)
+        """)
+        
+        # Session: started with 100.93 total (57.08 redeemable), ended with 100.43 total (100.43 redeemable)
+        # This is the checkpoint for redeemable SC
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, starting_redeemable, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2026-01-25', '19:12:00', '2026-01-25', '19:22:00',
+                    100.93, 57.08, 100.43, 100.43, 'Closed')
+        """)
+        
+        # Redemption of $100 (leaving 0.43 SC on site)
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, is_free_sc, more_remaining)
+            VALUES (1, 1, '2026-01-25', '19:23:00', 100.00, 0, 0)
+        """)
+        db.commit()
+        
+        # Check unrealized position
+        positions = repo.get_all_positions()
+        assert len(positions) == 1, "Position should exist (0.43 SC remaining)"
+        
+        pos = positions[0]
+        assert pos.total_sc == Decimal("0.43"), f"Total SC should be 0.43, got {pos.total_sc}"
+        assert pos.redeemable_sc == Decimal("0.43"), f"Redeemable SC should be 0.43 (100.43 - 100.00), got {pos.redeemable_sc}"
+        # Note: purchase_basis would be 0 after FIFO processing, but this test doesn't run FIFO service
+        # (testing the Unrealized SC estimation logic only)
+    
+    def test_free_sc_redemption_does_not_affect_redeemable_sc(self, db, repo):
+        """
+        Free SC (bonus/promo) redemptions should not reduce Redeemable SC (Position).
+        Only regular redemptions (is_free_sc=0) consume redeemable SC.
+        """
+        # Purchase
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 100.00)
+        """)
+        
+        # Session with redeemable SC
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, starting_redeemable, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    100.00, 0.00, 200.00, 100.00, 'Closed')
+        """)
+        
+        # Free SC redemption (bonus/promo SC)
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, is_free_sc, more_remaining)
+            VALUES (1, 1, '2024-01-02', '10:00:00', 100.00, 1, 1)
+        """)
+        db.commit()
+        
+        # Check unrealized position
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        
+        pos = positions[0]
+        # Free SC redemption affects total SC but NOT redeemable SC
+        assert pos.total_sc == Decimal("100.00"), f"Total SC should be 100 (200 - 100 free_sc redemption), got {pos.total_sc}"
+        assert pos.redeemable_sc == Decimal("100.00"), f"Redeemable SC should still be 100 (free_sc redemption doesn't affect it), got {pos.redeemable_sc}"
+

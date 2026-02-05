@@ -24,10 +24,10 @@ issue: 61
 ```
 
 Notes:
-- **Problem:** Total SC (Est.) only used last closed session ending balance as checkpoint, ignoring dailies/bonuses added before first session start or between sessions. Purchases with `starting_sc_balance` (snapshots) and Active session starting balances were not recognized as valid checkpoints.
-- **Fix:** Expanded checkpoint sources to three types: (1) purchase snapshots (WHERE `starting_sc_balance > 0.001`), (2) session starts (`starting_balance` from any session), (3) session ends (`ending_balance` from Closed sessions only). Checkpoint selection: most recent by datetime. Formula: `Total SC = checkpoint_total_sc + purchases_since_checkpoint - redemptions_since_checkpoint`.
+- **Problem:** Total SC (Est.) only used last closed session ending balance as checkpoint, ignoring dailies/bonuses added before first session start or between sessions. Purchases with `starting_sc_balance` (snapshots) and Active session starting balances were not recognized as valid checkpoints. Additionally, Redeemable SC (Position) was incorrectly showing checkpoint value without subtracting redemptions that occurred after the checkpoint.
+- **Fix:** Expanded checkpoint sources to three types: (1) purchase snapshots (WHERE `starting_sc_balance > 0.001`), (2) session starts (`starting_balance` from any session), (3) session ends (`ending_balance` from Closed sessions only). Checkpoint selection: most recent by datetime. Formula: `Total SC = checkpoint_total_sc + purchases_since_checkpoint - redemptions_since_checkpoint`. Redeemable SC now correctly subtracts non-free-SC redemptions after checkpoint: `Redeemable SC = checkpoint_redeemable_sc - redeemable_redemptions_since_checkpoint`.
 - **No-double-counting:** When checkpoint is a purchase snapshot, that purchase's `sc_received` is excluded from "purchases since checkpoint" delta to prevent adding the same SC twice.
-- **Validation:** Added 7 regression tests covering purchase snapshot precedence, session start checkpoints, session end checkpoints, checkpoint source ordering, no-double-counting invariant, multiple purchases with snapshots, and redemptions after snapshots. Updated 1 existing test expectation to reflect new Active session starting_balance checkpoint behavior.
+- **Validation:** Added 9 regression tests (7 for checkpoint expansion + 2 for redeemable SC after redemptions) covering purchase snapshot precedence, session start checkpoints, session end checkpoints, checkpoint source ordering, no-double-counting invariant, multiple purchases with snapshots, redemptions after snapshots, and redeemable SC estimation. Updated 3 existing test expectations to reflect new checkpoint behavior.
 
 ```yaml
 id: 2026-02-04-07
