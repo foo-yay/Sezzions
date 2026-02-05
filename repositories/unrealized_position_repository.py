@@ -326,7 +326,15 @@ class UnrealizedPositionRepository:
             return None
 
     def _get_close_balance_dt(self, site_id: int, user_id: int):
-        query = """
+        """
+        Get the datetime of position closure, which can be either:
+        1. Explicit "Balance Closed" marker (amount=0, notes like "Balance Closed%")
+        2. FULL redemption (more_remaining=0, meaning no balance remains on site)
+        
+        Returns the most recent of these two closure types.
+        """
+        # Check for explicit "Balance Closed" marker
+        balance_closed_query = """
             SELECT redemption_date, COALESCE(redemption_time,'00:00:00') as redemption_time
             FROM redemptions
             WHERE site_id = ? AND user_id = ?
@@ -335,10 +343,28 @@ class UnrealizedPositionRepository:
             ORDER BY redemption_date DESC, COALESCE(redemption_time,'00:00:00') DESC, id DESC
             LIMIT 1
         """
-        row = self.db.fetch_one(query, (site_id, user_id))
-        if not row:
-            return None
-        return self._to_dt(row['redemption_date'], row['redemption_time'])
+        balance_closed = self.db.fetch_one(balance_closed_query, (site_id, user_id))
+        
+        # Check for FULL redemption (more_remaining=0, explicitly not NULL)
+        full_redemption_query = """
+            SELECT redemption_date, COALESCE(redemption_time,'00:00:00') as redemption_time
+            FROM redemptions
+            WHERE site_id = ? AND user_id = ?
+              AND more_remaining IS NOT NULL
+              AND more_remaining = 0
+            ORDER BY redemption_date DESC, COALESCE(redemption_time,'00:00:00') DESC, id DESC
+            LIMIT 1
+        """
+        full_redemption = self.db.fetch_one(full_redemption_query, (site_id, user_id))
+        
+        # Return the most recent closure event
+        candidates = []
+        if balance_closed:
+            candidates.append(self._to_dt(balance_closed['redemption_date'], balance_closed['redemption_time']))
+        if full_redemption:
+            candidates.append(self._to_dt(full_redemption['redemption_date'], full_redemption['redemption_time']))
+        
+        return max(candidates) if candidates else None
     
     def get_position_by_site_user(self, site_id: int, user_id: int) -> Optional[UnrealizedPosition]:
         """Get specific position for a site/user pair"""

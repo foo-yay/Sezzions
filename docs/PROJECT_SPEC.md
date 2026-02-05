@@ -109,7 +109,11 @@ When editing a purchase or creating/editing a game session, the system computes 
   - Columns: "Total SC (Est.)", "Redeemable SC (Position)", "Est. Unrealized P/L"
 - **Issue #58 (2026-02-04):** Unrealized positions remain visible when `Total SC (Est.) > 0` even if `Remaining Basis = $0.00`.
   - This allows partial redemptions that consumed all basis (via FIFO) to still show in Unrealized if profit-only SC remains on the site.
-  - Positions are removed when: (a) estimated SC < threshold (0.01), or (b) explicit "Balance Closed" marker is set.
+- **Position closure (2026-02-05):** Positions are removed from Unrealized when a closure event datetime >= last activity datetime. Closure events:
+  - Explicit "Balance Closed" marker (`amount=0, notes LIKE 'Balance Closed%'`)
+  - FULL redemption (`more_remaining IS NOT NULL AND more_remaining = 0`)
+  - **Semantics:** `more_remaining=0` means "I'm cashing out everything I want to/can; treat remaining balance as dormant." Position automatically reopens when new activity (purchases, sessions) occurs after closure datetime.
+  - **Position visibility:** Positions removed when: (a) estimated SC < threshold (0.01), (b) closure event datetime >= last activity, or (c) no checkpoint available.
 
 ### 4.4 Taxable P/L (Game Sessions)
 

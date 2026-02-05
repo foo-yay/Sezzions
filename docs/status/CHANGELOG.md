@@ -9,6 +9,26 @@ Rules:
 
 ---
 
+## 2026-02-05
+
+```yaml
+id: 2026-02-05-01
+type: fix
+areas: [repositories, tests]
+summary: "FULL redemptions (more_remaining=0) now close Unrealized positions"
+files_changed:
+  - repositories/unrealized_position_repository.py
+  - tests/integration/test_issue_44_unrealized_live_balances.py
+```
+
+Notes:
+- **Problem:** When users cash out everything they want to (FULL redemption: `more_remaining=0`), the position would remain visible in the Unrealized tab even though they consider it dormant/closed. This clutters the Unrealized view with negligible balances (e.g., 0.43 SC left after $100 redemption).
+- **Fix:** Expanded `_get_close_balance_dt()` to check both "Balance Closed" markers AND FULL redemptions (`more_remaining IS NOT NULL AND more_remaining = 0`). Returns the most recent closure datetime. Positions are excluded from Unrealized tab when closure datetime >= last activity datetime.
+- **Semantics:** `more_remaining=0` means "I'm cashing out everything I want to/can right now; treat remaining balance as dormant." `more_remaining=1` means "partial redemption, balance remains active." Position reopens automatically when new activity (purchases, sessions) occurs after closure.
+- **Validation:** Added 4 regression tests covering: (1) FULL redemption closes position, (2) partial redemption keeps position visible, (3) FULL redemption followed by later activity reopens position, (4) newest closure wins when both "Balance Closed" and FULL redemption exist. Updated 3 existing tests to use `more_remaining=1` to maintain position visibility for their test scenarios.
+
+---
+
 ## 2026-02-04
 
 ```yaml

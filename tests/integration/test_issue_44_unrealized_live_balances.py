@@ -108,8 +108,8 @@ class TestUnrealizedBalancesAfterSession:
         # Add redemption after session
         db.execute("""
             INSERT INTO redemptions
-            (user_id, site_id, redemption_date, redemption_time, amount, processed)
-            VALUES (1, 1, '2024-01-03', '10:00:00', 30.00, 1)
+            (user_id, site_id, redemption_date, redemption_time, amount, processed, more_remaining)
+            VALUES (1, 1, '2024-01-03', '10:00:00', 30.00, 1, 1)
         """)
         db.commit()
         
@@ -389,8 +389,8 @@ class TestIssue61UnrealizedCheckpoints:
         # Redemption after checkpoint
         db.execute("""
             INSERT INTO redemptions
-            (user_id, site_id, redemption_date, redemption_time, amount, processed)
-            VALUES (1, 1, '2024-01-02', '10:00:00', 30.00, 1)
+            (user_id, site_id, redemption_date, redemption_time, amount, processed, more_remaining)
+            VALUES (1, 1, '2024-01-02', '10:00:00', 30.00, 1, 1)
         """)
         db.commit()
         
@@ -695,7 +695,7 @@ class TestRedeemableScPositionEstimate:
         db.execute("""
             INSERT INTO redemptions
             (user_id, site_id, redemption_date, redemption_time, amount, is_free_sc, more_remaining)
-            VALUES (1, 1, '2026-01-25', '19:23:00', 100.00, 0, 0)
+            VALUES (1, 1, '2026-01-25', '19:23:00', 100.00, 0, 1)
         """)
         db.commit()
         
@@ -747,3 +747,181 @@ class TestRedeemableScPositionEstimate:
         assert pos.total_sc == Decimal("100.00"), f"Total SC should be 100 (200 - 100 free_sc redemption), got {pos.total_sc}"
         assert pos.redeemable_sc == Decimal("100.00"), f"Redeemable SC should still be 100 (free_sc redemption doesn't affect it), got {pos.redeemable_sc}"
 
+
+class TestFullRedemptionClosesPosition:
+    """Test that FULL redemptions (more_remaining=0) close positions like 'Balance Closed' markers"""
+    
+    def test_full_redemption_closes_position(self, db, repo):
+        """
+        FULL redemption (more_remaining=0) should close position even if SC remains.
+        Scenario: Purchase + session + FULL redemption → position should NOT appear
+        """
+        # Purchase
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 40.00, 40.00, 40.00)
+        """)
+        
+        # Session ends with SC remaining
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    100.00, 100.43, 100.43, 'Closed')
+        """)
+        
+        # FULL redemption (more_remaining=0) even though 0.43 SC technically remains
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, is_free_sc, more_remaining)
+            VALUES (1, 1, '2024-01-01', '13:00:00', 100.00, 0, 0)
+        """)
+        db.commit()
+        
+        # Position should NOT appear (FULL redemption closes it)
+        positions = repo.get_all_positions()
+        assert len(positions) == 0, "Position should be closed after FULL redemption (more_remaining=0)"
+    
+    def test_partial_redemption_keeps_position_visible(self, db, repo):
+        """
+        Partial redemption (more_remaining=1) should keep position visible if SC remains.
+        """
+        # Purchase
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 100.00)
+        """)
+        
+        # Session ends with SC remaining
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    100.00, 150.00, 150.00, 'Closed')
+        """)
+        
+        # Partial redemption (more_remaining=1)
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, is_free_sc, more_remaining)
+            VALUES (1, 1, '2024-01-01', '13:00:00', 100.00, 0, 1)
+        """)
+        db.commit()
+        
+        # Position should still appear (partial redemption, more SC remains)
+        positions = repo.get_all_positions()
+        assert len(positions) == 1, "Position should remain visible after partial redemption (more_remaining=1)"
+        
+        pos = positions[0]
+        assert pos.total_sc == Decimal("50.00"), f"Total SC should be 50 (150 - 100), got {pos.total_sc}"
+    
+    def test_full_redemption_takes_precedence_over_later_activity(self, db, repo):
+        """
+        FULL redemption closes position at that timestamp.
+        Later activity AFTER the FULL redemption will reopen the position.
+        (This matches the 'Balance Closed' marker behavior)
+        """
+        # Purchase
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 100.00)
+        """)
+        
+        # Session
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    100.00, 100.00, 100.00, 'Closed')
+        """)
+        
+        # FULL redemption
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, is_free_sc, more_remaining)
+            VALUES (1, 1, '2024-01-01', '13:00:00', 100.00, 0, 0)
+        """)
+        db.commit()
+        
+        # Position should NOT appear (FULL redemption with no activity after)
+        positions = repo.get_all_positions()
+        assert len(positions) == 0, "Position should be closed after FULL redemption with no later activity"
+        
+        # Now add purchase AFTER the FULL redemption
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-02', '10:00:00', 50.00, 50.00, 50.00)
+        """)
+        db.commit()
+        
+        # Position should NOW appear (activity after FULL redemption reopens it)
+        positions = repo.get_all_positions()
+        assert len(positions) == 1, "Position should reopen after activity following FULL redemption"
+    
+    def test_full_redemption_vs_balance_closed_marker_newest_wins(self, db, repo):
+        """
+        If both FULL redemption and 'Balance Closed' marker exist, the newest one determines closure.
+        """
+        # Purchase
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 100.00)
+        """)
+        
+        # Session
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    100.00, 100.00, 100.00, 'Closed')
+        """)
+        
+        # Balance Closed marker (older)
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, is_free_sc, more_remaining, notes)
+            VALUES (1, 1, '2024-01-01', '13:00:00', 0.00, 0, 0, 'Balance Closed - Net Loss: $0.00')
+        """)
+        
+        # Later purchase (after Balance Closed)
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-02', '10:00:00', 50.00, 50.00, 50.00)
+        """)
+        
+        # Later session
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-02', '11:00:00', '2024-01-02', '12:00:00',
+                    50.00, 60.00, 60.00, 'Closed')
+        """)
+        
+        db.commit()
+        
+        # Position should appear (activity after Balance Closed marker)
+        positions = repo.get_all_positions()
+        assert len(positions) == 1, "Activity after closure should make position visible again"
+        
+        # Now add FULL redemption (newer than all activity)
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, is_free_sc, more_remaining)
+            VALUES (1, 1, '2024-01-03', '10:00:00', 60.00, 0, 0)
+        """)
+        db.commit()
+        
+        # Position should NOT appear (FULL redemption is newest)
+        positions = repo.get_all_positions()
+        assert len(positions) == 0, "FULL redemption after activity should close position"
