@@ -12,6 +12,22 @@ Rules:
 ## 2026-02-05
 
 ```yaml
+id: 2026-02-05-05
+type: feature
+areas: [ui]
+summary: "Game Sessions: End & Start New convenience flow"
+files_changed:
+  - ui/tabs/game_sessions_tab.py
+  - tests/integration/test_switch_game_flow.py
+```
+
+Notes:
+- Adds a fast workflow to end an Active session and immediately start a new session with carried-forward starting balances.
+- End Session dialog now includes **"🎮 End & Start New"**.
+- The Start Session dialog is prefilled with same User/Site and starting balances equal to the ended session’s ending balances; game selection is intentionally left blank.
+- Validation: scenario-based pytest-qt integration tests cover happy path, cancel, and failure injection.
+
+```yaml
 id: 2026-02-05-04
 type: feature
 areas: [ui, facades, services]

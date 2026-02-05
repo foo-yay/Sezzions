@@ -1,6 +1,6 @@
 # Sezzions — TODO (Offline Mirror)
 
-Last updated: 2026-01-28
+Last updated: 2026-02-05
 
 Rules:
 - Primary work tracking lives in GitHub Issues.
@@ -14,6 +14,7 @@ Rules:
 ## Now
 
 
+- [ ] Add “🎮 End & Start New” flow (auto-carry balances; pick game; start new session)
 - [ ] Define 3–6 “golden scenario” accounting tests (basis + cashflow P/L + taxable P/L)
 - [ ] Reconcile Game Session taxable P/L algorithm vs current implementation
 - [ ] Confirm whether UI still fetches via repos (enforce UI→services only)

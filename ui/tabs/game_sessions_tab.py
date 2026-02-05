@@ -539,7 +539,75 @@ class GameSessionsTab(QWidget):
 
         dialog = EndSessionDialog(self.facade, session, parent=self)
 
-        def handle_save():
+        def open_prefilled_next_session_dialog(ending_total_sc: Decimal, ending_redeemable_sc: Decimal) -> None:
+            start_dialog = StartSessionDialog(self.facade, parent=self)
+
+            user = None
+            site = None
+            try:
+                user = self.facade.get_user(session.user_id)
+                site = self.facade.get_site(session.site_id)
+            except Exception:
+                user = None
+                site = None
+
+            if user and getattr(user, "name", None):
+                start_dialog.user_combo.setCurrentText(user.name)
+            if site and getattr(site, "name", None):
+                start_dialog.site_combo.setCurrentText(site.name)
+
+            start_dialog.start_total_edit.setText(str(ending_total_sc))
+            start_dialog.start_redeem_edit.setText(str(ending_redeemable_sc))
+
+            # Force explicit game selection for the next session.
+            start_dialog.game_type_combo.blockSignals(True)
+            start_dialog.game_type_combo.setCurrentIndex(-1)
+            if start_dialog.game_type_combo.isEditable():
+                start_dialog.game_type_combo.setEditText("")
+            start_dialog.game_type_combo.blockSignals(False)
+
+            start_dialog.game_name_combo.blockSignals(True)
+            start_dialog.game_name_combo.clear()
+            start_dialog.game_name_combo.setEditText("")
+            if start_dialog.game_name_combo.lineEdit() is not None:
+                start_dialog.game_name_combo.lineEdit().setPlaceholderText("Select a game type first")
+            start_dialog.game_name_combo.blockSignals(False)
+
+            start_dialog._update_game_names()
+            start_dialog._update_balance_check()
+            start_dialog.game_type_combo.setFocus()
+
+            def handle_start_save():
+                data, error = start_dialog.collect_data()
+                if error:
+                    QMessageBox.warning(self, "Invalid Entry", error)
+                    return
+                try:
+                    self.facade.create_game_session(
+                        user_id=data["user_id"],
+                        site_id=data["site_id"],
+                        game_id=data["game_id"],
+                        session_date=data["session_date"],
+                        starting_balance=data["starting_total_sc"],
+                        ending_balance=Decimal("0.00"),
+                        starting_redeemable=data["starting_redeemable_sc"],
+                        ending_redeemable=Decimal("0.00"),
+                        purchases_during=Decimal("0.00"),
+                        redemptions_during=Decimal("0.00"),
+                        session_time=data["start_time"],
+                        notes=data["notes"],
+                        calculate_pl=False,
+                    )
+                    start_dialog.accept()
+                    self.load_data()
+                    QMessageBox.information(self, "Success", "Session started successfully!")
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Failed to start session: {e}")
+
+            start_dialog.save_btn.clicked.connect(handle_start_save)
+            start_dialog.exec()
+
+        def handle_close(then_start_new: bool):
             data, error = dialog.collect_data()
             if error:
                 QMessageBox.warning(self, "Invalid Entry", error)
@@ -558,11 +626,16 @@ class GameSessionsTab(QWidget):
                 )
                 dialog.accept()
                 self.load_data()
-                QMessageBox.information(self, "Success", "Session closed successfully!")
+                if then_start_new:
+                    open_prefilled_next_session_dialog(data["ending_total_sc"], data["ending_redeemable_sc"])
+                else:
+                    QMessageBox.information(self, "Success", "Session closed successfully!")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to close session: {e}")
 
-        dialog.save_btn.clicked.connect(handle_save)
+        dialog.save_btn.clicked.connect(lambda: handle_close(False))
+        if hasattr(dialog, "end_and_start_btn"):
+            dialog.end_and_start_btn.clicked.connect(lambda: handle_close(True))
         dialog.exec()
 
     def _open_purchase_by_id(self, purchase_id: int):
@@ -3920,9 +3993,12 @@ class EndSessionDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
         self.cancel_btn = QPushButton("✖️ Cancel")
+        # Note: Qt uses '&' to denote mnemonics; use '&&' to render a literal '&'.
+        self.end_and_start_btn = QPushButton("🎮 End && Start New")
         self.save_btn = QPushButton("💾 End Session")
         self.save_btn.setObjectName("PrimaryButton")
         btn_row.addWidget(self.cancel_btn)
+        btn_row.addWidget(self.end_and_start_btn)
         btn_row.addWidget(self.save_btn)
         layout.addLayout(btn_row)
 
