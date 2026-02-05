@@ -120,7 +120,7 @@ class TestUnrealizedBalancesAfterSession:
         
         # Current SC should reflect the redemption
         assert pos.total_sc == Decimal("50.00")  # 80 - 30
-        assert pos.redeemable_sc == Decimal("80.00")  # Last-known from session ending
+        assert pos.redeemable_sc == Decimal("50.00")  # 80 (checkpoint) - 30 (redemption)
         assert pos.purchase_basis == Decimal("50.00")  # Remaining basis unchanged
         assert pos.current_value == Decimal("50.00")
         assert pos.unrealized_pl == Decimal("0.00")  # 50 - 50
@@ -169,7 +169,7 @@ class TestUnrealizedBalancesAfterSession:
         
         # Current SC: 120 (session end total) + 50 + 25 (purchases) - 20 (redemption)
         assert pos.total_sc == Decimal("175.00")
-        assert pos.redeemable_sc == Decimal("100.00")  # Last-known from session ending
+        assert pos.redeemable_sc == Decimal("80.00")  # 100 (checkpoint) - 20 (redemption)
         assert pos.purchase_basis == Decimal("135.00")  # 60 + 50 + 25
         assert pos.unrealized_pl == Decimal("40.00")  # 175 - 135
 
@@ -201,15 +201,14 @@ class TestUnrealizedBalancesNoSession:
         assert pos.unrealized_pl == Decimal("0.00")
 
     def test_active_session_does_not_zero_out_total_sc(self, db, repo):
-        """An Active session (ending_balance default 0.00) should not be used as the baseline."""
+        """Active session starting_balance is now used as a checkpoint (Issue #61), so Total SC reflects it."""
         db.execute("""
             INSERT INTO purchases
             (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
             VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 100.00)
         """)
 
-        # Mimic how the app starts a session: status Active + ending_balance 0.00.
-        # This should NOT become the "last session" baseline for Unrealized.
+        # Active session at 11:00 with starting_balance 101.00 (user got daily)
         db.execute("""
             INSERT INTO game_sessions
             (user_id, site_id, game_id, session_date, session_time,
@@ -223,9 +222,185 @@ class TestUnrealizedBalancesNoSession:
         assert len(positions) == 1
         pos = positions[0]
 
-        # With no closed session checkpoint, Total SC should reflect purchases (not be forced to 0).
-        assert pos.total_sc == Decimal("100.00")
+        # With Issue #61, session start is a checkpoint, so Total SC = session starting_balance (101.00)
+        assert pos.total_sc == Decimal("101.00"), "Should use Active session starting_balance as checkpoint"
         assert pos.purchase_basis == Decimal("100.00")
+
+
+class TestIssue61UnrealizedCheckpoints:
+    """Test Issue #61: Unrealized uses purchase/session-start checkpoints for Total SC (Est.)"""
+    
+    def test_purchase_snapshot_overrides_sc_received_sum(self, db, repo):
+        """When purchase has starting_sc_balance snapshot, use it as baseline (includes dailies)."""
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 105.00, 100.00)
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Total SC should use the snapshot (105.00), not just sc_received (100.00)
+        assert pos.total_sc == Decimal("105.00"), "Should use purchase snapshot as baseline"
+        assert pos.purchase_basis == Decimal("100.00")
+        assert pos.unrealized_pl == Decimal("5.00")  # 105 - 100
+    
+    def test_session_start_snapshot_overrides_purchase(self, db, repo):
+        """Session start snapshot is newer than purchase, so it becomes the checkpoint."""
+        # Purchase at 10:00
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 105.00, 100.00)
+        """)
+        
+        # Session start at 11:00 with higher starting balance (user got daily SC between purchase and session)
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time,
+             starting_balance, ending_balance, starting_redeemable, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00',
+                    107.00, 0.00, 1.00, 0.00, 'Active')
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Total SC should use session start snapshot (107.00), not purchase snapshot (105.00)
+        assert pos.total_sc == Decimal("107.00"), "Session start snapshot should override purchase snapshot"
+        assert pos.redeemable_sc == Decimal("1.00"), "Should show session start redeemable"
+        assert pos.purchase_basis == Decimal("100.00")
+    
+    def test_session_end_still_beats_session_start(self, db, repo):
+        """Closed session end is the newest checkpoint, so it wins."""
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 105.00, 50.00)
+        """)
+        
+        # Session runs from 11:00 to 12:00
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, starting_redeemable, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    107.00, 80.00, 1.00, 80.00, 'Closed')
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Total SC should use session end (most recent checkpoint)
+        assert pos.total_sc == Decimal("80.00"), "Session end is newest checkpoint"
+        assert pos.redeemable_sc == Decimal("80.00")
+        assert pos.purchase_basis == Decimal("50.00")
+    
+    def test_purchases_after_session_start_checkpoint(self, db, repo):
+        """Purchase after session-start checkpoint adds to Total SC (Est.)."""
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 100.00, 100.00)
+        """)
+        
+        # Active session at 11:00
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time,
+             starting_balance, ending_balance, starting_redeemable, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00',
+                    100.00, 0.00, 0.00, 0.00, 'Active')
+        """)
+        
+        # Purchase after session start
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-02', '10:00:00', 50.00, 50.00, 50.00)
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Total SC = session start (100) + purchase after (50) = 150
+        assert pos.total_sc == Decimal("150.00"), "Purchase after session start should add to checkpoint"
+        assert pos.purchase_basis == Decimal("150.00")
+    
+    def test_no_double_counting_when_checkpoint_is_purchase(self, db, repo):
+        """Invariant: if checkpoint is from a purchase, don't also count its sc_received in deltas."""
+        # Purchase with snapshot
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 105.00, 100.00)
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Must be exactly 105 (snapshot), NOT 105 + 100 = 205 (double counting)
+        assert pos.total_sc == Decimal("105.00"), "Must not double-count checkpoint purchase's sc_received"
+    
+    def test_multiple_purchases_some_with_snapshots(self, db, repo):
+        """Newest purchase snapshot wins; older purchases without snapshots are ignored as checkpoints."""
+        # Old purchase with no snapshot
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 50.00, 50.00, 50.00)
+        """)
+        
+        # Newer purchase with snapshot (this becomes checkpoint)
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-02', '10:00:00', 100.00, 100.00, 155.00, 100.00)
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Total SC should be 155 (latest snapshot), not 50+100=150 or 155+50=205
+        assert pos.total_sc == Decimal("155.00"), "Should use newest purchase snapshot"
+        assert pos.purchase_basis == Decimal("150.00")  # Both purchases' remaining amounts
+    
+    def test_redemptions_after_purchase_snapshot_checkpoint(self, db, repo):
+        """Redemption after checkpoint reduces Total SC (Est.)."""
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 105.00, 50.00)
+        """)
+        
+        # Redemption after checkpoint
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, processed)
+            VALUES (1, 1, '2024-01-02', '10:00:00', 30.00, 1)
+        """)
+        db.commit()
+        
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+        
+        # Total SC = 105 (checkpoint) - 30 (redemption) = 75
+        assert pos.total_sc == Decimal("75.00"), "Redemption after checkpoint should reduce Total SC"
+        assert pos.purchase_basis == Decimal("50.00")
 
 
 class TestUnrealizedLastActivity:
@@ -482,3 +657,93 @@ class TestIssue58RemainingBasisZeroButSCExists:
         
         # Position should NOT appear (explicitly closed by user)
         assert len(positions) == 0, "Position with 'Balance Closed' marker should not be listed"
+
+
+class TestRedeemableScPositionEstimate:
+    """Tests for Redeemable SC (Position) estimation after redemptions"""
+    
+    def test_redeemable_sc_decreases_after_redemption(self, db, repo):
+        """
+        Regression test: Redeemable SC (Position) should subtract redemptions after checkpoint.
+        
+        Scenario (user-reported bug):
+        - Purchase $40 for 40 SC, starting_sc_balance = 94.33
+        - Free spins get balance up to 100.93 SC
+        - Session starts at 100.93 SC (57.08 redeemable), ends at 100.43 SC (100.43 redeemable)
+        - Redeem $100, leaving 0.43 SC on site
+        - Expected Redeemable SC (Position): 0.43
+        - Bug: showed 100.43 (checkpoint value without subtracting redemption)
+        """
+        # Purchase with snapshot (94.33 SC already on site before purchase)
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2026-01-25', '19:00:00', 40.00, 40.00, 94.33, 40.00)
+        """)
+        
+        # Session: started with 100.93 total (57.08 redeemable), ended with 100.43 total (100.43 redeemable)
+        # This is the checkpoint for redeemable SC
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, starting_redeemable, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2026-01-25', '19:12:00', '2026-01-25', '19:22:00',
+                    100.93, 57.08, 100.43, 100.43, 'Closed')
+        """)
+        
+        # Redemption of $100 (leaving 0.43 SC on site)
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, is_free_sc, more_remaining)
+            VALUES (1, 1, '2026-01-25', '19:23:00', 100.00, 0, 0)
+        """)
+        db.commit()
+        
+        # Check unrealized position
+        positions = repo.get_all_positions()
+        assert len(positions) == 1, "Position should exist (0.43 SC remaining)"
+        
+        pos = positions[0]
+        assert pos.total_sc == Decimal("0.43"), f"Total SC should be 0.43, got {pos.total_sc}"
+        assert pos.redeemable_sc == Decimal("0.43"), f"Redeemable SC should be 0.43 (100.43 - 100.00), got {pos.redeemable_sc}"
+        # Note: purchase_basis would be 0 after FIFO processing, but this test doesn't run FIFO service
+        # (testing the Unrealized SC estimation logic only)
+    
+    def test_free_sc_redemption_does_not_affect_redeemable_sc(self, db, repo):
+        """
+        Free SC (bonus/promo) redemptions should not reduce Redeemable SC (Position).
+        Only regular redemptions (is_free_sc=0) consume redeemable SC.
+        """
+        # Purchase
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 100.00)
+        """)
+        
+        # Session with redeemable SC
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, starting_redeemable, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    100.00, 0.00, 200.00, 100.00, 'Closed')
+        """)
+        
+        # Free SC redemption (bonus/promo SC)
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, is_free_sc, more_remaining)
+            VALUES (1, 1, '2024-01-02', '10:00:00', 100.00, 1, 1)
+        """)
+        db.commit()
+        
+        # Check unrealized position
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        
+        pos = positions[0]
+        # Free SC redemption affects total SC but NOT redeemable SC
+        assert pos.total_sc == Decimal("100.00"), f"Total SC should be 100 (200 - 100 free_sc redemption), got {pos.total_sc}"
+        assert pos.redeemable_sc == Decimal("100.00"), f"Redeemable SC should still be 100 (free_sc redemption doesn't affect it), got {pos.redeemable_sc}"
+
