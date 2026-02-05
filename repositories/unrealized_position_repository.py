@@ -1,5 +1,5 @@
 """
-Repository for querying unrealized positions (open positions with remaining basis)
+Repository for querying unrealized positions (open positions with SC remaining)
 """
 from typing import List, Optional
 from decimal import Decimal
@@ -16,8 +16,12 @@ class UnrealizedPositionRepository:
     
     def get_all_positions(self, start_date: Optional[date] = None, end_date: Optional[date] = None) -> List[UnrealizedPosition]:
         """
-        Get all unrealized positions (site/user with remaining basis).
-        Matches legacy refresh_unrealized_positions() logic.
+        Get all unrealized positions (site/user with SC remaining on site).
+        
+        Positions are shown when estimated total SC > threshold, even if remaining basis is $0
+        (allows for partial redemptions that consumed all basis but left profit-only SC).
+        
+        Excludes positions with explicit "Balance Closed" marker.
         """
         if not self.db:
             return []
@@ -26,31 +30,48 @@ class UnrealizedPositionRepository:
 
         notes_map = self._get_notes_map()
         
-        # Get all site/user combinations with remaining basis
+        # Get all site/user combinations with any purchase, session, or redemption activity
+        # (not limited to only purchases with remaining_amount > 0)
         query = """
             SELECT DISTINCT
-                p.site_id,
-                p.user_id,
-                s.name as site_name,
-                u.name as user_name
-            FROM purchases p
-            JOIN sites s ON p.site_id = s.id
-            JOIN users u ON p.user_id = u.id
-            WHERE p.remaining_amount > 0.001
-              AND (p.status IS NULL OR p.status = 'active')
+                site_id,
+                user_id
+            FROM (
+                SELECT site_id, user_id FROM purchases WHERE (status IS NULL OR status = 'active')
+                UNION
+                SELECT site_id, user_id FROM game_sessions
+                UNION
+                SELECT site_id, user_id FROM redemptions
+            ) combined
         """
         
-        pairs = self.db.fetch_all(query)
+        candidate_pairs = self.db.fetch_all(query)
         
-        for pair in pairs:
+        # For each candidate, compute remaining basis and estimated SC
+        for pair in candidate_pairs:
             site_id = pair['site_id']
             user_id = pair['user_id']
+            
+            # Get site and user names
+            site_user_query = """
+                SELECT s.name as site_name, u.name as user_name
+                FROM sites s, users u
+                WHERE s.id = ? AND u.id = ?
+            """
+            names = self.db.fetch_one(site_user_query, (site_id, user_id))
+            if not names:
+                continue
+            
+            site_name = names['site_name']
+            user_name = names['user_name']
+            site_name = names['site_name']
+            user_name = names['user_name']
             
             # Get remaining basis and start date
             basis_query = """
                 SELECT 
                     MIN(purchase_date) as start_date,
-                    SUM(remaining_amount) as remaining_basis
+                    COALESCE(SUM(remaining_amount), 0) as remaining_basis
                 FROM purchases
                 WHERE site_id = ? AND user_id = ?
                   AND (status IS NULL OR status = 'active')
@@ -58,14 +79,22 @@ class UnrealizedPositionRepository:
             """
             
             basis_data = self.db.fetch_one(basis_query, (site_id, user_id))
+            remaining_basis = Decimal(str(basis_data['remaining_basis'] or 0)) if basis_data else Decimal("0.00")
+            position_start_date = basis_data['start_date'] if basis_data and basis_data['start_date'] else None
             
-            if not basis_data or not basis_data['remaining_basis']:
-                continue
+            # If no purchases with remaining basis, use earliest purchase date
+            if not position_start_date:
+                earliest_purchase_query = """
+                    SELECT MIN(purchase_date) as start_date
+                    FROM purchases
+                    WHERE site_id = ? AND user_id = ?
+                      AND (status IS NULL OR status = 'active')
+                """
+                earliest = self.db.fetch_one(earliest_purchase_query, (site_id, user_id))
+                position_start_date = earliest['start_date'] if earliest and earliest['start_date'] else None
             
-            remaining_basis = Decimal(str(basis_data['remaining_basis']))
-            
-            # Skip if less than 1 cent
-            if remaining_basis < Decimal("0.01"):
+            # If still no start date, skip (no purchase activity)
+            if not position_start_date:
                 continue
             
             # Get current SC balance - estimate from last session + transactions since
@@ -129,10 +158,9 @@ class UnrealizedPositionRepository:
                 # Redeemable SC: only show if session is part of current position (session end >= position start)
                 # Otherwise show 0 (position predates this session, e.g., fully closed then repurchased)
                 total_sc = estimated_total_sc
-                position_start_date = basis_data['start_date']
                 position_start_dt = self._to_dt(position_start_date, '00:00:00')
                 
-                if session_end_dt and session_end_dt >= position_start_dt:
+                if session_end_dt and position_start_dt and session_end_dt >= position_start_dt:
                     # Session is part of current open position
                     redeemable_sc = baseline_redeemable
                 else:
@@ -211,12 +239,18 @@ class UnrealizedPositionRepository:
             current_value = total_sc * sc_rate
             unrealized_pl = current_value - remaining_basis
             
+            # Skip if total SC is below threshold (effectively zero)
+            # This allows positions with remaining_basis=0 but total_sc>0 to still appear
+            sc_threshold = Decimal("0.01")
+            if total_sc < sc_threshold:
+                continue
+            
             position = UnrealizedPosition(
                 site_id=site_id,
                 user_id=user_id,
-                site_name=pair['site_name'],
-                user_name=pair['user_name'],
-                start_date=basis_data['start_date'],
+                site_name=site_name,
+                user_name=user_name,
+                start_date=position_start_date,
                 purchase_basis=remaining_basis,
                 total_sc=total_sc,
                 redeemable_sc=redeemable_sc,
