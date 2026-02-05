@@ -2195,9 +2195,9 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             # Add header with period info
             if period_start:
                 start_date, start_time = period_start
-                period_label = f"Basis Period Purchases (since {start_date} {start_time[:5]})"
+                period_label = f"Full Basis Period — All Purchases (since {start_date} {start_time[:5]})"
             else:
-                period_label = "Basis Period Purchases (first period)"
+                period_label = "Full Basis Period — All Purchases (first period)"
             
             basis_group = QtWidgets.QGroupBox(period_label)
             basis_layout = QtWidgets.QVBoxLayout(basis_group)
@@ -2220,10 +2220,12 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             table.setColumnWidth(3, 130)
             table.setColumnWidth(4, 120)
             
+            # Set minimum height for 3 rows, but allow table to grow with content
             row_height = table.verticalHeader().defaultSectionSize()
             header_height = table.horizontalHeader().height()
-            max_rows = min(len(basis_purchases), 5)
-            table.setMaximumHeight(header_height + (row_height * max_rows) + 10)
+            min_rows = 3
+            table.setMinimumHeight(header_height + (row_height * min_rows) + 10)
+            # No max height - let it fill available space
             
             table.setRowCount(len(basis_purchases))
             for row, p in enumerate(basis_purchases):
@@ -2277,8 +2279,8 @@ class PurchaseViewDialog(QtWidgets.QDialog):
                     max(table.rowHeight(row), view_btn.sizeHint().height() + 16),
                 )
             
-            basis_layout.addWidget(table)
-            layout.addWidget(basis_group)
+            basis_layout.addWidget(table, 1)  # Stretch factor 1 to fill space
+            layout.addWidget(basis_group, 1)  # Stretch factor 1 to fill available space
 
         allocations = self._fetch_allocated_redemptions()
 

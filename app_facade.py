@@ -771,8 +771,9 @@ class AppFacade:
     ) -> List[Purchase]:
         """Get all purchases in the same basis period as the given purchase.
         
-        Returns purchases ordered by (date, time, id) that fall within the basis period
-        defined by FULL redemptions.
+        Returns ALL purchases (past, current, and future) ordered by (date, time, id)
+        that fall within the basis period defined by FULL redemptions (more_remaining=0).
+        Partial redemptions do NOT start a new basis period.
         
         Args:
             user_id: User ID
@@ -810,11 +811,8 @@ class AppFacade:
                    (p.purchase_date == start_date and p_purchase_time <= start_time):
                     continue
             
-            # Check if purchase is before or at the reference purchase time
-            if p.purchase_date > purchase_date or \
-               (p.purchase_date == purchase_date and p_purchase_time > p_time):
-                continue
-            
+            # Include ALL purchases in the basis period (past, current, and future)
+            # This gives a complete view of the entire basis period when viewing any purchase in it
             result.append(p)
         
         # Sort by (date, time, id)
