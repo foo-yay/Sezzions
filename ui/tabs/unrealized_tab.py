@@ -302,7 +302,7 @@ class UnrealizedTab(QtWidgets.QWidget):
             return
 
         total_basis = pos.purchase_basis
-        current_sc = pos.current_sc
+        current_sc = pos.total_sc
         current_value = pos.current_value
         # When closing: the loss is the FULL cost basis (you're abandoning it all)
         net_loss = total_basis
