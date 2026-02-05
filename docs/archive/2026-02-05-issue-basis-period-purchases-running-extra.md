@@ -13,9 +13,12 @@ Also, when a mismatch occurs, the user cannot easily see the purchase chain that
 ### A) Purchase dialogs: Related tab shows "Basis Period Purchases"
 In Add/View/Edit Purchase dialogs, display the previous purchases that belong to the same **basis period** (for the selected user+site) as-of the purchase timestamp.
 
-Definition:
-- **Basis period**: the purchase chain contributing to the current FIFO/basis stack until it is reset/closed.
-- **Boundary/reset**: basis period ends when basis is fully consumed OR the position is closed via FULL redemption / explicit close marker semantics (consistent with current dormant/close behavior).
+Definitions (v1; avoid time-travel FIFO simulation):
+- **Basis period**: a contiguous time slice of activity for a user+site, beginning immediately after the most recent "closure" event and continuing until the next closure event.
+- **Closure event (basis boundary / reset):** a FULL redemption (`more_remaining = 0`) or explicit close-marker semantics (consistent with current dormant/close behavior). If both exist, the most recent one before the purchase timestamp wins.
+- **Basis period start** for a given purchase timestamp: the instant just after the most recent closure event strictly before the purchase; if none exists, period start is the beginning of time for that user+site.
+
+Important: this definition intentionally does *not* depend on whether FIFO basis was fully consumed at some point (because “fully consumed as-of time” can require a historical allocation replay). We can add a follow-up issue later if we want “basis hits zero” to also define a boundary.
 
 UX sketch (compact):
 - A small table/list of purchases in the period (date/time, amount, SC received, post-purchase balance; consumed/remaining if available).
@@ -29,15 +32,27 @@ At purchase timestamp $P$:
 - `expected_pre = compute_expected_balances(...)` (expected total)
 - `total_extra(P) = actual_pre - expected_pre`
 
+Precision / tolerance:
+- Use `Decimal` math end-to-end.
+- Compare using a canonical quantization for SC balances (e.g. `quantize(Decimal('0.01'))`).
+- Tolerance is effectively zero after quantization: treat any non-zero quantized mismatch as a mismatch.
+
 Rules:
 1) **Negative mismatch persists (warn every time):**
    - If `total_extra(P) < -tolerance`, always show the existing mismatch confirmation.
    - Rationale: this indicates missing SC vs expected and should not be suppressed.
 
 2) **Extra SC becomes delta-based (reduce repeats):**
-   - If `total_extra(P) > +tolerance`, only show the mismatch confirmation when the *increase* in total extra is meaningful vs the prior purchase in the same basis period.
-   - `delta_extra(P) = total_extra(P) - total_extra(prev_purchase_in_period)`
+   - If `total_extra(P) > +tolerance`, only show the mismatch confirmation when the *increase* in total extra is meaningful vs the most recent prior "checkpoint" within the same basis period.
+   - **Checkpoint definition (for delta warnings):** the latest of:
+     - the immediately previous purchase in the same basis period, OR
+     - the latest closed session end in the same basis period
+     that occurs strictly before the current purchase timestamp.
+   - `delta_extra(P) = total_extra(P) - total_extra(checkpoint)`
    - Show the confirmation if `delta_extra(P) > +tolerance`.
+
+   Notes on sessions:
+   - Sessions are inherently accounted for via `expected_pre` when a session is closed (because `compute_expected_balances()` uses the last closed session as a checkpoint). The checkpoint concept above is about *delta messaging* (don’t attribute “new extra” to the wrong interval).
 
 3) **Ignore negative delta for extra tracking:**
    - If `delta_extra(P) < 0`, do nothing special (no message).
@@ -53,6 +68,11 @@ Notes:
 - If extra SC increases within the same basis period, the mismatch confirmation triggers again (for the new incremental increase).
 - If pre-purchase balance is lower than expected (negative beyond tolerance), mismatch confirmation triggers every time (not suppressed).
 - Edits anywhere in the chain (purchases/sessions/redemptions, scoped recalcs/full recalcs, deletions) automatically affect expected balances and delta logic (no manual reset needed).
+
+Implementation notes (to prevent ambiguity):
+- Ordering/tie-breakers for events should be stable: order by `(date, COALESCE(time,'00:00:00'), id)`.
+- When editing an existing purchase, exclude its own id when computing the “previous purchase” checkpoint.
+- Keep UI compact: reuse the existing mismatch confirmation dialog; do not add new persistent baseline state.
 
 ## Non-Goals
 - Do not change core accounting / FIFO / basis consumption semantics.
