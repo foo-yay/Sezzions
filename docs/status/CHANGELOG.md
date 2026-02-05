@@ -12,6 +12,34 @@ Rules:
 ## 2026-02-05
 
 ```yaml
+id: 2026-02-05-04
+type: feature
+areas: [ui, facades, services]
+summary: "Purchase dialogs: delta-based extra SC warnings + basis-period purchase chain"
+issue: "#66"
+files_changed:
+  - app_facade.py
+  - ui/tabs/purchases_tab.py
+```
+
+Notes:
+- **Problem:** Purchase dialogs showed the same "extra SC" balance warning repeatedly for each purchase in a basis period, even when the extra was persistent (not new). This created warning fatigue and made it hard to distinguish new vs existing imbalances.
+- **Solution:** 
+  1. Added delta-based warnings: compare current purchase's `total_extra` against previous purchase in the same basis period. Only warn if delta increases (positive) or if total_extra is negative (always warn on losses).
+  2. Added "Basis Period Purchases" section to Purchase View dialog's Related tab, showing all purchases in the current basis period with their amounts, SC received, and post-purchase balances.
+- **Basis Period Definition:** Bounded by FULL redemptions (`more_remaining=0`). Period start = instant after most recent FULL redemption. Period end = next FULL redemption or open-ended.
+- **Delta Calculation:**
+  - `total_extra = actual_pre - expected_pre` (quantized to 0.01)
+  - `delta_extra = total_extra(current) - total_extra(previous_in_period)`
+  - Warn if: (1) `total_extra < 0` (negative always warns), OR (2) `delta_extra > 0` (positive increase)
+  - Warning shows both total_extra and delta when previous purchase exists in period
+- **Facade Methods Added:**
+  - `get_basis_period_start_for_purchase()`: finds most recent FULL redemption datetime before a purchase
+  - `get_basis_period_purchases()`: returns purchases in the same basis period, ordered by (date, time, id)
+  - `compute_purchase_total_extra()`: computes total_extra given entered balance values (not used in final implementation, but available for future use)
+- **Validation:** All 645 existing tests pass. No new tests added yet (requires follow-up scenario-based tests per Agent Quality Bar).
+
+```yaml
 id: 2026-02-05-01
 type: fix
 areas: [repositories, tests]

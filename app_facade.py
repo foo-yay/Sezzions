@@ -711,6 +711,165 @@ class AppFacade:
             "games_rtp_recalculated": games_recalculated,
         }
     
+    def get_basis_period_start_for_purchase(
+        self, 
+        user_id: int, 
+        site_id: int, 
+        purchase_date: date,
+        purchase_time: Optional[str] = None
+    ) -> Optional[tuple[date, str]]:
+        """Get the start datetime of the basis period for a purchase.
+        
+        A basis period is bounded by FULL redemptions (more_remaining=0).
+        Returns (date, time) of the most recent FULL redemption before the purchase,
+        or None if no such redemption exists (meaning this purchase is in the first period).
+        
+        Args:
+            user_id: User ID
+            site_id: Site ID
+            purchase_date: Date of the purchase
+            purchase_time: Time of the purchase (optional, defaults to '00:00:00')
+            
+        Returns:
+            (date, time) tuple of the most recent FULL redemption, or None
+        """
+        redemptions = self.redemption_repo.get_by_user_and_site(user_id, site_id)
+        
+        # Normalize purchase time for comparison
+        p_time = purchase_time or "00:00:00"
+        
+        # Find the most recent FULL redemption (more_remaining=0) before this purchase
+        latest_full = None
+        latest_datetime = None
+        
+        for r in redemptions:
+            # Skip if not a full redemption
+            if r.more_remaining != 0:
+                continue
+                
+            r_time = r.redemption_time or "00:00:00"
+            
+            # Check if this redemption is before the purchase
+            if r.redemption_date < purchase_date or \
+               (r.redemption_date == purchase_date and r_time < p_time):
+                # Compare with current latest
+                if latest_datetime is None or \
+                   r.redemption_date > latest_datetime[0] or \
+                   (r.redemption_date == latest_datetime[0] and r_time > latest_datetime[1]):
+                    latest_full = r
+                    latest_datetime = (r.redemption_date, r_time)
+        
+        return latest_datetime
+    
+    def get_basis_period_purchases(
+        self,
+        user_id: int,
+        site_id: int,
+        purchase_date: date,
+        purchase_time: Optional[str] = None,
+        exclude_purchase_id: Optional[int] = None
+    ) -> List[Purchase]:
+        """Get all purchases in the same basis period as the given purchase.
+        
+        Returns purchases ordered by (date, time, id) that fall within the basis period
+        defined by FULL redemptions.
+        
+        Args:
+            user_id: User ID
+            site_id: Site ID
+            purchase_date: Date of the reference purchase
+            purchase_time: Time of the reference purchase (optional)
+            exclude_purchase_id: Purchase ID to exclude (useful when editing)
+            
+        Returns:
+            List of purchases in the basis period, ordered by (date, time, id)
+        """
+        # Get the basis period start
+        period_start = self.get_basis_period_start_for_purchase(
+            user_id, site_id, purchase_date, purchase_time
+        )
+        
+        # Get all purchases for this user+site
+        all_purchases = self.purchase_repo.get_by_user_and_site(user_id, site_id)
+        
+        # Filter to purchases in the basis period
+        p_time = purchase_time or "00:00:00"
+        result = []
+        
+        for p in all_purchases:
+            # Skip excluded purchase
+            if exclude_purchase_id and p.id == exclude_purchase_id:
+                continue
+                
+            p_purchase_time = p.purchase_time or "00:00:00"
+            
+            # Check if purchase is after period start (or no start = first period)
+            if period_start:
+                start_date, start_time = period_start
+                if p.purchase_date < start_date or \
+                   (p.purchase_date == start_date and p_purchase_time <= start_time):
+                    continue
+            
+            # Check if purchase is before or at the reference purchase time
+            if p.purchase_date > purchase_date or \
+               (p.purchase_date == purchase_date and p_purchase_time > p_time):
+                continue
+            
+            result.append(p)
+        
+        # Sort by (date, time, id)
+        result.sort(key=lambda x: (x.purchase_date, x.purchase_time or "00:00:00", x.id))
+        
+        return result
+    
+    def compute_purchase_total_extra(
+        self,
+        purchase_id: int,
+        entered_post_purchase_sc: Decimal,
+        entered_sc_received: Decimal
+    ) -> Decimal:
+        """Compute the total_extra for a purchase given entered values.
+        
+        total_extra = actual_pre - expected_pre
+        where:
+          actual_pre = entered_post_purchase_sc - entered_sc_received
+          expected_pre = from compute_expected_balances()
+          
+        Args:
+            purchase_id: Purchase ID
+            entered_post_purchase_sc: The post-purchase SC balance entered by user
+            entered_sc_received: The SC received amount entered by user
+            
+        Returns:
+            The total extra SC (quantized to 0.01)
+        """
+        from decimal import Decimal, ROUND_HALF_UP
+        
+        purchase = self.purchase_repo.get_by_id(purchase_id)
+        if not purchase:
+            return Decimal("0.00")
+        
+        # Compute expected balances
+        balances = self.report_service.compute_expected_balances(
+            user_id=purchase.user_id,
+            site_id=purchase.site_id
+        )
+        
+        # Find expected_pre for this purchase
+        expected_pre = Decimal("0.00")
+        for item in balances:
+            if item["event_type"] == "purchase" and item["purchase_id"] == purchase_id:
+                expected_pre = item.get("expected_pre", Decimal("0.00"))
+                break
+        
+        # Compute actual_pre from entered values
+        actual_pre = entered_post_purchase_sc - entered_sc_received
+        
+        # Compute total_extra and quantize to 0.01
+        total_extra = (actual_pre - expected_pre).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        
+        return total_extra
+
     def delete_purchase(self, purchase_id: int) -> None:
         """Delete purchase (prevents if consumed) with atomic transaction."""
         with self.db.transaction():
