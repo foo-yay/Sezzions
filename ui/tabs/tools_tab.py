@@ -105,6 +105,10 @@ class ToolsTab(QWidget):
         csv_group = self._create_csv_group()
         layout.addWidget(csv_group)
         
+        # Adjustments & Corrections Section
+        adjustments_group = self._create_adjustments_group()
+        layout.addWidget(adjustments_group)
+        
         # Database Tools Section
         db_group = self._create_database_group()
         layout.addWidget(db_group)
@@ -237,6 +241,58 @@ class ToolsTab(QWidget):
         download_template_btn = QPushButton("📄 Download Template")
         download_template_btn.clicked.connect(self._on_download_template)
         btn_layout.addWidget(download_template_btn)
+        
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+        
+        container_layout.addWidget(section)
+        return container
+    
+    def _create_adjustments_group(self) -> QWidget:
+        """Create the Adjustments & Corrections section."""
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(6)
+        
+        # Section header
+        header = QLabel("⚖️ Adjustments & Corrections")
+        header.setObjectName("SectionHeader")
+        container_layout.addWidget(header)
+        
+        # Section background
+        section = QWidget()
+        section.setObjectName("SectionBackground")
+        layout = QVBoxLayout(section)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+        
+        desc_label = QLabel(
+            "Create basis corrections and balance checkpoints. "
+            "Basis adjustments affect FIFO cost basis calculations. "
+            "Checkpoints override previous balances in expected balance computations."
+        )
+        desc_label.setWordWrap(True)
+        desc_label.setObjectName("HelperText")
+        layout.addWidget(desc_label)
+        
+        layout.addSpacing(6)
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+        
+        basis_btn = QPushButton("💵 New Basis Adjustment")
+        basis_btn.clicked.connect(self._on_create_basis_adjustment)
+        btn_layout.addWidget(basis_btn)
+        
+        checkpoint_btn = QPushButton("📌 New Balance Checkpoint")
+        checkpoint_btn.clicked.connect(self._on_create_checkpoint)
+        btn_layout.addWidget(checkpoint_btn)
+        
+        view_btn = QPushButton("📋 View Adjustments")
+        view_btn.clicked.connect(self._on_view_adjustments)
+        btn_layout.addWidget(view_btn)
         
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
@@ -1923,3 +1979,53 @@ class ToolsTab(QWidget):
         worker.signals.error.connect(on_error, Qt.QueuedConnection)
         self.thread_pool.start(worker)
     
+    # =========================================================================
+    # Adjustments & Corrections Handlers
+    # =========================================================================
+    
+    def _on_create_basis_adjustment(self):
+        """Show dialog to create a basis adjustment."""
+        from ui.adjustment_dialogs import BasisAdjustmentDialog
+        
+        dialog = BasisAdjustmentDialog(self.facade, parent=self)
+        if dialog.exec() == QDialog.Accepted:
+            adjustment = dialog.get_adjustment()
+            if adjustment:
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Basis adjustment created successfully.\n\n"
+                    f"Delta: ${adjustment.delta_basis_usd:,.2f}\n"
+                    f"Effective: {adjustment.effective_date} {adjustment.effective_time}"
+                )
+                self.data_changed.emit()
+    
+    def _on_create_checkpoint(self):
+        """Show dialog to create a balance checkpoint."""
+        from ui.adjustment_dialogs import CheckpointDialog
+        
+        dialog = CheckpointDialog(self.facade, parent=self)
+        if dialog.exec() == QDialog.Accepted:
+            adjustment = dialog.get_adjustment()
+            if adjustment:
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Balance checkpoint created successfully.\n\n"
+                    f"Total SC: {adjustment.checkpoint_total_sc:,.2f}\n"
+                    f"Redeemable SC: {adjustment.checkpoint_redeemable_sc:,.2f}\n"
+                    f"Effective: {adjustment.effective_date} {adjustment.effective_time}"
+                )
+                self.data_changed.emit()
+    
+    def _on_view_adjustments(self):
+        """Show dialog to view and manage adjustments."""
+        from ui.adjustment_dialogs import ViewAdjustmentsDialog
+        
+        dialog = ViewAdjustmentsDialog(self.facade, parent=self)
+        dialog.exec()
+        
+        # Emit data_changed if any modifications were made
+        if dialog.was_modified():
+            self.data_changed.emit()
+
