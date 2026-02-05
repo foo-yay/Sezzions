@@ -200,6 +200,33 @@ class TestUnrealizedBalancesNoSession:
         assert pos.purchase_basis == Decimal("150.00")
         assert pos.unrealized_pl == Decimal("0.00")
 
+    def test_active_session_does_not_zero_out_total_sc(self, db, repo):
+        """An Active session (ending_balance default 0.00) should not be used as the baseline."""
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 100.00)
+        """)
+
+        # Mimic how the app starts a session: status Active + ending_balance 0.00.
+        # This should NOT become the "last session" baseline for Unrealized.
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time,
+             starting_balance, ending_balance, starting_redeemable, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00',
+                    101.00, 0.00, 0.00, 0.00, 'Active')
+        """)
+        db.commit()
+
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+
+        # With no closed session checkpoint, Total SC should reflect purchases (not be forced to 0).
+        assert pos.total_sc == Decimal("100.00")
+        assert pos.purchase_basis == Decimal("100.00")
+
 
 class TestUnrealizedLastActivity:
     """Test that last_activity reflects most recent transaction"""
@@ -341,3 +368,117 @@ class TestUnrealizedRedeemableScopedToPosition:
         # Session is same day as position start, so redeemable should show
         assert pos.start_date == date(2024, 1, 1)
         assert pos.redeemable_sc == Decimal("80.00")  # From session
+
+
+class TestIssue58RemainingBasisZeroButSCExists:
+    """
+    Test Issue #58: Unrealized should show positions where basis is fully allocated
+    but SC remains on site (e.g., partial redemption consumed all basis, remainder pending).
+    """
+    
+    def test_basis_zero_but_sc_remains_position_still_shows(self, db, repo):
+        """
+        Scenario (Moonspin cap): Partial redemption consumed all remaining basis
+        due to FIFO, but ~175 SC remains on site pending next redemption.
+        Position should still appear in Unrealized.
+        """
+        # Purchase with basis
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 2500.00, 2500.00, 0.00)
+        """)
+        
+        # Session showing SC balance grew to 2675 (won 175 SC)
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    2500.00, 2675.00, 2675.00, 'completed')
+        """)
+        
+        # Partial redemption for 2500 SC (site cap) - FIFO consumed all remaining basis
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, more_remaining, processed)
+            VALUES (1, 1, '2024-01-02', '10:00:00', 2500.00, 1, 0)
+        """)
+        db.commit()
+        
+        # Check unrealized position
+        positions = repo.get_all_positions()
+        
+        # Position SHOULD still appear even though remaining_amount = 0
+        assert len(positions) == 1, "Position with SC>0 but basis=0 should still be listed"
+        
+        pos = positions[0]
+        assert pos.purchase_basis == Decimal("0.00")  # FIFO consumed all basis
+        # Current SC: 2675 (session end) - 2500 (redemption) = 175
+        assert pos.total_sc == Decimal("175.00")
+        assert pos.current_value == Decimal("175.00")
+        # Unrealized P/L: 175 - 0 = 175 (pure profit remainder)
+        assert pos.unrealized_pl == Decimal("175.00")
+    
+    def test_basis_zero_sc_near_zero_position_does_not_show(self, db, repo):
+        """
+        Scenario: Basis consumed and SC is effectively zero (< threshold).
+        Position should NOT appear.
+        """
+        # Purchase with basis fully consumed
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 0.00)
+        """)
+        
+        # Session ending with tiny SC (< 0.01)
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    100.00, 0.005, 0.005, 'completed')
+        """)
+        db.commit()
+        
+        # Check unrealized position
+        positions = repo.get_all_positions()
+        
+        # Position should NOT appear (SC < threshold)
+        assert len(positions) == 0, "Position with basis=0 and SC<threshold should not be listed"
+    
+    def test_balance_closed_marker_still_suppresses_position(self, db, repo):
+        """
+        Scenario: Basis=0, SC>0, but explicit "Balance Closed" redemption exists.
+        Position should NOT appear (user explicitly closed it).
+        """
+        # Purchase with basis consumed
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 0.00)
+        """)
+        
+        # Session with SC remaining
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    100.00, 50.00, 50.00, 'completed')
+        """)
+        
+        # "Balance Closed" marker redemption
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, processed, notes)
+            VALUES (1, 1, '2024-01-03', '10:00:00', 0.00, 1, 'Balance Closed - Net Loss: $0.00 (50.00 SC marked dormant)')
+        """)
+        db.commit()
+        
+        # Check unrealized position
+        positions = repo.get_all_positions()
+        
+        # Position should NOT appear (explicitly closed by user)
+        assert len(positions) == 0, "Position with 'Balance Closed' marker should not be listed"

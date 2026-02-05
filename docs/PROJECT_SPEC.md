@@ -95,7 +95,7 @@ When editing a purchase or creating/editing a game session, the system computes 
 ### 4.3 Cashflow P/L
 
 - Cashflow P/L is primarily produced from redemptions (payout vs basis).
-- Unrealized positions represent remaining basis/SC not yet realized.
+- Unrealized positions represent sites with remaining SC (position still open).
 - **Issue #44 (2026-02-02):** Unrealized tab now estimates current balances by incorporating purchases/redemptions after the most recent session. 
   - Formula: `estimated_total_sc = last_session_ending_balance + purchases_since - redemptions_since` (uses ending_balance for total SC baseline)
    - Redeemable SC is shown as **last-known from sessions within the current position** (session end >= position start_date), informational only
@@ -103,6 +103,9 @@ When editing a purchase or creating/editing a game session, the system computes 
    - **Unrealized P/L calculation:** Uses total SC × sc_rate for current value (not redeemable SC). Represents "money out vs current potential value."
    - This provides a "mostly accurate" current view (freebies/bonuses not tracked in real-time).
    - Columns: "Total SC (Est.)", "Redeemable SC (Position)", "Est. Unrealized P/L"
+- **Issue #58 (2026-02-04):** Unrealized positions remain visible when `Total SC (Est.) > 0` even if `Remaining Basis = $0.00`.
+  - This allows partial redemptions that consumed all basis (via FIFO) to still show in Unrealized if profit-only SC remains on the site.
+  - Positions are removed when: (a) estimated SC < threshold (0.01), or (b) explicit "Balance Closed" marker is set.
 
 ### 4.4 Taxable P/L (Game Sessions)
 

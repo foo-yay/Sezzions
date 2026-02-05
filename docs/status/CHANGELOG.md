@@ -12,6 +12,24 @@ Rules:
 ## 2026-02-04
 
 ```yaml
+id: 2026-02-04-07
+type: feature
+areas: [repositories, tests, docs]
+summary: "Unrealized positions remain visible when SC remains but basis is fully allocated (Issue #58)."
+files_changed:
+  - repositories/unrealized_position_repository.py
+  - tests/integration/test_issue_44_unrealized_live_balances.py
+  - docs/PROJECT_SPEC.md
+issue: 58
+```
+
+Notes:
+- **Problem:** Partial redemptions could consume all remaining basis (via FIFO allocation) but leave SC on the site (e.g., Moonspin 2500 SC cap scenario left ~175 SC remaining). The position would disappear from Unrealized even though it wasn't fully closed.
+- **Fix:** Unrealized now includes positions where `Total SC (Est.) > 0` even if `Remaining Basis = $0.00`, reflecting that the position is still open with profit-only SC.
+- **Removal criteria:** Position removed when (a) estimated SC < 0.01, or (b) explicit "Balance Closed" marker exists.
+- **Validation:** Added 3 regression tests (basis=0 + SC>0 shows, basis=0 + SC<threshold doesn't show, Balance Closed marker still suppresses).
+
+```yaml
 id: 2026-02-04-06
 type: fix
 areas: [ui, tests]
