@@ -1976,6 +1976,13 @@ class PurchaseViewDialog(QtWidgets.QDialog):
 
         layout.addLayout(btn_row)
 
+    def _open_purchase_by_id(self, purchase_id: int):
+        """Open a new view dialog for the specified purchase and highlight it in the main table"""
+        # Navigate to the purchase in the parent tab if possible
+        if self.parent() and hasattr(self.parent(), 'open_purchase_by_id'):
+            self.close()  # Close current dialog first
+            self.parent().open_purchase_by_id(purchase_id)
+    
     def _create_details_tab(self, user_name: str, site_name: str, card_name: str) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
@@ -2198,7 +2205,7 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             
             table = QtWidgets.QTableWidget(0, 5)
             table.setHorizontalHeaderLabels([
-                "Purchase Date/Time", "Amount", "SC Received", "Post-Purchase SC", "Current?"
+                "Purchase Date/Time", "Amount", "SC Received", "Post-Purchase SC", "View Purchase"
             ])
             table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
             table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -2211,7 +2218,7 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             table.setColumnWidth(1, 100)
             table.setColumnWidth(2, 100)
             table.setColumnWidth(3, 130)
-            table.setColumnWidth(4, 80)
+            table.setColumnWidth(4, 120)
             
             row_height = table.verticalHeader().defaultSectionSize()
             header_height = table.horizontalHeader().height()
@@ -2220,24 +2227,55 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             
             table.setRowCount(len(basis_purchases))
             for row, p in enumerate(basis_purchases):
+                is_current = p.id == self.purchase.id
+                
                 date_val = str(p.purchase_date)
                 time_val = (p.purchase_time or "00:00:00")[:5]
                 date_time_display = f"{date_val} {time_val}"
                 date_item = QtWidgets.QTableWidgetItem(date_time_display)
+                if is_current:
+                    font = date_item.font()
+                    font.setBold(True)
+                    date_item.setFont(font)
                 table.setItem(row, 0, date_item)
                 
-                table.setItem(row, 1, QtWidgets.QTableWidgetItem(f"${float(p.amount):.2f}"))
-                table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"{float(p.sc_received):,.2f} SC"))
-                table.setItem(row, 3, QtWidgets.QTableWidgetItem(f"{float(p.starting_sc_balance):,.2f} SC"))
-                
-                is_current = "✓" if p.id == self.purchase.id else ""
-                current_item = QtWidgets.QTableWidgetItem(is_current)
-                current_item.setTextAlignment(QtCore.Qt.AlignCenter)
+                amount_item = QtWidgets.QTableWidgetItem(f"${float(p.amount):.2f}")
                 if is_current:
-                    font = current_item.font()
+                    font = amount_item.font()
                     font.setBold(True)
-                    current_item.setFont(font)
-                table.setItem(row, 4, current_item)
+                    amount_item.setFont(font)
+                table.setItem(row, 1, amount_item)
+                
+                sc_received_item = QtWidgets.QTableWidgetItem(f"{float(p.sc_received):,.2f} SC")
+                if is_current:
+                    font = sc_received_item.font()
+                    font.setBold(True)
+                    sc_received_item.setFont(font)
+                table.setItem(row, 2, sc_received_item)
+                
+                post_sc_item = QtWidgets.QTableWidgetItem(f"{float(p.starting_sc_balance):,.2f} SC")
+                if is_current:
+                    font = post_sc_item.font()
+                    font.setBold(True)
+                    post_sc_item.setFont(font)
+                table.setItem(row, 3, post_sc_item)
+                
+                # Add View Purchase button
+                view_btn = QtWidgets.QPushButton("👁️ View Purchase")
+                view_btn.setObjectName("MiniButton")
+                view_btn.setFixedHeight(24)
+                view_btn.setFixedWidth(view_btn.sizeHint().width() + 12)
+                view_btn.clicked.connect(lambda _checked=False, pid=p.id: self._open_purchase_by_id(pid))
+                view_container = QtWidgets.QWidget()
+                view_container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+                view_layout = QtWidgets.QGridLayout(view_container)
+                view_layout.setContentsMargins(6, 4, 6, 4)
+                view_layout.addWidget(view_btn, 0, 0, QtCore.Qt.AlignCenter)
+                table.setCellWidget(row, 4, view_container)
+                table.setRowHeight(
+                    row,
+                    max(table.rowHeight(row), view_btn.sizeHint().height() + 16),
+                )
             
             basis_layout.addWidget(table)
             layout.addWidget(basis_group)
