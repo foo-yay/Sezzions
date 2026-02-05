@@ -12,6 +12,23 @@ Rules:
 ## 2026-02-04
 
 ```yaml
+id: 2026-02-04-06
+type: fix
+areas: [ui, tests]
+summary: "End Session dialog notes start collapsed; dialog resizes on expand/collapse."
+files_changed:
+  - ui/tabs/game_sessions_tab.py
+  - tests/integration/test_edit_session_dialog_notes_layout.py
+  - tests/integration/test_end_session_dialog_notes_layout.py
+issue: null
+```
+
+Notes:
+- **Problem:** Ending a session with pre-existing notes could open the dialog in a cramped state (especially when notes were visible), compressing the "Session Details" section.
+- **Fix:** Start with notes collapsed (even if notes exist) and compute tight/expanded dialog heights from Qt size hints so expand/collapse resizes cleanly.
+- **Validation:** Added headless regression tests for End Session + Edit Session + Edit Closed Session collapsed → expanded → collapsed behavior.
+
+```yaml
 id: 2026-02-04-05
 type: fix
 areas: [ui, tests]

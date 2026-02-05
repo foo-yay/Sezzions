@@ -837,8 +837,9 @@ class StartSessionDialog(QDialog):
 
         self.setWindowTitle("Edit Session" if session else "Start Session")
         self.setMinimumWidth(750)
-        self.setMinimumHeight(580)
-        self.resize(750, 580)
+        # Notes are collapsible; compute tight/expanded heights after load.
+        self._min_height_no_notes = 0
+        self._min_height_with_notes = 0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -1133,6 +1134,11 @@ class StartSessionDialog(QDialog):
 
         self._update_completers()
         self._validate_inline()
+
+        # Start with notes collapsed and dialog tight.
+        self._compute_height_presets()
+        self.setMinimumHeight(self._min_height_no_notes)
+        self.resize(self.width(), max(self.height(), self._min_height_no_notes))
     
     def _create_section_header(self, text: str) -> QLabel:
         """Create a section header"""
@@ -1540,14 +1546,18 @@ class StartSessionDialog(QDialog):
         start_redeem = self.session.starting_redeemable
         self.start_redeem_edit.setText(str(start_redeem))
         self.notes_edit.setPlainText(self.session.notes or "")
-        
-        # Expand notes section if there are notes
+
+        # Notes start collapsed even if notes exist (dialog opens compact).
+        self.notes_collapsed = True
+        self.notes_section.setVisible(False)
         if self.session.notes:
-            self.notes_collapsed = False
-            self.notes_section.setVisible(True)
-            self.notes_toggle.setText("📝 Notes")
-            self.setMinimumHeight(710)
-            self.resize(self.width(), 710)
+            self.notes_toggle.setText("📝 Show Notes...")
+        else:
+            self.notes_toggle.setText("📝 Add Notes...")
+
+        self._compute_height_presets()
+        self.setMinimumHeight(self._min_height_no_notes)
+        self.resize(self.width(), max(self.height(), self._min_height_no_notes))
         
         self._update_balance_check()
         self._update_rtp_display()
@@ -1577,25 +1587,42 @@ class StartSessionDialog(QDialog):
         self.notes_collapsed = True
         self.notes_section.setVisible(False)
         self.notes_toggle.setText("📝 Add Notes...")
-        self.setMinimumHeight(580)
-        self.resize(self.width(), 580)
+
+        self._compute_height_presets()
+        self.setMinimumHeight(self._min_height_no_notes)
+        self.resize(self.width(), max(self.height(), self._min_height_no_notes))
         
         self._validate_inline()
     
+    def _compute_height_presets(self) -> None:
+        """Compute min heights for collapsed vs expanded notes states."""
+        self.notes_section.setVisible(False)
+        self.adjustSize()
+        collapsed_hint = int(self.sizeHint().height())
+        self._min_height_no_notes = max(collapsed_hint, 580)
+
+        self.notes_section.setVisible(True)
+        self.adjustSize()
+        expanded_hint = int(self.sizeHint().height())
+        self._min_height_with_notes = max(expanded_hint, self._min_height_no_notes + 80)
+
+        self.notes_section.setVisible(not self.notes_collapsed)
+
     def _toggle_notes(self):
         """Toggle notes section visibility"""
         self.notes_collapsed = not self.notes_collapsed
         self.notes_section.setVisible(not self.notes_collapsed)
         if self.notes_collapsed:
-            self.notes_toggle.setText("📝 Add Notes...")
-            # Shrink dialog back to original height
-            self.setMinimumHeight(580)
-            self.resize(self.width(), 580)
+            if (self.notes_edit.toPlainText().strip() or ""):
+                self.notes_toggle.setText("📝 Show Notes...")
+            else:
+                self.notes_toggle.setText("📝 Add Notes...")
+            self.setMinimumHeight(self._min_height_no_notes)
+            self.resize(self.width(), self._min_height_no_notes)
         else:
             self.notes_toggle.setText("📝 Notes")
-            # Expand dialog to accommodate notes
-            self.setMinimumHeight(710)
-            self.resize(self.width(), 710)
+            self.setMinimumHeight(self._min_height_with_notes)
+            self.resize(self.width(), max(self.height(), self._min_height_with_notes))
             self.notes_edit.setFocus()
 
     def _mark_time_edited(self, _text):
@@ -1713,7 +1740,9 @@ class EditClosedSessionDialog(QDialog):
 
         self.setWindowTitle("Edit Closed Session")
         self.setMinimumWidth(750)
-        self.setMinimumHeight(700)
+        # Notes are collapsible; compute tight/expanded heights after load.
+        self._min_height_no_notes = 0
+        self._min_height_with_notes = 0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -2142,6 +2171,11 @@ class EditClosedSessionDialog(QDialog):
 
         self._load_session()
         self._validate_inline()
+
+        # Start with notes collapsed and dialog tight.
+        self._compute_height_presets()
+        self.setMinimumHeight(self._min_height_no_notes)
+        self.resize(self.width(), max(self.height(), self._min_height_no_notes))
     
     def _create_section_header(self, text: str) -> QLabel:
         """Create a section header"""
@@ -2414,19 +2448,36 @@ class EditClosedSessionDialog(QDialog):
         ok_btn.clicked.connect(dialog.accept)
         if dialog.exec() == QDialog.Accepted:
             self.end_date_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+
+    def _compute_height_presets(self) -> None:
+        """Compute min heights for collapsed vs expanded notes states."""
+        self.notes_section.setVisible(False)
+        self.adjustSize()
+        collapsed_hint = int(self.sizeHint().height())
+        self._min_height_no_notes = max(collapsed_hint, 620)
+
+        self.notes_section.setVisible(True)
+        self.adjustSize()
+        expanded_hint = int(self.sizeHint().height())
+        self._min_height_with_notes = max(expanded_hint, self._min_height_no_notes + 80)
+
+        self.notes_section.setVisible(not self.notes_collapsed)
     
     def _toggle_notes(self):
         """Toggle notes section visibility"""
         self.notes_collapsed = not self.notes_collapsed
         self.notes_section.setVisible(not self.notes_collapsed)
         if self.notes_collapsed:
-            self.notes_toggle.setText("📝 Add Notes...")
-            self.setMinimumHeight(620)
-            self.resize(self.width(), 620)
+            if (self.notes_edit.toPlainText().strip() or ""):
+                self.notes_toggle.setText("📝 Show Notes...")
+            else:
+                self.notes_toggle.setText("📝 Add Notes...")
+            self.setMinimumHeight(self._min_height_no_notes)
+            self.resize(self.width(), self._min_height_no_notes)
         else:
             self.notes_toggle.setText("📝 Notes")
-            self.setMinimumHeight(750)
-            self.resize(self.width(), 750)
+            self.setMinimumHeight(self._min_height_with_notes)
+            self.resize(self.width(), max(self.height(), self._min_height_with_notes))
             self.notes_edit.setFocus()
     
     def _set_invalid(self, widget, message):
@@ -2769,14 +2820,18 @@ class EditClosedSessionDialog(QDialog):
         if getattr(self.session, "wager_amount", None) is not None:
             self.wager_edit.setText(str(self.session.wager_amount or ""))
         self.notes_edit.setPlainText(self.session.notes or "")
-        
-        # Expand notes section if there are notes
+
+        # Notes start collapsed even if notes exist (dialog opens compact).
+        self.notes_collapsed = True
+        self.notes_section.setVisible(False)
         if self.session.notes:
-            self.notes_collapsed = False
-            self.notes_section.setVisible(True)
-            self.notes_toggle.setText("📝 Notes")
-            self.setMinimumHeight(830)
-            self.resize(self.width(), 830)
+            self.notes_toggle.setText("📝 Show Notes...")
+        else:
+            self.notes_toggle.setText("📝 Add Notes...")
+
+        self._compute_height_presets()
+        self.setMinimumHeight(self._min_height_no_notes)
+        self.resize(self.width(), max(self.height(), self._min_height_no_notes))
         
         self._update_balance_check()
         self._update_rtp_display()
@@ -3504,7 +3559,10 @@ class EndSessionDialog(QDialog):
         self.session = session
         self.setWindowTitle("End Game Session")
         self.setMinimumWidth(700)
-        self.setMinimumHeight(720)
+        # Heights are computed from layout size hints so the dialog starts
+        # tight when notes are collapsed, but expands cleanly when shown.
+        self._min_height_no_notes = 0
+        self._min_height_with_notes = 0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -3845,13 +3903,12 @@ class EndSessionDialog(QDialog):
         
         form.addWidget(self.notes_section, 6, 0, 1, 7)
 
-        # Auto-populate notes if they exist
+        # Auto-populate notes if they exist, but start collapsed so the dialog
+        # opens compact. Expanding will resize the dialog accordingly.
         existing_notes = self.session.notes or ""
         if existing_notes:
             self.notes_edit.setPlainText(existing_notes)
-            self.notes_toggle.setText("📝 Notes")
-            self.notes_section.setVisible(True)
-            self.notes_collapsed = False
+            self.notes_toggle.setText("📝 Show Notes...")
 
         form.setColumnStretch(0, 1)
         form.setColumnStretch(4, 1)
@@ -3897,6 +3954,40 @@ class EndSessionDialog(QDialog):
         self._validate_inline()
         
         self._update_session_details()
+
+        # Compute tight collapsed/expanded heights and start collapsed.
+        # This avoids "Session Details" being scrunched while keeping the
+        # initial dialog smaller when notes already exist.
+        self._compute_height_presets()
+        self.setMinimumHeight(self._min_height_no_notes)
+        self.resize(self.width(), max(self.height(), self._min_height_no_notes))
+
+    def _compute_height_presets(self) -> None:
+        """Compute min heights for collapsed vs expanded notes states."""
+        self.notes_section.setVisible(False)
+        self.adjustSize()
+        collapsed_hint = int(self.sizeHint().height())
+        self._min_height_no_notes = max(collapsed_hint, 580)
+
+        self.notes_section.setVisible(True)
+        self.adjustSize()
+        expanded_hint = int(self.sizeHint().height())
+        self._min_height_with_notes = max(expanded_hint, self._min_height_no_notes + 100)
+
+        self.notes_section.setVisible(True)
+        self.notes_collapsed = False
+        self.notes_toggle.setText("📝 Notes")
+        self.setMinimumHeight(self._min_height_with_notes)
+        self.resize(self.width(), max(self.height(), self._min_height_with_notes))
+
+        self.notes_section.setVisible(False)
+        self.notes_collapsed = True
+        if (self.session.notes or ""):
+            self.notes_toggle.setText("📝 Show Notes...")
+        else:
+            self.notes_toggle.setText("📝 Add Notes...")
+        self.setMinimumHeight(self._min_height_no_notes)
+        self.resize(self.width(), self._min_height_no_notes)
     
     def _get_game_type(self) -> str:
         """Get game type name for this session"""
@@ -3958,13 +4049,16 @@ class EndSessionDialog(QDialog):
         self.notes_collapsed = not self.notes_collapsed
         self.notes_section.setVisible(not self.notes_collapsed)
         if self.notes_collapsed:
-            self.notes_toggle.setText("📝 Add Notes...")
-            self.setMinimumHeight(680)
-            self.resize(self.width(), 680)
+            if (self.session.notes or ""):
+                self.notes_toggle.setText("📝 Show Notes...")
+            else:
+                self.notes_toggle.setText("📝 Add Notes...")
+            self.setMinimumHeight(self._min_height_no_notes)
+            self.resize(self.width(), self._min_height_no_notes)
         else:
             self.notes_toggle.setText("📝 Notes")
-            self.setMinimumHeight(800)
-            self.resize(self.width(), 800)
+            self.setMinimumHeight(self._min_height_with_notes)
+            self.resize(self.width(), max(self.height(), self._min_height_with_notes))
             self.notes_edit.setFocus()
     
     def _set_today(self):
