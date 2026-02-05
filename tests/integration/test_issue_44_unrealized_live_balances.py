@@ -200,6 +200,33 @@ class TestUnrealizedBalancesNoSession:
         assert pos.purchase_basis == Decimal("150.00")
         assert pos.unrealized_pl == Decimal("0.00")
 
+    def test_active_session_does_not_zero_out_total_sc(self, db, repo):
+        """An Active session (ending_balance default 0.00) should not be used as the baseline."""
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 100.00, 100.00, 100.00)
+        """)
+
+        # Mimic how the app starts a session: status Active + ending_balance 0.00.
+        # This should NOT become the "last session" baseline for Unrealized.
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time,
+             starting_balance, ending_balance, starting_redeemable, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00',
+                    101.00, 0.00, 0.00, 0.00, 'Active')
+        """)
+        db.commit()
+
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+
+        # With no closed session checkpoint, Total SC should reflect purchases (not be forced to 0).
+        assert pos.total_sc == Decimal("100.00")
+        assert pos.purchase_basis == Decimal("100.00")
+
 
 class TestUnrealizedLastActivity:
     """Test that last_activity reflects most recent transaction"""

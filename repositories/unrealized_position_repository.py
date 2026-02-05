@@ -64,8 +64,6 @@ class UnrealizedPositionRepository:
             
             site_name = names['site_name']
             user_name = names['user_name']
-            site_name = names['site_name']
-            user_name = names['user_name']
             
             # Get remaining basis and start date
             basis_query = """
@@ -103,7 +101,9 @@ class UnrealizedPositionRepository:
                 FROM game_sessions
                 WHERE site_id = ? AND user_id = ?
                   AND ending_balance IS NOT NULL
-                ORDER BY session_date DESC, session_time DESC
+                                    AND LOWER(COALESCE(status, '')) != 'active'
+                                ORDER BY COALESCE(end_date, session_date) DESC,
+                                                 COALESCE(end_time, session_time) DESC
                 LIMIT 1
             """
             
