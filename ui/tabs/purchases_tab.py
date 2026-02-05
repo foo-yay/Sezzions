@@ -329,15 +329,11 @@ class PurchasesTab(QtWidgets.QWidget):
                 # because it returns datetime.now() each time if field is empty!
                 purchase_time = dialog.get_time()
 
-                balance_check_date, balance_check_time = _balance_check_cutoff(
-                    purchase_date, purchase_time
-                )
-                
                 expected_total, _expected_redeem = self.facade.compute_expected_balances(
                     user_id=dialog.user_id,
                     site_id=dialog.site_id,
-                    session_date=balance_check_date,
-                    session_time=balance_check_time,
+                    session_date=purchase_date,
+                    session_time=purchase_time,
                 )
                 starting_sc = dialog.get_starting_sc_balance()
                 sc_received = dialog.get_sc_received()
@@ -432,14 +428,12 @@ class PurchasesTab(QtWidgets.QWidget):
 
                 purchase_date = dialog.get_date()
                 purchase_time = dialog.get_time()
-                balance_check_date, balance_check_time = _balance_check_cutoff(
-                    purchase_date, purchase_time
-                )
                 expected_total, _expected_redeem = self.facade.compute_expected_balances(
                     user_id=dialog.user_id,
                     site_id=dialog.site_id,
-                    session_date=balance_check_date,
-                    session_time=balance_check_time,
+                    session_date=purchase_date,
+                    session_time=purchase_time,
+                    exclude_purchase_id=purchase.id,
                 )
                 starting_sc = dialog.get_starting_sc_balance()
                 sc_received = dialog.get_sc_received()

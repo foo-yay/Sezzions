@@ -12,6 +12,51 @@ Rules:
 ## 2026-02-04
 
 ```yaml
+id: 2026-02-04-05
+type: fix
+areas: [ui, tests]
+summary: "End Session dialog now shows Game Type correctly."
+files_changed:
+  - ui/tabs/game_sessions_tab.py
+  - tests/integration/test_end_session_dialog_game_type.py
+issue: null
+```
+
+Notes:
+- **Problem:** `EndSessionDialog` attempted to load game/game-type via repo attributes that are not part of `AppFacade`, causing the Game Type chip to render as blank/"—".
+- **Fix:** Fetch game + game type via `AppFacade.get_game()` / `AppFacade.get_game_type()`.
+- **Validation:** Added a headless regression test.
+
+```yaml
+id: 2026-02-04-04
+type: fix
+areas: [ui]
+summary: "Fix purchase add/edit crash after removing _balance_check_cutoff helper."
+files_changed:
+  - ui/tabs/purchases_tab.py
+issue: null
+```
+
+Notes:
+- **Problem:** Purchase add/edit flows still referenced `_balance_check_cutoff()`, causing `NameError` when editing purchase timestamps.
+- **Fix:** Remove the stale helper calls and use `compute_expected_balances()` directly (edit flow passes `exclude_purchase_id`).
+- **Validation:** Full pytest suite passes.
+
+```yaml
+id: 2026-02-04-03
+type: docs
+areas: [docs, accounting]
+summary: "Clarify 'redeemable' vs 'recognized/earned' SC and when taxable gameplay P/L is recognized."
+files_changed:
+  - docs/PROJECT_SPEC.md
+issue: null
+```
+
+Notes:
+- Documented the intentional semantics: Sezzions does not try to recognize taxable gains at the moment redeemable SC appears on a site; gains are recognized only when a session is closed.
+- Clarified how `discoverable_sc` works and why off-session freebies net out if they are lost during play.
+
+```yaml
 id: 2026-02-04-02
 type: fix
 areas: [services, ui, tests]
