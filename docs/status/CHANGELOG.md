@@ -27,6 +27,19 @@ Notes:
 - **Semantics:** `more_remaining=0` means "I'm cashing out everything I want to/can right now; treat remaining balance as dormant." `more_remaining=1` means "partial redemption, balance remains active." Position reopens automatically when new activity (purchases, sessions) occurs after closure.
 - **Validation:** Added 4 regression tests covering: (1) FULL redemption closes position, (2) partial redemption keeps position visible, (3) FULL redemption followed by later activity reopens position, (4) newest closure wins when both "Balance Closed" and FULL redemption exist. Updated 3 existing tests to use `more_remaining=1` to maintain position visibility for their test scenarios.
 
+```yaml
+id: 2026-02-05-02
+type: fix
+areas: [ui]
+summary: "Fix Unrealized Close Position crash (current_sc -> total_sc)"
+files_changed:
+  - ui/tabs/unrealized_tab.py
+```
+
+Notes:
+- **Problem:** Clicking "Close Position" could raise an `AttributeError` because the UI referenced `pos.current_sc` but the model uses `total_sc`.
+- **Fix:** Use `pos.total_sc` for the close-balance confirmation and close call.
+
 ---
 
 ## 2026-02-04
