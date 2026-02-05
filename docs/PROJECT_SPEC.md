@@ -184,6 +184,11 @@ UI rules:
 - Prefer View-first dialog flows; edits are deliberate.
 - Bulk actions and destructive actions require confirmation.
 
+Game Sessions convenience:
+- Sezzions keeps **1 game per session** (accounting clarity), but provides a fast workflow to chain sessions across games:
+  - End Session dialog: **"End & Start New"**
+  - New Start Session dialog is prefilled with the ended session’s ending balances (same user/site); game selection is intentionally left blank.
+
 ### Default Date Filter Presets
 
 Many primary tabs use `DateFilterWidget` as the first-level time scoping control.
