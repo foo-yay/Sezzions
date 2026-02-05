@@ -215,7 +215,7 @@ class RecalculationService:
                 # Create synthetic purchase ID using negative numbers to avoid collisions
                 synthetic_id = -(adj.id)
                 dt = _to_dt(adj.effective_date, adj.effective_time)
-                delta = adj.basis_delta_usd or Decimal("0.00")
+                delta = adj.delta_basis_usd or Decimal("0.00")
                 
                 # Insert in chronological order
                 purchases.append((synthetic_id, dt, delta))
@@ -410,7 +410,7 @@ class RecalculationService:
                 # Create synthetic purchase ID using negative numbers to avoid collisions
                 synthetic_id = -(adj.id)
                 dt = _to_dt(adj.effective_date, adj.effective_time)
-                delta = adj.basis_delta_usd or Decimal("0.00")
+                delta = adj.delta_basis_usd or Decimal("0.00")
                 
                 # Insert in chronological order
                 purchases.append((synthetic_id, dt, delta))
