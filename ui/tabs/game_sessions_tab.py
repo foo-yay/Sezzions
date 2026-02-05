@@ -3903,14 +3903,15 @@ class EndSessionDialog(QDialog):
         if not self.session.game_id:
             return "—"
         try:
-            game = self.facade.game_repo.get_by_id(self.session.game_id)
-            if game and game.game_type_id:
-                game_types = self.facade.game_type_repo.list_all()
-                for gt in game_types:
-                    if gt.id == game.game_type_id:
-                        return gt.name
-        except:
-            pass
+            game = self.facade.get_game(self.session.game_id)
+            if not game or not getattr(game, "game_type_id", None):
+                return "—"
+
+            game_type = self.facade.get_game_type(game.game_type_id)
+            if game_type and getattr(game_type, "name", None):
+                return game_type.name
+        except Exception:
+            return "—"
         return "—"
     
     def _get_game_name(self) -> str:
@@ -3918,11 +3919,11 @@ class EndSessionDialog(QDialog):
         if not self.session.game_id:
             return "—"
         try:
-            game = self.facade.game_repo.get_by_id(self.session.game_id)
-            if game:
+            game = self.facade.get_game(self.session.game_id)
+            if game and getattr(game, "name", None):
                 return game.name
-        except:
-            pass
+        except Exception:
+            return "—"
         return "—"
     
     def _create_section_header(self, text: str) -> QLabel:

@@ -104,10 +104,46 @@ When editing a purchase or creating/editing a game session, the system computes 
    - This provides a "mostly accurate" current view (freebies/bonuses not tracked in real-time).
    - Columns: "Total SC (Est.)", "Redeemable SC (Position)", "Est. Unrealized P/L"
 
-Game sessions compute taxable P/L based on redeemable vs locked balances and basis consumption rules.
-This is one of the highest-risk correctness areas.
+### 4.4 Taxable P/L (Game Sessions)
 
-Tax-session logic is high-risk correctness territory. Any changes should be anchored by explicit scenario tests and validated via recalculation.
+Sezzions computes **taxable gameplay P/L** using game sessions. This is one of the highest-risk correctness areas.
+
+#### Key terms (dogmatic semantics)
+
+- **Redeemable SC (site state):** SC that the casino site currently shows as redeemable/withdrawable. This number can change *outside* of tracked sessions (free spins, bonus drops, adjustments, etc.).
+- **Recognized / “earned” SC (Sezzions accounting):** Sezzions intentionally does **not** recognize taxable gains at the moment redeemable SC appears on a site.
+  - Instead, Sezzions recognizes taxable outcomes **only when a game session is closed**.
+  - This is a deliberate tradeoff to avoid requiring the user to monitor dozens of sites continuously.
+- **Expected start redeemable:** the redeemable SC that Sezzions believes was already “recognized” as of the session start (typically prior closed session ending redeemable, after applying any redemptions).
+- **Discoverable SC:** redeemable SC that is present at session start above the expected checkpoint.
+  - `discoverable_sc = max(0, starting_redeemable - expected_start_redeemable)`
+  - Interpretation: “redeemable that appeared since the last checkpoint, and is now being recognized within this session.”
+
+#### Session taxable P/L formula
+
+Per closed session:
+
+- `delta_redeem = ending_redeemable - starting_redeemable`
+- `net_taxable_pl = ((discoverable_sc + delta_redeem) * sc_rate) - basis_consumed`
+
+Important identity (why off-session freebies don’t get taxed if lost):
+
+- `discoverable_sc + delta_redeem = ending_redeemable - expected_start_redeemable`
+
+So if redeemable SC appears between sessions (becomes discoverable at next start) and is then lost during play, the loss nets it out automatically because the end redeemable is lower.
+
+#### Basis consumption and cash-in/cash-out alignment
+
+- `basis_consumed` is **not** simply “cash spent this session”. It is consumed when locked/bonus SC is processed into redeemable through play, and it can draw from a rolling pending-basis pool.
+- As a result, **single-session net taxable P/L may diverge from a simple money-in/money-out story** whenever:
+  - purchases are not fully “processed” (locked SC remains locked),
+  - basis is carried across sessions (pending basis pool is non-zero),
+  - or session segmentation/balances are inaccurate.
+- Over a longer horizon, as locked SC is processed and the pending basis pool returns to ~0, the cumulative taxable results will generally align much more closely with “net redeemable produced minus paid-in basis,” but it is not guaranteed session-by-session.
+
+#### Testing and change control
+
+Tax-session logic is high-risk correctness territory. Any changes must be anchored by explicit scenario tests (hand-computable datasets) and validated via full recalculation.
 
 ## 5) UI/UX (Product Behavior)
 
