@@ -12,6 +12,53 @@ Rules:
 ## 2026-02-05
 
 ```yaml
+id: 2026-02-05-06
+type: feature
+areas: [models, repositories, services, ui, database]
+summary: "Adjustments & Corrections (Basis Adjustments + Balance Checkpoints)"
+issue: "#54"
+files_changed:
+  - models/adjustment.py (new)
+  - repositories/adjustment_repository.py (new)
+  - repositories/database.py (account_adjustments table)
+  - services/adjustment_service.py (new)
+  - services/game_session_service.py (checkpoint integration)
+  - services/recalculation_service.py (basis adjustment integration)
+  - ui/tabs/tools_tab.py (adjustments section)
+  - ui/adjustment_dialogs.py (new)
+  - tests/unit/test_adjustment_model.py (12 tests)
+  - tests/unit/test_adjustment_repository.py (10 tests)
+  - tests/unit/test_adjustment_service.py (15 tests)
+```
+
+Notes:
+- **Feature:** Two types of manual adjustments for correcting accounting issues:
+  1. **Basis Corrections** (BASIS_USD_CORRECTION): Delta adjustments to cost basis (e.g., missed fees, refunds)
+     - Integrated into FIFO pipeline as synthetic purchases with negative IDs
+     - Ordered by effective datetime for correct FIFO sequencing
+  2. **Balance Checkpoints** (BALANCE_CHECKPOINT_CORRECTION): Known balance anchors at specific timestamps
+     - Override closed sessions in expected balance calculations
+     - Used for reconciliation or importing external data
+
+- **Data Layer:**
+  - New `account_adjustments` table with soft delete support
+  - Indexes on (user_id, site_id, effective_date, effective_time) and (type, deleted_at)
+  - Fields: type, delta_basis_usd, checkpoint_total_sc, checkpoint_redeemable_sc, reason (required), notes, related_table/id
+
+- **Service Layer:**
+  - AdjustmentService with validation (delta != 0, checkpoints have non-zero balances)
+  - GameSessionService.compute_expected_balances() uses latest checkpoint before cutoff
+  - RecalculationService injects basis adjustments as synthetic lots in FIFO rebuild
+
+- **UI (Tools Tab):**
+  - New Adjustments section with three buttons: New Basis Adjustment, New Balance Checkpoint, View Adjustments
+  - BasisAdjustmentDialog: form for delta, user/site, date/time, reason
+  - CheckpointDialog: form for total/redeemable SC, user/site, date/time, reason
+  - ViewAdjustmentsDialog: table view with filters, soft delete, restore
+
+- **Test Coverage:** 37 new unit tests (100% coverage on new models/repos/services), 685 total tests passing
+
+```yaml
 id: 2026-02-05-05
 type: feature
 areas: [ui]

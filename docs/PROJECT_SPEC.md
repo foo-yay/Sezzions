@@ -166,6 +166,46 @@ So if redeemable SC appears between sessions (becomes discoverable at next start
 
 Tax-session logic is high-risk correctness territory. Any changes must be anchored by explicit scenario tests (hand-computable datasets) and validated via full recalculation.
 
+### 4.5 Adjustments & Corrections
+
+Sezzions supports two types of manual adjustments to correct accounting issues or incorporate external data:
+
+#### 4.5.1 Basis Corrections (BASIS_USD_CORRECTION)
+
+Basis adjustments allow manual corrections to cost basis when errors occur or external factors require adjustment.
+
+- **Purpose**: Correct purchase cost basis errors (e.g., missed fees, refunds, chargebacks)
+- **Mechanism**: Adds a delta (positive or negative) to the FIFO pipeline as a synthetic purchase
+- **Integration**: Synthetic adjustments are inserted into the FIFO rebuild with negative IDs (to avoid collisions with real purchases)
+- **Effective timestamp**: Adjustments participate in FIFO ordering based on their `effective_date` and `effective_time`
+- **Use case example**: A $25 purchase fee was missed; create a +$25 basis adjustment to correct total cost
+
+#### 4.5.2 Balance Checkpoints (BALANCE_CHECKPOINT_CORRECTION)
+
+Balance checkpoints establish known balances at specific timestamps, overriding prior calculations.
+
+- **Purpose**: Correct balance continuity errors or import external balance data
+- **Mechanism**: Checkpoints take priority over closed sessions in expected balance calculations
+- **Integration**: `compute_expected_balances()` uses the most recent checkpoint before a given timestamp as the anchor
+- **Fields**: `checkpoint_total_sc` and `checkpoint_redeemable_sc` specify known balances
+- **Use case example**: After reconciling with casino site, establish a known $1,500 SC balance at a specific date/time
+
+#### 4.5.3 Adjustment Properties
+
+All adjustments share:
+- **Soft delete**: Adjustments can be deleted without losing audit history (`deleted_at`, `deleted_reason`)
+- **Restoration**: Deleted adjustments can be restored
+- **Filtering**: Adjustments can be filtered by user, site, type, date range
+- **Recalculation trigger**: Creating/deleting/restoring adjustments requires recalculation for the affected (user_id, site_id) pair
+- **Audit fields**: `reason` (required), `notes` (optional), `related_table`/`related_id` (optional foreign reference)
+
+#### 4.5.4 UI Access (Tools Tab)
+
+The Tools tab provides:
+- **New Basis Adjustment** dialog: user/site selectors, date/time, delta amount, reason
+- **New Balance Checkpoint** dialog: user/site selectors, date/time, total SC, redeemable SC, reason
+- **View Adjustments** dialog: table view with filters, soft delete, restore functionality
+
 ## 5) UI/UX (Product Behavior)
 
 ### Navigation
