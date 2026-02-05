@@ -63,8 +63,11 @@ def test_purchase_edit_balance_check_excludes_edited_purchase(qtbot, temp_db_pat
     qtbot.wait(50)
 
     text = dialog.balance_check_label.text()
-    assert "30.75 higher than expected" in text
-    assert "(25.00 SC)" in text
+    # New logic uses actual balance chain: P2 expected = P1's actual post-purchase (36.75)
+    # P2 actual pre = 45.75, so difference = 45.75 - 36.75 = 9.00 SC
+    # Expected post = 36.75 + 10 = 46.75 SC
+    assert "9.00 SC HIGHER than expected" in text
+    assert "(46.75 SC)" in text
     assert dialog.balance_check_label.property("status") == "warning"
 
     dialog.close()

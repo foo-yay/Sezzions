@@ -329,32 +329,101 @@ class PurchasesTab(QtWidgets.QWidget):
                 # because it returns datetime.now() each time if field is empty!
                 purchase_time = dialog.get_time()
 
-                expected_total, _expected_redeem = self.facade.compute_expected_balances(
-                    user_id=dialog.user_id,
-                    site_id=dialog.site_id,
-                    session_date=purchase_date,
-                    session_time=purchase_time,
-                )
                 starting_sc = dialog.get_starting_sc_balance()
                 sc_received = dialog.get_sc_received()
-                
                 pre_purchase_balance = Decimal(str(starting_sc)) - Decimal(str(sc_received))
-                balance_delta = pre_purchase_balance - Decimal(str(expected_total))
-                if abs(balance_delta) > Decimal("0.50"):
-                    direction = "higher" if balance_delta > 0 else "lower"
+                
+                # Get previous purchases in this basis period
+                period_purchases = self.facade.get_basis_period_purchases(
+                    user_id=dialog.user_id,
+                    site_id=dialog.site_id,
+                    purchase_date=purchase_date,
+                    purchase_time=purchase_time,
+                    exclude_purchase_id=None  # No exclusion for new purchase
+                )
+                
+                # Determine expected pre-purchase balance:
+                # If there's a previous purchase in the period, use its actual post-purchase balance
+                # Otherwise, use compute_expected_balances
+                if period_purchases:
+                    prev_purchase = period_purchases[-1]
+                    expected_total = prev_purchase.starting_sc_balance
+                else:
+                    expected_total, _expected_redeem = self.facade.compute_expected_balances(
+                        user_id=dialog.user_id,
+                        site_id=dialog.site_id,
+                        session_date=purchase_date,
+                        session_time=purchase_time,
+                    )
+                
+                # Compute total_extra for this purchase
+                total_extra = (pre_purchase_balance - Decimal(str(expected_total))).quantize(Decimal("0.01"))
+                
+                print(f"\n=== Purchase Balance Check (ADD) ===")
+                print(f"Pre-purchase: {pre_purchase_balance}, Expected: {expected_total}, Total extra: {total_extra}")
+                print(f"Period purchases found: {len(period_purchases)}")
+                for i, p in enumerate(period_purchases):
+                    print(f"  Purchase {i+1}: ID={p.id}, Date={p.purchase_date}, Time={p.purchase_time}, Post-SC={p.starting_sc_balance}")
+                
+                # Compute delta_extra vs most recent purchase in period
+                delta_extra = total_extra
+                prev_total_extra = Decimal("0.00")
+                
+                if period_purchases:
+                    # Get the most recent purchase (last in the sorted list)
+                    prev_purchase = period_purchases[-1]
+                    # Get its stored starting_sc_balance and sc_received to compute its total_extra
+                    prev_actual_pre = prev_purchase.starting_sc_balance - prev_purchase.sc_received
+                    
+                    # Get expected_pre for the previous purchase (MUST exclude the previous purchase itself)
+                    prev_expected_total, _ = self.facade.compute_expected_balances(
+                        user_id=prev_purchase.user_id,
+                        site_id=prev_purchase.site_id,
+                        session_date=prev_purchase.purchase_date,
+                        session_time=prev_purchase.purchase_time,
+                        exclude_purchase_id=prev_purchase.id,
+                    )
+                    prev_total_extra = (prev_actual_pre - prev_expected_total).quantize(Decimal("0.01"))
+                    delta_extra = total_extra - prev_total_extra
+                    print(f"Prev total_extra: {prev_total_extra}, Delta: {delta_extra}")
+                
+                # Warn on any non-zero total_extra (no tolerance)
+                should_warn = (total_extra != 0)
+                
+                if total_extra < 0:
+                    warn_reason = "negative"
+                elif total_extra > 0:
+                    warn_reason = "positive"
+                else:
+                    warn_reason = None
+                
+                print(f"Total extra: {total_extra}, Delta: {delta_extra}, Warn: {should_warn}")
+                print("=" * 50)
+                
+                if should_warn:
+                    if warn_reason == "negative":
+                        direction = "LOWER"
+                        explanation = "This indicates a tracked loss or missing SC."
+                    else:  # positive
+                        direction = "HIGHER"
+                        explanation = "This indicates untracked wins or freebies."
+                    
+                    msg_parts = [
+                        "The calculated pre-purchase balance does not match the expected balance.\n\n",
+                        f"Post-purchase SC (entered): {float(starting_sc):,.2f} SC\n",
+                        f"SC received: {float(sc_received):,.2f} SC\n",
+                        f"Pre-purchase balance: {float(pre_purchase_balance):,.2f} SC\n",
+                        f"Expected pre-purchase: {float(expected_total):,.2f} SC\n",
+                        f"Difference: {float(total_extra):,.2f} SC ({direction})\n",
+                    ]
+                    
+                    msg_parts.append(f"\n{explanation}\n\n")
+                    msg_parts.append("Continue anyway?")
+                    
                     response = QtWidgets.QMessageBox.question(
                         self,
                         "Balance Mismatch Detected",
-                        "The calculated pre-purchase balance does not match the expected balance from recorded sessions.\n\n"
-                        f"Post-purchase SC (entered): {float(starting_sc):,.2f} SC\n"
-                        f"SC received: {float(sc_received):,.2f} SC\n"
-                        f"Pre-purchase balance: {float(pre_purchase_balance):,.2f} SC\n"
-                        f"Expected pre-purchase: {float(expected_total):,.2f} SC\n"
-                        f"Difference: {float(balance_delta):,.2f} SC ({direction})\n\n"
-                        "This usually means:\n"
-                        "• Untracked wins/losses or freebies\n"
-                        "• A missing Game Session\n\n"
-                        "Continue anyway?",
+                        "".join(msg_parts),
                         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                         QtWidgets.QMessageBox.No,
                     )
@@ -428,32 +497,93 @@ class PurchasesTab(QtWidgets.QWidget):
 
                 purchase_date = dialog.get_date()
                 purchase_time = dialog.get_time()
-                expected_total, _expected_redeem = self.facade.compute_expected_balances(
-                    user_id=dialog.user_id,
-                    site_id=dialog.site_id,
-                    session_date=purchase_date,
-                    session_time=purchase_time,
-                    exclude_purchase_id=purchase.id,
-                )
+                
                 starting_sc = dialog.get_starting_sc_balance()
                 sc_received = dialog.get_sc_received()
                 pre_purchase_balance = Decimal(str(starting_sc)) - Decimal(str(sc_received))
-                balance_delta = pre_purchase_balance - Decimal(str(expected_total))
-                if abs(balance_delta) > Decimal("0.50"):
-                    direction = "higher" if balance_delta > 0 else "lower"
+                
+                # Get previous purchases in this basis period
+                period_purchases = self.facade.get_basis_period_purchases(
+                    user_id=dialog.user_id,
+                    site_id=dialog.site_id,
+                    purchase_date=purchase_date,
+                    purchase_time=purchase_time,
+                    exclude_purchase_id=purchase.id  # Exclude current purchase when editing
+                )
+                
+                # Determine expected pre-purchase balance:
+                # If there's a previous purchase in the period, use its actual post-purchase balance
+                # Otherwise, use compute_expected_balances
+                if period_purchases:
+                    prev_purchase = period_purchases[-1]
+                    expected_total = prev_purchase.starting_sc_balance
+                else:
+                    expected_total, _expected_redeem = self.facade.compute_expected_balances(
+                        user_id=dialog.user_id,
+                        site_id=dialog.site_id,
+                        session_date=purchase_date,
+                        session_time=purchase_time,
+                        exclude_purchase_id=purchase.id,
+                    )
+                
+                # Compute total_extra for this purchase
+                total_extra = (pre_purchase_balance - Decimal(str(expected_total))).quantize(Decimal("0.01"))
+                
+                # Compute delta_extra vs most recent purchase in period
+                delta_extra = total_extra
+                prev_total_extra = Decimal("0.00")
+                
+                if period_purchases:
+                    # Get the most recent purchase (last in the sorted list)
+                    prev_purchase = period_purchases[-1]
+                    # Get its stored starting_sc_balance and sc_received to compute its total_extra
+                    prev_actual_pre = prev_purchase.starting_sc_balance - prev_purchase.sc_received
+                    
+                    # Get expected_pre for the previous purchase (MUST exclude the previous purchase itself)
+                    prev_expected_total, _ = self.facade.compute_expected_balances(
+                        user_id=prev_purchase.user_id,
+                        site_id=prev_purchase.site_id,
+                        session_date=prev_purchase.purchase_date,
+                        session_time=prev_purchase.purchase_time,
+                        exclude_purchase_id=prev_purchase.id,
+                    )
+                    prev_total_extra = (prev_actual_pre - prev_expected_total).quantize(Decimal("0.01"))
+                    delta_extra = total_extra - prev_total_extra
+                
+                # Warn on any non-zero total_extra (no tolerance)
+                should_warn = (total_extra != 0)
+                
+                if total_extra < 0:
+                    warn_reason = "negative"
+                elif total_extra > 0:
+                    warn_reason = "positive"
+                else:
+                    warn_reason = None
+                
+                if should_warn:
+                    if warn_reason == "negative":
+                        direction = "LOWER"
+                        explanation = "This indicates a tracked loss or missing SC."
+                    else:  # positive
+                        direction = "HIGHER"
+                        explanation = "This indicates untracked wins or freebies."
+                    
+                    msg_parts = [
+                        "The calculated pre-purchase balance does not match the expected balance.\n\n",
+                        f"Post-purchase SC (entered): {float(starting_sc):,.2f} SC\n",
+                        f"SC received: {float(sc_received):,.2f} SC\n",
+                        f"Pre-purchase balance: {float(pre_purchase_balance):,.2f} SC\n",
+                        f"Expected pre-purchase: {float(expected_total):,.2f} SC\n",
+                        f"Difference: {float(total_extra):,.2f} SC ({direction})\n",
+                    ]
+                    
+                    msg_parts.append(f"\n{explanation}\n\n")
+                    msg_parts.append("Continue anyway?")
+                    
                     response = QtWidgets.QMessageBox.question(
                         self,
                         "Balance Mismatch Detected",
-                        "The calculated pre-purchase balance does not match the expected balance from recorded sessions.\n\n"
-                        f"Post-purchase SC (entered): {float(starting_sc):,.2f} SC\n"
-                        f"SC received: {float(sc_received):,.2f} SC\n"
-                        f"Pre-purchase balance: {float(pre_purchase_balance):,.2f} SC\n"
-                        f"Expected pre-purchase: {float(expected_total):,.2f} SC\n"
-                        f"Difference: {float(balance_delta):,.2f} SC ({direction})\n\n"
-                        "This usually means:\n"
-                        "• Untracked wins/losses or freebies\n"
-                        "• A missing Game Session\n\n"
-                        "Continue anyway?",
+                        "".join(msg_parts),
                         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                         QtWidgets.QMessageBox.No,
                     )
@@ -1397,14 +1527,6 @@ class PurchaseDialog(QtWidgets.QDialog):
         # When editing, exclude the purchase being edited from expected balance calculation
         exclude_purchase_id = self.purchase.id if self.purchase else None
         
-        expected_total, _expected_redeem = self.facade.compute_expected_balances(
-            user_id=user_id,
-            site_id=site_id,
-            session_date=parsed_date,
-            session_time=parsed_time,
-            exclude_purchase_id=exclude_purchase_id
-        )
-
         # Get SC received to calculate pre-purchase balance
         sc_received_text = self.sc_edit.text().strip()
         try:
@@ -1414,26 +1536,68 @@ class PurchaseDialog(QtWidgets.QDialog):
         
         # Calculate the pre-purchase balance (what balance was BEFORE this purchase)
         pre_purchase_balance = Decimal(str(start_sc_val)) - sc_received_val
-        delta = pre_purchase_balance - Decimal(str(expected_total))
+        
+        # Get previous purchases in this basis period
+        period_purchases = self.facade.get_basis_period_purchases(
+            user_id=user_id,
+            site_id=site_id,
+            purchase_date=parsed_date,
+            purchase_time=parsed_time,
+            exclude_purchase_id=exclude_purchase_id
+        )
+        
+        # Determine expected pre-purchase balance using the same logic as the submission check
+        if period_purchases:
+            prev_purchase = period_purchases[-1]
+            expected_total = prev_purchase.starting_sc_balance
+        else:
+            expected_total, _expected_redeem = self.facade.compute_expected_balances(
+                user_id=user_id,
+                site_id=site_id,
+                session_date=parsed_date,
+                session_time=parsed_time,
+                exclude_purchase_id=exclude_purchase_id
+            )
+        
+        # Compute total_extra
+        total_extra = (pre_purchase_balance - Decimal(str(expected_total))).quantize(Decimal("0.01"))
+        
+        # Compute delta_extra vs most recent purchase in period
+        delta_extra = total_extra
+        if period_purchases:
+            prev_purchase = period_purchases[-1]
+            prev_actual_pre = prev_purchase.starting_sc_balance - prev_purchase.sc_received
+            prev_expected_total, _ = self.facade.compute_expected_balances(
+                user_id=prev_purchase.user_id,
+                site_id=prev_purchase.site_id,
+                session_date=prev_purchase.purchase_date,
+                session_time=prev_purchase.purchase_time,
+                exclude_purchase_id=prev_purchase.id,
+            )
+            prev_total_extra = (prev_actual_pre - prev_expected_total).quantize(Decimal("0.01"))
+            delta_extra = total_extra - prev_total_extra
+        
+        # Warn on any non-zero total_extra (no tolerance)
+        should_warn = (total_extra != 0)
         
         # Calculate expected post-purchase balance for display
         expected_post_purchase = Decimal(str(expected_total)) + sc_received_val
         
-        if abs(delta) <= Decimal("0.01"):
-            # Balance matches expected - all good
+        if not should_warn:
+            # Balance matches expected
             self.balance_check_label.setProperty("status", "match")
-            self.balance_check_label.setText("✓ Balance Check: No problems detected")
-        elif delta > Decimal("0.01"):
+            self.balance_check_label.setText("✓ Balance Check: OK")
+        elif total_extra < 0:
+            # Balance is lower than expected
+            self.balance_check_label.setProperty("status", "error")
+            self.balance_check_label.setText(
+                f"✗ Balance Check: {float(abs(total_extra)):.2f} SC LOWER than expected ({float(expected_post_purchase):.2f} SC)"
+            )
+        else:  # total_extra > 0
             # Balance is higher than expected
             self.balance_check_label.setProperty("status", "warning")
             self.balance_check_label.setText(
-                f"✗ Balance Check: Starting SC balance is {float(delta):.2f} higher than expected ({float(expected_post_purchase):.2f} SC)"
-            )
-        else:
-            # Balance is lower than expected (problem)
-            self.balance_check_label.setProperty("status", "error")
-            self.balance_check_label.setText(
-                f"✗ Balance Check: Starting SC balance is {float(abs(delta)):.2f} lower than expected ({float(expected_post_purchase):.2f} SC)"
+                f"✗ Balance Check: {float(total_extra):.2f} SC HIGHER than expected ({float(expected_post_purchase):.2f} SC)"
             )
 
         self.balance_check_label.style().unpolish(self.balance_check_label)
@@ -1812,6 +1976,13 @@ class PurchaseViewDialog(QtWidgets.QDialog):
 
         layout.addLayout(btn_row)
 
+    def _open_purchase_by_id(self, purchase_id: int):
+        """Open a new view dialog for the specified purchase and highlight it in the main table"""
+        # Navigate to the purchase in the parent tab if possible
+        if self.parent() and hasattr(self.parent(), 'open_purchase_by_id'):
+            self.close()  # Close current dialog first
+            self.parent().open_purchase_by_id(purchase_id)
+    
     def _create_details_tab(self, user_name: str, site_name: str, card_name: str) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
@@ -2003,10 +2174,118 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
+        # Add Basis Period Purchases section
+        basis_purchases = self.facade.get_basis_period_purchases(
+            user_id=self.purchase.user_id,
+            site_id=self.purchase.site_id,
+            purchase_date=self.purchase.purchase_date,
+            purchase_time=self.purchase.purchase_time,
+            exclude_purchase_id=None  # Include all purchases in period, including current
+        )
+        
+        # Find the basis period start
+        period_start = self.facade.get_basis_period_start_for_purchase(
+            user_id=self.purchase.user_id,
+            site_id=self.purchase.site_id,
+            purchase_date=self.purchase.purchase_date,
+            purchase_time=self.purchase.purchase_time
+        )
+        
+        if basis_purchases:
+            # Add header with period info
+            if period_start:
+                start_date, start_time = period_start
+                period_label = f"Full Basis Period — All Purchases (since {start_date} {start_time[:5]})"
+            else:
+                period_label = "Full Basis Period — All Purchases (first period)"
+            
+            basis_group = QtWidgets.QGroupBox(period_label)
+            basis_layout = QtWidgets.QVBoxLayout(basis_group)
+            basis_layout.setContentsMargins(8, 10, 8, 8)
+            
+            table = QtWidgets.QTableWidget(0, 5)
+            table.setHorizontalHeaderLabels([
+                "Purchase Date/Time", "Amount", "SC Received", "Post-Purchase SC", "View Purchase"
+            ])
+            table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+            table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+            table.verticalHeader().setVisible(False)
+            table.horizontalHeader().setStretchLastSection(True)
+            header = table.horizontalHeader()
+            header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+            table.setColumnWidth(0, 160)
+            table.setColumnWidth(1, 100)
+            table.setColumnWidth(2, 100)
+            table.setColumnWidth(3, 130)
+            table.setColumnWidth(4, 120)
+            
+            # Set minimum height for 3 rows, but allow table to grow with content
+            row_height = table.verticalHeader().defaultSectionSize()
+            header_height = table.horizontalHeader().height()
+            min_rows = 3
+            table.setMinimumHeight(header_height + (row_height * min_rows) + 10)
+            # No max height - let it fill available space
+            
+            table.setRowCount(len(basis_purchases))
+            for row, p in enumerate(basis_purchases):
+                is_current = p.id == self.purchase.id
+                
+                date_val = str(p.purchase_date)
+                time_val = (p.purchase_time or "00:00:00")[:5]
+                date_time_display = f"{date_val} {time_val}"
+                date_item = QtWidgets.QTableWidgetItem(date_time_display)
+                if is_current:
+                    font = date_item.font()
+                    font.setBold(True)
+                    date_item.setFont(font)
+                table.setItem(row, 0, date_item)
+                
+                amount_item = QtWidgets.QTableWidgetItem(f"${float(p.amount):.2f}")
+                if is_current:
+                    font = amount_item.font()
+                    font.setBold(True)
+                    amount_item.setFont(font)
+                table.setItem(row, 1, amount_item)
+                
+                sc_received_item = QtWidgets.QTableWidgetItem(f"{float(p.sc_received):,.2f} SC")
+                if is_current:
+                    font = sc_received_item.font()
+                    font.setBold(True)
+                    sc_received_item.setFont(font)
+                table.setItem(row, 2, sc_received_item)
+                
+                post_sc_item = QtWidgets.QTableWidgetItem(f"{float(p.starting_sc_balance):,.2f} SC")
+                if is_current:
+                    font = post_sc_item.font()
+                    font.setBold(True)
+                    post_sc_item.setFont(font)
+                table.setItem(row, 3, post_sc_item)
+                
+                # Add View Purchase button
+                view_btn = QtWidgets.QPushButton("👁️ View Purchase")
+                view_btn.setObjectName("MiniButton")
+                view_btn.setFixedHeight(24)
+                view_btn.setFixedWidth(view_btn.sizeHint().width() + 12)
+                view_btn.clicked.connect(lambda _checked=False, pid=p.id: self._open_purchase_by_id(pid))
+                view_container = QtWidgets.QWidget()
+                view_container.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+                view_layout = QtWidgets.QGridLayout(view_container)
+                view_layout.setContentsMargins(6, 4, 6, 4)
+                view_layout.addWidget(view_btn, 0, 0, QtCore.Qt.AlignCenter)
+                table.setCellWidget(row, 4, view_container)
+                table.setRowHeight(
+                    row,
+                    max(table.rowHeight(row), view_btn.sizeHint().height() + 16),
+                )
+            
+            basis_layout.addWidget(table, 1)  # Stretch factor 1 to fill space
+            layout.addWidget(basis_group, 1)  # Stretch factor 1 to fill available space
+
         allocations = self._fetch_allocated_redemptions()
 
-        if not self.linked_sessions and not allocations:
-            placeholder = QtWidgets.QLabel("No related sessions or redemptions found.")
+        if not self.linked_sessions and not allocations and not basis_purchases:
+            placeholder = QtWidgets.QLabel("No related sessions, purchases, or redemptions found.")
             placeholder.setStyleSheet("color: palette(mid); font-style: italic;")
             layout.addWidget(placeholder)
             layout.addStretch()
