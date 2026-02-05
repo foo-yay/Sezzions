@@ -359,6 +359,8 @@ class PurchasesTab(QtWidgets.QWidget):
                 # Compute total_extra for this purchase
                 total_extra = (pre_purchase_balance - Decimal(str(expected_total))).quantize(Decimal("0.01"))
                 
+                print(f"\n=== Purchase Balance Check (ADD) ===")
+                print(f"Pre-purchase: {pre_purchase_balance}, Expected: {expected_total}, Total extra: {total_extra}")
                 print(f"Period purchases found: {len(period_purchases)}")
                 for i, p in enumerate(period_purchases):
                     print(f"  Purchase {i+1}: ID={p.id}, Date={p.purchase_date}, Time={p.purchase_time}, Post-SC={p.starting_sc_balance}")
@@ -383,23 +385,28 @@ class PurchasesTab(QtWidgets.QWidget):
                     )
                     prev_total_extra = (prev_actual_pre - prev_expected_total).quantize(Decimal("0.01"))
                     delta_extra = total_extra - prev_total_extra
+                    print(f"Prev total_extra: {prev_total_extra}, Delta: {delta_extra}")
                 
-                # Warn if: (1) negative mismatch, or (2) positive delta increase
-                should_warn = False
+                # Warn on any non-zero total_extra (no tolerance)
+                should_warn = (total_extra != 0)
+                
                 if total_extra < 0:
-                    should_warn = True
                     warn_reason = "negative"
-                elif delta_extra > 0:
-                    should_warn = True
-                    warn_reason = "increase"
+                elif total_extra > 0:
+                    warn_reason = "positive"
+                else:
+                    warn_reason = None
+                
+                print(f"Total extra: {total_extra}, Delta: {delta_extra}, Warn: {should_warn}")
+                print("=" * 50)
                 
                 if should_warn:
                     if warn_reason == "negative":
                         direction = "LOWER"
                         explanation = "This indicates a tracked loss or missing SC."
-                    else:
+                    else:  # positive
                         direction = "HIGHER"
-                        explanation = "This indicates new untracked wins or freebies."
+                        explanation = "This indicates untracked wins or freebies."
                     
                     msg_parts = [
                         "The calculated pre-purchase balance does not match the expected balance.\n\n",
@@ -407,12 +414,8 @@ class PurchasesTab(QtWidgets.QWidget):
                         f"SC received: {float(sc_received):,.2f} SC\n",
                         f"Pre-purchase balance: {float(pre_purchase_balance):,.2f} SC\n",
                         f"Expected pre-purchase: {float(expected_total):,.2f} SC\n",
-                        f"Total extra: {float(total_extra):,.2f} SC ({direction})\n",
+                        f"Difference: {float(total_extra):,.2f} SC ({direction})\n",
                     ]
-                    
-                    if period_purchases:
-                        msg_parts.append(f"Previous extra in period: {float(prev_total_extra):,.2f} SC\n")
-                        msg_parts.append(f"Delta (change): {float(delta_extra):,.2f} SC\n")
                     
                     msg_parts.append(f"\n{explanation}\n\n")
                     msg_parts.append("Continue anyway?")
@@ -547,22 +550,23 @@ class PurchasesTab(QtWidgets.QWidget):
                     prev_total_extra = (prev_actual_pre - prev_expected_total).quantize(Decimal("0.01"))
                     delta_extra = total_extra - prev_total_extra
                 
-                # Warn if: (1) negative mismatch, or (2) positive delta increase
-                should_warn = False
+                # Warn on any non-zero total_extra (no tolerance)
+                should_warn = (total_extra != 0)
+                
                 if total_extra < 0:
-                    should_warn = True
                     warn_reason = "negative"
-                elif delta_extra > 0:
-                    should_warn = True
-                    warn_reason = "increase"
+                elif total_extra > 0:
+                    warn_reason = "positive"
+                else:
+                    warn_reason = None
                 
                 if should_warn:
                     if warn_reason == "negative":
                         direction = "LOWER"
                         explanation = "This indicates a tracked loss or missing SC."
-                    else:
+                    else:  # positive
                         direction = "HIGHER"
-                        explanation = "This indicates new untracked wins or freebies."
+                        explanation = "This indicates untracked wins or freebies."
                     
                     msg_parts = [
                         "The calculated pre-purchase balance does not match the expected balance.\n\n",
@@ -570,12 +574,8 @@ class PurchasesTab(QtWidgets.QWidget):
                         f"SC received: {float(sc_received):,.2f} SC\n",
                         f"Pre-purchase balance: {float(pre_purchase_balance):,.2f} SC\n",
                         f"Expected pre-purchase: {float(expected_total):,.2f} SC\n",
-                        f"Total extra: {float(total_extra):,.2f} SC ({direction})\n",
+                        f"Difference: {float(total_extra):,.2f} SC ({direction})\n",
                     ]
-                    
-                    if period_purchases:
-                        msg_parts.append(f"Previous extra in period: {float(prev_total_extra):,.2f} SC\n")
-                        msg_parts.append(f"Delta (change): {float(delta_extra):,.2f} SC\n")
                     
                     msg_parts.append(f"\n{explanation}\n\n")
                     msg_parts.append("Continue anyway?")
@@ -1527,14 +1527,6 @@ class PurchaseDialog(QtWidgets.QDialog):
         # When editing, exclude the purchase being edited from expected balance calculation
         exclude_purchase_id = self.purchase.id if self.purchase else None
         
-        expected_total, _expected_redeem = self.facade.compute_expected_balances(
-            user_id=user_id,
-            site_id=site_id,
-            session_date=parsed_date,
-            session_time=parsed_time,
-            exclude_purchase_id=exclude_purchase_id
-        )
-
         # Get SC received to calculate pre-purchase balance
         sc_received_text = self.sc_edit.text().strip()
         try:
@@ -1544,26 +1536,68 @@ class PurchaseDialog(QtWidgets.QDialog):
         
         # Calculate the pre-purchase balance (what balance was BEFORE this purchase)
         pre_purchase_balance = Decimal(str(start_sc_val)) - sc_received_val
-        delta = pre_purchase_balance - Decimal(str(expected_total))
+        
+        # Get previous purchases in this basis period
+        period_purchases = self.facade.get_basis_period_purchases(
+            user_id=user_id,
+            site_id=site_id,
+            purchase_date=parsed_date,
+            purchase_time=parsed_time,
+            exclude_purchase_id=exclude_purchase_id
+        )
+        
+        # Determine expected pre-purchase balance using the same logic as the submission check
+        if period_purchases:
+            prev_purchase = period_purchases[-1]
+            expected_total = prev_purchase.starting_sc_balance
+        else:
+            expected_total, _expected_redeem = self.facade.compute_expected_balances(
+                user_id=user_id,
+                site_id=site_id,
+                session_date=parsed_date,
+                session_time=parsed_time,
+                exclude_purchase_id=exclude_purchase_id
+            )
+        
+        # Compute total_extra
+        total_extra = (pre_purchase_balance - Decimal(str(expected_total))).quantize(Decimal("0.01"))
+        
+        # Compute delta_extra vs most recent purchase in period
+        delta_extra = total_extra
+        if period_purchases:
+            prev_purchase = period_purchases[-1]
+            prev_actual_pre = prev_purchase.starting_sc_balance - prev_purchase.sc_received
+            prev_expected_total, _ = self.facade.compute_expected_balances(
+                user_id=prev_purchase.user_id,
+                site_id=prev_purchase.site_id,
+                session_date=prev_purchase.purchase_date,
+                session_time=prev_purchase.purchase_time,
+                exclude_purchase_id=prev_purchase.id,
+            )
+            prev_total_extra = (prev_actual_pre - prev_expected_total).quantize(Decimal("0.01"))
+            delta_extra = total_extra - prev_total_extra
+        
+        # Warn on any non-zero total_extra (no tolerance)
+        should_warn = (total_extra != 0)
         
         # Calculate expected post-purchase balance for display
         expected_post_purchase = Decimal(str(expected_total)) + sc_received_val
         
-        if abs(delta) <= Decimal("0.01"):
-            # Balance matches expected - all good
+        if not should_warn:
+            # Balance matches expected
             self.balance_check_label.setProperty("status", "match")
-            self.balance_check_label.setText("✓ Balance Check: No problems detected")
-        elif delta > Decimal("0.01"):
+            self.balance_check_label.setText("✓ Balance Check: OK")
+        elif total_extra < 0:
+            # Balance is lower than expected
+            self.balance_check_label.setProperty("status", "error")
+            self.balance_check_label.setText(
+                f"✗ Balance Check: {float(abs(total_extra)):.2f} SC LOWER than expected ({float(expected_post_purchase):.2f} SC)"
+            )
+        else:  # total_extra > 0
             # Balance is higher than expected
             self.balance_check_label.setProperty("status", "warning")
             self.balance_check_label.setText(
-                f"✗ Balance Check: Starting SC balance is {float(delta):.2f} higher than expected ({float(expected_post_purchase):.2f} SC)"
-            )
-        else:
-            # Balance is lower than expected (problem)
-            self.balance_check_label.setProperty("status", "error")
-            self.balance_check_label.setText(
-                f"✗ Balance Check: Starting SC balance is {float(abs(delta)):.2f} lower than expected ({float(expected_post_purchase):.2f} SC)"
+                f"✗ Balance Check: {float(total_extra):.2f} SC HIGHER than expected ({float(expected_post_purchase):.2f} SC)"
             )
 
         self.balance_check_label.style().unpolish(self.balance_check_label)
