@@ -331,10 +331,16 @@ class RedemptionService:
             return ""
 
         try:
-            # Check FIFO allocations
             cursor = self.db._connection.cursor()
+
+            # Check FIFO allocations (redemption_allocations)
             cursor.execute(
-                "SELECT COUNT(*) as count, SUM(amount_allocated) as total FROM fifo_allocations WHERE redemption_id = ?",
+                """
+                SELECT COUNT(*) as count,
+                       COALESCE(SUM(CAST(allocated_amount AS REAL)), 0) as total
+                FROM redemption_allocations
+                WHERE redemption_id = ?
+                """,
                 (redemption_id,),
             )
             alloc_result = cursor.fetchone()
@@ -347,9 +353,10 @@ class RedemptionService:
                 SELECT COUNT(*) as count
                 FROM game_sessions gs
                 WHERE EXISTS (
-                    SELECT 1 FROM fifo_allocations fa
-                    JOIN purchases p ON fa.purchase_id = p.id
-                    WHERE fa.redemption_id = ?
+                    SELECT 1
+                    FROM redemption_allocations ra
+                    JOIN purchases p ON ra.purchase_id = p.id
+                    WHERE ra.redemption_id = ?
                       AND p.user_id = gs.user_id AND p.site_id = gs.site_id
                       AND gs.session_date >= p.purchase_date
                       AND gs.end_date IS NOT NULL
@@ -366,6 +373,7 @@ class RedemptionService:
                     msg += f"{session_count} closed game session(s) may be affected.\n"
                 msg += "Deleting will recalculate all affected sessions."
                 return msg
+
             return ""
         except Exception as e:
             print(f"Error checking redemption deletion impact: {e}")

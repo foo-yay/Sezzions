@@ -40,6 +40,20 @@ Notes:
 - **Problem:** Clicking "Close Position" could raise an `AttributeError` because the UI referenced `pos.current_sc` but the model uses `total_sc`.
 - **Fix:** Use `pos.total_sc` for the close-balance confirmation and close call.
 
+```yaml
+id: 2026-02-05-03
+type: fix
+areas: [services, ui, tests]
+summary: "Fix redemption deletion impact check on DBs without fifo_allocations"
+files_changed:
+  - services/redemption_service.py
+  - tests/unit/test_redemption_deletion_impact.py
+```
+
+Notes:
+- **Problem:** Deleting a redemption could log `no such table: fifo_allocations` while checking deletion impact.
+- **Fix:** `RedemptionService.get_deletion_impact()` now queries `redemption_allocations` (the real FIFO allocation table).
+
 ---
 
 ## 2026-02-04
