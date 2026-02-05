@@ -24,6 +24,9 @@ UX sketch (compact):
 - A small table/list of purchases in the period (date/time, amount, SC received, post-purchase balance; consumed/remaining if available).
 - Optional action button: View selected purchase (space-permitting).
 
+Basis-period purchase scoping (v1):
+- Show purchases for the same user+site with purchase datetime in `(basis_period_start_dt, current_purchase_dt]`, ordered by `(purchase_date, COALESCE(purchase_time,'00:00:00'), id)`.
+
 ### B) Purchase dialogs: switch "extra SC" warnings to a running-delta system
 Keep the current purchase mismatch confirmation dialog, but change *when* it triggers for the "extra" case.
 
@@ -34,7 +37,8 @@ At purchase timestamp $P$:
 
 Precision / tolerance:
 - Use `Decimal` math end-to-end.
-- Compare using a canonical quantization for SC balances (e.g. `quantize(Decimal('0.01'))`).
+- SC is treated as a 2-decimal currency-like value (0.00 format).
+- Compare using a canonical quantization for SC balances: `quantize(Decimal('0.01'))`.
 - Tolerance is effectively zero after quantization: treat any non-zero quantized mismatch as a mismatch.
 
 Rules:
@@ -43,16 +47,12 @@ Rules:
    - Rationale: this indicates missing SC vs expected and should not be suppressed.
 
 2) **Extra SC becomes delta-based (reduce repeats):**
-   - If `total_extra(P) > +tolerance`, only show the mismatch confirmation when the *increase* in total extra is meaningful vs the most recent prior "checkpoint" within the same basis period.
-   - **Checkpoint definition (for delta warnings):** the latest of:
-     - the immediately previous purchase in the same basis period, OR
-     - the latest closed session end in the same basis period
-     that occurs strictly before the current purchase timestamp.
-   - `delta_extra(P) = total_extra(P) - total_extra(checkpoint)`
+   - If `total_extra(P) > +tolerance`, only show the mismatch confirmation when the *increase* in total extra is meaningful vs the previous purchase in the same basis period.
+   - `delta_extra(P) = total_extra(P) - total_extra(prev_purchase_in_period)`
    - Show the confirmation if `delta_extra(P) > +tolerance`.
 
    Notes on sessions:
-   - Sessions are inherently accounted for via `expected_pre` when a session is closed (because `compute_expected_balances()` uses the last closed session as a checkpoint). The checkpoint concept above is about *delta messaging* (don’t attribute “new extra” to the wrong interval).
+   - Sessions are inherently accounted for via `expected_pre` when a session is closed (because `compute_expected_balances()` uses the last closed session as a checkpoint). This ensures a purchase’s mismatch check reflects the expected current state from purchases + closed sessions + redemptions, not just the previous purchase.
 
 3) **Ignore negative delta for extra tracking:**
    - If `delta_extra(P) < 0`, do nothing special (no message).
