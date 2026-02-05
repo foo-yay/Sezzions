@@ -422,6 +422,31 @@ class DatabaseManager:
 
         self._migrate_expenses_table()
         
+        # Account adjustments table (basis corrections + balance checkpoints)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS account_adjustments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                site_id INTEGER NOT NULL,
+                effective_date TEXT NOT NULL,
+                effective_time TEXT DEFAULT '00:00:00',
+                type TEXT NOT NULL CHECK(type IN ('BASIS_USD_CORRECTION', 'BALANCE_CHECKPOINT_CORRECTION')),
+                delta_basis_usd TEXT DEFAULT '0.00',
+                checkpoint_total_sc TEXT DEFAULT '0.00',
+                checkpoint_redeemable_sc TEXT DEFAULT '0.00',
+                reason TEXT NOT NULL,
+                notes TEXT,
+                related_table TEXT,
+                related_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP,
+                deleted_at TIMESTAMP,
+                deleted_reason TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
+            )
+        ''')
+        
         # Audit log table (compliance trail)
         # Reference: DATABASE_DESIGN.md §12
         cursor.execute('''
@@ -473,6 +498,12 @@ class DatabaseManager:
         # Game session event links indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_gsel_session ON game_session_event_links(game_session_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_gsel_event ON game_session_event_links(event_type, event_id)')
+        
+        # Account adjustments indexes
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_adjustments_user_site ON account_adjustments(user_id, site_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_adjustments_date ON account_adjustments(effective_date, effective_time)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_adjustments_type ON account_adjustments(type)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_adjustments_deleted ON account_adjustments(deleted_at)')
         
         # Audit log indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_table ON audit_log(table_name)')
