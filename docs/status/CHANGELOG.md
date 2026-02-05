@@ -15,29 +15,57 @@ Rules:
 id: 2026-02-05-04
 type: feature
 areas: [ui, facades, services]
-summary: "Purchase dialogs: delta-based extra SC warnings + basis-period purchase chain"
+summary: "Purchase dialogs: balance chain warnings + full basis-period display"
 issue: "#66"
 files_changed:
   - app_facade.py
   - ui/tabs/purchases_tab.py
+  - tests/integration/test_purchase_edit_balance_check.py
 ```
 
 Notes:
-- **Problem:** Purchase dialogs showed the same "extra SC" balance warning repeatedly for each purchase in a basis period, even when the extra was persistent (not new). This created warning fatigue and made it hard to distinguish new vs existing imbalances.
+- **Problem:** Purchase dialogs didn't track balance chains correctly, leading to misleading warnings and lack of context for multi-purchase basis periods.
 - **Solution:** 
-  1. Added delta-based warnings: compare current purchase's `total_extra` against previous purchase in the same basis period. Only warn if delta increases (positive) or if total_extra is negative (always warn on losses).
-  2. Added "Basis Period Purchases" section to Purchase View dialog's Related tab, showing all purchases in the current basis period with their amounts, SC received, and post-purchase balances.
-- **Basis Period Definition:** Bounded by FULL redemptions (`more_remaining=0`). Period start = instant after most recent FULL redemption. Period end = next FULL redemption or open-ended.
-- **Delta Calculation:**
-  - `total_extra = actual_pre - expected_pre` (quantized to 0.01)
-  - `delta_extra = total_extra(current) - total_extra(previous_in_period)`
-  - Warn if: (1) `total_extra < 0` (negative always warns), OR (2) `delta_extra > 0` (positive increase)
-  - Warning shows both total_extra and delta when previous purchase exists in period
+  1. Implemented proper balance chain tracking: expected balance uses previous purchase's actual `starting_sc_balance` (not just sum of SC received)
+  2. Added "Full Basis Period" section to Purchase View dialog showing ALL purchases (past, current, future) in the basis period
+  3. Added View Purchase buttons for easy navigation through purchase chains
+  4. Simplified warnings: warn on ANY non-zero mismatch (no tolerance, no confusing delta display)
+
+- **Basis Period Rules (Clarified):**
+  - Period starts after most recent FULL redemption (`more_remaining=0`)
+  - Partial redemptions (`more_remaining>0`) do NOT start new period
+  - Example: Redeem 2500 SC but leave 200 SC → NOT full → period continues
+  - Subsequent purchases continue same basis period until next FULL redemption
+
+- **Balance Chain Logic (Critical Fix):**
+  - If previous purchase exists in basis period: `expected_pre = prev_purchase.starting_sc_balance`
+  - If first purchase in period: `expected_pre = compute_expected_balances()`
+  - This creates proper balance chain accounting for actual entered balances
+  - `total_extra = (actual_pre - expected_pre).quantize(Decimal("0.01"))`
+
+- **Warning Logic (Simplified):**
+  - Warn if `total_extra != 0` (any mismatch, no tolerance)
+  - Real-time label shows: "✓ Balance Check: OK" or "✗ Balance Check: X.XX SC HIGHER/LOWER than expected (Y.YY SC)"
+  - Submission warning dialog explains if mismatch indicates tracked loss or untracked wins
+
+- **Bug Fixes During Implementation:**
+  1. Fixed `exclude_purchase_id` not being passed when computing previous purchase's total_extra
+  2. Fixed expected balance using `compute_expected_balances` instead of actual balance chain
+  3. Fixed real-time label using old 0.50 tolerance logic instead of matching submission check
+  4. Removed confusing delta display per user feedback ("just show if balance matches or not")
+
+- **UI Enhancements:**
+  - Current purchase shown in **bold** in basis period table
+  - Table fills available space (min 3 rows visible, scales with content)
+  - View Purchase buttons styled like View Session buttons
+  - Clicking button highlights purchase in main table and opens its dialog
+
 - **Facade Methods Added:**
-  - `get_basis_period_start_for_purchase()`: finds most recent FULL redemption datetime before a purchase
-  - `get_basis_period_purchases()`: returns purchases in the same basis period, ordered by (date, time, id)
-  - `compute_purchase_total_extra()`: computes total_extra given entered balance values (not used in final implementation, but available for future use)
-- **Validation:** All 645 existing tests pass. No new tests added yet (requires follow-up scenario-based tests per Agent Quality Bar).
+  - `get_basis_period_start_for_purchase()`: finds most recent FULL redemption datetime
+  - `get_basis_period_purchases()`: returns ALL purchases in basis period (past, current, future), ordered by (date, time, id)
+  - `compute_purchase_total_extra()`: computes total_extra given entered balance values
+
+- **Validation:** All 645 tests pass. Updated `test_purchase_edit_balance_check_excludes_edited_purchase` to expect new balance chain logic.
 
 ```yaml
 id: 2026-02-05-01
