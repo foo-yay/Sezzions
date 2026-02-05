@@ -373,12 +373,13 @@ class PurchasesTab(QtWidgets.QWidget):
                     # Get its stored starting_sc_balance and sc_received to compute its total_extra
                     prev_actual_pre = prev_purchase.starting_sc_balance - prev_purchase.sc_received
                     
-                    # Get expected_pre for the previous purchase
+                    # Get expected_pre for the previous purchase (MUST exclude the previous purchase itself)
                     prev_expected_total, _ = self.facade.compute_expected_balances(
                         user_id=prev_purchase.user_id,
                         site_id=prev_purchase.site_id,
                         session_date=prev_purchase.purchase_date,
                         session_time=prev_purchase.purchase_time,
+                        exclude_purchase_id=prev_purchase.id,
                     )
                     prev_total_extra = (prev_actual_pre - prev_expected_total).quantize(Decimal("0.01"))
                     delta_extra = total_extra - prev_total_extra
@@ -535,12 +536,13 @@ class PurchasesTab(QtWidgets.QWidget):
                     # Get its stored starting_sc_balance and sc_received to compute its total_extra
                     prev_actual_pre = prev_purchase.starting_sc_balance - prev_purchase.sc_received
                     
-                    # Get expected_pre for the previous purchase
+                    # Get expected_pre for the previous purchase (MUST exclude the previous purchase itself)
                     prev_expected_total, _ = self.facade.compute_expected_balances(
                         user_id=prev_purchase.user_id,
                         site_id=prev_purchase.site_id,
                         session_date=prev_purchase.purchase_date,
                         session_time=prev_purchase.purchase_time,
+                        exclude_purchase_id=prev_purchase.id,
                     )
                     prev_total_extra = (prev_actual_pre - prev_expected_total).quantize(Decimal("0.01"))
                     delta_extra = total_extra - prev_total_extra
