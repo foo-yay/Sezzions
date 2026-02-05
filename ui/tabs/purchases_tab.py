@@ -342,6 +342,14 @@ class PurchasesTab(QtWidgets.QWidget):
                 pre_purchase_balance = Decimal(str(starting_sc)) - Decimal(str(sc_received))
                 total_extra = (pre_purchase_balance - Decimal(str(expected_total))).quantize(Decimal("0.01"))
                 
+                # DEBUG: Print values for troubleshooting
+                print(f"\n=== Purchase Balance Check DEBUG ===")
+                print(f"Post-purchase SC (entered): {starting_sc}")
+                print(f"SC received: {sc_received}")
+                print(f"Pre-purchase (calculated): {pre_purchase_balance}")
+                print(f"Expected pre-purchase: {expected_total}")
+                print(f"Total extra: {total_extra}")
+                
                 # Get previous purchases in this basis period to compute delta
                 period_purchases = self.facade.get_basis_period_purchases(
                     user_id=dialog.user_id,
@@ -350,6 +358,10 @@ class PurchasesTab(QtWidgets.QWidget):
                     purchase_time=purchase_time,
                     exclude_purchase_id=None  # No exclusion for new purchase
                 )
+                
+                print(f"Period purchases found: {len(period_purchases)}")
+                for i, p in enumerate(period_purchases):
+                    print(f"  Purchase {i+1}: ID={p.id}, Date={p.purchase_date}, Time={p.purchase_time}, Post-SC={p.starting_sc_balance}")
                 
                 # Compute delta_extra vs most recent purchase in period
                 delta_extra = total_extra
@@ -370,15 +382,24 @@ class PurchasesTab(QtWidgets.QWidget):
                     )
                     prev_total_extra = (prev_actual_pre - prev_expected_total).quantize(Decimal("0.01"))
                     delta_extra = total_extra - prev_total_extra
+                    
+                    print(f"Previous purchase total_extra: {prev_total_extra}")
+                    print(f"Delta: {delta_extra}")
                 
                 # Warn if: (1) negative mismatch, or (2) positive delta increase
                 should_warn = False
                 if total_extra < 0:
                     should_warn = True
                     warn_reason = "negative"
+                    print(f"WARN: negative total_extra")
                 elif delta_extra > 0:
                     should_warn = True
                     warn_reason = "increase"
+                    print(f"WARN: positive delta increase")
+                else:
+                    print(f"NO WARN: total_extra={total_extra}, delta_extra={delta_extra}")
+                
+                print("=" * 40 + "\n")
                 
                 if should_warn:
                     if warn_reason == "negative":
