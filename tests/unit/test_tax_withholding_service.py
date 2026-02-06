@@ -130,6 +130,31 @@ def test_bulk_recalc_overwrites_custom_when_requested(service, test_db, sample_u
     assert row["tax_withholding_amount"] == 20.0
 
 
+def test_apply_to_date_preserves_existing_custom_rate(service, test_db, sample_user):
+    _insert_daily_session(test_db, sample_user, "2026-01-01", "100.00")
+
+    # Seed a custom rate for the date.
+    test_db.execute(
+        "INSERT INTO daily_date_tax (session_date, net_daily_pnl, tax_withholding_rate_pct, tax_withholding_is_custom, tax_withholding_amount) VALUES (?, ?, ?, ?, ?)",
+        ("2026-01-01", 100.0, 30.0, 1, 30.0),
+    )
+
+    # Re-apply without specifying a custom rate: should preserve the custom rate.
+    service.apply_to_date("2026-01-01")
+
+    row = test_db.fetch_one(
+        """
+        SELECT net_daily_pnl, tax_withholding_rate_pct, tax_withholding_is_custom, tax_withholding_amount
+        FROM daily_date_tax WHERE session_date = ?
+        """,
+        ("2026-01-01",),
+    )
+    assert row["net_daily_pnl"] == 100.0
+    assert row["tax_withholding_rate_pct"] == 30.0
+    assert row["tax_withholding_is_custom"] == 1
+    assert row["tax_withholding_amount"] == 30.0
+
+
 def test_bulk_recalc_is_atomic_on_failure(service, test_db, sample_user, sample_site, monkeypatch):
     """Test that bulk recalc is atomic - failure rolls back all changes."""
     # Two daily sessions eligible for update.

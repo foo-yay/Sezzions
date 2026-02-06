@@ -324,44 +324,49 @@ class GameSessionService:
         session_time: str,
         exclude_purchase_id: Optional[int] = None
     ) -> Tuple[Decimal, Decimal]:
-        """Compute expected starting total/redeemable balances for a session
-        
-        Args:
-            exclude_purchase_id: Optional purchase ID to exclude from the calculation.
-                Used when editing a purchase to avoid including it in its own expected balance.
+        """Compute expected total/redeemable balances at a cutoff timestamp.
+
+        This method is used for *starting-balance expectations* (sessions and purchase balance checks).
+
+        Semantics:
+        - Start from the latest anchor before the cutoff:
+          1) explicit balance checkpoint (if available)
+          2) latest closed session ending balances
+          3) otherwise 0
+        - Apply events after that anchor and strictly before the cutoff.
+          Purchases are authoritative for total balance via their stored post-purchase balance.
+
+        When editing a purchase, pass exclude_purchase_id.
+        For deterministic behavior with same-timestamp purchases, purchases at the cutoff timestamp
+        are treated as ordered by ID; we include only those with ID < exclude_purchase_id.
         """
         expected_total = Decimal("0.00")
         expected_redeemable = Decimal("0.00")
 
-        def to_dt(d, t):
+        def to_dt(d: date, t: Optional[str]) -> datetime:
             time_str = t or "00:00:00"
             if len(time_str) == 5:
                 time_str = f"{time_str}:00"
             return datetime.combine(d, datetime.strptime(time_str, "%H:%M:%S").time())
 
         cutoff = to_dt(session_date, session_time)
-        checkpoint_dt = None
+        anchor_dt: Optional[datetime] = None
 
-        # DEBUG
-        print(f"[DEBUG compute_expected_balances] adjustment_service={self.adjustment_service}")
-        print(f"[DEBUG compute_expected_balances] user={user_id}, site={site_id}, date={session_date}, time={session_time}")
-
-        # Priority 1: Balance checkpoint adjustments (explicit anchors)
+        # Priority 1: explicit checkpoint
         if self.adjustment_service is not None:
             latest_checkpoint = self.adjustment_service.get_latest_checkpoint_before(
-                user_id, site_id, session_date, session_time
+                user_id,
+                site_id,
+                session_date,
+                session_time,
             )
-            print(f"[DEBUG] latest_checkpoint={latest_checkpoint}")
             if latest_checkpoint:
-                checkpoint_dt = to_dt(
-                    latest_checkpoint.effective_date,
-                    latest_checkpoint.effective_time
-                )
-                expected_total = latest_checkpoint.checkpoint_total_sc
-                expected_redeemable = latest_checkpoint.checkpoint_redeemable_sc
+                anchor_dt = to_dt(latest_checkpoint.effective_date, latest_checkpoint.effective_time)
+                expected_total = Decimal(str(latest_checkpoint.checkpoint_total_sc))
+                expected_redeemable = Decimal(str(latest_checkpoint.checkpoint_redeemable_sc))
 
-        # Priority 2: Last closed session as checkpoint (legacy behavior, only if no adjustment checkpoint)
-        if checkpoint_dt is None:
+        # Priority 2: last closed session
+        if anchor_dt is None:
             sessions = self.session_repo.get_by_user_and_site(user_id, site_id)
             for sess in sessions:
                 if sess.status != "Closed":
@@ -369,47 +374,61 @@ class GameSessionService:
                 sess_end_date = sess.end_date or sess.session_date
                 sess_end_time = sess.end_time or sess.session_time
                 sess_dt = to_dt(sess_end_date, sess_end_time)
-                if sess_dt < cutoff and (checkpoint_dt is None or sess_dt > checkpoint_dt):
-                    checkpoint_dt = sess_dt
+                if sess_dt < cutoff and (anchor_dt is None or sess_dt > anchor_dt):
+                    anchor_dt = sess_dt
                     expected_total = Decimal(str(sess.ending_balance))
                     expected_redeemable = Decimal(str(sess.ending_redeemable))
 
-        # Fall back to last purchase starting balance checkpoint
-        # NOTE: starting_sc_balance is the POST-purchase balance (what user sees on site after purchase)
-        # We use the purchase BEFORE this as the checkpoint, not the purchase itself
-        if checkpoint_dt is None and self.purchase_repo is not None:
-            purchases = self.purchase_repo.get_by_user_and_site(user_id, site_id)
-            for p in purchases:
-                p_dt = to_dt(p.purchase_date, p.purchase_time)
-                # Only use purchases that are BEFORE the cutoff as checkpoints
-                # Don't use starting_sc_balance as a checkpoint - it causes double-counting
-                if p_dt < cutoff:
-                    pass  # Purchases will be added in the next section
+        # Load events after the anchor and before the cutoff.
+        purchases = self.purchase_repo.get_by_user_and_site(user_id, site_id) if self.purchase_repo is not None else []
+        redemptions = self.redemption_repo.get_by_user_and_site(user_id, site_id) if self.redemption_repo is not None else []
 
-        # Apply purchases/redemptions after checkpoint up to cutoff
-        if self.purchase_repo is not None:
-            purchases = self.purchase_repo.get_by_user_and_site(user_id, site_id)
-            for p in purchases:
-                # Skip the excluded purchase if specified
-                if exclude_purchase_id is not None and p.id == exclude_purchase_id:
-                    continue
-                p_dt = to_dt(p.purchase_date, p.purchase_time)
-                if p_dt <= cutoff and (checkpoint_dt is None or p_dt > checkpoint_dt):
-                    sc_amount = Decimal(str(p.sc_received))
-                    expected_total += sc_amount
+        # Sort deterministically (datetime then id)
+        purchases_sorted = sorted(
+            purchases,
+            key=lambda p: (to_dt(p.purchase_date, p.purchase_time), int(p.id or 0)),
+        )
+        redemptions_sorted = sorted(
+            redemptions,
+            key=lambda r: (to_dt(r.redemption_date, r.redemption_time), int(r.id or 0)),
+        )
 
-        if self.redemption_repo is not None:
-            redemptions = self.redemption_repo.get_by_user_and_site(user_id, site_id)
-            for r in redemptions:
-                r_dt = to_dt(r.redemption_date, r.redemption_time)
-                if r_dt <= cutoff and (checkpoint_dt is None or r_dt > checkpoint_dt):
-                    amount = Decimal(str(r.amount))
-                    expected_total -= amount
-                    expected_redeemable -= amount
+        # Apply redemptions (delta-based) first by walking time; purchases will overwrite total.
+        # This is safe because purchase.starting_sc_balance is authoritative post-purchase.
+        for r in redemptions_sorted:
+            r_dt = to_dt(r.redemption_date, r.redemption_time)
+            if anchor_dt is not None and r_dt <= anchor_dt:
+                continue
+            if not (r_dt < cutoff):
+                continue
+            amount = Decimal(str(r.amount))
+            expected_total -= amount
+            expected_redeemable -= amount
+
+        for p in purchases_sorted:
+            p_dt = to_dt(p.purchase_date, p.purchase_time)
+            if anchor_dt is not None and p_dt <= anchor_dt:
+                continue
+
+            # Only apply purchases strictly before cutoff.
+            # When editing a purchase, allow earlier purchases at the same timestamp (id order).
+            if p_dt < cutoff:
+                pass
+            elif exclude_purchase_id is not None and p_dt == cutoff and int(p.id) < int(exclude_purchase_id):
+                pass
+            else:
+                continue
+
+            if exclude_purchase_id is not None and p.id == exclude_purchase_id:
+                continue
+
+            expected_total = Decimal(str(p.starting_sc_balance))
+            # Best-effort: treat redeemable as tracking the same total when purchases are the last
+            # authoritative balance entry in the chain.
+            expected_redeemable = max(expected_redeemable, expected_total)
 
         expected_total = max(Decimal("0.00"), expected_total)
         expected_redeemable = max(Decimal("0.00"), expected_redeemable)
-        
         return expected_total, expected_redeemable
     
     def _calculate_session_pl(self, session: GameSession, user_id: int, site_id: int) -> None:
