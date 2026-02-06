@@ -16,9 +16,10 @@ from ui.tabs.tools_tab import ToolsTab
 class SetupTab(QtWidgets.QWidget):
     """Container tab for all setup/configuration tabs"""
     
-    def __init__(self, facade: AppFacade):
+    def __init__(self, facade: AppFacade, settings=None):
         super().__init__()
         self.facade = facade
+        self.settings = settings
         
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(12, 16, 12, 12)
@@ -56,7 +57,8 @@ class SetupTab(QtWidgets.QWidget):
         self.redemption_method_types_tab = RedemptionMethodTypesTab(facade)
         self.game_types_tab = GameTypesTab(facade)
         self.games_tab = GamesTab(facade)
-        self.tools_tab = ToolsTab(facade)
+        # Pass settings to ToolsTab for section state persistence
+        self.tools_tab = ToolsTab(facade, settings=self.settings)
 
         # Keep Setup data views consistent after DB restore/reset from Tools.
         # ToolsTab emits data_changed after destructive DB operations.

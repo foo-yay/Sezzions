@@ -12,6 +12,42 @@ Rules:
 ## 2026-02-06
 
 ```yaml
+id: 2026-02-06-06
+type: bugfix
+areas: [ui, services]
+summary: "Repair Mode QA fixes: UI persistence, name resolution, stale pair updates, and architectural cleanup"
+pr: "#75"
+files_changed:
+  - ui/repair_mode_dialog.py
+  - ui/tabs/tools_tab.py
+  - ui/main_window.py
+  - ui/tabs/setup_tab.py
+  - services/repair_mode_service.py
+  - services/game_session_service.py
+  - app_facade.py
+```
+
+Notes:
+- **Manual QA Phase:** Comprehensive hands-on testing revealed 15 bugs not caught by automated tests (726 tests passing)
+- **Signal Handling:** Fixed checkbox not enabling button (stateChanged → toggled signal in RepairModeConfirmDialog)
+- **Method Names:** Fixed AttributeErrors (get_maintenance_mode → is_maintenance_mode, QTabBar.clear() → removeTab loop)
+- **Widget Lifecycle:** Fixed RuntimeError from deleted widget by changing message box parent to main_window instead of self (after tab refresh)
+- **Name Resolution:** Fixed "Unknown User/Site" in stale pair dialogs:
+  - Updated RepairModeService to accept db_manager for name lookups
+  - Fixed User model attribute (username → name)
+  - Fixed Site model attribute (site_name → name)
+- **Stale Pair Updates:** Fixed stale pair count not updating after purchase edits by adding tools_tab to refresh_all_tabs list
+- **Rebuild Stale Pairs:** Fixed AttributeError (_run_recalculation didn't exist) by rewriting _on_rebuild_stale_pairs to properly create RecalculationWorker instances
+- **Tax Withholding:** Removed invalid apply_to_session_model() call (tax withholding is calculated at date level, not per-session)
+- **UI Button Visibility:** Changed repair mode buttons to hide() when disabled (not just setEnabled(False)) for cleaner UX
+- **Stale Pair Clearing:** Added automatic clearing of stale pairs after "Recalculate Everything" completes
+- **View Persistence:** Added Setup sub-tab index persistence (saves/restores which Setup sub-tab is active across app restarts and repair mode toggles)
+- **Section State Persistence:** Added expand/collapse state persistence for all Tools sections (Repair Mode, Recalculation, CSV, Adjustments, Database)
+- **Settings Propagation:** Passed settings object through MainWindow → SetupTab → ToolsTab for reliable persistence
+- **Default Collapsed:** Changed all Tools sections to start collapsed by default for cleaner initial view
+- **Known Issue (Follow-up):** Window can expand beyond screen boundaries when all Tools sections expanded; needs scroll area implementation (tracked in new Issue)
+
+```yaml
 id: 2026-02-06-05
 type: feature
 areas: [services, ui, app_facade]

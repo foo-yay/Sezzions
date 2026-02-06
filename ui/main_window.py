@@ -28,9 +28,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.facade = facade
         self.settings = Settings()
         
-        # Wire Repair Mode service to facade with settings
+        # Wire Repair Mode service to facade with settings and db_manager
         from services.repair_mode_service import RepairModeService
-        self.facade.repair_mode_service = RepairModeService(self.settings)
+        self.facade.repair_mode_service = RepairModeService(self.settings, self.facade.db)
         
         # Check initial repair mode state for window title
         self.repair_mode = self.facade.repair_mode_service.is_enabled()
@@ -170,6 +170,18 @@ class MainWindow(QtWidgets.QMainWindow):
         last_tab = self.settings.get('last_tab', 0)
         if last_tab < self.tab_bar.count():
             self.tab_bar.setCurrentIndex(last_tab)
+        
+        # Restore last Setup sub-tab
+        if hasattr(self, 'setup_tab') and hasattr(self.setup_tab, 'sub_tabs'):
+            last_setup_subtab = self.settings.get('last_setup_subtab', 0)
+            if last_setup_subtab < self.setup_tab.sub_tabs.count():
+                self.setup_tab.sub_tabs.setCurrentIndex(last_setup_subtab)
+            # Connect to track future changes
+            self.setup_tab.sub_tabs.currentChanged.connect(self._on_setup_subtab_changed)
+    
+    def _on_setup_subtab_changed(self, index: int):
+        """Save Setup sub-tab selection when it changes"""
+        self.settings.set('last_setup_subtab', index)
 
         # Register for data change events (unified refresh system)
         if hasattr(self.facade, "add_data_change_listener"):
@@ -243,6 +255,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings.set('window_width', self.width())
         self.settings.set('window_height', self.height())
         self.settings.set('last_tab', self.tab_bar.currentIndex())
+        # Save Setup sub-tab if applicable
+        if hasattr(self, 'setup_tab') and hasattr(self.setup_tab, 'sub_tabs'):
+            self.settings.set('last_setup_subtab', self.setup_tab.sub_tabs.currentIndex())
         event.accept()
     
     def _check_data_integrity(self):
@@ -274,7 +289,7 @@ class MainWindow(QtWidgets.QMainWindow):
         
         if self.maintenance_mode:
             # Maintenance mode: only show Setup tab (which includes Tools)
-            self.setup_tab = SetupTab(self.facade)
+            self.setup_tab = SetupTab(self.facade, settings=self.settings)
             self.tab_bar.addTab("⚙️ Setup")
             self.stack.addWidget(self.setup_tab)
             self._tab_index["setup"] = 0
@@ -329,7 +344,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._tab_index["expenses"] = self.tab_bar.count() - 1
         
         # Setup tab (contains Users/Sites/Cards/etc. + Tools)
-        self.setup_tab = SetupTab(self.facade)
+        self.setup_tab = SetupTab(self.facade, settings=self.settings)
         self.tab_bar.addTab("⚙️ Setup")
         self.stack.addWidget(self.setup_tab)
         self._tab_index["setup"] = self.tab_bar.count() - 1
@@ -565,6 +580,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.unrealized_tab,
             self.realized_tab,
             self.setup_tab,
+            self.tools_tab,
         ):
             if hasattr(widget, "refresh_data"):
                 try:
@@ -607,7 +623,8 @@ class MainWindow(QtWidgets.QMainWindow):
         while self.stack.count() > 0:
             widget = self.stack.widget(0)
             self.stack.removeWidget(widget)
-        self.tab_bar.clear()
+        while self.tab_bar.count() > 0:
+            self.tab_bar.removeTab(0)
         
         # Clear any existing banners
         layout = self.main_content.layout()
@@ -623,6 +640,14 @@ class MainWindow(QtWidgets.QMainWindow):
         # Restore tab selection
         if current_tab_name and current_tab_name in self._tab_index:
             self.tab_bar.setCurrentIndex(self._tab_index[current_tab_name])
+        
+        # Restore Setup sub-tab selection
+        if hasattr(self, 'setup_tab') and hasattr(self.setup_tab, 'sub_tabs'):
+            last_setup_subtab = self.settings.get('last_setup_subtab', 0)
+            if last_setup_subtab < self.setup_tab.sub_tabs.count():
+                self.setup_tab.sub_tabs.setCurrentIndex(last_setup_subtab)
+            # Reconnect signal handler after tab recreation
+            self.setup_tab.sub_tabs.currentChanged.connect(self._on_setup_subtab_changed)
     
     def _validate_data(self):
         """Run data validation"""

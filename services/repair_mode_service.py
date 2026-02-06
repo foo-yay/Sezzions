@@ -37,14 +37,16 @@ class RepairModeService:
     Stale pairs are persisted in settings.json via the Settings class.
     """
     
-    def __init__(self, settings):
+    def __init__(self, settings, db_manager=None):
         """
         Initialize service with settings manager.
         
         Args:
             settings: Settings instance (duck-typed, must support get/set)
+            db_manager: Optional DatabaseManager for resolving user/site names
         """
         self.settings = settings
+        self.db_manager = db_manager
     
     def is_enabled(self) -> bool:
         """Check if Repair Mode is currently enabled."""
@@ -58,19 +60,19 @@ class RepairModeService:
         """Get all currently stale pairs."""
         stale_data = self.settings.get('repair_mode_stale_pairs', {})
         
-        # Try to get user/site names from repositories (may not be available in tests)
-        try:
-            from repositories.user_repository import UserRepository
-            from repositories.site_repository import SiteRepository
-            from repositories.database import get_connection
-            conn = get_connection()
-            user_repo = UserRepository(conn)
-            site_repo = SiteRepository(conn)
-            users_dict = {u.id: u.username for u in user_repo.get_all()}
-            sites_dict = {s.id: s.site_name for s in site_repo.get_all()}
-        except:
-            users_dict = {}
-            sites_dict = {}
+        # Try to get user/site names from repositories if db_manager is available
+        users_dict = {}
+        sites_dict = {}
+        if self.db_manager:
+            try:
+                from repositories.user_repository import UserRepository
+                from repositories.site_repository import SiteRepository
+                user_repo = UserRepository(self.db_manager)
+                site_repo = SiteRepository(self.db_manager)
+                users_dict = {u.id: u.name for u in user_repo.get_all()}
+                sites_dict = {s.id: s.name for s in site_repo.get_all()}
+            except Exception:
+                pass  # Fall back to empty dicts
         
         pairs = []
         for key, data in stale_data.items():

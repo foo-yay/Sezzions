@@ -49,7 +49,7 @@ class RepairModeConfirmDialog(QDialog):
         # Acknowledgment checkbox
         self.ack_checkbox = QCheckBox("I understand derived calculations will not update automatically.")
         self.ack_checkbox.setStyleSheet("font-weight: bold;")
-        self.ack_checkbox.stateChanged.connect(self._on_checkbox_changed)
+        self.ack_checkbox.toggled.connect(self._on_checkbox_toggled)
         layout.addWidget(self.ack_checkbox)
         
         # Buttons
@@ -73,6 +73,6 @@ class RepairModeConfirmDialog(QDialog):
         
         layout.addLayout(button_layout)
     
-    def _on_checkbox_changed(self, state):
+    def _on_checkbox_toggled(self, checked):
         """Enable/disable the Enable button based on checkbox state."""
-        self.enable_button.setEnabled(state == Qt.Checked)
+        self.enable_button.setEnabled(checked)

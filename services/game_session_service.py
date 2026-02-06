@@ -557,8 +557,8 @@ class GameSessionService:
             sess.basis_consumed = basis_consumed
             sess.net_taxable_pl = net_taxable_pl
 
-            if self.tax_withholding_service is not None:
-                self.tax_withholding_service.apply_to_session_model(sess)
+            # Tax withholding is calculated at DATE level (not per-session)
+            # via TaxWithholdingService.apply_to_date() or bulk_recalculate()
 
             self.session_repo.update(sess)
 
