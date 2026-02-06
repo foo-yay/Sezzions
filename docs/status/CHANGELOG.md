@@ -18,11 +18,13 @@ areas: [ui]
 summary: "Redemptions table shows Cost Basis and Unbased columns"
 files_changed:
   - ui/tabs/redemptions_tab.py
+  - repositories/redemption_repository.py
 ```
 
 Notes:
 - Added Cost Basis and Unbased columns in the Redemptions table.
 - Order is Cost Basis before Amount, and Unbased after Amount.
+- Values are now populated from FIFO allocation totals and realized transaction cost basis.
 
 ```yaml
 id: 2026-02-06-09

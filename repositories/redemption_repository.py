@@ -35,6 +35,12 @@ class RedemptionRepository:
                      s.name as site_name,
                      rm.name as method_name,
                      rm.method_type as method_type,
+                     (SELECT COALESCE(SUM(ra.allocated_amount), 0)
+                      FROM redemption_allocations ra
+                      WHERE ra.redemption_id = r.id) AS allocated_basis,
+                     (SELECT COALESCE(SUM(rt.cost_basis), 0)
+                      FROM realized_transactions rt
+                      WHERE rt.redemption_id = r.id) AS realized_cost_basis,
                      EXISTS(
                          SELECT 1 FROM redemption_allocations ra
                          WHERE ra.redemption_id = r.id
@@ -201,6 +207,11 @@ class RedemptionRepository:
             redemption.method_name = row['method_name']
         if 'method_type' in row.keys():
             redemption.method_type = row['method_type']
+
+        if 'allocated_basis' in row.keys():
+            redemption.allocated_basis = Decimal(str(row['allocated_basis']))
+        if 'realized_cost_basis' in row.keys():
+            redemption.realized_cost_basis = Decimal(str(row['realized_cost_basis']))
 
         if 'has_fifo_allocation' in row.keys():
             redemption._has_fifo_allocation = bool(row['has_fifo_allocation'])

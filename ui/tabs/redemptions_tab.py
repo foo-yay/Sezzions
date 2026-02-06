@@ -189,11 +189,39 @@ class RedemptionsTab(QtWidgets.QWidget):
                 site = getattr(redemption, 'site_name', None) or "—"
                 self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(site))
 
-                # Cost Basis
-                if redemption.cost_basis is None:
+                # Cost Basis / Unbased
+                amount_value = Decimal(str(redemption.amount))
+                allocated_basis = getattr(redemption, "allocated_basis", None)
+                if allocated_basis is not None:
+                    try:
+                        allocated_basis = Decimal(str(allocated_basis))
+                    except Exception:
+                        allocated_basis = None
+                realized_cost_basis = getattr(redemption, "realized_cost_basis", None)
+                if realized_cost_basis is not None:
+                    try:
+                        realized_cost_basis = Decimal(str(realized_cost_basis))
+                    except Exception:
+                        realized_cost_basis = None
+
+                if getattr(redemption, "is_free_sc", False):
+                    cost_basis_value = Decimal("0")
+                    unbased_value = amount_value
+                else:
+                    cost_basis_value = realized_cost_basis
+                    if cost_basis_value is None and allocated_basis is not None:
+                        cost_basis_value = allocated_basis
+                    if allocated_basis is None:
+                        unbased_value = None
+                    else:
+                        unbased_value = amount_value - allocated_basis
+                        if unbased_value < Decimal("0"):
+                            unbased_value = Decimal("0")
+
+                if cost_basis_value is None:
                     cost_basis_display = "—"
                 else:
-                    cost_basis_display = f"${float(redemption.cost_basis):.2f}"
+                    cost_basis_display = f"${float(cost_basis_value):.2f}"
                 cost_basis_item = QtWidgets.QTableWidgetItem(cost_basis_display)
                 cost_basis_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
                 self.table.setItem(row, 3, cost_basis_item)
@@ -205,14 +233,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                 self.table.setItem(row, 4, amount_item)
 
                 # Unbased
-                if redemption.cost_basis is None:
-                    unbased_display = "—"
-                else:
-                    try:
-                        unbased_value = Decimal(str(redemption.amount)) - Decimal(str(redemption.cost_basis))
-                    except Exception:
-                        unbased_value = None
-                    unbased_display = "—" if unbased_value is None else f"${float(unbased_value):.2f}"
+                unbased_display = "—" if unbased_value is None else f"${float(unbased_value):.2f}"
                 unbased_item = QtWidgets.QTableWidgetItem(unbased_display)
                 unbased_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
                 self.table.setItem(row, 5, unbased_item)
@@ -276,20 +297,40 @@ class RedemptionsTab(QtWidgets.QWidget):
             for r in self.redemptions:
                 receipt_status = "pending" if not r.receipt_date else "received"
                 processed_status = "processed" if r.processed else "unprocessed"
-                if r.cost_basis is None:
-                    unbased_value = None
-                else:
+                amount_value = Decimal(str(r.amount))
+                allocated_basis = getattr(r, "allocated_basis", None)
+                if allocated_basis is not None:
                     try:
-                        unbased_value = Decimal(str(r.amount)) - Decimal(str(r.cost_basis))
+                        allocated_basis = Decimal(str(allocated_basis))
                     except Exception:
+                        allocated_basis = None
+                realized_cost_basis = getattr(r, "realized_cost_basis", None)
+                if realized_cost_basis is not None:
+                    try:
+                        realized_cost_basis = Decimal(str(realized_cost_basis))
+                    except Exception:
+                        realized_cost_basis = None
+
+                if getattr(r, "is_free_sc", False):
+                    cost_basis_value = Decimal("0")
+                    unbased_value = amount_value
+                else:
+                    cost_basis_value = realized_cost_basis
+                    if cost_basis_value is None and allocated_basis is not None:
+                        cost_basis_value = allocated_basis
+                    if allocated_basis is None:
                         unbased_value = None
+                    else:
+                        unbased_value = amount_value - allocated_basis
+                        if unbased_value < Decimal("0"):
+                            unbased_value = Decimal("0")
                 parts = [
                     str(r.redemption_date),
                     getattr(r, 'user_name', '') or '',
                     getattr(r, 'site_name', '') or '',
                     getattr(r, 'method_name', '') or '',
                     str(r.amount),
-                    str(r.cost_basis) if r.cost_basis is not None else '',
+                    str(cost_basis_value) if cost_basis_value is not None else '',
                     str(unbased_value) if unbased_value is not None else '',
                     receipt_status,
                     processed_status,
