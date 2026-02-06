@@ -69,35 +69,50 @@ LIGHT_THEME = Theme("Light", {
 
 # Dark theme
 DARK_THEME = Theme("Dark", {
-    'bg': '#1e1e1e',
-    'surface': '#252525',
-    'surface2': '#2d2d2d',
-    'border': '#3c3c3c',
-    'input_bg': '#2b2b2b',
-    'text': '#e0e0e0',
-    'text_muted': '#b0b0b0',
-    'accent': '#4fc3f7',
-    'accent_hover': '#38b2e6',
-    'selection': '#0d47a1',
-    'focus': '#4fc3f7',
-    'scrollbar': '#4a4a4a',
+    'bg': '#111111',           # --color-background
+    'surface': '#19191b',      # --gray-2
+    'surface2': '#222325',     # --gray-3
+    'border': '#303136',       # --gray-5
+    'input_bg': '#222325',     # --gray-3
+    'text': '#eeeef0',         # --gray-12
+    'text_muted': '#b2b3bd',   # --gray-11
+    'accent': '#3d63dd',       # --blue-9
+    'accent_hover': '#3f5cb0', # --blue-10
+    'selection': '#243974',    # --blue-5
+    'focus': '#93b4ff',        # --blue-11
+    'scrollbar': '#5f606a',    # --gray-8
 })
 
+# Custom theme (example of adding more themes)
+CUSTOM_THEME = Theme("Custom", {
+    'bg': '#FDFDFE',
+    'surface': '#EFF0F3',
+    'surface2': '#EDF2FE',
+    'border': '#BDD1FF',
+    'input_bg': '#ffffff',
+    'text': '#1E1F24',
+    'text_muted': '#B9BBC6',
+    'accent': '#395BC7',
+    'accent_hover': '#87A5EF',
+    'selection': '#395BC7',
+    'focus': '#90caf9',
+    'scrollbar': '#90a4ae',
+})
 
 # Blue theme (example of adding more themes)
 BLUE_THEME = Theme("Blue", {
-    'bg': '#e3f2fd',
-    'surface': '#edf4ff',
-    'surface2': '#dbe9ff',
-    'border': '#90caf9',
-    'input_bg': '#ffffff',
-    'text': '#0d47a1',
-    'text_muted': '#37517a',
-    'accent': '#1976d2',
-    'accent_hover': '#1565c0',
-    'selection': '#bbdefb',
-    'focus': '#90caf9',
-    'scrollbar': '#90a4ae',
+    'bg': '#ffffff',            # --color-background
+    'surface': '#f7f9ff',       # --blue-2
+    'surface2': '#edf2fe',      # --blue-3
+    'border': '#dfeaff',        # --blue-4
+    'input_bg': '#fdfdfe',      # --blue-1
+    'text': '#1e1f24',          # --gray-12
+    'text_muted': '#62636c',    # --gray-11
+    'accent': '#3d63dd',        # --blue-9
+    'accent_hover': '#3657c3',  # --blue-10
+    'selection': '#d0dfff',     # --blue-5
+    'focus': '#a6bff9',         # --blue-7
+    'scrollbar': '#b9bbc6',     # --gray-8
 })
 
 
@@ -106,6 +121,7 @@ THEMES = {
     'Light': LIGHT_THEME,
     'Dark': DARK_THEME,
     'Blue': BLUE_THEME,
+    'Custom': CUSTOM_THEME,
 }
 
 
