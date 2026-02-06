@@ -87,6 +87,7 @@ class ToolsTab(QWidget):
         
     def _setup_ui(self):
         """Setup the UI components"""
+        self.setObjectName("ToolsTabBackground")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
@@ -173,19 +174,7 @@ class ToolsTab(QWidget):
         header_btn.setText(title)
         header_btn.setCheckable(True)
         header_btn.setChecked(expanded)
-        header_btn.setStyleSheet("""
-            QToolButton {
-                border: none;
-                background: transparent;
-                font-weight: bold;
-                font-size: 13px;
-                text-align: left;
-                padding: 8px;
-            }
-            QToolButton:hover {
-                background-color: rgba(255, 255, 255, 0.05);
-            }
-        """)
+        header_btn.setObjectName("CollapsibleHeader")
         header_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         header_btn.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
         
@@ -638,15 +627,6 @@ class ToolsTab(QWidget):
         completer.setCaseSensitivity(Qt.CaseInsensitive)
         completer.setFilterMode(Qt.MatchContains)
         completer.setCompletionMode(QCompleter.PopupCompletion)
-        
-        # Style the popup
-        popup = QListView()
-        popup.setStyleSheet(
-            "QListView { background: palette(base); color: palette(text); }"
-            "QListView::item:selected { background: palette(highlight); color: palette(highlighted-text); }"
-        )
-        completer.setPopup(popup)
-        
         combo.setCompleter(completer)
         line_edit = combo.lineEdit()
         if line_edit:

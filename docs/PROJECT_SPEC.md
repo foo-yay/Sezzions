@@ -224,6 +224,12 @@ UI rules:
 - Prefer View-first dialog flows; edits are deliberate.
 - Bulk actions and destructive actions require confirmation.
 
+Window Constraints (Issue #76):
+- Tools tab wrapped in QScrollArea to prevent off-screen expansion
+- Collapsible sections can be expanded without resizing window beyond screen bounds
+- Scroll bars appear automatically when content exceeds visible area
+- Tools tab styling follows global theme patterns (no local overrides)
+
 Game Sessions convenience:
 - Sezzions keeps **1 game per session** (accounting clarity), but provides a fast workflow to chain sessions across games:
   - End Session dialog: **"End & Start New"**

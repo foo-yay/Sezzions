@@ -71,7 +71,13 @@ class SetupTab(QtWidgets.QWidget):
         self.sub_tabs.addTab(self.redemption_methods_tab, "💵 Redemption Methods")
         self.sub_tabs.addTab(self.game_types_tab, "🎯 Game Types")
         self.sub_tabs.addTab(self.games_tab, "🎮 Games")
-        self.sub_tabs.addTab(self.tools_tab, "🔧 Tools")
+        
+        # Wrap Tools tab in scroll area to prevent window expansion (Issue #76)
+        tools_scroll = QtWidgets.QScrollArea()
+        tools_scroll.setWidget(self.tools_tab)
+        tools_scroll.setWidgetResizable(True)
+        tools_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.sub_tabs.addTab(tools_scroll, "🔧 Tools")
         
         card = QtWidgets.QFrame()
         card.setObjectName("SetupCard")
