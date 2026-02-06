@@ -1,12 +1,12 @@
 """Dialogs for creating and managing adjustments (basis corrections & balance checkpoints)."""
 
 from decimal import Decimal, InvalidOperation
-from datetime import datetime
+from datetime import datetime, date
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QPushButton, QLabel, QLineEdit, QTextEdit, QComboBox,
     QDateEdit, QTimeEdit, QTableWidget, QTableWidgetItem,
-    QHeaderView, QAbstractItemView, QMessageBox, QWidget
+    QHeaderView, QAbstractItemView, QMessageBox, QWidget, QCompleter, QListView, QApplication, QGridLayout
 )
 from PySide6.QtCore import Qt, QDate, QTime, Signal
 from PySide6.QtGui import QColor
@@ -20,11 +20,20 @@ class BasisAdjustmentDialog(QDialog):
         self.facade = facade
         self.adjustment = None
         self.setWindowTitle("New Basis Adjustment")
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(600)
         self._setup_ui()
+        self._update_completers()
+        
+        # Connect validation
+        self.user_combo.currentIndexChanged.connect(self._validate_inline)
+        self.site_combo.currentIndexChanged.connect(self._validate_inline)
+        self.delta_input.textChanged.connect(self._validate_inline)
+        self.reason_input.textChanged.connect(self._validate_inline)
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
         
         # Description
         desc = QLabel(
@@ -36,61 +45,135 @@ class BasisAdjustmentDialog(QDialog):
         desc.setObjectName("HelperText")
         layout.addWidget(desc)
         
-        layout.addSpacing(10)
+        layout.addSpacing(4)
         
-        # Form
-        form = QFormLayout()
-        form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        # Main section
+        section = QWidget()
+        section.setObjectName("SectionBackground")
+        grid = QGridLayout(section)
+        grid.setContentsMargins(12, 12, 12, 12)
+        grid.setHorizontalSpacing(30)
+        grid.setVerticalSpacing(10)
+        
+        row = 0
         
         # User
+        user_label = QLabel("User:")
+        user_label.setObjectName("FieldLabel")
+        user_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(user_label, row, 0)
+        
         self.user_combo = QComboBox()
+        self.user_combo.setEditable(True)
+        self.user_combo.lineEdit().setPlaceholderText("Choose...")
         self._load_users()
-        form.addRow("User:", self.user_combo)
+        self.user_combo.setMinimumWidth(180)
+        grid.addWidget(self.user_combo, row, 1)
         
         # Site
+        site_label = QLabel("Site:")
+        site_label.setObjectName("FieldLabel")
+        site_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(site_label, row, 2)
+        
         self.site_combo = QComboBox()
+        self.site_combo.setEditable(True)
+        self.site_combo.lineEdit().setPlaceholderText("Choose...")
         self._load_sites()
-        form.addRow("Site:", self.site_combo)
+        self.site_combo.setMinimumWidth(180)
+        grid.addWidget(self.site_combo, row, 3)
+        
+        row += 1
         
         # Effective Date
+        date_label = QLabel("Effective Date:")
+        date_label.setObjectName("FieldLabel")
+        date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(date_label, row, 0)
+        
         self.date_edit = QDateEdit()
         self.date_edit.setCalendarPopup(True)
+        self.date_edit.setDisplayFormat("MM/dd/yyyy")
         self.date_edit.setDate(QDate.currentDate())
-        form.addRow("Effective Date:", self.date_edit)
+        grid.addWidget(self.date_edit, row, 1)
         
-        # Effective Time
+        # Effective Time with NOW button
+        time_label = QLabel("Effective Time:")
+        time_label.setObjectName("FieldLabel")
+        time_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(time_label, row, 2)
+        
+        time_container = QWidget()
+        time_layout = QHBoxLayout(time_container)
+        time_layout.setContentsMargins(0, 0, 0, 0)
+        time_layout.setSpacing(4)
+        
         self.time_edit = QTimeEdit()
+        self.time_edit.setDisplayFormat("HH:mm")
         self.time_edit.setTime(QTime(0, 0))
-        form.addRow("Effective Time:", self.time_edit)
+        time_layout.addWidget(self.time_edit)
+        
+        now_btn = QPushButton("NOW")
+        now_btn.clicked.connect(self._set_now)
+        now_btn.setFixedWidth(60)
+        time_layout.addWidget(now_btn)
+        
+        grid.addWidget(time_container, row, 3)
+        
+        row += 1
         
         # Delta (positive or negative)
+        delta_label = QLabel("Basis Delta ($):")
+        delta_label.setObjectName("FieldLabel")
+        delta_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(delta_label, row, 0)
+        
         self.delta_input = QLineEdit()
         self.delta_input.setPlaceholderText("e.g., -20.00 or 15.50")
-        form.addRow("Basis Delta (USD):", self.delta_input)
+        self.delta_input.setFixedWidth(140)
+        grid.addWidget(self.delta_input, row, 1)
+        
+        row += 1
         
         # Reason (required)
+        reason_label = QLabel("Reason:")
+        reason_label.setObjectName("FieldLabel")
+        reason_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(reason_label, row, 0)
+        
         self.reason_input = QLineEdit()
         self.reason_input.setPlaceholderText("e.g., Fee correction")
-        form.addRow("Reason (required):", self.reason_input)
+        grid.addWidget(self.reason_input, row, 1, 1, 3)
+        
+        row += 1
         
         # Notes (optional)
-        self.notes_input = QTextEdit()
-        self.notes_input.setPlaceholderText("Optional additional notes")
-        self.notes_input.setMaximumHeight(80)
-        form.addRow("Notes:", self.notes_input)
+        notes_label = QLabel("Notes:")
+        notes_label.setObjectName("FieldLabel")
+        notes_label.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        grid.addWidget(notes_label, row, 0)
         
-        layout.addLayout(form)
+        self.notes_input = QTextEdit()
+        self.notes_input.setPlaceholderText("Optional...")
+        self.notes_input.setMaximumHeight(80)
+        grid.addWidget(self.notes_input, row, 1, 1, 3)
+        
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
+        
+        layout.addWidget(section)
         layout.addSpacing(10)
         
         # Buttons
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         
-        cancel_btn = QPushButton("Cancel")
+        cancel_btn = QPushButton("❌ Cancel")
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
         
-        create_btn = QPushButton("Create Adjustment")
+        create_btn = QPushButton("✅ Create Adjustment")
+        create_btn.setObjectName("PrimaryButton")
         create_btn.setDefault(True)
         create_btn.clicked.connect(self._on_create)
         btn_layout.addWidget(create_btn)
@@ -99,37 +182,101 @@ class BasisAdjustmentDialog(QDialog):
     
     def _load_users(self):
         users = self.facade.user_service.list_active_users()
+        self.user_combo.addItem("")  # Empty first item
         for user in users:
             self.user_combo.addItem(user.name, user.id)
+        self.user_combo.setCurrentIndex(-1)  # No default
     
     def _load_sites(self):
         sites = self.facade.site_service.list_active_sites()
+        self.site_combo.addItem("")  # Empty first item
         for site in sites:
             self.site_combo.addItem(site.name, site.id)
+        self.site_combo.setCurrentIndex(-1)  # No default
+    
+    def _update_completers(self):
+        """Add auto-complete to combo boxes"""
+        for combo in (self.user_combo, self.site_combo):
+            completer = QCompleter(combo.model())
+            completer.setCaseSensitivity(Qt.CaseInsensitive)
+            completer.setFilterMode(Qt.MatchContains)
+            completer.setCompletionMode(QCompleter.InlineCompletion)
+            popup = QListView()
+            popup.setStyleSheet(
+                "QListView { background: palette(base); color: palette(text); }"
+                "QListView::item:selected { background: palette(highlight); color: palette(highlighted-text); }"
+            )
+            completer.setPopup(popup)
+            combo.setCompleter(completer)
+            if combo.lineEdit():
+                combo.lineEdit().setCompleter(completer)
+    
+    def _set_now(self):
+        """Set time to current time"""
+        self.time_edit.setTime(QTime.currentTime())
+    
+    def _set_invalid(self, widget, message: str):
+        """Mark widget as invalid with red border"""
+        widget.setProperty("invalid", True)
+        widget.setToolTip(message)
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _set_valid(self, widget):
+        """Clear invalid state"""
+        widget.setProperty("invalid", False)
+        widget.setToolTip("")
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+    
+    def _validate_inline(self):
+        """Validate fields and mark invalid ones in red"""
+        valid = True
+        
+        # User
+        if self.user_combo.currentIndex() < 0 or not self.user_combo.currentData():
+            self._set_invalid(self.user_combo, "User is required")
+            valid = False
+        else:
+            self._set_valid(self.user_combo)
+        
+        # Site
+        if self.site_combo.currentIndex() < 0 or not self.site_combo.currentData():
+            self._set_invalid(self.site_combo, "Site is required")
+            valid = False
+        else:
+            self._set_valid(self.site_combo)
+        
+        # Delta
+        delta_text = self.delta_input.text().strip()
+        if not delta_text:
+            self._set_invalid(self.delta_input, "Delta is required")
+            valid = False
+        else:
+            try:
+                delta = Decimal(delta_text)
+                if delta == Decimal("0.00"):
+                    self._set_invalid(self.delta_input, "Delta cannot be zero")
+                    valid = False
+                else:
+                    self._set_valid(self.delta_input)
+            except (ValueError, InvalidOperation):
+                self._set_invalid(self.delta_input, "Invalid number format")
+                valid = False
+        
+        # Reason
+        if not self.reason_input.text().strip():
+            self._set_invalid(self.reason_input, "Reason is required")
+            valid = False
+        else:
+            self._set_valid(self.reason_input)
+        
+        return valid
     
     def _on_create(self):
         # Validation
-        if self.user_combo.currentIndex() < 0:
-            QMessageBox.warning(self, "Validation Error", "Please select a user.")
-            return
-        
-        if self.site_combo.currentIndex() < 0:
-            QMessageBox.warning(self, "Validation Error", "Please select a site.")
-            return
-        
-        reason = self.reason_input.text().strip()
-        if not reason:
-            QMessageBox.warning(self, "Validation Error", "Reason is required.")
-            return
-        
-        try:
-            delta = Decimal(self.delta_input.text().strip())
-        except (ValueError, InvalidOperation):
-            QMessageBox.warning(self, "Validation Error", "Invalid delta value. Enter a number (e.g., -20.00).")
-            return
-        
-        if delta == Decimal("0.00"):
-            QMessageBox.warning(self, "Validation Error", "Delta cannot be zero.")
+        if not self._validate_inline():
+            QMessageBox.warning(self, "Validation Error", "Please correct the highlighted fields.")
             return
         
         # Create adjustment
@@ -138,6 +285,8 @@ class BasisAdjustmentDialog(QDialog):
             site_id = self.site_combo.currentData()
             effective_date = self.date_edit.date().toString("yyyy-MM-dd")
             effective_time = self.time_edit.time().toString("HH:mm:ss")
+            delta = Decimal(self.delta_input.text().strip())
+            reason = self.reason_input.text().strip()
             notes = self.notes_input.toPlainText().strip() or None
             
             self.adjustment = self.facade.adjustment_service.create_basis_adjustment(
@@ -166,11 +315,21 @@ class CheckpointDialog(QDialog):
         self.facade = facade
         self.adjustment = None
         self.setWindowTitle("New Balance Checkpoint")
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(600)
         self._setup_ui()
+        self._update_completers()
+        
+        # Connect validation
+        self.user_combo.currentIndexChanged.connect(self._validate_inline)
+        self.site_combo.currentIndexChanged.connect(self._validate_inline)
+        self.total_sc_input.textChanged.connect(self._validate_inline)
+        self.redeemable_sc_input.textChanged.connect(self._validate_inline)
+        self.reason_input.textChanged.connect(self._validate_inline)
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(16)
         
         # Description
         desc = QLabel(
@@ -182,66 +341,146 @@ class CheckpointDialog(QDialog):
         desc.setObjectName("HelperText")
         layout.addWidget(desc)
         
-        layout.addSpacing(10)
+        layout.addSpacing(4)
         
-        # Form
-        form = QFormLayout()
-        form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        # Main section
+        section = QWidget()
+        section.setObjectName("SectionBackground")
+        grid = QGridLayout(section)
+        grid.setContentsMargins(12, 12, 12, 12)
+        grid.setHorizontalSpacing(30)
+        grid.setVerticalSpacing(10)
+        
+        row = 0
         
         # User
+        user_label = QLabel("User:")
+        user_label.setObjectName("FieldLabel")
+        user_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(user_label, row, 0)
+        
         self.user_combo = QComboBox()
+        self.user_combo.setEditable(True)
+        self.user_combo.lineEdit().setPlaceholderText("Choose...")
         self._load_users()
-        form.addRow("User:", self.user_combo)
+        self.user_combo.setMinimumWidth(180)
+        grid.addWidget(self.user_combo, row, 1)
         
         # Site
+        site_label = QLabel("Site:")
+        site_label.setObjectName("FieldLabel")
+        site_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(site_label, row, 2)
+        
         self.site_combo = QComboBox()
+        self.site_combo.setEditable(True)
+        self.site_combo.lineEdit().setPlaceholderText("Choose...")
         self._load_sites()
-        form.addRow("Site:", self.site_combo)
+        self.site_combo.setMinimumWidth(180)
+        grid.addWidget(self.site_combo, row, 3)
+        
+        row += 1
         
         # Effective Date
+        date_label = QLabel("Effective Date:")
+        date_label.setObjectName("FieldLabel")
+        date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(date_label, row, 0)
+        
         self.date_edit = QDateEdit()
         self.date_edit.setCalendarPopup(True)
+        self.date_edit.setDisplayFormat("MM/dd/yyyy")
         self.date_edit.setDate(QDate.currentDate())
-        form.addRow("Effective Date:", self.date_edit)
+        grid.addWidget(self.date_edit, row, 1)
         
-        # Effective Time
+        # Effective Time with NOW button
+        time_label = QLabel("Effective Time:")
+        time_label.setObjectName("FieldLabel")
+        time_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(time_label, row, 2)
+        
+        time_container = QWidget()
+        time_layout = QHBoxLayout(time_container)
+        time_layout.setContentsMargins(0, 0, 0, 0)
+        time_layout.setSpacing(4)
+        
         self.time_edit = QTimeEdit()
+        self.time_edit.setDisplayFormat("HH:mm")
         self.time_edit.setTime(QTime(0, 0))
-        form.addRow("Effective Time:", self.time_edit)
+        time_layout.addWidget(self.time_edit)
+        
+        now_btn = QPushButton("NOW")
+        now_btn.clicked.connect(self._set_now)
+        now_btn.setFixedWidth(60)
+        time_layout.addWidget(now_btn)
+        
+        grid.addWidget(time_container, row, 3)
+        
+        row += 1
         
         # Total SC Balance
+        total_sc_label = QLabel("Total SC:")
+        total_sc_label.setObjectName("FieldLabel")
+        total_sc_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(total_sc_label, row, 0)
+        
         self.total_sc_input = QLineEdit()
         self.total_sc_input.setPlaceholderText("e.g., 1500.00")
-        form.addRow("Total SC Balance:", self.total_sc_input)
+        self.total_sc_input.setFixedWidth(140)
+        grid.addWidget(self.total_sc_input, row, 1)
         
         # Redeemable SC Balance
+        redeemable_sc_label = QLabel("Redeemable SC:")
+        redeemable_sc_label.setObjectName("FieldLabel")
+        redeemable_sc_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(redeemable_sc_label, row, 2)
+        
         self.redeemable_sc_input = QLineEdit()
         self.redeemable_sc_input.setPlaceholderText("e.g., 1200.00")
-        form.addRow("Redeemable SC Balance:", self.redeemable_sc_input)
+        self.redeemable_sc_input.setFixedWidth(140)
+        grid.addWidget(self.redeemable_sc_input, row, 3)
+        
+        row += 1
         
         # Reason (required)
+        reason_label = QLabel("Reason:")
+        reason_label.setObjectName("FieldLabel")
+        reason_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        grid.addWidget(reason_label, row, 0)
+        
         self.reason_input = QLineEdit()
         self.reason_input.setPlaceholderText("e.g., Manual correction after site reconciliation")
-        form.addRow("Reason (required):", self.reason_input)
+        grid.addWidget(self.reason_input, row, 1, 1, 3)
+        
+        row += 1
         
         # Notes (optional)
-        self.notes_input = QTextEdit()
-        self.notes_input.setPlaceholderText("Optional additional notes")
-        self.notes_input.setMaximumHeight(80)
-        form.addRow("Notes:", self.notes_input)
+        notes_label = QLabel("Notes:")
+        notes_label.setObjectName("FieldLabel")
+        notes_label.setAlignment(Qt.AlignRight | Qt.AlignTop)
+        grid.addWidget(notes_label, row, 0)
         
-        layout.addLayout(form)
+        self.notes_input = QTextEdit()
+        self.notes_input.setPlaceholderText("Optional...")
+        self.notes_input.setMaximumHeight(80)
+        grid.addWidget(self.notes_input, row, 1, 1, 3)
+        
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
+        
+        layout.addWidget(section)
         layout.addSpacing(10)
         
         # Buttons
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         
-        cancel_btn = QPushButton("Cancel")
+        cancel_btn = QPushButton("❌ Cancel")
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
         
-        create_btn = QPushButton("Create Checkpoint")
+        create_btn = QPushButton("✅ Create Checkpoint")
+        create_btn.setObjectName("PrimaryButton")
         create_btn.setDefault(True)
         create_btn.clicked.connect(self._on_create)
         btn_layout.addWidget(create_btn)
@@ -250,43 +489,120 @@ class CheckpointDialog(QDialog):
     
     def _load_users(self):
         users = self.facade.user_service.list_active_users()
+        self.user_combo.addItem("")  # Empty first item
         for user in users:
             self.user_combo.addItem(user.name, user.id)
+        self.user_combo.setCurrentIndex(-1)  # No default
     
     def _load_sites(self):
         sites = self.facade.site_service.list_active_sites()
+        self.site_combo.addItem("")  # Empty first item
         for site in sites:
             self.site_combo.addItem(site.name, site.id)
+        self.site_combo.setCurrentIndex(-1)  # No default
+    
+    def _update_completers(self):
+        """Add auto-complete to combo boxes"""
+        for combo in (self.user_combo, self.site_combo):
+            completer = QCompleter(combo.model())
+            completer.setCaseSensitivity(Qt.CaseInsensitive)
+            completer.setFilterMode(Qt.MatchContains)
+            completer.setCompletionMode(QCompleter.InlineCompletion)
+            popup = QListView()
+            popup.setStyleSheet(
+                "QListView { background: palette(base); color: palette(text); }"
+                "QListView::item:selected { background: palette(highlight); color: palette(highlighted-text); }"
+            )
+            completer.setPopup(popup)
+            combo.setCompleter(completer)
+            if combo.lineEdit():
+                combo.lineEdit().setCompleter(completer)
+    
+    def _set_now(self):
+        """Set time to current time"""
+        self.time_edit.setTime(QTime.currentTime())
+    
+    def _set_invalid(self, widget, message: str):
+        """Mark widget as invalid with red border"""
+        widget.setProperty("invalid", True)
+        widget.setToolTip(message)
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _set_valid(self, widget):
+        """Clear invalid state"""
+        widget.setProperty("invalid", False)
+        widget.setToolTip("")
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+    
+    def _validate_inline(self):
+        """Validate fields and mark invalid ones in red"""
+        valid = True
+        
+        # User
+        if self.user_combo.currentIndex() < 0 or not self.user_combo.currentData():
+            self._set_invalid(self.user_combo, "User is required")
+            valid = False
+        else:
+            self._set_valid(self.user_combo)
+        
+        # Site
+        if self.site_combo.currentIndex() < 0 or not self.site_combo.currentData():
+            self._set_invalid(self.site_combo, "Site is required")
+            valid = False
+        else:
+            self._set_valid(self.site_combo)
+        
+        # At least one SC balance
+        total_text = self.total_sc_input.text().strip()
+        redeemable_text = self.redeemable_sc_input.text().strip()
+        
+        has_valid_total = False
+        has_valid_redeemable = False
+        
+        if total_text:
+            try:
+                total = Decimal(total_text)
+                if total != Decimal("0.00"):
+                    has_valid_total = True
+                    self._set_valid(self.total_sc_input)
+                else:
+                    self._set_invalid(self.total_sc_input, "Cannot be zero")
+            except (ValueError, InvalidOperation):
+                self._set_invalid(self.total_sc_input, "Invalid number format")
+        else:
+            self._set_invalid(self.total_sc_input, "At least one balance required")
+        
+        if redeemable_text:
+            try:
+                redeemable = Decimal(redeemable_text)
+                if redeemable != Decimal("0.00"):
+                    has_valid_redeemable = True
+                    self._set_valid(self.redeemable_sc_input)
+                else:
+                    self._set_invalid(self.redeemable_sc_input, "Cannot be zero")
+            except (ValueError, InvalidOperation):
+                self._set_invalid(self.redeemable_sc_input, "Invalid number format")
+        else:
+            self._set_invalid(self.redeemable_sc_input, "At least one balance required")
+        
+        if not has_valid_total and not has_valid_redeemable:
+            valid = False
+        
+        # Reason
+        if not self.reason_input.text().strip():
+            self._set_invalid(self.reason_input, "Reason is required")
+            valid = False
+        else:
+            self._set_valid(self.reason_input)
+        
+        return valid
     
     def _on_create(self):
         # Validation
-        if self.user_combo.currentIndex() < 0:
-            QMessageBox.warning(self, "Validation Error", "Please select a user.")
-            return
-        
-        if self.site_combo.currentIndex() < 0:
-            QMessageBox.warning(self, "Validation Error", "Please select a site.")
-            return
-        
-        reason = self.reason_input.text().strip()
-        if not reason:
-            QMessageBox.warning(self, "Validation Error", "Reason is required.")
-            return
-        
-        try:
-            total_sc = Decimal(self.total_sc_input.text().strip() or "0")
-        except (ValueError, InvalidOperation):
-            QMessageBox.warning(self, "Validation Error", "Invalid Total SC value.")
-            return
-        
-        try:
-            redeemable_sc = Decimal(self.redeemable_sc_input.text().strip() or "0")
-        except (ValueError, InvalidOperation):
-            QMessageBox.warning(self, "Validation Error", "Invalid Redeemable SC value.")
-            return
-        
-        if total_sc == Decimal("0") and redeemable_sc == Decimal("0"):
-            QMessageBox.warning(self, "Validation Error", "At least one balance must be non-zero.")
+        if not self._validate_inline():
+            QMessageBox.warning(self, "Validation Error", "Please correct the highlighted fields.")
             return
         
         # Create checkpoint
@@ -295,6 +611,9 @@ class CheckpointDialog(QDialog):
             site_id = self.site_combo.currentData()
             effective_date = self.date_edit.date().toString("yyyy-MM-dd")
             effective_time = self.time_edit.time().toString("HH:mm:ss")
+            total_sc = Decimal(self.total_sc_input.text().strip() or "0")
+            redeemable_sc = Decimal(self.redeemable_sc_input.text().strip() or "0")
+            reason = self.reason_input.text().strip()
             notes = self.notes_input.toPlainText().strip() or None
             
             self.adjustment = self.facade.adjustment_service.create_balance_checkpoint(
@@ -324,17 +643,20 @@ class ViewAdjustmentsDialog(QDialog):
         self.facade = facade
         self._modified = False
         self.setWindowTitle("View Adjustments")
-        self.setMinimumSize(900, 600)
+        self.setMinimumSize(1000, 650)
         self._setup_ui()
         self._load_adjustments()
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
         
         # Filters
         filter_layout = QHBoxLayout()
         
         filter_label = QLabel("Filter:")
+        filter_label.setObjectName("FieldLabel")
         filter_layout.addWidget(filter_label)
         
         self.user_filter = QComboBox()
@@ -387,7 +709,6 @@ class ViewAdjustmentsDialog(QDialog):
         btn_layout = QHBoxLayout()
         
         self.delete_btn = QPushButton("🗑️ Soft Delete")
-        self.delete_btn.setObjectName("DangerButton")
         self.delete_btn.clicked.connect(self._on_delete)
         self.delete_btn.setEnabled(False)
         btn_layout.addWidget(self.delete_btn)
@@ -399,7 +720,8 @@ class ViewAdjustmentsDialog(QDialog):
         
         btn_layout.addStretch()
         
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton("✅ Close")
+        close_btn.setObjectName("PrimaryButton")
         close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(close_btn)
         
