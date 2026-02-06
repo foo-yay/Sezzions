@@ -30,15 +30,29 @@ class NotificationService:
         Create or update a notification. De-duplicates by (type, subject_id).
         
         If a notification with the same (type, subject_id) exists:
-        - Update its title/body/severity/action
+        - If suppressed (cooldown), do nothing and return existing
+        - Otherwise update its title/body/severity/action
         - Reset dismissed/deleted/snoozed state
         - Preserve read state
         """
         # Check if notification already exists
         existing = self.notification_repo.get_by_composite_key(type, subject_id)
         
-        if existing and not existing.is_deleted:
-            # Update existing notification
+        if existing:
+            # If notification is suppressed (cooldown period), don't recreate or update
+            if existing.is_suppressed:
+                return existing
+            
+            # If deleted but cooldown expired, resurface as new/unread
+            if existing.is_deleted and not existing.is_suppressed:
+                # Reset to active state
+                existing.deleted_at = None
+                existing.read_at = None  # Resurface as unread
+                existing.dismissed_at = None
+                existing.snoozed_until = None
+                existing.suppressed_until = None
+            
+            # Update notification content
             existing.title = title
             existing.body = body
             existing.severity = severity
@@ -111,12 +125,23 @@ class NotificationService:
         """Get notification by ID"""
         return self.notification_repo.get_by_id(notification_id)
     
-    def mark_read(self, notification_id: int) -> Optional[Notification]:
-        """Mark notification as read"""
+    def mark_read(self, notification_id: int, cooldown_days: int = 0) -> Optional[Notification]:
+        """
+        Mark notification as read.
+        
+        Args:
+            notification_id: ID of notification to mark read
+            cooldown_days: Number of days to suppress resurfacing (default 0 = no cooldown)
+        """
         notification = self.notification_repo.get_by_id(notification_id)
         if notification:
             notification.mark_read()
             notification.updated_at = datetime.now()
+            
+            # Set suppression cooldown if specified
+            if cooldown_days > 0:
+                notification.suppress(datetime.now() + timedelta(days=cooldown_days))
+            
             return self.notification_repo.update(notification)
         return None
     
@@ -169,12 +194,23 @@ class NotificationService:
         until = tomorrow.replace(hour=hour, minute=0, second=0, microsecond=0)
         return self.snooze(notification_id, until)
     
-    def delete(self, notification_id: int) -> Optional[Notification]:
-        """Mark notification as deleted"""
+    def delete(self, notification_id: int, cooldown_days: int = 0) -> Optional[Notification]:
+        """
+        Mark notification as deleted.
+        
+        Args:
+            notification_id: ID of notification to delete
+            cooldown_days: Number of days to suppress resurfacing (default 0 = no cooldown)
+        """
         notification = self.notification_repo.get_by_id(notification_id)
         if notification:
             notification.delete()
             notification.updated_at = datetime.now()
+            
+            # Set suppression cooldown if specified
+            if cooldown_days > 0:
+                notification.suppress(datetime.now() + timedelta(days=cooldown_days))
+            
             return self.notification_repo.update(notification)
         return None
     
