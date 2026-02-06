@@ -594,15 +594,22 @@ class NotificationCenterDialog(QDialog):
         if not notification:
             return 1  # Default 1 day
         
+        # Access settings from parent MainWindow
+        main_window = self.parent()
+        if not main_window or not hasattr(main_window, 'settings'):
+            return 1  # Fallback if no settings available
+        
+        settings = main_window.settings
+        
         # For redemption pending notifications, use the threshold from settings
         if notification.type == 'redemption_pending_receipt':
-            settings_data = self.facade.settings.settings
+            settings_data = settings.settings
             threshold_days = settings_data.get('redemption_pending_receipt_threshold_days', 7)
             return threshold_days
         
         # For backup notifications, use backup interval or default 1 day
         if notification.type in ['backup_due', 'backup_failed', 'backup_directory_missing']:
-            backup_config = self.facade.settings.get_automatic_backup_config()
+            backup_config = settings.get_automatic_backup_config()
             interval_days = backup_config.get('interval_days', 1)
             return interval_days
         
