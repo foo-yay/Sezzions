@@ -59,8 +59,9 @@ class TestPurchaseBalanceCheckExclusion:
             starting_sc_balance=Decimal("150.00")
         )
         
-        # When editing purchase1, expected balance should include purchase2 (same timestamp)
-        # but NOT include purchase1 itself
+        # When editing purchase1, expected balance is the balance *before* purchase1.
+        # For same-timestamp purchases, we only include purchases with smaller IDs.
+        # Since purchase1 is the earliest at that timestamp, expected is 0.
         expected_total, expected_redeemable = facade.compute_expected_balances(
             user_id=user_id,
             site_id=site_id,
@@ -69,8 +70,7 @@ class TestPurchaseBalanceCheckExclusion:
             exclude_purchase_id=purchase1.id
         )
         
-        # Should be 50 (purchase2 included, purchase1 excluded)
-        assert expected_total == Decimal("50.00")
+        assert expected_total == Decimal("0.00")
         
         # When editing purchase2, expected balance should include purchase1 but not purchase2
         expected_total, expected_redeemable = facade.compute_expected_balances(
@@ -81,7 +81,7 @@ class TestPurchaseBalanceCheckExclusion:
             exclude_purchase_id=purchase2.id
         )
         
-        # Should be 100 (purchase1 included, purchase2 excluded)
+        # Should be 100 (purchase1 post-purchase balance)
         assert expected_total == Decimal("100.00")
     
     def test_two_purchases_same_timestamp_edit_second(self, facade, test_user_site):
@@ -200,7 +200,8 @@ class TestPurchaseBalanceCheckExclusion:
             starting_sc_balance=Decimal("150.00")
         )
         
-        # Compute expected balance with no exclusion at 11:00:00
+        # Compute expected balance with no exclusion at 11:00:00.
+        # Semantics: expected balance is strictly before the cutoff event.
         expected_total, _ = facade.compute_expected_balances(
             user_id=user_id,
             site_id=site_id,
@@ -209,5 +210,5 @@ class TestPurchaseBalanceCheckExclusion:
             exclude_purchase_id=None
         )
         
-        # Should include both purchases (at or before 11:00:00)
-        assert expected_total == Decimal("150.00")
+        # Only the 10:00 purchase is before 11:00.
+        assert expected_total == Decimal("100.00")

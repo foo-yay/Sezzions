@@ -64,15 +64,61 @@ class RecalculationWorker(QRunnable):
         try:
             # Create database connection in this thread (SQLite thread safety)
             from repositories.database import DatabaseManager
-            from services.recalculation_service import RecalculationService
+            from services.recalculation_service import RebuildResult, RecalculationService
             from services.tax_withholding_service import TaxWithholdingService
+            from repositories.adjustment_repository import AdjustmentRepository
+            from repositories.game_session_event_link_repository import GameSessionEventLinkRepository
+            from repositories.game_session_repository import GameSessionRepository
+            from repositories.purchase_repository import PurchaseRepository
+            from repositories.redemption_repository import RedemptionRepository
+            from repositories.site_repository import SiteRepository
+            from services.adjustment_service import AdjustmentService
+            from services.fifo_service import FIFOService
+            from services.game_session_event_link_service import GameSessionEventLinkService
+            from services.game_session_service import GameSessionService
             
             db = DatabaseManager(self.db_path)
             
             # Create tax withholding service with settings from UI thread
             tax_service = TaxWithholdingService(db, settings=self.settings_dict)
-            
-            recalc_service = RecalculationService(db, tax_withholding_service=tax_service)
+
+            # Adjustments/checkpoints must be wired so rebuilds include basis adjustments (FIFO)
+            # and checkpoints (expected balances within session recalculation).
+            adjustment_repo = AdjustmentRepository(db)
+            adjustment_service = AdjustmentService(adjustment_repo)
+
+            # Session/event services for rebuild completeness
+            purchase_repo = PurchaseRepository(db)
+            redemption_repo = RedemptionRepository(db)
+            session_repo = GameSessionRepository(db)
+            site_repo = SiteRepository(db)
+            fifo_service = FIFOService(purchase_repo)
+
+            game_session_service = GameSessionService(
+                session_repo,
+                site_repo=site_repo,
+                fifo_service=fifo_service,
+                purchase_repo=purchase_repo,
+                redemption_repo=redemption_repo,
+                tax_withholding_service=tax_service,
+                adjustment_service=adjustment_service,
+            )
+
+            recalc_service = RecalculationService(
+                db,
+                game_session_service=game_session_service,
+                tax_withholding_service=tax_service,
+                adjustment_service=adjustment_service,
+            )
+
+            link_repo = GameSessionEventLinkRepository(db)
+            link_service = GameSessionEventLinkService(
+                link_repo,
+                session_repo,
+                purchase_repo,
+                redemption_repo,
+                db,
+            )
             
             result = None
             
@@ -80,6 +126,8 @@ class RecalculationWorker(QRunnable):
                 result = recalc_service.rebuild_all(
                     progress_callback=self._progress_callback
                 )
+                # Keep linking coherent with derived rebuilds
+                link_service.rebuild_links_all()
                 # Add operation tracking to result
                 result = dataclasses.replace(result, operation=self.operation)
             elif self.operation == "pair":
@@ -90,7 +138,70 @@ class RecalculationWorker(QRunnable):
                     site_id=self.site_id,
                     progress_callback=self._progress_callback
                 )
+                link_service.rebuild_links_for_pair(self.site_id, self.user_id)
                 # Add operation tracking to result
+                result = dataclasses.replace(result, operation=self.operation)
+            elif self.operation == "user":
+                if self.user_id is None:
+                    raise ValueError("user_id required for user recalculation")
+                pairs = [(u, s) for (u, s) in recalc_service.iter_pairs() if u == self.user_id]
+                total_pairs = len(pairs)
+                aggregate = None
+                for idx, (user_id, site_id) in enumerate(pairs, 1):
+                    if self._cancelled:
+                        raise InterruptedError("Recalculation cancelled by user")
+                    self._progress_callback(idx, max(1, total_pairs), f"Rebuilding pair {idx}/{total_pairs}")
+                    pair_result = recalc_service.rebuild_for_pair(user_id=user_id, site_id=site_id)
+                    link_service.rebuild_links_for_pair(site_id, user_id)
+                    if aggregate is None:
+                        aggregate = pair_result
+                    else:
+                        aggregate = dataclasses.replace(
+                            aggregate,
+                            pairs_processed=aggregate.pairs_processed + pair_result.pairs_processed,
+                            redemptions_processed=aggregate.redemptions_processed + pair_result.redemptions_processed,
+                            allocations_written=aggregate.allocations_written + pair_result.allocations_written,
+                            purchases_updated=aggregate.purchases_updated + pair_result.purchases_updated,
+                            game_sessions_processed=aggregate.game_sessions_processed + pair_result.game_sessions_processed,
+                        )
+                result = aggregate or RebuildResult(
+                    pairs_processed=0,
+                    redemptions_processed=0,
+                    allocations_written=0,
+                    purchases_updated=0,
+                    game_sessions_processed=0,
+                )
+                result = dataclasses.replace(result, operation=self.operation)
+            elif self.operation == "site":
+                if self.site_id is None:
+                    raise ValueError("site_id required for site recalculation")
+                pairs = [(u, s) for (u, s) in recalc_service.iter_pairs() if s == self.site_id]
+                total_pairs = len(pairs)
+                aggregate = None
+                for idx, (user_id, site_id) in enumerate(pairs, 1):
+                    if self._cancelled:
+                        raise InterruptedError("Recalculation cancelled by user")
+                    self._progress_callback(idx, max(1, total_pairs), f"Rebuilding pair {idx}/{total_pairs}")
+                    pair_result = recalc_service.rebuild_for_pair(user_id=user_id, site_id=site_id)
+                    link_service.rebuild_links_for_pair(site_id, user_id)
+                    if aggregate is None:
+                        aggregate = pair_result
+                    else:
+                        aggregate = dataclasses.replace(
+                            aggregate,
+                            pairs_processed=aggregate.pairs_processed + pair_result.pairs_processed,
+                            redemptions_processed=aggregate.redemptions_processed + pair_result.redemptions_processed,
+                            allocations_written=aggregate.allocations_written + pair_result.allocations_written,
+                            purchases_updated=aggregate.purchases_updated + pair_result.purchases_updated,
+                            game_sessions_processed=aggregate.game_sessions_processed + pair_result.game_sessions_processed,
+                        )
+                result = aggregate or RebuildResult(
+                    pairs_processed=0,
+                    redemptions_processed=0,
+                    allocations_written=0,
+                    purchases_updated=0,
+                    game_sessions_processed=0,
+                )
                 result = dataclasses.replace(result, operation=self.operation)
             elif self.operation == "after_import":
                 if self.entity_type is None:
@@ -101,6 +212,16 @@ class RecalculationWorker(QRunnable):
                     site_ids=self.site_ids or [],
                     progress_callback=self._progress_callback
                 )
+                # Keep linking coherent for affected pairs
+                affected_pairs = []
+                for user_id, site_id in recalc_service.iter_pairs():
+                    if self.user_ids and user_id not in self.user_ids:
+                        continue
+                    if self.site_ids and site_id not in self.site_ids:
+                        continue
+                    affected_pairs.append((user_id, site_id))
+                for user_id, site_id in affected_pairs:
+                    link_service.rebuild_links_for_pair(site_id, user_id)
                 # Add operation tracking to result
                 result = dataclasses.replace(result, operation=self.operation)
             else:

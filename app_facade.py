@@ -1236,6 +1236,12 @@ class AppFacade:
                 boundary_date,
                 boundary_time,
             )
+            self.game_session_event_link_service.rebuild_links_for_pair_from(
+                redemption.site_id,
+                redemption.user_id,
+                boundary_date.isoformat(),
+                boundary_time,
+            )
     
     def delete_redemptions_bulk(self, redemption_ids: List[int]) -> None:
         """Delete multiple redemptions efficiently in a batch.
@@ -1274,12 +1280,12 @@ class AppFacade:
                 self.game_session_service.recalculate_closed_sessions_for_pair_from(
                     user_id, site_id, boundary_date, boundary_time
                 )
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
-                redemption.site_id,
-                redemption.user_id,
-                boundary_date.isoformat(),
-                boundary_time,
-            )
+                self.game_session_event_link_service.rebuild_links_for_pair_from(
+                    site_id,
+                    user_id,
+                    boundary_date.isoformat(),
+                    boundary_time,
+                )
     
     # ==========================================================================
     # Game Session Operations

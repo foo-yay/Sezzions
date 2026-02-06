@@ -532,9 +532,7 @@ class ToolsTab(QWidget):
     def _update_stats(self):
         """Update statistics display"""
         try:
-            from services import RecalculationService
-            recalc_service = RecalculationService(self.facade.db)
-            stats = recalc_service.get_stats()
+            stats = self.facade.recalculation_service.get_stats()
             
             self.stats_label.setText(
                 f"Database: {stats['pairs']} pairs, "

@@ -100,13 +100,29 @@ class TaxWithholdingService:
         # Calculate net P/L across ALL users for this date (sum winners and losers)
         net_daily_pl = self._calculate_date_net_pl(session_date)
 
-        # Determine rate to use
+        # Determine rate to use.
+        # If no custom rate is provided, preserve an existing custom override (if any).
         if custom_rate_pct is not None:
             rate_pct = Decimal(str(custom_rate_pct))
             is_custom = True
         else:
-            rate_pct = config.default_rate_pct
-            is_custom = False
+            existing = self.db.fetch_one(
+                """
+                SELECT tax_withholding_rate_pct, tax_withholding_is_custom
+                FROM daily_date_tax
+                WHERE session_date = ?
+                """,
+                (session_date,),
+            )
+            if existing and existing.get("tax_withholding_is_custom"):
+                try:
+                    rate_pct = Decimal(str(existing.get("tax_withholding_rate_pct")))
+                except Exception:
+                    rate_pct = config.default_rate_pct
+                is_custom = True
+            else:
+                rate_pct = config.default_rate_pct
+                is_custom = False
 
         # Compute tax amount (only on positive net P/L)
         amount = self.compute_amount(net_daily_pl, rate_pct)

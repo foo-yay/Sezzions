@@ -12,6 +12,31 @@ Rules:
 ## 2026-02-06
 
 ```yaml
+id: 2026-02-06-02
+type: bugfix
+areas: [services, ui, app_facade, tests]
+summary: "Repair/rebuild robustness: adjustment-aware tools rebuilds, event-link rebuild coverage, and safer tax recompute"
+issue: "#55"
+files_changed:
+  - app_facade.py
+  - services/game_session_service.py
+  - services/recalculation_service.py
+  - services/tax_withholding_service.py
+  - ui/tools_workers.py
+  - ui/tabs/tools_tab.py
+  - tests/integration/test_issue_49_purchase_exclusion.py
+  - tests/unit/test_recalculation_service.py
+  - tests/unit/test_tax_withholding_service.py
+```
+
+Notes:
+- Tools rebuild pipeline is now fully adjustment/checkpoint-aware and rebuilds `game_session_event_links` after scoped/all rebuilds.
+- Redemption delete cascades now rebuild event links consistently (single + bulk paths).
+- Expected-balance computation is deterministic for same-timestamp purchase edits (prevents drift/regressions).
+- Tax withholding recompute (`apply_to_date`) preserves an existing custom rate when no override is provided.
+- Pair discovery for rebuild (`iter_pairs`) now includes non-deleted account adjustments.
+
+```yaml
 id: 2026-02-06-01
 type: bugfix
 areas: [ui, app_facade]

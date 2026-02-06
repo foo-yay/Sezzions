@@ -120,6 +120,8 @@ class RecalculationService:
             SELECT DISTINCT user_id, site_id FROM redemptions
             UNION
             SELECT DISTINCT user_id, site_id FROM game_sessions
+            UNION
+            SELECT DISTINCT user_id, site_id FROM account_adjustments WHERE deleted_at IS NULL
             """
         )
         pairs: List[Tuple[int, int]] = []

@@ -55,6 +55,23 @@ class TestIterPairs:
         
         pairs = service.iter_pairs()
         assert (2, 1) in pairs
+
+    def test_iter_pairs_from_account_adjustments(self, test_db, service):
+        """Test pairs from account_adjustments (non-deleted only)."""
+        cursor = test_db._connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO account_adjustments (
+                user_id, site_id, effective_date, effective_time, type, reason,
+                delta_basis_usd, checkpoint_total_sc, checkpoint_redeemable_sc
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (1, 2, "2024-01-01", "00:00:00", "BASIS_USD_CORRECTION", "test", "1.00", "0.00", "0.00"),
+        )
+        test_db._connection.commit()
+
+        pairs = service.iter_pairs()
+        assert (1, 2) in pairs
     
     def test_iter_pairs_multiple(self, test_db, service):
         """Test multiple pairs."""
