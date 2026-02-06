@@ -5,9 +5,9 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QMessageBox, QFileDialog,
     QComboBox, QCompleter, QListView, QDialog, QLineEdit,
-    QCheckBox, QSpinBox, QSizePolicy
+    QCheckBox, QSpinBox, QSizePolicy, QToolButton, QFrame
 )
-from PySide6.QtCore import QThreadPool, Qt, Signal
+from PySide6.QtCore import QThreadPool, Qt, Signal, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFontMetrics
 from typing import Optional
 import os
@@ -99,21 +99,83 @@ class ToolsTab(QWidget):
         
         # Recalculation Section
         recalc_group = self._create_recalculation_group()
-        layout.addWidget(recalc_group)
+        recalc_collapsible = self._create_collapsible_section("🔄 Recalculation Tools", recalc_group, expanded=True)
+        layout.addWidget(recalc_collapsible)
         
         # CSV Import/Export Section
         csv_group = self._create_csv_group()
-        layout.addWidget(csv_group)
+        csv_collapsible = self._create_collapsible_section("📄 CSV Import / Export", csv_group, expanded=False)
+        layout.addWidget(csv_collapsible)
         
         # Adjustments & Corrections Section
         adjustments_group = self._create_adjustments_group()
-        layout.addWidget(adjustments_group)
+        adjustments_collapsible = self._create_collapsible_section("⚖️ Adjustments & Corrections", adjustments_group, expanded=False)
+        layout.addWidget(adjustments_collapsible)
         
         # Database Tools Section
         db_group = self._create_database_group()
-        layout.addWidget(db_group)
+        db_collapsible = self._create_collapsible_section("🔧 Database Tools", db_group, expanded=False)
+        layout.addWidget(db_collapsible)
         
         layout.addStretch()
+    
+    def _create_collapsible_section(self, title: str, content_widget: QWidget, expanded: bool = False) -> QWidget:
+        """Create a collapsible section with a title and content.
+        
+        Args:
+            title: Section title text
+            content_widget: Widget to show/hide
+            expanded: Initial expanded state
+        """
+        container = QFrame()
+        container.setFrameShape(QFrame.StyledPanel)
+        container.setObjectName("CollapsibleSection")
+        
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Header button
+        header_btn = QToolButton()
+        header_btn.setText(title)
+        header_btn.setCheckable(True)
+        header_btn.setChecked(expanded)
+        header_btn.setStyleSheet("""
+            QToolButton {
+                border: none;
+                background: transparent;
+                font-weight: bold;
+                font-size: 13px;
+                text-align: left;
+                padding: 8px;
+            }
+            QToolButton:hover {
+                background-color: rgba(255, 255, 255, 0.05);
+            }
+        """)
+        header_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        header_btn.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
+        
+        layout.addWidget(header_btn)
+        
+        # Content container
+        content_container = QWidget()
+        content_layout = QVBoxLayout(content_container)
+        content_layout.setContentsMargins(8, 4, 8, 8)
+        content_layout.addWidget(content_widget)
+        
+        content_container.setVisible(expanded)
+        layout.addWidget(content_container)
+        
+        # Toggle function
+        def toggle():
+            is_expanded = header_btn.isChecked()
+            header_btn.setArrowType(Qt.DownArrow if is_expanded else Qt.RightArrow)
+            content_container.setVisible(is_expanded)
+        
+        header_btn.toggled.connect(toggle)
+        
+        return container
         
     def _create_recalculation_group(self) -> QWidget:
         """Create the recalculation section"""
@@ -121,11 +183,6 @@ class ToolsTab(QWidget):
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(6)
-        
-        # Section header
-        header = QLabel("🧮 Data Recalculation")
-        header.setObjectName("SectionHeader")
-        container_layout.addWidget(header)
         
         # Section background
         section = QWidget()
@@ -204,11 +261,6 @@ class ToolsTab(QWidget):
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(6)
         
-        # Section header
-        header = QLabel("📄 CSV Import/Export")
-        header.setObjectName("SectionHeader")
-        container_layout.addWidget(header)
-        
         # Section background
         section = QWidget()
         section.setObjectName("SectionBackground")
@@ -254,11 +306,6 @@ class ToolsTab(QWidget):
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(6)
-        
-        # Section header
-        header = QLabel("⚖️ Adjustments & Corrections")
-        header.setObjectName("SectionHeader")
-        container_layout.addWidget(header)
         
         # Section background
         section = QWidget()
@@ -308,11 +355,6 @@ class ToolsTab(QWidget):
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(6)
-        
-        # Section header
-        header = QLabel("🗄️ Database Tools")
-        header.setObjectName("SectionHeader")
-        container_layout.addWidget(header)
         
         # Section background
         section = QWidget()

@@ -26,6 +26,7 @@ from repositories.realized_transaction_repository import RealizedTransactionRepo
 from repositories.daily_session_repository import DailySessionRepository
 from repositories.game_session_event_link_repository import GameSessionEventLinkRepository
 from repositories.expense_repository import ExpenseRepository
+from repositories.adjustment_repository import AdjustmentRepository
 
 from services.user_service import UserService
 from services.site_service import SiteService
@@ -50,6 +51,7 @@ from services.tools.csv_export_service import CSVExportService
 from services.tax_withholding_service import TaxWithholdingService
 from services.notification_service import NotificationService
 from services.notification_rules_service import NotificationRulesService
+from services.adjustment_service import AdjustmentService
 from repositories.notification_repository import NotificationRepository
 
 from models.user import User
@@ -65,6 +67,7 @@ from models.game_session import GameSession
 from models.unrealized_position import UnrealizedPosition
 from models.realized_transaction import RealizedTransaction
 from models.expense import Expense
+from models.adjustment import Adjustment
 
 
 class AppFacade:
@@ -146,12 +149,17 @@ class AppFacade:
         self.expense_service = ExpenseService(self.expense_repo)
         self.realized_notes_service = RealizedNotesService(self.db)
 
+        # Adjustments service
+        self.adjustment_repo = AdjustmentRepository(self.db)
+        self.adjustment_service = AdjustmentService(self.adjustment_repo)
+
         # Bulk rebuild / recalculation orchestration (legacy parity)
         # Pass game_session_service so RecalculationService can recalculate both FIFO + sessions
         self.recalculation_service = RecalculationService(
             self.db,
             game_session_service=self.game_session_service,
-            tax_withholding_service=self.tax_withholding_service
+            tax_withholding_service=self.tax_withholding_service,
+            adjustment_service=self.adjustment_service
         )
         self.game_session_event_link_service = GameSessionEventLinkService(
             self.game_session_event_link_repo,
