@@ -339,8 +339,69 @@ Tools are accessible via Setup → Tools sub-tab and provide "production readine
 - CSV import/export (schema-driven)
 - Backup/restore/reset
 - Recalculation (full and scoped)
+- Repair Mode (Issue #55)
 
-### 6.1 Database Tools (Backup/Restore/Reset)
+### 6.1 Repair Mode
+
+**Purpose:**
+Provides controlled environment for troubleshooting derived data corruption by disabling automatic rebuilds and tracking affected (user, site) pairs.
+
+**Problem:**
+When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automatic rebuilds after every edit make it difficult to isolate the root cause or perform systematic repairs.
+
+**Architecture:**
+- `RepairModeService`: Manages enabled state and stale pair list (settings.json persistence)
+  - `is_enabled()`: Check if repair mode is active
+  - `set_enabled(bool)`: Toggle repair mode state
+  - `mark_pair_stale(user_id, site_id, from_date, from_time, reason)`: Record affected pair
+  - `clear_pair(user_id, site_id)`: Remove from stale list
+  - `clear_all()`: Clear entire stale list
+  - `get_stale_pairs()`: Retrieve list of stale pairs with metadata
+- `AppFacade._rebuild_or_mark_stale()`: Conditional helper method used by all CRUD operations
+  - Normal mode: Immediately rebuilds derived data for affected pair
+  - Repair mode: Marks pair as stale and skips rebuild
+- Stale pair tracking:
+  - Key: `{user_id}:{site_id}`
+  - Value: `{from_date, from_time, updated_at, reasons: []}`
+  - Persisted in settings.json under `repair_mode_stale_pairs`
+  - Cross-pair operations (e.g., reassigning purchase to different site) mark both old and new pairs stale
+
+**UI Components:**
+- Tools tab section (collapsible):
+  - Status indicator: 🔴 ENABLED (red bold) or 🟢 Disabled (green)
+  - Toggle button: Styled red in normal mode to indicate danger of enabling
+  - Stale pairs count: Shows number of pairs needing rebuild (red if > 0)
+  - "Rebuild Stale Pairs" button: Uses existing recalculation worker
+  - "Clear Stale List" button: Remove stale markers without rebuilding
+- MainWindow integration:
+  - Red banner at top: "🔧 REPAIR MODE — Auto-rebuild disabled" (mirrors Maintenance Mode pattern)
+  - Window title suffix: " - REPAIR MODE"
+  - `refresh_repair_mode_ui()`: Rebuilds tabs to update banner/title when mode toggled
+- `RepairModeConfirmDialog`: Blocking confirmation dialog on enable
+  - Warning bullets explaining consequences
+  - Required acknowledgment checkbox
+  - Red "Enable Repair Mode" button (disabled until checkbox checked)
+
+**Workflow:**
+1. Enable Repair Mode via Tools tab (confirmation required)
+2. Perform troubleshooting edits/imports/corrections
+3. Review stale pairs list (shows which (user, site) pairs are affected)
+4. Rebuild selected/all stale pairs when ready (or clear list if manually verified)
+5. Disable Repair Mode to resume normal auto-rebuild behavior
+
+**Safety:**
+- Cannot enable while Maintenance Mode is active (blocking check per Issue #55)
+- Disable is immediate (no confirmation needed)
+- All CRUD operations affected: purchases, redemptions, sessions, expenses, adjustments
+- Stale pairs persist across app restarts (settings.json)
+
+**Implementation Notes:**
+- Refactored 10+ CRUD methods in `AppFacade` to use `_rebuild_or_mark_stale()` instead of direct rebuild calls
+- Cross-pair moves (e.g., `update_purchase()` with site_id change) mark both old and new pairs stale
+- Rebuild uses existing `RecalculationWorker` infrastructure with progress dialog
+- Clear stale list warns user that data won't be recalculated (useful if manually verified)
+
+### 6.2 Database Tools (Backup/Restore/Reset)
 
 **Architecture:**
 - All database tools operations (backup/restore/reset) execute in background workers off the UI thread

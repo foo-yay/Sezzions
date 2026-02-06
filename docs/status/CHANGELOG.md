@@ -12,6 +12,48 @@ Rules:
 ## 2026-02-06
 
 ```yaml
+id: 2026-02-06-05
+type: feature
+areas: [services, ui, app_facade]
+summary: "Repair Mode: manual derived data rebuild control for troubleshooting (implements Issue #55)"
+issue: "#55"
+files_changed:
+  - services/repair_mode_service.py (new)
+  - app_facade.py
+  - ui/main_window.py
+  - ui/tabs/tools_tab.py
+  - ui/repair_mode_dialog.py (new)
+  - ui/settings.py
+  - docs/archive/2026-02-06-issue-55-proposed-body.md (new)
+```
+
+Notes:
+- **Purpose:** Provides controlled environment for troubleshooting derived data corruption by disabling automatic rebuilds and tracking affected (user, site) pairs.
+- **Problem:** When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automatic rebuilds after every edit make it difficult to isolate the root cause or perform systematic repairs.
+- **Solution:** Repair Mode (manual toggle in Tools tab):
+  - **When enabled:** All CRUD operations (create/update/delete purchases, redemptions, sessions, adjustments) mark the affected (user, site) pair as "stale" instead of immediately rebuilding derived data
+  - **Stale pair tracking:** Persisted in settings.json with boundary date/time, timestamp, and reasons for staleness
+  - **Manual rebuild:** Tools tab provides "Rebuild Stale Pairs" and "Clear Stale List" actions
+  - **UI indicators:** Red banner at top of window, window title suffix " - REPAIR MODE", status indicator in Tools tab
+  - **Safety:** Cannot enable while Maintenance Mode is active; requires explicit confirmation with acknowledgment checkbox
+- **Backend Architecture:**
+  - `RepairModeService`: Manages enabled state and stale pair list (settings.json persistence)
+  - `AppFacade._rebuild_or_mark_stale()`: Conditional helper method used by all CRUD operations
+  - Refactored 10+ CRUD methods to use helper instead of direct rebuild calls
+  - Cross-pair moves (e.g., reassigning purchase to different site) mark both old and new pairs stale
+- **UI Components:**
+  - `RepairModeConfirmDialog`: Blocking confirmation with warning bullets, required acknowledgment checkbox
+  - Tools tab section: Status indicator, toggle button, stale pairs count, rebuild/clear actions
+  - MainWindow: Red banner (mirrors Maintenance Mode pattern), window title suffix, `refresh_repair_mode_ui()` method
+- **Workflow:**
+  1. Enable Repair Mode via Tools tab (confirmation required)
+  2. Perform troubleshooting edits/imports/corrections
+  3. Review stale pairs list (shows which (user, site) pairs are affected)
+  4. Rebuild selected/all stale pairs when ready
+  5. Disable Repair Mode to resume normal auto-rebuild behavior
+- **Testing:** Backend and CRUD refactoring complete; UI testing and comprehensive test suite pending.
+
+```yaml
 id: 2026-02-06-04
 type: bugfix
 areas: [models, services, repositories, ui, tests]
