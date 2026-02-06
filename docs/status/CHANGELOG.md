@@ -41,6 +41,35 @@ Notes:
 - Linked from docs/INDEX.md so it’s discoverable.
 
 ```yaml
+id: 2026-02-06-11
+type: refactor
+areas: [ui]
+summary: "Load theme stylesheet from resources/theme.qss and refresh theme palettes"
+files_changed:
+  - ui/themes.py
+  - docs/PROJECT_SPEC.md
+```
+
+Notes:
+- Theme stylesheet is now maintained in `resources/theme.qss` with variables substituted at runtime.
+- Updated Dark/Blue palettes and added a Custom theme option.
+
+```yaml
+id: 2026-02-06-10
+type: feature
+areas: [ui]
+summary: "Redemptions table shows Cost Basis and Unbased columns"
+files_changed:
+  - ui/tabs/redemptions_tab.py
+  - repositories/redemption_repository.py
+```
+
+Notes:
+- Added Cost Basis and Unbased columns in the Redemptions table.
+- Order is Cost Basis before Amount, and Unbased after Amount.
+- Values are now populated from FIFO allocation totals and realized transaction cost basis.
+
+```yaml
 id: 2026-02-06-09
 type: bugfix
 areas: [ui]

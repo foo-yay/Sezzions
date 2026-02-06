@@ -224,6 +224,7 @@ UI rules:
 - Prefer View-first dialog flows; edits are deliberate.
 - Bulk actions and destructive actions require confirmation.
 - Dialog secondary labels use theme-managed `MutedLabel` styling for dark-theme readability.
+- Global Qt stylesheet is maintained in `resources/theme.qss` with theme variables substituted at runtime by `ui/themes.py`.
 
 Window Constraints (Issue #76):
 - Tools tab wrapped in QScrollArea to prevent off-screen expansion

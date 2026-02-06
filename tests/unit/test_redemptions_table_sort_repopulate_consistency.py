@@ -40,11 +40,22 @@ class _FakeFacade:
 
 
 def _table_row_snapshot(tab: RedemptionsTab):
+    def _col(header_text: str) -> int:
+        for col in range(tab.table.columnCount()):
+            header_item = tab.table.horizontalHeaderItem(col)
+            if header_item and header_item.text() == header_text:
+                return col
+        raise AssertionError(f"Missing expected column header: {header_text}")
+
+    id_col = _col("Date/Time")
+    site_col = _col("Site")
+    amount_col = _col("Amount")
+
     rows = []
     for row in range(tab.table.rowCount()):
-        id_item = tab.table.item(row, 0)
-        amount_item = tab.table.item(row, 3)
-        site_item = tab.table.item(row, 2)
+        id_item = tab.table.item(row, id_col)
+        amount_item = tab.table.item(row, amount_col)
+        site_item = tab.table.item(row, site_col)
         if id_item is None:
             continue
         rows.append(
