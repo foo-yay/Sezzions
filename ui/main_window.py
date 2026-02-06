@@ -580,6 +580,50 @@ class MainWindow(QtWidgets.QMainWindow):
                 except Exception:
                     continue
     
+    def refresh_repair_mode_ui(self):
+        """
+        Refresh repair mode UI elements (banner and window title).
+        Called from Tools tab when repair mode is toggled.
+        """
+        # Update repair mode state
+        self.repair_mode = self.facade.repair_mode_service.is_enabled()
+        
+        # Update window title
+        window_title = "Sezzions - Casino Session Tracker"
+        if self.repair_mode:
+            window_title += " - REPAIR MODE"
+        self.setWindowTitle(window_title)
+        
+        # Rebuild tabs to update banner visibility
+        # (In a production app, we'd want a more surgical approach, but this is simple and works)
+        # Save current tab index
+        current_tab_name = None
+        for name, index in self._tab_index.items():
+            if index == self.tab_bar.currentIndex():
+                current_tab_name = name
+                break
+        
+        # Clear existing tabs
+        while self.stack.count() > 0:
+            widget = self.stack.widget(0)
+            self.stack.removeWidget(widget)
+        self.tab_bar.clear()
+        
+        # Clear any existing banners
+        layout = self.main_content.layout()
+        # Remove all widgets except the tab bar and stack
+        while layout.count() > 2:
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        # Recreate tabs (which will add the banner if needed)
+        self._create_tabs()
+        
+        # Restore tab selection
+        if current_tab_name and current_tab_name in self._tab_index:
+            self.tab_bar.setCurrentIndex(self._tab_index[current_tab_name])
+    
     def _validate_data(self):
         """Run data validation"""
         result = self.facade.validate_all_data()
