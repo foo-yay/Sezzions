@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime, date
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QPushButton, QLabel, QLineEdit, QTextEdit, QComboBox,
+    QPushButton, QLabel, QLineEdit, QTextEdit, QComboBox, QCalendarWidget,
     QDateEdit, QTimeEdit, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QMessageBox, QWidget, QCompleter, QListView, QApplication, QGridLayout
 )
@@ -27,8 +27,13 @@ class BasisAdjustmentDialog(QDialog):
         # Connect validation
         self.user_combo.currentIndexChanged.connect(self._validate_inline)
         self.site_combo.currentIndexChanged.connect(self._validate_inline)
+        self.date_edit.textChanged.connect(self._validate_inline)
+        self.time_edit.textChanged.connect(self._validate_inline)
         self.delta_input.textChanged.connect(self._validate_inline)
         self.reason_input.textChanged.connect(self._validate_inline)
+        
+        # Initial validation to show red fields
+        self._validate_inline()
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -38,8 +43,7 @@ class BasisAdjustmentDialog(QDialog):
         # Description
         desc = QLabel(
             "Create a basis adjustment to correct purchase cost basis.\n"
-            "Positive values increase basis, negative values decrease it.\n"
-            "This will affect FIFO allocations when recalculated."
+            "Positive values increase basis, negative values decrease it."
         )
         desc.setWordWrap(True)
         desc.setObjectName("HelperText")
@@ -85,20 +89,36 @@ class BasisAdjustmentDialog(QDialog):
         
         row += 1
         
-        # Effective Date
-        date_label = QLabel("Effective Date:")
+        # Effective Date with calendar and Today button
+        date_label = QLabel("Date:")
         date_label.setObjectName("FieldLabel")
         date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(date_label, row, 0)
         
-        self.date_edit = QDateEdit()
-        self.date_edit.setCalendarPopup(True)
-        self.date_edit.setDisplayFormat("MM/dd/yyyy")
-        self.date_edit.setDate(QDate.currentDate())
-        grid.addWidget(self.date_edit, row, 1)
+        date_container = QWidget()
+        date_layout = QHBoxLayout(date_container)
+        date_layout.setContentsMargins(0, 0, 0, 0)
+        date_layout.setSpacing(4)
         
-        # Effective Time with NOW button
-        time_label = QLabel("Effective Time:")
+        self.date_edit = QLineEdit()
+        self.date_edit.setPlaceholderText("MM/DD/YY")
+        self.date_edit.setFixedWidth(110)
+        date_layout.addWidget(self.date_edit)
+        
+        self.calendar_btn = QPushButton("📅")
+        self.calendar_btn.setFixedWidth(44)
+        self.calendar_btn.clicked.connect(self._pick_date)
+        date_layout.addWidget(self.calendar_btn)
+        
+        self.today_btn = QPushButton("Today")
+        self.today_btn.clicked.connect(self._set_today)
+        date_layout.addWidget(self.today_btn)
+        
+        date_layout.addStretch()
+        grid.addWidget(date_container, row, 1)
+        
+        # Effective Time with Now button
+        time_label = QLabel("Time:")
         time_label.setObjectName("FieldLabel")
         time_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(time_label, row, 2)
@@ -108,16 +128,16 @@ class BasisAdjustmentDialog(QDialog):
         time_layout.setContentsMargins(0, 0, 0, 0)
         time_layout.setSpacing(4)
         
-        self.time_edit = QTimeEdit()
-        self.time_edit.setDisplayFormat("HH:mm")
-        self.time_edit.setTime(QTime(0, 0))
+        self.time_edit = QLineEdit()
+        self.time_edit.setPlaceholderText("HH:MM")
+        self.time_edit.setFixedWidth(90)
         time_layout.addWidget(self.time_edit)
         
-        now_btn = QPushButton("NOW")
+        now_btn = QPushButton("Now")
         now_btn.clicked.connect(self._set_now)
-        now_btn.setFixedWidth(60)
         time_layout.addWidget(now_btn)
         
+        time_layout.addStretch()
         grid.addWidget(time_container, row, 3)
         
         row += 1
@@ -142,7 +162,7 @@ class BasisAdjustmentDialog(QDialog):
         grid.addWidget(reason_label, row, 0)
         
         self.reason_input = QLineEdit()
-        self.reason_input.setPlaceholderText("e.g., Fee correction")
+        self.reason_input.setPlaceholderText("Required - explain why this adjustment is needed")
         grid.addWidget(self.reason_input, row, 1, 1, 3)
         
         row += 1
@@ -154,7 +174,7 @@ class BasisAdjustmentDialog(QDialog):
         grid.addWidget(notes_label, row, 0)
         
         self.notes_input = QTextEdit()
-        self.notes_input.setPlaceholderText("Optional...")
+        self.notes_input.setPlaceholderText("Optional additional details...")
         self.notes_input.setMaximumHeight(80)
         grid.addWidget(self.notes_input, row, 1, 1, 3)
         
@@ -168,7 +188,7 @@ class BasisAdjustmentDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         
-        cancel_btn = QPushButton("❌ Cancel")
+        cancel_btn = QPushButton("✖️ Cancel")
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
         
@@ -211,9 +231,51 @@ class BasisAdjustmentDialog(QDialog):
             if combo.lineEdit():
                 combo.lineEdit().setCompleter(completer)
     
+    def _set_today(self):
+        """Set date to today"""
+        self.date_edit.setText(datetime.now().strftime("%m/%d/%y"))
+    
     def _set_now(self):
         """Set time to current time"""
-        self.time_edit.setTime(QTime.currentTime())
+        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+    
+    def _pick_date(self):
+        """Show calendar picker"""
+        cal_dialog = QDialog(self)
+        cal_dialog.setWindowTitle("Pick Date")
+        layout = QVBoxLayout(cal_dialog)
+        
+        calendar = QCalendarWidget()
+        calendar.setGridVisible(True)
+        
+        # Set to current date if empty, or parse existing date
+        date_text = self.date_edit.text().strip()
+        if date_text:
+            try:
+                parsed_date = datetime.strptime(date_text, "%m/%d/%y")
+                calendar.setSelectedDate(QDate(parsed_date.year, parsed_date.month, parsed_date.day))
+            except:
+                pass
+        
+        layout.addWidget(calendar)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        
+        cancel_btn = QPushButton("✖️ Cancel")
+        cancel_btn.clicked.connect(cal_dialog.reject)
+        btn_layout.addWidget(cancel_btn)
+        
+        ok_btn = QPushButton("✅ OK")
+        ok_btn.setObjectName("PrimaryButton")
+        ok_btn.clicked.connect(cal_dialog.accept)
+        btn_layout.addWidget(ok_btn)
+        
+        layout.addLayout(btn_layout)
+        
+        if cal_dialog.exec():
+            selected = calendar.selectedDate()
+            self.date_edit.setText(selected.toString("MM/dd/yy"))
     
     def _set_invalid(self, widget, message: str):
         """Mark widget as invalid with red border"""
@@ -247,6 +309,32 @@ class BasisAdjustmentDialog(QDialog):
         else:
             self._set_valid(self.site_combo)
         
+        # Date
+        date_text = self.date_edit.text().strip()
+        if not date_text:
+            self._set_invalid(self.date_edit, "Date is required")
+            valid = False
+        else:
+            try:
+                datetime.strptime(date_text, "%m/%d/%y")
+                self._set_valid(self.date_edit)
+            except:
+                self._set_invalid(self.date_edit, "Invalid date format (MM/DD/YY)")
+                valid = False
+        
+        # Time
+        time_text = self.time_edit.text().strip()
+        if not time_text:
+            self._set_invalid(self.time_edit, "Time is required")
+            valid = False
+        else:
+            try:
+                datetime.strptime(time_text, "%H:%M")
+                self._set_valid(self.time_edit)
+            except:
+                self._set_invalid(self.time_edit, "Invalid time format (HH:MM)")
+                valid = False
+        
         # Delta
         delta_text = self.delta_input.text().strip()
         if not delta_text:
@@ -274,6 +362,12 @@ class BasisAdjustmentDialog(QDialog):
         return valid
     
     def _on_create(self):
+        # Default empty date/time to now
+        if not self.date_edit.text().strip():
+            self._set_today()
+        if not self.time_edit.text().strip():
+            self._set_now()
+        
         # Validation
         if not self._validate_inline():
             QMessageBox.warning(self, "Validation Error", "Please correct the highlighted fields.")
@@ -283,8 +377,14 @@ class BasisAdjustmentDialog(QDialog):
         try:
             user_id = self.user_combo.currentData()
             site_id = self.site_combo.currentData()
-            effective_date = self.date_edit.date().toString("yyyy-MM-dd")
-            effective_time = self.time_edit.time().toString("HH:mm:ss")
+            
+            # Parse date and time
+            date_obj = datetime.strptime(self.date_edit.text().strip(), "%m/%d/%y")
+            time_obj = datetime.strptime(self.time_edit.text().strip(), "%H:%M")
+            
+            effective_date = date_obj.strftime("%Y-%m-%d")
+            effective_time = time_obj.strftime("%H:%M:00")
+            
             delta = Decimal(self.delta_input.text().strip())
             reason = self.reason_input.text().strip()
             notes = self.notes_input.toPlainText().strip() or None
@@ -322,9 +422,14 @@ class CheckpointDialog(QDialog):
         # Connect validation
         self.user_combo.currentIndexChanged.connect(self._validate_inline)
         self.site_combo.currentIndexChanged.connect(self._validate_inline)
+        self.date_edit.textChanged.connect(self._validate_inline)
+        self.time_edit.textChanged.connect(self._validate_inline)
         self.total_sc_input.textChanged.connect(self._validate_inline)
         self.redeemable_sc_input.textChanged.connect(self._validate_inline)
         self.reason_input.textChanged.connect(self._validate_inline)
+        
+        # Initial validation to show red fields
+        self._validate_inline()
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -334,8 +439,7 @@ class CheckpointDialog(QDialog):
         # Description
         desc = QLabel(
             "Create a balance checkpoint to establish a known balance at a specific time.\n"
-            "This will override previous balance calculations and take priority over closed sessions.\n"
-            "Useful for correcting balance discrepancies or importing external data."
+            "This will override previous balance calculations and take priority over closed sessions."
         )
         desc.setWordWrap(True)
         desc.setObjectName("HelperText")
@@ -381,20 +485,36 @@ class CheckpointDialog(QDialog):
         
         row += 1
         
-        # Effective Date
-        date_label = QLabel("Effective Date:")
+        # Effective Date with calendar and Today button
+        date_label = QLabel("Date:")
         date_label.setObjectName("FieldLabel")
         date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(date_label, row, 0)
         
-        self.date_edit = QDateEdit()
-        self.date_edit.setCalendarPopup(True)
-        self.date_edit.setDisplayFormat("MM/dd/yyyy")
-        self.date_edit.setDate(QDate.currentDate())
-        grid.addWidget(self.date_edit, row, 1)
+        date_container = QWidget()
+        date_layout = QHBoxLayout(date_container)
+        date_layout.setContentsMargins(0, 0, 0, 0)
+        date_layout.setSpacing(4)
         
-        # Effective Time with NOW button
-        time_label = QLabel("Effective Time:")
+        self.date_edit = QLineEdit()
+        self.date_edit.setPlaceholderText("MM/DD/YY")
+        self.date_edit.setFixedWidth(110)
+        date_layout.addWidget(self.date_edit)
+        
+        self.calendar_btn = QPushButton("📅")
+        self.calendar_btn.setFixedWidth(44)
+        self.calendar_btn.clicked.connect(self._pick_date)
+        date_layout.addWidget(self.calendar_btn)
+        
+        self.today_btn = QPushButton("Today")
+        self.today_btn.clicked.connect(self._set_today)
+        date_layout.addWidget(self.today_btn)
+        
+        date_layout.addStretch()
+        grid.addWidget(date_container, row, 1)
+        
+        # Effective Time with Now button
+        time_label = QLabel("Time:")
         time_label.setObjectName("FieldLabel")
         time_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         grid.addWidget(time_label, row, 2)
@@ -404,16 +524,16 @@ class CheckpointDialog(QDialog):
         time_layout.setContentsMargins(0, 0, 0, 0)
         time_layout.setSpacing(4)
         
-        self.time_edit = QTimeEdit()
-        self.time_edit.setDisplayFormat("HH:mm")
-        self.time_edit.setTime(QTime(0, 0))
+        self.time_edit = QLineEdit()
+        self.time_edit.setPlaceholderText("HH:MM")
+        self.time_edit.setFixedWidth(90)
         time_layout.addWidget(self.time_edit)
         
-        now_btn = QPushButton("NOW")
+        now_btn = QPushButton("Now")
         now_btn.clicked.connect(self._set_now)
-        now_btn.setFixedWidth(60)
         time_layout.addWidget(now_btn)
         
+        time_layout.addStretch()
         grid.addWidget(time_container, row, 3)
         
         row += 1
@@ -449,7 +569,7 @@ class CheckpointDialog(QDialog):
         grid.addWidget(reason_label, row, 0)
         
         self.reason_input = QLineEdit()
-        self.reason_input.setPlaceholderText("e.g., Manual correction after site reconciliation")
+        self.reason_input.setPlaceholderText("Required - explain why this checkpoint is needed")
         grid.addWidget(self.reason_input, row, 1, 1, 3)
         
         row += 1
@@ -461,7 +581,7 @@ class CheckpointDialog(QDialog):
         grid.addWidget(notes_label, row, 0)
         
         self.notes_input = QTextEdit()
-        self.notes_input.setPlaceholderText("Optional...")
+        self.notes_input.setPlaceholderText("Optional additional details...")
         self.notes_input.setMaximumHeight(80)
         grid.addWidget(self.notes_input, row, 1, 1, 3)
         
@@ -475,7 +595,7 @@ class CheckpointDialog(QDialog):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         
-        cancel_btn = QPushButton("❌ Cancel")
+        cancel_btn = QPushButton("✖️ Cancel")
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
         
@@ -518,9 +638,51 @@ class CheckpointDialog(QDialog):
             if combo.lineEdit():
                 combo.lineEdit().setCompleter(completer)
     
+    def _set_today(self):
+        """Set date to today"""
+        self.date_edit.setText(datetime.now().strftime("%m/%d/%y"))
+    
     def _set_now(self):
         """Set time to current time"""
-        self.time_edit.setTime(QTime.currentTime())
+        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+    
+    def _pick_date(self):
+        """Show calendar picker"""
+        cal_dialog = QDialog(self)
+        cal_dialog.setWindowTitle("Pick Date")
+        layout = QVBoxLayout(cal_dialog)
+        
+        calendar = QCalendarWidget()
+        calendar.setGridVisible(True)
+        
+        # Set to current date if empty, or parse existing date
+        date_text = self.date_edit.text().strip()
+        if date_text:
+            try:
+                parsed_date = datetime.strptime(date_text, "%m/%d/%y")
+                calendar.setSelectedDate(QDate(parsed_date.year, parsed_date.month, parsed_date.day))
+            except:
+                pass
+        
+        layout.addWidget(calendar)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        
+        cancel_btn = QPushButton("✖️ Cancel")
+        cancel_btn.clicked.connect(cal_dialog.reject)
+        btn_layout.addWidget(cancel_btn)
+        
+        ok_btn = QPushButton("✅ OK")
+        ok_btn.setObjectName("PrimaryButton")
+        ok_btn.clicked.connect(cal_dialog.accept)
+        btn_layout.addWidget(ok_btn)
+        
+        layout.addLayout(btn_layout)
+        
+        if cal_dialog.exec():
+            selected = calendar.selectedDate()
+            self.date_edit.setText(selected.toString("MM/dd/yy"))
     
     def _set_invalid(self, widget, message: str):
         """Mark widget as invalid with red border"""
@@ -553,6 +715,32 @@ class CheckpointDialog(QDialog):
             valid = False
         else:
             self._set_valid(self.site_combo)
+        
+        # Date
+        date_text = self.date_edit.text().strip()
+        if not date_text:
+            self._set_invalid(self.date_edit, "Date is required")
+            valid = False
+        else:
+            try:
+                datetime.strptime(date_text, "%m/%d/%y")
+                self._set_valid(self.date_edit)
+            except:
+                self._set_invalid(self.date_edit, "Invalid date format (MM/DD/YY)")
+                valid = False
+        
+        # Time
+        time_text = self.time_edit.text().strip()
+        if not time_text:
+            self._set_invalid(self.time_edit, "Time is required")
+            valid = False
+        else:
+            try:
+                datetime.strptime(time_text, "%H:%M")
+                self._set_valid(self.time_edit)
+            except:
+                self._set_invalid(self.time_edit, "Invalid time format (HH:MM)")
+                valid = False
         
         # At least one SC balance
         total_text = self.total_sc_input.text().strip()
@@ -600,6 +788,12 @@ class CheckpointDialog(QDialog):
         return valid
     
     def _on_create(self):
+        # Default empty date/time to now
+        if not self.date_edit.text().strip():
+            self._set_today()
+        if not self.time_edit.text().strip():
+            self._set_now()
+        
         # Validation
         if not self._validate_inline():
             QMessageBox.warning(self, "Validation Error", "Please correct the highlighted fields.")
@@ -609,8 +803,14 @@ class CheckpointDialog(QDialog):
         try:
             user_id = self.user_combo.currentData()
             site_id = self.site_combo.currentData()
-            effective_date = self.date_edit.date().toString("yyyy-MM-dd")
-            effective_time = self.time_edit.time().toString("HH:mm:ss")
+            
+            # Parse date and time
+            date_obj = datetime.strptime(self.date_edit.text().strip(), "%m/%d/%y")
+            time_obj = datetime.strptime(self.time_edit.text().strip(), "%H:%M")
+            
+            effective_date = date_obj.strftime("%Y-%m-%d")
+            effective_time = time_obj.strftime("%H:%M:00")
+            
             total_sc = Decimal(self.total_sc_input.text().strip() or "0")
             redeemable_sc = Decimal(self.redeemable_sc_input.text().strip() or "0")
             reason = self.reason_input.text().strip()
@@ -720,8 +920,7 @@ class ViewAdjustmentsDialog(QDialog):
         
         btn_layout.addStretch()
         
-        close_btn = QPushButton("✅ Close")
-        close_btn.setObjectName("PrimaryButton")
+        close_btn = QPushButton("🚪 Close")
         close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(close_btn)
         
@@ -754,18 +953,18 @@ class ViewAdjustmentsDialog(QDialog):
             self.table.setItem(row, 1, QTableWidgetItem(type_str))
             
             # User
-            user = self.facade.user_service.get_user_by_id(adj.user_id)
+            user = self.facade.user_service.get_user(adj.user_id)
             self.table.setItem(row, 2, QTableWidgetItem(user.name if user else str(adj.user_id)))
             
             # Site
-            site = self.facade.site_service.get_site_by_id(adj.site_id)
+            site = self.facade.site_service.get_site(adj.site_id)
             self.table.setItem(row, 3, QTableWidgetItem(site.name if site else str(adj.site_id)))
             
             # Effective Date
-            self.table.setItem(row, 4, QTableWidgetItem(adj.effective_date))
+            self.table.setItem(row, 4, QTableWidgetItem(str(adj.effective_date)))
             
             # Effective Time
-            self.table.setItem(row, 5, QTableWidgetItem(adj.effective_time))
+            self.table.setItem(row, 5, QTableWidgetItem(str(adj.effective_time)))
             
             # Delta/Total SC
             if adj.type.value == "BASIS_USD_CORRECTION":

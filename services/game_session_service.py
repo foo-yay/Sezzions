@@ -342,11 +342,16 @@ class GameSessionService:
         cutoff = to_dt(session_date, session_time)
         checkpoint_dt = None
 
+        # DEBUG
+        print(f"[DEBUG compute_expected_balances] adjustment_service={self.adjustment_service}")
+        print(f"[DEBUG compute_expected_balances] user={user_id}, site={site_id}, date={session_date}, time={session_time}")
+
         # Priority 1: Balance checkpoint adjustments (explicit anchors)
         if self.adjustment_service is not None:
             latest_checkpoint = self.adjustment_service.get_latest_checkpoint_before(
                 user_id, site_id, session_date, session_time
             )
+            print(f"[DEBUG] latest_checkpoint={latest_checkpoint}")
             if latest_checkpoint:
                 checkpoint_dt = to_dt(
                     latest_checkpoint.effective_date,

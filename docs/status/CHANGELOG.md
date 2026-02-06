@@ -9,6 +9,39 @@ Rules:
 
 ---
 
+## 2026-02-06
+
+```yaml
+id: 2026-02-06-01
+type: bugfix
+areas: [ui, app_facade]
+summary: "Purchase balance check now respects balance checkpoints and adjustments"
+issue: "#54"
+files_changed:
+  - app_facade.py (adjustment_service initialization order)
+  - ui/tabs/purchases_tab.py (balance check logic)
+  - ui/adjustment_dialogs.py (date/time field patterns)
+```
+
+Notes:
+- **Bug Fix:** Purchase dialog balance check was using legacy logic that bypassed checkpoint calculations
+  - Previously: When period_purchases existed, used prev_purchase.starting_sc_balance as expected value
+  - Now: Always calls facade.compute_expected_balances() which respects checkpoints and adjustments
+  - Fixed in: ADD purchase flow, EDIT purchase flow, and live balance check (_update_balance_check)
+
+- **Bug Fix:** adjustment_service was initialized after game_session_service in AppFacade
+  - Moved adjustment_service initialization before game_session_service
+  - Now properly passed to game_session_service constructor
+  - Enables checkpoint logic in compute_expected_balances()
+
+- **UI Fix:** Adjustment dialogs now use correct date/time field pattern
+  - Changed from QDateEdit/QTimeEdit to QLineEdit with placeholders (MM/DD/YY, HH:MM)
+  - Added calendar picker button (📅) and "Today"/"Now" quick-fill buttons
+  - Matches global UI patterns (Purchase dialog, etc.)
+  - Fixed method names: get_user_by_id → get_user, get_site_by_id → get_site
+
+---
+
 ## 2026-02-05
 
 ```yaml

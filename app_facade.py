@@ -133,6 +133,10 @@ class AppFacade:
         # Tax withholding estimates (Issue #29)
         self.tax_withholding_service = TaxWithholdingService(self.db, settings=None)  # wired from MainWindow
 
+        # Adjustments service (must be before game_session_service)
+        self.adjustment_repo = AdjustmentRepository(self.db)
+        self.adjustment_service = AdjustmentService(self.adjustment_repo)
+
         self.game_session_service = GameSessionService(
             self.game_session_repo,
             site_repo=self.site_repo,  # Needed for SC rate in P/L calculation
@@ -140,6 +144,7 @@ class AppFacade:
             purchase_repo=self.purchase_repo,
             redemption_repo=self.redemption_repo,
             tax_withholding_service=self.tax_withholding_service,
+            adjustment_service=self.adjustment_service,
         )
         
         self.report_service = ReportService(self.db)
@@ -148,10 +153,6 @@ class AppFacade:
         self.daily_sessions_service = DailySessionsService(self.db, self.daily_session_repo)
         self.expense_service = ExpenseService(self.expense_repo)
         self.realized_notes_service = RealizedNotesService(self.db)
-
-        # Adjustments service
-        self.adjustment_repo = AdjustmentRepository(self.db)
-        self.adjustment_service = AdjustmentService(self.adjustment_repo)
 
         # Bulk rebuild / recalculation orchestration (legacy parity)
         # Pass game_session_service so RecalculationService can recalculate both FIFO + sessions

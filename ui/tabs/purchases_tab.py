@@ -342,19 +342,13 @@ class PurchasesTab(QtWidgets.QWidget):
                     exclude_purchase_id=None  # No exclusion for new purchase
                 )
                 
-                # Determine expected pre-purchase balance:
-                # If there's a previous purchase in the period, use its actual post-purchase balance
-                # Otherwise, use compute_expected_balances
-                if period_purchases:
-                    prev_purchase = period_purchases[-1]
-                    expected_total = prev_purchase.starting_sc_balance
-                else:
-                    expected_total, _expected_redeem = self.facade.compute_expected_balances(
-                        user_id=dialog.user_id,
-                        site_id=dialog.site_id,
-                        session_date=purchase_date,
-                        session_time=purchase_time,
-                    )
+                # Always use compute_expected_balances to respect checkpoints and adjustments
+                expected_total, _expected_redeem = self.facade.compute_expected_balances(
+                    user_id=dialog.user_id,
+                    site_id=dialog.site_id,
+                    session_date=purchase_date,
+                    session_time=purchase_time,
+                )
                 
                 # Compute total_extra for this purchase
                 total_extra = (pre_purchase_balance - Decimal(str(expected_total))).quantize(Decimal("0.01"))
@@ -513,18 +507,14 @@ class PurchasesTab(QtWidgets.QWidget):
                 
                 # Determine expected pre-purchase balance:
                 # If there's a previous purchase in the period, use its actual post-purchase balance
-                # Otherwise, use compute_expected_balances
-                if period_purchases:
-                    prev_purchase = period_purchases[-1]
-                    expected_total = prev_purchase.starting_sc_balance
-                else:
-                    expected_total, _expected_redeem = self.facade.compute_expected_balances(
-                        user_id=dialog.user_id,
-                        site_id=dialog.site_id,
-                        session_date=purchase_date,
-                        session_time=purchase_time,
-                        exclude_purchase_id=purchase.id,
-                    )
+                # Always use compute_expected_balances to respect checkpoints and adjustments
+                expected_total, _expected_redeem = self.facade.compute_expected_balances(
+                    user_id=dialog.user_id,
+                    site_id=dialog.site_id,
+                    session_date=purchase_date,
+                    session_time=purchase_time,
+                    exclude_purchase_id=purchase.id,
+                )
                 
                 # Compute total_extra for this purchase
                 total_extra = (pre_purchase_balance - Decimal(str(expected_total))).quantize(Decimal("0.01"))
@@ -1547,17 +1537,14 @@ class PurchaseDialog(QtWidgets.QDialog):
         )
         
         # Determine expected pre-purchase balance using the same logic as the submission check
-        if period_purchases:
-            prev_purchase = period_purchases[-1]
-            expected_total = prev_purchase.starting_sc_balance
-        else:
-            expected_total, _expected_redeem = self.facade.compute_expected_balances(
-                user_id=user_id,
-                site_id=site_id,
-                session_date=parsed_date,
-                session_time=parsed_time,
-                exclude_purchase_id=exclude_purchase_id
-            )
+        # Always use compute_expected_balances to respect checkpoints and adjustments
+        expected_total, _expected_redeem = self.facade.compute_expected_balances(
+            user_id=user_id,
+            site_id=site_id,
+            session_date=parsed_date,
+            session_time=parsed_time,
+            exclude_purchase_id=exclude_purchase_id
+        )
         
         # Compute total_extra
         total_extra = (pre_purchase_balance - Decimal(str(expected_total))).quantize(Decimal("0.01"))

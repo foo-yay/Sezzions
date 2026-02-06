@@ -510,6 +510,11 @@ class ModernPurchaseDialog(QtWidgets.QDialog):
             session_date=parsed_date,
             session_time=parsed_time,
         )
+        
+        # DEBUG
+        print(f"[BALANCE CHECK DEBUG] user_id={user_id}, site_id={site_id}")
+        print(f"[BALANCE CHECK DEBUG] date={parsed_date}, time={parsed_time}")
+        print(f"[BALANCE CHECK DEBUG] expected_total={expected_total}, start_sc_val={start_sc_val}")
 
         delta = Decimal(str(start_sc_val)) - Decimal(str(expected_total))
         if delta > Decimal("0.01"):
