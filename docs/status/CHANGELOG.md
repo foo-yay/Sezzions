@@ -12,6 +12,28 @@ Rules:
 ## 2026-02-06
 
 ```yaml
+id: 2026-02-06-07
+type: bugfix
+areas: [ui]
+summary: "Window resize constraints: prevent expansion beyond screen boundaries (resolves Issue #76)"
+issue: "#76"
+files_changed:
+  - ui/tabs/setup_tab.py
+  - ui/main_window.py
+```
+
+Notes:
+- **Problem:** Expanding all Tools sub-sections caused window to resize beyond screen boundaries, becoming stuck off-screen and unresizable
+- **Root Cause:** Tools tab content directly triggered window resize without boundary constraints
+- **Solution:**
+  - Wrapped ToolsTab in QScrollArea within Setup sub-tabs (content now scrolls instead of expanding window)
+  - Added maximum window size constraint (90% of screen dimensions) in MainWindow initialization
+  - Used screen.availableGeometry() to respect taskbar/dock areas
+  - Set scroll area to widgetResizable with no frame for seamless integration
+- **Impact:** Window now stays within screen bounds; Tools sections can all be expanded simultaneously with scrolling as needed
+- **UX:** Collapsible sections work as expected; scroll bars appear automatically when content exceeds visible area
+
+```yaml
 id: 2026-02-06-06
 type: bugfix
 areas: [ui, services]
