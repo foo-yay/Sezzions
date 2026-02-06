@@ -736,7 +736,7 @@ class CardViewDialog(QtWidgets.QDialog):
         left_grid.setColumnStretch(1, 1)
         
         user_lbl = QtWidgets.QLabel("User:")
-        user_lbl.setStyleSheet("color: palette(mid);")
+        user_lbl.setObjectName("MutedLabel")
         user_name = getattr(card, 'user_name', None)
         user_display = user_name if user_name else "Unknown User" if card.user_id else "—"
         user_val = self._make_selectable_label(user_display)
@@ -744,13 +744,13 @@ class CardViewDialog(QtWidgets.QDialog):
         left_grid.addWidget(user_val, 0, 1)
         
         name_lbl = QtWidgets.QLabel("Card Name:")
-        name_lbl.setStyleSheet("color: palette(mid);")
+        name_lbl.setObjectName("MutedLabel")
         name_val = self._make_selectable_label(card.name)
         left_grid.addWidget(name_lbl, 1, 0, QtCore.Qt.AlignRight)
         left_grid.addWidget(name_val, 1, 1)
         
         last_four_lbl = QtWidgets.QLabel("Last Four:")
-        last_four_lbl.setStyleSheet("color: palette(mid);")
+        last_four_lbl.setObjectName("MutedLabel")
         last_four_val = self._make_selectable_label(card.last_four or "—")
         left_grid.addWidget(last_four_lbl, 2, 0, QtCore.Qt.AlignRight)
         left_grid.addWidget(last_four_val, 2, 1)
@@ -764,13 +764,13 @@ class CardViewDialog(QtWidgets.QDialog):
         right_grid.setColumnStretch(1, 1)
         
         status_lbl = QtWidgets.QLabel("Status:")
-        status_lbl.setStyleSheet("color: palette(mid);")
+        status_lbl.setObjectName("MutedLabel")
         status_val = self._make_selectable_label("Active" if card.is_active else "Inactive")
         right_grid.addWidget(status_lbl, 0, 0, QtCore.Qt.AlignRight)
         right_grid.addWidget(status_val, 0, 1)
         
         cashback_lbl = QtWidgets.QLabel("Cashback %:")
-        cashback_lbl.setStyleSheet("color: palette(mid);")
+        cashback_lbl.setObjectName("MutedLabel")
         cashback_val = self._make_selectable_label(f"{float(card.cashback_rate):.2f}" if card.cashback_rate else "0.00")
         right_grid.addWidget(cashback_lbl, 1, 0, QtCore.Qt.AlignRight)
         right_grid.addWidget(cashback_val, 1, 1)
@@ -801,7 +801,10 @@ class CardViewDialog(QtWidgets.QDialog):
             notes_layout.addWidget(notes_display)
         else:
             notes_empty = QtWidgets.QLabel("—")
-            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_empty.setObjectName("MutedLabel")
+            notes_font = notes_empty.font()
+            notes_font.setItalic(True)
+            notes_empty.setFont(notes_font)
             notes_layout.addWidget(notes_empty)
         main_layout.addWidget(notes_section)
         

@@ -635,13 +635,13 @@ class SiteViewDialog(QtWidgets.QDialog):
         left_grid.setColumnStretch(1, 1)
         
         name_lbl = QtWidgets.QLabel("Name:")
-        name_lbl.setStyleSheet("color: palette(mid);")
+        name_lbl.setObjectName("MutedLabel")
         name_val = self._make_selectable_label(site.name)
         left_grid.addWidget(name_lbl, 0, 0, QtCore.Qt.AlignRight)
         left_grid.addWidget(name_val, 0, 1)
         
         url_lbl = QtWidgets.QLabel("URL:")
-        url_lbl.setStyleSheet("color: palette(mid);")
+        url_lbl.setObjectName("MutedLabel")
         url_val = self._make_selectable_label(site.url or "—")
         left_grid.addWidget(url_lbl, 1, 0, QtCore.Qt.AlignRight)
         left_grid.addWidget(url_val, 1, 1)
@@ -655,13 +655,13 @@ class SiteViewDialog(QtWidgets.QDialog):
         right_grid.setColumnStretch(1, 1)
         
         status_lbl = QtWidgets.QLabel("Status:")
-        status_lbl.setStyleSheet("color: palette(mid);")
+        status_lbl.setObjectName("MutedLabel")
         status_val = self._make_selectable_label("Active" if site.is_active else "Inactive")
         right_grid.addWidget(status_lbl, 0, 0, QtCore.Qt.AlignRight)
         right_grid.addWidget(status_val, 0, 1)
         
         rate_lbl = QtWidgets.QLabel("SC Rate:")
-        rate_lbl.setStyleSheet("color: palette(mid);")
+        rate_lbl.setObjectName("MutedLabel")
         rate_val = self._make_selectable_label(str(site.sc_rate))
         right_grid.addWidget(rate_lbl, 1, 0, QtCore.Qt.AlignRight)
         right_grid.addWidget(rate_val, 1, 1)
@@ -692,7 +692,10 @@ class SiteViewDialog(QtWidgets.QDialog):
             notes_layout.addWidget(notes_display)
         else:
             notes_empty = QtWidgets.QLabel("—")
-            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_empty.setObjectName("MutedLabel")
+            notes_font = notes_empty.font()
+            notes_font.setItalic(True)
+            notes_empty.setFont(notes_font)
             notes_layout.addWidget(notes_empty)
         main_layout.addWidget(notes_section)
         

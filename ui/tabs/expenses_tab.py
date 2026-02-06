@@ -863,7 +863,7 @@ class ExpenseViewDialog(QtWidgets.QDialog):
         
         # Date & Time
         date_label = QtWidgets.QLabel("Date:")
-        date_label.setStyleSheet("color: palette(mid);")
+        date_label.setObjectName("MutedLabel")
         left_grid.addWidget(date_label, 0, 0)
         date_time_str = self._format_date(expense.expense_date)
         if expense.expense_time:
@@ -873,13 +873,13 @@ class ExpenseViewDialog(QtWidgets.QDialog):
         
         # Vendor
         vendor_label = QtWidgets.QLabel("Vendor:")
-        vendor_label.setStyleSheet("color: palette(mid);")
+        vendor_label.setObjectName("MutedLabel")
         left_grid.addWidget(vendor_label, 1, 0)
         left_grid.addWidget(self._make_selectable_label(expense.vendor or "—"), 1, 1)
         
         # Amount
         amount_label = QtWidgets.QLabel("Amount:")
-        amount_label.setStyleSheet("color: palette(mid);")
+        amount_label.setObjectName("MutedLabel")
         left_grid.addWidget(amount_label, 2, 0)
         left_grid.addWidget(self._make_selectable_label(f"${expense.amount:,.2f}"), 2, 1)
         
@@ -892,13 +892,13 @@ class ExpenseViewDialog(QtWidgets.QDialog):
         
         # User
         user_label = QtWidgets.QLabel("User:")
-        user_label.setStyleSheet("color: palette(mid);")
+        user_label.setObjectName("MutedLabel")
         right_grid.addWidget(user_label, 0, 0)
         right_grid.addWidget(self._make_selectable_label(expense.user_name or "—"), 0, 1)
         
         # Category
         category_label = QtWidgets.QLabel("Category:")
-        category_label.setStyleSheet("color: palette(mid);")
+        category_label.setObjectName("MutedLabel")
         right_grid.addWidget(category_label, 1, 0)
         right_grid.addWidget(self._make_selectable_label(expense.category or "—"), 1, 1)
         
@@ -923,7 +923,10 @@ class ExpenseViewDialog(QtWidgets.QDialog):
             notes_layout.addWidget(notes_display)
         else:
             notes_empty = QtWidgets.QLabel("—")
-            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_empty.setObjectName("MutedLabel")
+            notes_font = notes_empty.font()
+            notes_font.setItalic(True)
+            notes_empty.setFont(notes_font)
             notes_layout.addWidget(notes_empty)
         
         layout.addWidget(notes_section)
