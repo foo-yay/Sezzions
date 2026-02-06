@@ -42,7 +42,10 @@ class Settings:
                 'notify_on_failure': True,
                 'notify_when_overdue': True,
                 'overdue_threshold_days': 1
-            }
+            },
+            # Repair Mode settings (Issue #55)
+            'repair_mode_enabled': False,
+            'repair_mode_stale_pairs': {}
         }
 
     

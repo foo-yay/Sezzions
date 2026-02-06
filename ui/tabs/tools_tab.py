@@ -28,6 +28,7 @@ from ui.csv_dialogs import (
     ExportOptionsDialog
 )
 from services.tools.dtos import ImportResult
+from ui.repair_mode_dialog import RepairModeConfirmDialog
 
 
 class ToolsTab(QWidget):
@@ -36,9 +37,10 @@ class ToolsTab(QWidget):
     # Signal emitted after database-modifying operations (backup/restore/reset)
     data_changed = Signal()
     
-    def __init__(self, app_facade, parent=None):
+    def __init__(self, app_facade, parent=None, settings=None):
         super().__init__(parent)
         self.facade = app_facade
+        self.settings = settings  # Store settings for persistence
         self.backup_dir = ''  # Initialize backup directory attribute
         self.thread_pool = QThreadPool.globalInstance()
         self._active_progress_dialog = None  # Store active progress dialog to prevent GC
@@ -58,6 +60,24 @@ class ToolsTab(QWidget):
                 return dict(widget.settings.settings)
             widget = widget.parentWidget()
         return {}
+    
+    def _get_settings_object(self):
+        """Get settings object for reading/writing settings.
+        
+        Uses stored settings if available, otherwise walks up widget hierarchy.
+        Returns None if not found.
+        """
+        # Use stored settings if available
+        if self.settings and hasattr(self.settings, 'get'):
+            return self.settings
+        
+        # Fall back to parent walk
+        widget = self
+        while widget:
+            if hasattr(widget, 'settings') and hasattr(widget.settings, 'get'):
+                return widget.settings
+            widget = widget.parentWidget()
+        return None
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -97,36 +117,49 @@ class ToolsTab(QWidget):
 
         layout.addLayout(header_layout)
         
+        # Repair Mode Section
+        repair_group = self._create_repair_mode_group()
+        repair_collapsible = self._create_collapsible_section("🔧 Repair Mode", repair_group, section_id="repair_mode", expanded=False)
+        layout.addWidget(repair_collapsible)
+        
         # Recalculation Section
         recalc_group = self._create_recalculation_group()
-        recalc_collapsible = self._create_collapsible_section("🔄 Recalculation Tools", recalc_group, expanded=True)
+        recalc_collapsible = self._create_collapsible_section("🔄 Recalculation Tools", recalc_group, section_id="recalculation", expanded=False)
         layout.addWidget(recalc_collapsible)
         
         # CSV Import/Export Section
         csv_group = self._create_csv_group()
-        csv_collapsible = self._create_collapsible_section("📄 CSV Import / Export", csv_group, expanded=False)
+        csv_collapsible = self._create_collapsible_section("📄 CSV Import / Export", csv_group, section_id="csv_tools", expanded=False)
         layout.addWidget(csv_collapsible)
         
         # Adjustments & Corrections Section
         adjustments_group = self._create_adjustments_group()
-        adjustments_collapsible = self._create_collapsible_section("⚖️ Adjustments & Corrections", adjustments_group, expanded=False)
+        adjustments_collapsible = self._create_collapsible_section("⚖️ Adjustments & Corrections", adjustments_group, section_id="adjustments", expanded=False)
         layout.addWidget(adjustments_collapsible)
         
         # Database Tools Section
         db_group = self._create_database_group()
-        db_collapsible = self._create_collapsible_section("🔧 Database Tools", db_group, expanded=False)
+        db_collapsible = self._create_collapsible_section("🔧 Database Tools", db_group, section_id="database_tools", expanded=False)
         layout.addWidget(db_collapsible)
         
         layout.addStretch()
     
-    def _create_collapsible_section(self, title: str, content_widget: QWidget, expanded: bool = False) -> QWidget:
+    def _create_collapsible_section(self, title: str, content_widget: QWidget, section_id: str = None, expanded: bool = False) -> QWidget:
         """Create a collapsible section with a title and content.
         
         Args:
             title: Section title text
             content_widget: Widget to show/hide
-            expanded: Initial expanded state
+            section_id: Unique identifier for persisting expand/collapse state
+            expanded: Default expanded state (overridden by saved state if section_id provided)
         """
+        # Restore saved state if section_id provided
+        if section_id:
+            settings = self._get_settings_object()
+            if settings:
+                section_state_key = f'tools_section_{section_id}_expanded'
+                expanded = settings.get(section_state_key, expanded)
+        
         container = QFrame()
         container.setFrameShape(QFrame.StyledPanel)
         container.setObjectName("CollapsibleSection")
@@ -172,11 +205,101 @@ class ToolsTab(QWidget):
             is_expanded = header_btn.isChecked()
             header_btn.setArrowType(Qt.DownArrow if is_expanded else Qt.RightArrow)
             content_container.setVisible(is_expanded)
+            
+            # Save state if section_id provided
+            if section_id:
+                settings = self._get_settings_object()
+                if settings:
+                    section_state_key = f'tools_section_{section_id}_expanded'
+                    settings.set(section_state_key, is_expanded)
         
         header_btn.toggled.connect(toggle)
         
         return container
+    
+    def _create_repair_mode_group(self) -> QWidget:
+        """Create the repair mode section"""
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(6)
         
+        # Section background
+        section = QWidget()
+        section.setObjectName("SectionBackground")
+        layout = QVBoxLayout(section)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+        
+        # Description
+        desc_label = QLabel(
+            "Repair Mode disables automatic derived data rebuilds after edits. "
+            "Use when troubleshooting data corruption or performing large bulk operations. "
+            "Stale pairs must be rebuilt manually."
+        )
+        desc_label.setWordWrap(True)
+        desc_label.setObjectName("HelperText")
+        layout.addWidget(desc_label)
+
+        layout.addSpacing(6)
+
+        # Status row
+        status_layout = QHBoxLayout()
+        status_layout.setSpacing(8)
+        
+        status_label = QLabel("Status:")
+        status_label.setObjectName("FieldLabel")
+        status_layout.addWidget(status_label)
+        
+        # Status indicator
+        self.repair_mode_indicator = QLabel()
+        self._update_repair_mode_indicator()
+        status_layout.addWidget(self.repair_mode_indicator)
+        
+        status_layout.addStretch()
+        
+        # Toggle button
+        self.repair_mode_toggle_btn = QPushButton()
+        self.repair_mode_toggle_btn.clicked.connect(self._on_repair_mode_toggle)
+        self._update_repair_mode_button()
+        status_layout.addWidget(self.repair_mode_toggle_btn)
+        
+        layout.addLayout(status_layout)
+        
+        # Stale pairs info row
+        stale_layout = QHBoxLayout()
+        stale_layout.setSpacing(8)
+        
+        stale_label = QLabel("Stale Pairs:")
+        stale_label.setObjectName("FieldLabel")
+        stale_layout.addWidget(stale_label)
+        
+        self.stale_pairs_count_label = QLabel()
+        self._update_stale_pairs_count()
+        stale_layout.addWidget(self.stale_pairs_count_label)
+        
+        stale_layout.addStretch()
+        
+        # Rebuild stale button
+        self.rebuild_stale_btn = QPushButton("🔄 Rebuild Stale Pairs")
+        self.rebuild_stale_btn.clicked.connect(self._on_rebuild_stale_pairs)
+        stale_layout.addWidget(self.rebuild_stale_btn)
+        
+        # Clear stale button
+        self.clear_stale_btn = QPushButton("🧹 Clear Stale List")
+        self.clear_stale_btn.clicked.connect(self._on_clear_stale_pairs)
+        stale_layout.addWidget(self.clear_stale_btn)
+        
+        # Initially hide buttons if not in repair mode (will be shown/hidden in _refresh_repair_mode_ui)
+        if not (self.facade.repair_mode_service and self.facade.repair_mode_service.is_enabled()):
+            self.rebuild_stale_btn.hide()
+            self.clear_stale_btn.hide()
+        
+        layout.addLayout(stale_layout)
+        
+        container_layout.addWidget(section)
+        return container
+    
     def _create_recalculation_group(self) -> QWidget:
         """Create the recalculation section"""
         container = QWidget()
@@ -585,6 +708,230 @@ class ToolsTab(QWidget):
         
         # Show progress dialog
         progress_dialog.exec()
+    
+    # ===== Repair Mode Methods =====
+    
+    def _update_repair_mode_indicator(self):
+        """Update the repair mode status indicator"""
+        if not self.facade.repair_mode_service:
+            self.repair_mode_indicator.setText("🟢 Disabled")
+            self.repair_mode_indicator.setStyleSheet("color: #28a745; font-weight: bold;")
+            return
+            
+        is_enabled = self.facade.repair_mode_service.is_enabled()
+        if is_enabled:
+            self.repair_mode_indicator.setText("🔴 ENABLED")
+            self.repair_mode_indicator.setStyleSheet("color: #cc0000; font-weight: bold;")
+        else:
+            self.repair_mode_indicator.setText("🟢 Disabled")
+            self.repair_mode_indicator.setStyleSheet("color: #28a745; font-weight: bold;")
+    
+    def _update_repair_mode_button(self):
+        """Update the repair mode toggle button text"""
+        if not self.facade.repair_mode_service:
+            self.repair_mode_toggle_btn.setText("Enable Repair Mode")
+            self.repair_mode_toggle_btn.setStyleSheet("background-color: #cc0000; color: white;")
+            return
+            
+        is_enabled = self.facade.repair_mode_service.is_enabled()
+        if is_enabled:
+            self.repair_mode_toggle_btn.setText("Disable Repair Mode")
+            self.repair_mode_toggle_btn.setStyleSheet("")
+        else:
+            self.repair_mode_toggle_btn.setText("Enable Repair Mode")
+            self.repair_mode_toggle_btn.setStyleSheet("background-color: #cc0000; color: white;")
+    
+    def _update_stale_pairs_count(self):
+        """Update the stale pairs count label"""
+        if not self.facade.repair_mode_service:
+            self.stale_pairs_count_label.setText("0 stale pairs")
+            return
+            
+        stale_pairs = self.facade.repair_mode_service.get_stale_pairs()
+        count = len(stale_pairs)
+        if count == 0:
+            self.stale_pairs_count_label.setText("None")
+            self.stale_pairs_count_label.setStyleSheet("")
+        else:
+            self.stale_pairs_count_label.setText(f"{count} pair(s) need rebuilding")
+            self.stale_pairs_count_label.setStyleSheet("color: #cc0000; font-weight: bold;")
+    
+    def _update_rebuild_stale_button(self):
+        """Enable/disable rebuild stale button based on stale pairs count"""
+        if not self.facade.repair_mode_service:
+            self.rebuild_stale_btn.setEnabled(False)
+            return
+        # Disable if not in repair mode (stale pairs are historical at this point)
+        if not self.facade.repair_mode_service.is_enabled():
+            self.rebuild_stale_btn.setEnabled(False)
+            return
+        stale_pairs = self.facade.repair_mode_service.get_stale_pairs()
+        self.rebuild_stale_btn.setEnabled(len(stale_pairs) > 0)
+    
+    def _update_clear_stale_button(self):
+        """Enable/disable clear stale button based on stale pairs count"""
+        if not self.facade.repair_mode_service:
+            self.clear_stale_btn.setEnabled(False)
+            return
+        # Disable if not in repair mode (stale pairs are historical at this point)
+        if not self.facade.repair_mode_service.is_enabled():
+            self.clear_stale_btn.setEnabled(False)
+            return
+        stale_pairs = self.facade.repair_mode_service.get_stale_pairs()
+        self.clear_stale_btn.setEnabled(len(stale_pairs) > 0)
+    
+    def _refresh_repair_mode_ui(self):
+        """Refresh all repair mode UI elements"""
+        self._update_repair_mode_indicator()
+        self._update_repair_mode_button()
+        self._update_stale_pairs_count()
+        
+        # Show/hide stale pair action buttons based on repair mode state
+        if self.facade.repair_mode_service and self.facade.repair_mode_service.is_enabled():
+            self.rebuild_stale_btn.show()
+            self.clear_stale_btn.show()
+            self._update_rebuild_stale_button()
+            self._update_clear_stale_button()
+        else:
+            self.rebuild_stale_btn.hide()
+            self.clear_stale_btn.hide()
+    
+    def _on_repair_mode_toggle(self):
+        """Handle repair mode toggle button click"""
+        if not self.facade.repair_mode_service:
+            return
+        is_enabled = self.facade.repair_mode_service.is_enabled()
+        
+        if is_enabled:
+            # Disable repair mode (no confirmation needed)
+            self.facade.repair_mode_service.set_enabled(False)
+            self._refresh_repair_mode_ui()
+            
+            # Notify parent to refresh window title and banner
+            main_window = self.window()
+            if hasattr(main_window, 'refresh_repair_mode_ui'):
+                main_window.refresh_repair_mode_ui()
+            
+            # Show message after refresh (using main_window as parent since self may be deleted)
+            QMessageBox.information(
+                main_window,
+                "Repair Mode Disabled",
+                "Repair Mode has been disabled. Automatic derived data rebuilds are now enabled."
+            )
+        else:
+            # Enable repair mode (requires confirmation)
+            dialog = RepairModeConfirmDialog(self)
+            if dialog.exec() == QDialog.Accepted:
+                # Check if maintenance mode is active (blocking condition per Issue #55)
+                if self.facade.is_maintenance_mode():
+                    QMessageBox.warning(
+                        self,
+                        "Cannot Enable Repair Mode",
+                        "Repair Mode cannot be enabled while Maintenance Mode is active. "
+                        "Please disable Maintenance Mode first."
+                    )
+                    return
+                
+                self.facade.repair_mode_service.set_enabled(True)
+                self._refresh_repair_mode_ui()
+                
+                # Notify parent to refresh window title and banner
+                main_window = self.window()
+                if hasattr(main_window, 'refresh_repair_mode_ui'):
+                    main_window.refresh_repair_mode_ui()
+    
+    def _on_rebuild_stale_pairs(self):
+        """Handle rebuild stale pairs button click"""
+        if not self.facade.repair_mode_service:
+            return
+        stale_pairs = self.facade.repair_mode_service.get_stale_pairs()
+        if not stale_pairs:
+            QMessageBox.information(self, "No Stale Pairs", "No stale pairs need rebuilding.")
+            return
+        
+        # Build summary message
+        pair_list = "\n".join([f"• {pair.user_name} @ {pair.site_name}" for pair in stale_pairs])
+        confirm_msg = (
+            f"Rebuild derived data for {len(stale_pairs)} stale pair(s)?\n\n"
+            f"{pair_list}\n\n"
+            "This will recalculate FIFO allocations, cost basis, and P/L for each pair."
+        )
+        
+        reply = QMessageBox.question(
+            self,
+            "Rebuild Stale Pairs",
+            confirm_msg,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Rebuild each stale pair using existing recalculation worker
+            for pair in stale_pairs:
+                # Create progress dialog
+                title = f"Recalculate {pair.user_name} @ {pair.site_name}"
+                progress_dialog = RecalculationProgressDialog(title, self)
+                
+                # Create worker with database path (creates its own connection for thread safety)
+                worker = RecalculationWorker(
+                    self.facade.db.db_path,
+                    operation="pair",
+                    user_id=pair.user_id,
+                    site_id=pair.site_id,
+                    settings_dict=self._get_settings_dict()
+                )
+                
+                # Connect signals
+                worker.signals.progress.connect(progress_dialog.update_progress)
+                worker.signals.finished.connect(lambda result, pd=progress_dialog: self._on_recalculation_finished(result, pd))
+                worker.signals.error.connect(lambda error, pd=progress_dialog: self._on_recalculation_error(error, pd))
+                worker.signals.cancelled.connect(lambda pd=progress_dialog: self._on_recalculation_cancelled(pd))
+                progress_dialog.cancel_requested.connect(worker.cancel)
+                
+                # Start worker
+                self.thread_pool.start(worker)
+                
+                # Show progress dialog (blocks until done)
+                progress_dialog.exec()
+                
+                # Clear the pair from stale list after rebuild
+                self.facade.repair_mode_service.clear_pair(pair.user_id, pair.site_id)
+            
+            # Refresh UI
+            self._refresh_repair_mode_ui()
+    
+    def _on_clear_stale_pairs(self):
+        """Handle clear stale pairs button click"""
+        if not self.facade.repair_mode_service:
+            return
+        stale_pairs = self.facade.repair_mode_service.get_stale_pairs()
+        if not stale_pairs:
+            QMessageBox.information(self, "No Stale Pairs", "No stale pairs to clear.")
+            return
+        
+        confirm_msg = (
+            f"Clear the stale pairs list without rebuilding?\n\n"
+            f"{len(stale_pairs)} pair(s) will be removed from the list. "
+            "Their derived data will NOT be recalculated.\n\n"
+            "This is useful if you have manually verified the data is correct."
+        )
+        
+        reply = QMessageBox.question(
+            self,
+            "Clear Stale Pairs",
+            confirm_msg,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.facade.repair_mode_service.clear_all()
+            self._refresh_repair_mode_ui()
+            QMessageBox.information(
+                self,
+                "Stale Pairs Cleared",
+                "All stale pairs have been cleared from the list."
+            )
         
     def _on_recalculate_scoped(self):
         """Handle scoped recalculation button click"""
@@ -697,6 +1044,11 @@ class ToolsTab(QWidget):
         progress_dialog.set_complete("Recalculation complete!")
         progress_dialog.accept()
         
+        # Clear stale pairs if this was a full rebuild (Issue #55)
+        result_operation = getattr(result, 'operation', 'all')
+        if result_operation == "all" and self.facade.repair_mode_service:
+            self.facade.repair_mode_service.clear_all()
+        
         # Update stats
         self._update_stats()
         
@@ -706,8 +1058,6 @@ class ToolsTab(QWidget):
         
         # Emit unified data change event (Issue #9)
         from services.data_change_event import DataChangeEvent, OperationType
-        # Safely access operation attribute (fallback to RECALCULATE_ALL if not present)
-        result_operation = getattr(result, 'operation', 'all')
         operation = OperationType.RECALCULATE_ALL if result_operation == "all" else OperationType.RECALCULATE_SCOPED
         self.facade.emit_data_changed(DataChangeEvent(
             operation=operation,
@@ -741,6 +1091,7 @@ class ToolsTab(QWidget):
         self._load_users()
         self._load_sites()
         self._update_stats()
+        self._refresh_repair_mode_ui()
     
     def refresh_data(self):
         """Standardized refresh method (Issue #9 contract)"""

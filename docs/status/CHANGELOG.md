@@ -12,6 +12,84 @@ Rules:
 ## 2026-02-06
 
 ```yaml
+id: 2026-02-06-06
+type: bugfix
+areas: [ui, services]
+summary: "Repair Mode QA fixes: UI persistence, name resolution, stale pair updates, and architectural cleanup"
+pr: "#75"
+files_changed:
+  - ui/repair_mode_dialog.py
+  - ui/tabs/tools_tab.py
+  - ui/main_window.py
+  - ui/tabs/setup_tab.py
+  - services/repair_mode_service.py
+  - services/game_session_service.py
+  - app_facade.py
+```
+
+Notes:
+- **Manual QA Phase:** Comprehensive hands-on testing revealed 15 bugs not caught by automated tests (726 tests passing)
+- **Signal Handling:** Fixed checkbox not enabling button (stateChanged → toggled signal in RepairModeConfirmDialog)
+- **Method Names:** Fixed AttributeErrors (get_maintenance_mode → is_maintenance_mode, QTabBar.clear() → removeTab loop)
+- **Widget Lifecycle:** Fixed RuntimeError from deleted widget by changing message box parent to main_window instead of self (after tab refresh)
+- **Name Resolution:** Fixed "Unknown User/Site" in stale pair dialogs:
+  - Updated RepairModeService to accept db_manager for name lookups
+  - Fixed User model attribute (username → name)
+  - Fixed Site model attribute (site_name → name)
+- **Stale Pair Updates:** Fixed stale pair count not updating after purchase edits by adding tools_tab to refresh_all_tabs list
+- **Rebuild Stale Pairs:** Fixed AttributeError (_run_recalculation didn't exist) by rewriting _on_rebuild_stale_pairs to properly create RecalculationWorker instances
+- **Tax Withholding:** Removed invalid apply_to_session_model() call (tax withholding is calculated at date level, not per-session)
+- **UI Button Visibility:** Changed repair mode buttons to hide() when disabled (not just setEnabled(False)) for cleaner UX
+- **Stale Pair Clearing:** Added automatic clearing of stale pairs after "Recalculate Everything" completes
+- **View Persistence:** Added Setup sub-tab index persistence (saves/restores which Setup sub-tab is active across app restarts and repair mode toggles)
+- **Section State Persistence:** Added expand/collapse state persistence for all Tools sections (Repair Mode, Recalculation, CSV, Adjustments, Database)
+- **Settings Propagation:** Passed settings object through MainWindow → SetupTab → ToolsTab for reliable persistence
+- **Default Collapsed:** Changed all Tools sections to start collapsed by default for cleaner initial view
+- **Known Issue (Follow-up):** Window can expand beyond screen boundaries when all Tools sections expanded; needs scroll area implementation (tracked in new Issue)
+
+```yaml
+id: 2026-02-06-05
+type: feature
+areas: [services, ui, app_facade]
+summary: "Repair Mode: manual derived data rebuild control for troubleshooting (implements Issue #55)"
+issue: "#55"
+files_changed:
+  - services/repair_mode_service.py (new)
+  - app_facade.py
+  - ui/main_window.py
+  - ui/tabs/tools_tab.py
+  - ui/repair_mode_dialog.py (new)
+  - ui/settings.py
+  - docs/archive/2026-02-06-issue-55-proposed-body.md (new)
+```
+
+Notes:
+- **Purpose:** Provides controlled environment for troubleshooting derived data corruption by disabling automatic rebuilds and tracking affected (user, site) pairs.
+- **Problem:** When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automatic rebuilds after every edit make it difficult to isolate the root cause or perform systematic repairs.
+- **Solution:** Repair Mode (manual toggle in Tools tab):
+  - **When enabled:** All CRUD operations (create/update/delete purchases, redemptions, sessions, adjustments) mark the affected (user, site) pair as "stale" instead of immediately rebuilding derived data
+  - **Stale pair tracking:** Persisted in settings.json with boundary date/time, timestamp, and reasons for staleness
+  - **Manual rebuild:** Tools tab provides "Rebuild Stale Pairs" and "Clear Stale List" actions
+  - **UI indicators:** Red banner at top of window, window title suffix " - REPAIR MODE", status indicator in Tools tab
+  - **Safety:** Cannot enable while Maintenance Mode is active; requires explicit confirmation with acknowledgment checkbox
+- **Backend Architecture:**
+  - `RepairModeService`: Manages enabled state and stale pair list (settings.json persistence)
+  - `AppFacade._rebuild_or_mark_stale()`: Conditional helper method used by all CRUD operations
+  - Refactored 10+ CRUD methods to use helper instead of direct rebuild calls
+  - Cross-pair moves (e.g., reassigning purchase to different site) mark both old and new pairs stale
+- **UI Components:**
+  - `RepairModeConfirmDialog`: Blocking confirmation with warning bullets, required acknowledgment checkbox
+  - Tools tab section: Status indicator, toggle button, stale pairs count, rebuild/clear actions
+  - MainWindow: Red banner (mirrors Maintenance Mode pattern), window title suffix, `refresh_repair_mode_ui()` method
+- **Workflow:**
+  1. Enable Repair Mode via Tools tab (confirmation required)
+  2. Perform troubleshooting edits/imports/corrections
+  3. Review stale pairs list (shows which (user, site) pairs are affected)
+  4. Rebuild selected/all stale pairs when ready
+  5. Disable Repair Mode to resume normal auto-rebuild behavior
+- **Testing:** Backend and CRUD refactoring complete; UI testing and comprehensive test suite pending.
+
+```yaml
 id: 2026-02-06-04
 type: bugfix
 areas: [models, services, repositories, ui, tests]

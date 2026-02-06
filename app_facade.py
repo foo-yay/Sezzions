@@ -52,6 +52,7 @@ from services.tax_withholding_service import TaxWithholdingService
 from services.notification_service import NotificationService
 from services.notification_rules_service import NotificationRulesService
 from services.adjustment_service import AdjustmentService
+from services.repair_mode_service import RepairModeService
 from repositories.notification_repository import NotificationRepository
 
 from models.user import User
@@ -182,6 +183,10 @@ class AppFacade:
             None,  # Will be set from MainWindow
             self.db
         )
+        
+        # Repair Mode service (Issue #55)
+        # Will be wired to MainWindow settings after construction
+        self.repair_mode_service = None
 
     @staticmethod
     def _normalize_time(value: Optional[str]) -> str:
@@ -271,6 +276,46 @@ class AppFacade:
         first = self._containing_boundary(site_id, user_id, first_date, first_time)
         second = self._containing_boundary(site_id, user_id, second_date, second_time)
         return self._earliest_boundary(first[0], first[1], second[0], second[1])
+    
+    def _rebuild_or_mark_stale(
+        self,
+        user_id: int,
+        site_id: int,
+        boundary_date: date,
+        boundary_time: str,
+        reason: Optional[str] = None
+    ) -> None:
+        """
+        Either rebuild derived data immediately, or mark the pair as stale (Repair Mode).
+        
+        When Repair Mode is OFF: performs full rebuild (FIFO + sessions + links).
+        When Repair Mode is ON: marks the pair stale for explicit rebuild later.
+        
+        Args:
+            user_id: User ID
+            site_id: Site ID
+            boundary_date: Earliest date to rebuild from
+            boundary_time: Earliest time to rebuild from
+            reason: Optional reason for stale marking (e.g., "purchase edit")
+        """
+        if self.repair_mode_service and self.repair_mode_service.is_enabled():
+            # Repair Mode: mark stale instead of rebuilding
+            self.repair_mode_service.mark_pair_stale(
+                user_id=user_id,
+                site_id=site_id,
+                from_date=boundary_date.isoformat(),
+                from_time=boundary_time,
+                reason=reason
+            )
+        else:
+            # Normal mode: rebuild immediately
+            self.recalculation_service.rebuild_fifo_for_pair_from(
+                user_id,
+                site_id,
+                boundary_date.isoformat(),
+                boundary_time
+            )
+    
     # ==========================================================================
     # User Operations
     # ==========================================================================
@@ -538,23 +583,12 @@ class AppFacade:
                 purchase.purchase_date,
                 purchase.purchase_time,
             )
-            self.recalculation_service.rebuild_fifo_for_pair_from(
-                user_id,
-                site_id,
-                boundary_date.isoformat(),
-                boundary_time,
-            )
-            self.game_session_service.recalculate_closed_sessions_for_pair_from(
+            self._rebuild_or_mark_stale(
                 user_id,
                 site_id,
                 boundary_date,
                 boundary_time,
-            )
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
-                site_id,
-                user_id,
-                boundary_date.isoformat(),
-                boundary_time,
+                reason="purchase create"
             )
             return purchase
     
@@ -610,48 +644,27 @@ class AppFacade:
                         updated.purchase_time,
                     )
                     user_id, site_id = old_pair
-                    self.recalculation_service.rebuild_fifo_for_pair_from(
-                        user_id,
-                        site_id,
-                        boundary_date.isoformat(),
-                        boundary_time,
-                    )
-                    self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                    self._rebuild_or_mark_stale(
                         user_id,
                         site_id,
                         boundary_date,
                         boundary_time,
-                    )
-                    self.game_session_event_link_service.rebuild_links_for_pair_from(
-                        site_id,
-                        user_id,
-                        boundary_date.isoformat(),
-                        boundary_time,
+                        reason="purchase edit"
                     )
                 else:
+                    # Cross-pair move: mark both pairs stale
                     old_date, old_time = self._containing_boundary(
                         old_pair[1],
                         old_pair[0],
                         old_purchase.purchase_date,
                         old_purchase.purchase_time,
                     )
-                    self.recalculation_service.rebuild_fifo_for_pair_from(
-                        old_pair[0],
-                        old_pair[1],
-                        old_date.isoformat(),
-                        old_time,
-                    )
-                    self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                    self._rebuild_or_mark_stale(
                         old_pair[0],
                         old_pair[1],
                         old_date,
                         old_time,
-                    )
-                    self.game_session_event_link_service.rebuild_links_for_pair_from(
-                        old_pair[1],
-                        old_pair[0],
-                        old_date.isoformat(),
-                        old_time,
+                        reason="purchase moved (old pair)"
                     )
 
                     new_date, new_time = self._containing_boundary(
@@ -660,23 +673,12 @@ class AppFacade:
                         updated.purchase_date,
                         updated.purchase_time,
                     )
-                    self.recalculation_service.rebuild_fifo_for_pair_from(
-                        new_pair[0],
-                        new_pair[1],
-                        new_date.isoformat(),
-                        new_time,
-                    )
-                    self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                    self._rebuild_or_mark_stale(
                         new_pair[0],
                         new_pair[1],
                         new_date,
                         new_time,
-                    )
-                    self.game_session_event_link_service.rebuild_links_for_pair_from(
-                        new_pair[1],
-                        new_pair[0],
-                        new_date.isoformat(),
-                        new_time,
+                        reason="purchase moved (new pair)"
                     )
 
             return updated
@@ -889,23 +891,12 @@ class AppFacade:
                     purchase.purchase_date,
                     purchase.purchase_time,
                 )
-                self.recalculation_service.rebuild_fifo_for_pair_from(
-                    purchase.user_id,
-                    purchase.site_id,
-                    boundary_date.isoformat(),
-                    boundary_time,
-                )
-                self.game_session_service.recalculate_closed_sessions_for_pair_from(
+                self._rebuild_or_mark_stale(
                     purchase.user_id,
                     purchase.site_id,
                     boundary_date,
                     boundary_time,
-                )
-                self.game_session_event_link_service.rebuild_links_for_pair_from(
-                    purchase.site_id,
-                    purchase.user_id,
-                    boundary_date.isoformat(),
-                    boundary_time,
+                    reason="purchase delete"
                 )
     
     def get_available_purchases_for_fifo(self, user_id: int, site_id: int) -> List[Purchase]:
@@ -964,24 +955,19 @@ class AppFacade:
                 redemption.redemption_time,
             )
             if apply_fifo:
-                self.recalculation_service.rebuild_fifo_for_pair_from(
+                self._rebuild_or_mark_stale(
+
                     user_id,
+
                     site_id,
-                    boundary_date.isoformat(),
+
+                    boundary_date,
+
                     boundary_time,
+
+                    reason="data edit"
+
                 )
-            self.game_session_service.recalculate_closed_sessions_for_pair_from(
-                user_id,
-                site_id,
-                boundary_date,
-                boundary_time,
-            )
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
-                site_id,
-                user_id,
-                boundary_date.isoformat(),
-                boundary_time,
-            )
             return redemption
 
     def update_redemption_reprocess(self, redemption_id: int, **kwargs) -> Redemption:
@@ -1020,23 +1006,18 @@ class AppFacade:
                 updated.redemption_date,
                 updated.redemption_time,
             )
-            self.recalculation_service.rebuild_fifo_for_pair_from(
+            self._rebuild_or_mark_stale(
+
                 old_pair[0],
+
                 old_pair[1],
-                boundary_date.isoformat(),
-                boundary_time,
-            )
-            self.game_session_service.recalculate_closed_sessions_for_pair_from(
-                old_pair[0],
-                old_pair[1],
+
                 boundary_date,
+
                 boundary_time,
-            )
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
-                old_pair[1],
-                old_pair[0],
-                boundary_date.isoformat(),
-                boundary_time,
+
+                reason="data edit"
+
             )
         else:
             old_date, old_time = self._containing_boundary(
@@ -1045,23 +1026,18 @@ class AppFacade:
                 old_redemption.redemption_date,
                 old_redemption.redemption_time,
             )
-            self.recalculation_service.rebuild_fifo_for_pair_from(
+            self._rebuild_or_mark_stale(
+
                 old_pair[0],
+
                 old_pair[1],
-                old_date.isoformat(),
-                old_time,
-            )
-            self.game_session_service.recalculate_closed_sessions_for_pair_from(
-                old_pair[0],
-                old_pair[1],
+
                 old_date,
+
                 old_time,
-            )
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
-                old_pair[1],
-                old_pair[0],
-                old_date.isoformat(),
-                old_time,
+
+                reason="data edit"
+
             )
 
             new_date, new_time = self._containing_boundary(
@@ -1070,23 +1046,18 @@ class AppFacade:
                 updated.redemption_date,
                 updated.redemption_time,
             )
-            self.recalculation_service.rebuild_fifo_for_pair_from(
+            self._rebuild_or_mark_stale(
+
                 new_pair[0],
+
                 new_pair[1],
-                new_date.isoformat(),
-                new_time,
-            )
-            self.game_session_service.recalculate_closed_sessions_for_pair_from(
-                new_pair[0],
-                new_pair[1],
+
                 new_date,
+
                 new_time,
-            )
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
-                new_pair[1],
-                new_pair[0],
-                new_date.isoformat(),
-                new_time,
+
+                reason="data edit"
+
             )
 
         return self.redemption_repo.get_by_id(redemption_id)
@@ -1123,23 +1094,18 @@ class AppFacade:
                         updated.redemption_date,
                         updated.redemption_time,
                     )
-                    self.recalculation_service.rebuild_fifo_for_pair_from(
+                    self._rebuild_or_mark_stale(
+
                         old_pair[0],
+
                         old_pair[1],
-                        boundary_date.isoformat(),
-                        boundary_time,
-                    )
-                    self.game_session_service.recalculate_closed_sessions_for_pair_from(
-                        old_pair[0],
-                        old_pair[1],
+
                         boundary_date,
+
                         boundary_time,
-                    )
-                    self.game_session_event_link_service.rebuild_links_for_pair_from(
-                        old_pair[1],
-                        old_pair[0],
-                        boundary_date.isoformat(),
-                        boundary_time,
+
+                        reason="data edit"
+
                     )
                 else:
                     old_date, old_time = self._containing_boundary(
@@ -1148,23 +1114,18 @@ class AppFacade:
                         old_redemption.redemption_date,
                         old_redemption.redemption_time,
                     )
-                    self.recalculation_service.rebuild_fifo_for_pair_from(
+                    self._rebuild_or_mark_stale(
+
                         old_pair[0],
+
                         old_pair[1],
-                        old_date.isoformat(),
-                        old_time,
-                    )
-                    self.game_session_service.recalculate_closed_sessions_for_pair_from(
-                        old_pair[0],
-                        old_pair[1],
+
                         old_date,
+
                         old_time,
-                    )
-                    self.game_session_event_link_service.rebuild_links_for_pair_from(
-                        old_pair[1],
-                        old_pair[0],
-                        old_date.isoformat(),
-                        old_time,
+
+                        reason="data edit"
+
                     )
 
                     new_date, new_time = self._containing_boundary(
@@ -1173,23 +1134,18 @@ class AppFacade:
                         updated.redemption_date,
                         updated.redemption_time,
                     )
-                    self.recalculation_service.rebuild_fifo_for_pair_from(
+                    self._rebuild_or_mark_stale(
+
                         new_pair[0],
+
                         new_pair[1],
-                        new_date.isoformat(),
-                        new_time,
-                    )
-                    self.game_session_service.recalculate_closed_sessions_for_pair_from(
-                        new_pair[0],
-                        new_pair[1],
+
                         new_date,
+
                         new_time,
-                    )
-                    self.game_session_event_link_service.rebuild_links_for_pair_from(
-                        new_pair[1],
-                        new_pair[0],
-                        new_date.isoformat(),
-                        new_time,
+
+                        reason="data edit"
+
                     )
             else:
                 self.game_session_event_link_service.rebuild_links_for_pair(
@@ -1224,23 +1180,18 @@ class AppFacade:
                 redemption.redemption_date,
                 redemption.redemption_time,
             )
-            self.recalculation_service.rebuild_fifo_for_pair_from(
+            self._rebuild_or_mark_stale(
+
                 redemption.user_id,
+
                 redemption.site_id,
-                boundary_date.isoformat(),
-                boundary_time,
-            )
-            self.game_session_service.recalculate_closed_sessions_for_pair_from(
-                redemption.user_id,
-                redemption.site_id,
+
                 boundary_date,
+
                 boundary_time,
-            )
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
-                redemption.site_id,
-                redemption.user_id,
-                boundary_date.isoformat(),
-                boundary_time,
+
+                reason="redemption delete"
+
             )
     
     def delete_redemptions_bulk(self, redemption_ids: List[int]) -> None:
