@@ -170,23 +170,23 @@ class RealizedPositionDialog(QtWidgets.QDialog):
         
         # Left column
         date_label = QtWidgets.QLabel("Redemption Date:")
-        date_label.setStyleSheet("color: palette(mid);")
+        date_label.setObjectName("MutedLabel")
         position_grid.addWidget(date_label, 0, 0)
         position_grid.addWidget(make_selectable_label(format_date(self.position.get("redemption_date"))), 0, 1)
         
         user_label = QtWidgets.QLabel("User:")
-        user_label.setStyleSheet("color: palette(mid);")
+        user_label.setObjectName("MutedLabel")
         position_grid.addWidget(user_label, 1, 0)
         position_grid.addWidget(make_selectable_label(self.position.get("user_name") or "—"), 1, 1)
         
         # Right column
         time_label = QtWidgets.QLabel("Redemption Time:")
-        time_label.setStyleSheet("color: palette(mid);")
+        time_label.setObjectName("MutedLabel")
         position_grid.addWidget(time_label, 0, 2)
         position_grid.addWidget(make_selectable_label(format_time(self.position.get("redemption_time"))), 0, 3)
         
         site_label = QtWidgets.QLabel("Site:")
-        site_label.setStyleSheet("color: palette(mid);")
+        site_label.setObjectName("MutedLabel")
         position_grid.addWidget(site_label, 1, 2)
         position_grid.addWidget(make_selectable_label(self.position.get("site_name") or "—"), 1, 3)
         
@@ -210,22 +210,22 @@ class RealizedPositionDialog(QtWidgets.QDialog):
         financial_grid.setVerticalSpacing(6)
         
         redemption_label = QtWidgets.QLabel("Redemption Amount:")
-        redemption_label.setStyleSheet("color: palette(mid);")
+        redemption_label.setObjectName("MutedLabel")
         financial_grid.addWidget(redemption_label, 0, 0)
         financial_grid.addWidget(make_selectable_label(format_currency(self.position.get("redemption_amount"))), 0, 1)
         
         basis_label = QtWidgets.QLabel("Cost Basis:")
-        basis_label.setStyleSheet("color: palette(mid);")
+        basis_label.setObjectName("MutedLabel")
         financial_grid.addWidget(basis_label, 1, 0)
         financial_grid.addWidget(make_selectable_label(format_currency(self.position.get("cost_basis"))), 1, 1)
         
         fees_label = QtWidgets.QLabel("Fees:")
-        fees_label.setStyleSheet("color: palette(mid);")
+        fees_label.setObjectName("MutedLabel")
         financial_grid.addWidget(fees_label, 2, 0)
         financial_grid.addWidget(make_selectable_label(format_currency(self.position.get("fees"))), 2, 1)
         
         pl_label = QtWidgets.QLabel("Realized P/L:")
-        pl_label.setStyleSheet("color: palette(mid);")
+        pl_label.setObjectName("MutedLabel")
         financial_grid.addWidget(pl_label, 3, 0)
         
         # Color code P/L
@@ -257,29 +257,29 @@ class RealizedPositionDialog(QtWidgets.QDialog):
         processing_grid.setVerticalSpacing(6)
         
         method_type_label = QtWidgets.QLabel("Redemption Method Type:")
-        method_type_label.setStyleSheet("color: palette(mid);")
+        method_type_label.setObjectName("MutedLabel")
         processing_grid.addWidget(method_type_label, 0, 0)
         processing_grid.addWidget(make_selectable_label(self.position.get("method_type") or "—"), 0, 1)
         
         method_label = QtWidgets.QLabel("Redemption Method:")
-        method_label.setStyleSheet("color: palette(mid);")
+        method_label.setObjectName("MutedLabel")
         processing_grid.addWidget(method_label, 1, 0)
         processing_grid.addWidget(make_selectable_label(self.position.get("method_name") or "—"), 1, 1)
         
         type_label = QtWidgets.QLabel("Redemption Type:")
-        type_label.setStyleSheet("color: palette(mid);")
+        type_label.setObjectName("MutedLabel")
         processing_grid.addWidget(type_label, 2, 0)
         type_text = "Partial" if self.position.get("more_remaining") else "Full"
         processing_grid.addWidget(make_selectable_label(type_text), 2, 1)
         
         receipt_label = QtWidgets.QLabel("Receipt Date:")
-        receipt_label.setStyleSheet("color: palette(mid);")
+        receipt_label.setObjectName("MutedLabel")
         processing_grid.addWidget(receipt_label, 3, 0)
         receipt_text = format_date(self.position.get("receipt_date")) if self.position.get("receipt_date") else "—"
         processing_grid.addWidget(make_selectable_label(receipt_text), 3, 1)
         
         processed_label = QtWidgets.QLabel("Processed:")
-        processed_label.setStyleSheet("color: palette(mid);")
+        processed_label.setObjectName("MutedLabel")
         processing_grid.addWidget(processed_label, 4, 0)
         processed_text = "Yes" if self.position.get("processed") else "No"
         processing_grid.addWidget(make_selectable_label(processed_text), 4, 1)
@@ -304,7 +304,10 @@ class RealizedPositionDialog(QtWidgets.QDialog):
             notes_layout.addWidget(notes_display)
         else:
             notes_empty = QtWidgets.QLabel("—")
-            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_empty.setObjectName("MutedLabel")
+            notes_font = notes_empty.font()
+            notes_font.setItalic(True)
+            notes_empty.setFont(notes_font)
             notes_layout.addWidget(notes_empty)
         
         layout.addWidget(notes_section)

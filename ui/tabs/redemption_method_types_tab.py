@@ -565,13 +565,13 @@ class RedemptionMethodTypeViewDialog(QtWidgets.QDialog):
         grid.setColumnStretch(1, 1)
         
         name_lbl = QtWidgets.QLabel("Name:")
-        name_lbl.setStyleSheet("color: palette(mid);")
+        name_lbl.setObjectName("MutedLabel")
         name_val = self._make_selectable_label(method_type.name)
         grid.addWidget(name_lbl, 0, 0, QtCore.Qt.AlignRight)
         grid.addWidget(name_val, 0, 1)
         
         status_lbl = QtWidgets.QLabel("Status:")
-        status_lbl.setStyleSheet("color: palette(mid);")
+        status_lbl.setObjectName("MutedLabel")
         status_val = self._make_selectable_label("Active" if method_type.is_active else "Inactive")
         grid.addWidget(status_lbl, 1, 0, QtCore.Qt.AlignRight)
         grid.addWidget(status_val, 1, 1)
@@ -600,7 +600,10 @@ class RedemptionMethodTypeViewDialog(QtWidgets.QDialog):
             notes_layout.addWidget(notes_display)
         else:
             notes_empty = QtWidgets.QLabel("—")
-            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_empty.setObjectName("MutedLabel")
+            notes_font = notes_empty.font()
+            notes_font.setItalic(True)
+            notes_empty.setFont(notes_font)
             notes_layout.addWidget(notes_empty)
         main_layout.addWidget(notes_section)
         

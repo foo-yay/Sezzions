@@ -582,23 +582,23 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         
         # Left column
         site_label = QtWidgets.QLabel("Site:")
-        site_label.setStyleSheet("color: palette(mid);")
+        site_label.setObjectName("MutedLabel")
         header_grid.addWidget(site_label, 0, 0)
         header_grid.addWidget(make_selectable_label(self.position.site_name), 0, 1)
         
         start_date_label = QtWidgets.QLabel("Start Date:")
-        start_date_label.setStyleSheet("color: palette(mid);")
+        start_date_label.setObjectName("MutedLabel")
         header_grid.addWidget(start_date_label, 1, 0)
         header_grid.addWidget(make_selectable_label(self._format_date(self.position.start_date)), 1, 1)
         
         # Right column
         user_label = QtWidgets.QLabel("User:")
-        user_label.setStyleSheet("color: palette(mid);")
+        user_label.setObjectName("MutedLabel")
         header_grid.addWidget(user_label, 0, 2)
         header_grid.addWidget(make_selectable_label(self.position.user_name), 0, 3)
         
         last_activity_label = QtWidgets.QLabel("Last Activity:")
-        last_activity_label.setStyleSheet("color: palette(mid);")
+        last_activity_label.setObjectName("MutedLabel")
         header_grid.addWidget(last_activity_label, 1, 2)
         header_grid.addWidget(make_selectable_label(self._format_date(self.position.last_activity)), 1, 3)
         
@@ -623,7 +623,7 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         metrics_grid.setVerticalSpacing(6)
         
         basis_label = QtWidgets.QLabel("Remaining Basis:")
-        basis_label.setStyleSheet("color: palette(mid);")
+        basis_label.setObjectName("MutedLabel")
         metrics_grid.addWidget(basis_label, 0, 0)
         metrics_grid.addWidget(make_selectable_label(self._format_currency(self.position.purchase_basis), align_right=True), 0, 1)
         
@@ -631,7 +631,7 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         unrealized_pl = float(self.position.unrealized_pl or 0)
         pl_color = "green" if unrealized_pl >= 0 else "red"
         unrealized_label = QtWidgets.QLabel("Unrealized P/L:")
-        unrealized_label.setStyleSheet("color: palette(mid);")
+        unrealized_label.setObjectName("MutedLabel")
         metrics_grid.addWidget(unrealized_label, 1, 0)
         metrics_grid.addWidget(make_selectable_label(self._format_signed_currency(self.position.unrealized_pl), align_right=True, color=pl_color), 1, 1)
         
@@ -654,12 +654,12 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         values_grid.setVerticalSpacing(6)
         
         current_sc_label = QtWidgets.QLabel("Current SC:")
-        current_sc_label.setStyleSheet("color: palette(mid);")
+        current_sc_label.setObjectName("MutedLabel")
         values_grid.addWidget(current_sc_label, 0, 0)
         values_grid.addWidget(make_selectable_label(f"{float(self.position.current_sc):.2f}", align_right=True), 0, 1)
         
         current_value_label = QtWidgets.QLabel("Current Value:")
-        current_value_label.setStyleSheet("color: palette(mid);")
+        current_value_label.setObjectName("MutedLabel")
         values_grid.addWidget(current_value_label, 1, 0)
         values_grid.addWidget(make_selectable_label(self._format_currency(self.position.current_value), align_right=True), 1, 1)
         
@@ -685,7 +685,10 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
             notes_layout.addWidget(notes_display)
         else:
             notes_empty = QtWidgets.QLabel("—")
-            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_empty.setObjectName("MutedLabel")
+            notes_font = notes_empty.font()
+            notes_font.setItalic(True)
+            notes_empty.setFont(notes_font)
             notes_layout.addWidget(notes_empty)
         
         layout.addWidget(notes_section)

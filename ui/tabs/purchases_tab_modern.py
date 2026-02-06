@@ -1134,7 +1134,10 @@ class ModernPurchaseViewDialog(QtWidgets.QDialog):
 
         if not self.linked_sessions and not allocations:
             placeholder = QtWidgets.QLabel("No related sessions or redemptions found.")
-            placeholder.setStyleSheet("color: palette(mid); font-style: italic;")
+            placeholder.setObjectName("MutedLabel")
+            placeholder_font = placeholder.font()
+            placeholder_font.setItalic(True)
+            placeholder.setFont(placeholder_font)
             layout.addWidget(placeholder)
             layout.addStretch()
             return widget

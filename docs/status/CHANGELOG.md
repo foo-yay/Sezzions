@@ -12,6 +12,35 @@ Rules:
 ## 2026-02-06
 
 ```yaml
+id: 2026-02-06-09
+type: bugfix
+areas: [ui]
+summary: "Dark theme dialog labels now use theme-muted styling for readability"
+issue: "#76"
+files_changed:
+  - ui/themes.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/purchases_tab.py
+  - ui/tabs/game_sessions_tab.py
+  - ui/tabs/realized_tab.py
+  - ui/tabs/users_tab.py
+  - ui/tabs/sites_tab.py
+  - ui/tabs/cards_tab.py
+  - ui/tabs/games_tab.py
+  - ui/tabs/game_types_tab.py
+  - ui/tabs/redemption_methods_tab.py
+  - ui/tabs/redemption_method_types_tab.py
+  - ui/tabs/expenses_tab.py
+  - ui/tabs/unrealized_tab.py
+  - ui/tabs/purchases_tab_modern.py
+```
+
+Notes:
+- **Problem:** Dialog field labels were using `palette(mid)` and became unreadable in Dark theme.
+- **Solution:** Introduced `MutedLabel` theme styling and applied it across dialog view layouts.
+- **Impact:** Consistent, readable secondary labels in Dark theme without changing dialog layout.
+
+```yaml
 id: 2026-02-06-08
 type: bugfix
 areas: [ui]

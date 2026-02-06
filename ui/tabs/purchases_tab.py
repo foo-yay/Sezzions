@@ -2036,12 +2036,12 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         when_grid.setVerticalSpacing(6)
         
         date_label = QtWidgets.QLabel("Date:")
-        date_label.setStyleSheet("color: palette(mid);")
+        date_label.setObjectName("MutedLabel")
         when_grid.addWidget(date_label, 0, 0)
         when_grid.addWidget(make_selectable_label(format_date(self.purchase.purchase_date)), 0, 1)
         
         time_label = QtWidgets.QLabel("Time:")
-        time_label.setStyleSheet("color: palette(mid);")
+        time_label.setObjectName("MutedLabel")
         when_grid.addWidget(time_label, 1, 0)
         when_grid.addWidget(make_selectable_label(format_time(self.purchase.purchase_time)), 1, 1)
         
@@ -2057,17 +2057,17 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         details_grid.setVerticalSpacing(6)
         
         user_label = QtWidgets.QLabel("User:")
-        user_label.setStyleSheet("color: palette(mid);")
+        user_label.setObjectName("MutedLabel")
         details_grid.addWidget(user_label, 0, 0)
         details_grid.addWidget(make_selectable_label(user_name or "—"), 0, 1)
         
         site_label = QtWidgets.QLabel("Site:")
-        site_label.setStyleSheet("color: palette(mid);")
+        site_label.setObjectName("MutedLabel")
         details_grid.addWidget(site_label, 1, 0)
         details_grid.addWidget(make_selectable_label(site_name or "—"), 1, 1)
         
         card_label = QtWidgets.QLabel("Card:")
-        card_label.setStyleSheet("color: palette(mid);")
+        card_label.setObjectName("MutedLabel")
         details_grid.addWidget(card_label, 2, 0)
         details_grid.addWidget(make_selectable_label(card_name or "—"), 2, 1)
         
@@ -2096,27 +2096,27 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         basis_val = f"${float(self.purchase.remaining_amount):.2f}"
         
         amount_label = QtWidgets.QLabel("Amount:")
-        amount_label.setStyleSheet("color: palette(mid);")
+        amount_label.setObjectName("MutedLabel")
         balances_grid.addWidget(amount_label, 0, 0)
         balances_grid.addWidget(make_selectable_label(amount_val, align_right=True), 0, 1)
         
         cashback_label = QtWidgets.QLabel("Cashback:")
-        cashback_label.setStyleSheet("color: palette(mid);")
+        cashback_label.setObjectName("MutedLabel")
         balances_grid.addWidget(cashback_label, 1, 0)
         balances_grid.addWidget(make_selectable_label(cashback_val, align_right=True), 1, 1)
         
         start_sc_label = QtWidgets.QLabel("Starting SC:")
-        start_sc_label.setStyleSheet("color: palette(mid);")
+        start_sc_label.setObjectName("MutedLabel")
         balances_grid.addWidget(start_sc_label, 2, 0)
         balances_grid.addWidget(make_selectable_label(start_sc_val, align_right=True), 2, 1)
         
         sc_label = QtWidgets.QLabel("SC Received:")
-        sc_label.setStyleSheet("color: palette(mid);")
+        sc_label.setObjectName("MutedLabel")
         balances_grid.addWidget(sc_label, 3, 0)
         balances_grid.addWidget(make_selectable_label(sc_val, align_right=True), 3, 1)
         
         basis_label = QtWidgets.QLabel("Remaining Basis:")
-        basis_label.setStyleSheet("color: palette(mid);")
+        basis_label.setObjectName("MutedLabel")
         balances_grid.addWidget(basis_label, 4, 0)
         balances_grid.addWidget(make_selectable_label(basis_val, align_right=True), 4, 1)
         
@@ -2142,7 +2142,10 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             notes_layout.addWidget(notes_display)
         else:
             notes_empty = QtWidgets.QLabel("—")
-            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_empty.setObjectName("MutedLabel")
+            notes_font = notes_empty.font()
+            notes_font.setItalic(True)
+            notes_empty.setFont(notes_font)
             notes_layout.addWidget(notes_empty)
         
         layout.addWidget(notes_section)
@@ -2273,7 +2276,10 @@ class PurchaseViewDialog(QtWidgets.QDialog):
 
         if not self.linked_sessions and not allocations and not basis_purchases:
             placeholder = QtWidgets.QLabel("No related sessions, purchases, or redemptions found.")
-            placeholder.setStyleSheet("color: palette(mid); font-style: italic;")
+            placeholder.setObjectName("MutedLabel")
+            placeholder_font = placeholder.font()
+            placeholder_font.setItalic(True)
+            placeholder.setFont(placeholder_font)
             layout.addWidget(placeholder)
             layout.addStretch()
             return widget

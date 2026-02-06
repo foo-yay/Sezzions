@@ -3080,7 +3080,7 @@ class ViewSessionDialog(QDialog):
 
         # Row 0: Start Date/Time (left), End Date/Time (right)
         start_dt_label = QLabel("Start Date / Time:")
-        start_dt_label.setStyleSheet("color: palette(mid);")
+        start_dt_label.setObjectName("MutedLabel")
         details_grid.addWidget(start_dt_label, 0, 0)
 
         start_dt_value = self._format_datetime(self.session.session_date, self.session.session_time)
@@ -3090,7 +3090,7 @@ class ViewSessionDialog(QDialog):
         details_grid.addWidget(start_dt_display, 0, 1)
 
         end_dt_label = QLabel("End Date / Time:")
-        end_dt_label.setStyleSheet("color: palette(mid);")
+        end_dt_label.setObjectName("MutedLabel")
         details_grid.addWidget(end_dt_label, 0, 2)
 
         end_dt_value = self._format_datetime(self.session.end_date, self.session.end_time) if self.session.end_date else "—"
@@ -3101,7 +3101,7 @@ class ViewSessionDialog(QDialog):
 
         # Row 1: User (left), Site (right)
         user_label = QLabel("User:")
-        user_label.setStyleSheet("color: palette(mid);")
+        user_label.setObjectName("MutedLabel")
         details_grid.addWidget(user_label, 1, 0)
 
         user_name = users.get(self.session.user_id, "—")
@@ -3111,7 +3111,7 @@ class ViewSessionDialog(QDialog):
         details_grid.addWidget(user_display, 1, 1)
 
         site_label = QLabel("Site:")
-        site_label.setStyleSheet("color: palette(mid);")
+        site_label.setObjectName("MutedLabel")
         details_grid.addWidget(site_label, 1, 2)
 
         site_name = sites.get(self.session.site_id, "—")
@@ -3149,7 +3149,7 @@ class ViewSessionDialog(QDialog):
 
         row = 0
         game_type_label = QLabel("Game Type:")
-        game_type_label.setStyleSheet("color: palette(mid);")
+        game_type_label.setObjectName("MutedLabel")
         game_stats_grid.addWidget(game_type_label, row, 0)
         game_type_value = QLabel(game_type_name)
         game_type_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -3158,7 +3158,7 @@ class ViewSessionDialog(QDialog):
 
         row += 1
         game_name_label = QLabel("Game Name:")
-        game_name_label.setStyleSheet("color: palette(mid);")
+        game_name_label.setObjectName("MutedLabel")
         game_stats_grid.addWidget(game_name_label, row, 0)
         game_name_value = QLabel(game_name)
         game_name_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -3167,7 +3167,7 @@ class ViewSessionDialog(QDialog):
 
         row += 1
         wager_label = QLabel("Wager:")
-        wager_label.setStyleSheet("color: palette(mid);")
+        wager_label.setObjectName("MutedLabel")
         game_stats_grid.addWidget(wager_label, row, 0)
         wager_value = self.session.wager_amount if self.session.wager_amount is not None else None
         wager_display = format_currency(wager_value) if wager_value not in (None, "") else "—"
@@ -3178,7 +3178,7 @@ class ViewSessionDialog(QDialog):
 
         row += 1
         rtp_label = QLabel("RTP:")
-        rtp_label.setStyleSheet("color: palette(mid);")
+        rtp_label.setObjectName("MutedLabel")
         game_stats_grid.addWidget(rtp_label, row, 0)
         rtp_display = self._calculate_rtp_display(game)
         rtp_value_label = QLabel(rtp_display)
@@ -3390,7 +3390,10 @@ class ViewSessionDialog(QDialog):
             notes_layout.addWidget(notes_display)
         else:
             notes_empty = QLabel("—")
-            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_empty.setObjectName("MutedLabel")
+            notes_font = notes_empty.font()
+            notes_font.setItalic(True)
+            notes_empty.setFont(notes_font)
             notes_layout.addWidget(notes_empty)
 
         layout.addWidget(notes_section)

@@ -2015,12 +2015,12 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         when_grid.setVerticalSpacing(6)
         
         date_label = QtWidgets.QLabel("Date:")
-        date_label.setStyleSheet("color: palette(mid);")
+        date_label.setObjectName("MutedLabel")
         when_grid.addWidget(date_label, 0, 0)
         when_grid.addWidget(make_selectable_label(format_date(self.redemption.redemption_date)), 0, 1)
         
         time_label = QtWidgets.QLabel("Time:")
-        time_label.setStyleSheet("color: palette(mid);")
+        time_label.setObjectName("MutedLabel")
         when_grid.addWidget(time_label, 1, 0)
         when_grid.addWidget(make_selectable_label(format_time(self.redemption.redemption_time)), 1, 1)
         
@@ -2036,32 +2036,32 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         details_grid.setVerticalSpacing(6)
         
         user_label = QtWidgets.QLabel("User:")
-        user_label.setStyleSheet("color: palette(mid);")
+        user_label.setObjectName("MutedLabel")
         details_grid.addWidget(user_label, 0, 0)
         details_grid.addWidget(make_selectable_label(user_name or "—"), 0, 1)
         
         site_label = QtWidgets.QLabel("Site:")
-        site_label.setStyleSheet("color: palette(mid);")
+        site_label.setObjectName("MutedLabel")
         details_grid.addWidget(site_label, 1, 0)
         details_grid.addWidget(make_selectable_label(site_name or "—"), 1, 1)
         
         method_type_label = QtWidgets.QLabel("Method Type:")
-        method_type_label.setStyleSheet("color: palette(mid);")
+        method_type_label.setObjectName("MutedLabel")
         details_grid.addWidget(method_type_label, 2, 0)
         details_grid.addWidget(make_selectable_label(method_type or "—"), 2, 1)
         
         method_label = QtWidgets.QLabel("Method:")
-        method_label.setStyleSheet("color: palette(mid);")
+        method_label.setObjectName("MutedLabel")
         details_grid.addWidget(method_label, 3, 0)
         details_grid.addWidget(make_selectable_label(method_name or "—"), 3, 1)
         
         amount_label = QtWidgets.QLabel("Amount:")
-        amount_label.setStyleSheet("color: palette(mid);")
+        amount_label.setObjectName("MutedLabel")
         details_grid.addWidget(amount_label, 4, 0)
         details_grid.addWidget(make_selectable_label(f"${float(self.redemption.amount):.2f}"), 4, 1)
         
         fees_label = QtWidgets.QLabel("Fees:")
-        fees_label.setStyleSheet("color: palette(mid);")
+        fees_label.setObjectName("MutedLabel")
         details_grid.addWidget(fees_label, 5, 0)
         details_grid.addWidget(make_selectable_label(f"${float(self.redemption.fees):.2f}"), 5, 1)
         
@@ -2084,19 +2084,19 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         processing_grid.setVerticalSpacing(6)
         
         redemption_type_label = QtWidgets.QLabel("Redemption Type:")
-        redemption_type_label.setStyleSheet("color: palette(mid);")
+        redemption_type_label.setObjectName("MutedLabel")
         processing_grid.addWidget(redemption_type_label, 0, 0)
         type_text = "Partial" if self.redemption.more_remaining else "Full"
         processing_grid.addWidget(make_selectable_label(type_text), 0, 1)
         
         receipt_label = QtWidgets.QLabel("Receipt Date:")
-        receipt_label.setStyleSheet("color: palette(mid);")
+        receipt_label.setObjectName("MutedLabel")
         processing_grid.addWidget(receipt_label, 1, 0)
         receipt_text = format_date(self.redemption.receipt_date) if self.redemption.receipt_date else "—"
         processing_grid.addWidget(make_selectable_label(receipt_text), 1, 1)
         
         processed_label = QtWidgets.QLabel("Processed:")
-        processed_label.setStyleSheet("color: palette(mid);")
+        processed_label.setObjectName("MutedLabel")
         processing_grid.addWidget(processed_label, 2, 0)
         processed_text = "Yes" if self.redemption.processed else "No"
         processing_grid.addWidget(make_selectable_label(processed_text), 2, 1)
@@ -2123,7 +2123,10 @@ class RedemptionViewDialog(QtWidgets.QDialog):
             notes_layout.addWidget(notes_display)
         else:
             notes_empty = QtWidgets.QLabel("—")
-            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_empty.setObjectName("MutedLabel")
+            notes_font = notes_empty.font()
+            notes_font.setItalic(True)
+            notes_empty.setFont(notes_font)
             notes_layout.addWidget(notes_empty)
         
         layout.addWidget(notes_section)

@@ -497,7 +497,10 @@ class GameDialog(QtWidgets.QDialog):
         
         actual_rtp_val = f"{float(getattr(game, 'actual_rtp', 0) or 0):.2f}%" if game and getattr(game, "actual_rtp", None) is not None else "—"
         self.actual_rtp_value = QtWidgets.QLabel(actual_rtp_val)
-        self.actual_rtp_value.setStyleSheet("color: palette(mid); font-style: italic;")
+        self.actual_rtp_value.setObjectName("MutedLabel")
+        actual_rtp_font = self.actual_rtp_value.font()
+        actual_rtp_font.setItalic(True)
+        self.actual_rtp_value.setFont(actual_rtp_font)
         rtp_row.addWidget(self.actual_rtp_value)
         rtp_row.addStretch(1)
         
@@ -729,13 +732,13 @@ class GameViewDialog(QtWidgets.QDialog):
         left_grid.setColumnStretch(1, 1)
         
         name_lbl = QtWidgets.QLabel("Name:")
-        name_lbl.setStyleSheet("color: palette(mid);")
+        name_lbl.setObjectName("MutedLabel")
         name_val = self._make_selectable_label(game.name)
         left_grid.addWidget(name_lbl, 0, 0, QtCore.Qt.AlignRight)
         left_grid.addWidget(name_val, 0, 1)
         
         game_type_lbl = QtWidgets.QLabel("Game Type:")
-        game_type_lbl.setStyleSheet("color: palette(mid);")
+        game_type_lbl.setObjectName("MutedLabel")
         game_type_name = getattr(game, 'game_type_name', None)
         game_type_display = game_type_name if game_type_name else "Unknown Type" if game.game_type_id else "—"
         game_type_val = self._make_selectable_label(game_type_display)
@@ -751,20 +754,20 @@ class GameViewDialog(QtWidgets.QDialog):
         right_grid.setColumnStretch(1, 1)
         
         rtp_lbl = QtWidgets.QLabel("RTP (%):")
-        rtp_lbl.setStyleSheet("color: palette(mid);")
+        rtp_lbl.setObjectName("MutedLabel")
         rtp_val = self._make_selectable_label(str(game.rtp) if game.rtp is not None else "—")
         right_grid.addWidget(rtp_lbl, 0, 0, QtCore.Qt.AlignRight)
         right_grid.addWidget(rtp_val, 0, 1)
         
         actual_rtp_lbl = QtWidgets.QLabel("Actual RTP:")
-        actual_rtp_lbl.setStyleSheet("color: palette(mid);")
+        actual_rtp_lbl.setObjectName("MutedLabel")
         actual_rtp_val_text = f"{float(getattr(game, 'actual_rtp', 0) or 0):.2f}%" if getattr(game, "actual_rtp", None) is not None else "—"
         actual_rtp_val = self._make_selectable_label(actual_rtp_val_text)
         right_grid.addWidget(actual_rtp_lbl, 1, 0, QtCore.Qt.AlignRight)
         right_grid.addWidget(actual_rtp_val, 1, 1)
         
         status_lbl = QtWidgets.QLabel("Status:")
-        status_lbl.setStyleSheet("color: palette(mid);")
+        status_lbl.setObjectName("MutedLabel")
         status_val = self._make_selectable_label("Active" if game.is_active else "Inactive")
         right_grid.addWidget(status_lbl, 2, 0, QtCore.Qt.AlignRight)
         right_grid.addWidget(status_val, 2, 1)
@@ -795,7 +798,10 @@ class GameViewDialog(QtWidgets.QDialog):
             notes_layout.addWidget(notes_display)
         else:
             notes_empty = QtWidgets.QLabel("—")
-            notes_empty.setStyleSheet("color: palette(mid); font-style: italic;")
+            notes_empty.setObjectName("MutedLabel")
+            notes_font = notes_empty.font()
+            notes_font.setItalic(True)
+            notes_empty.setFont(notes_font)
             notes_layout.addWidget(notes_empty)
         main_layout.addWidget(notes_section)
         
