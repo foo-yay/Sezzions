@@ -577,15 +577,25 @@ Provide passive, persistent notifications for important app events without inter
 **Notification Model:**
 - **Identity**: type (string), subject_id (optional), title, body, severity (enum)
 - **Actions**: action_key (string), action_payload (dict) for routing user clicks
-- **State**: created_at, read_at, dismissed_at, snoozed_until, deleted_at
-- **Properties**: is_read, is_dismissed, is_snoozed, is_deleted, is_active
+- **State**: created_at, read_at, dismissed_at, snoozed_until, deleted_at, suppressed_until (Issue #73)
+- **Properties**: is_read, is_dismissed, is_snoozed, is_deleted, is_suppressed, is_active
 - **De-duplication**: Composite key (type, subject_id) ensures only one notification per monitored condition
 
 **Notification Service:**
 - `create_or_update()`: De-dupes by composite key; updates existing if found
+  - **Suppression-aware** (Issue #73): Returns existing notification without updates if `is_suppressed` (during cooldown)
+  - **Resurfacing**: When cooldown expires + condition still true → clears deleted_at/read_at, resurfaces as new/unread
 - `get_all()`, `get_active()`, `get_by_id()`, `get_unread_count()`
-- State transitions: `mark_read()`, `mark_unread()`, `mark_all_read()`
-- User actions: `dismiss()`, `snooze()`, `snooze_for_hours()`, `snooze_until_tomorrow()`, `delete()`
+- State transitions: `mark_read(cooldown_days=0)`, `mark_unread()`, `mark_all_read()`
+- User actions: `dismiss()`, `snooze()`, `snooze_for_hours()`, `snooze_until_tomorrow()`, `delete(cooldown_days=0)`
+  - **Cooldown suppression** (Issue #73): `delete()` and `mark_read()` accept `cooldown_days` parameter
+    - Sets `suppressed_until = datetime.now() + timedelta(days=cooldown_days)`
+    - Prevents immediate reappearance when rules re-evaluate (fixes "nag loop")
+    - Cooldown duration based on notification type's threshold:
+      - Redemption pending: `redemption_pending_receipt_threshold_days` (default 7 days)
+      - Backup notifications: backup `interval_days` (default 1 day)
+      - Other: 1 day default
+    - **Delete vs Mark Read**: Both set cooldown; delete hides notification completely, mark read moves to "Read" group
 - Bulk: `clear_dismissed()`, `dismiss_by_type()`
 
 **Notification Rules Service:**
@@ -633,7 +643,14 @@ Provide passive, persistent notifications for important app events without inter
 
 **Tests:**
 - 19 unit tests covering: CRUD, de-duplication, state transitions, unread count, bulk operations
-- No integration tests for rules evaluators yet (future: mock DB/settings, assert notification creation)
+- 7 integration tests (Issue #73) covering cooldown lifecycle:
+  - Delete with cooldown prevents immediate recreation
+  - Mark read with cooldown prevents immediate recreation
+  - Cooldown expiration allows resurfacing as unread
+  - Past suppression timestamps don't suppress
+  - Redemption rules respect suppression during evaluation
+  - Condition resolution during cooldown
+  - Multiple notifications with independent cooldowns
 - No headless UI smoke test yet (future: boot MainWindow, assert bell exists, open center)
 
 ### 6.5 Tax Withholding Estimates (Issue #29)
