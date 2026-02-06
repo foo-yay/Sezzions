@@ -163,15 +163,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_timer.timeout.connect(self._execute_refresh)
         self._pending_refresh_event = None
         
-        # Apply window size constraints based on screen dimensions (Issue #76)
-        screen = QtWidgets.QApplication.primaryScreen()
-        if screen:
-            screen_geometry = screen.availableGeometry()
-            # Set maximum window size to 90% of screen dimensions
-            max_width = int(screen_geometry.width() * 0.9)
-            max_height = int(screen_geometry.height() * 0.9)
-            self.setMaximumSize(max_width, max_height)
-        
         # Apply saved theme
         self._apply_theme(self.settings.get_theme())
         

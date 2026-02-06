@@ -394,6 +394,31 @@ class Theme:
             QLabel {{
                 color: {text};
             }}
+
+            QWidget#ToolsTabBackground {{
+                background: transparent;
+            }}
+            QTabWidget#SetupSubTabs QScrollArea {{
+                background: {surface2};
+                border: none;
+            }}
+            QTabWidget#SetupSubTabs QScrollArea::viewport {{
+                background: {surface2};
+            }}
+            QFrame#CollapsibleSection {{
+                background: {surface2};
+                border: 1px solid {border};
+                border-radius: 8px;
+            }}
+            QToolButton#CollapsibleHeader {{
+                border: none;
+                background: transparent;
+                font-weight: 600;
+                font-size: 13px;
+                text-align: left;
+                padding: 8px 10px;
+                color: {text};
+            }}
             
             /* Dialog Section Styles */
             QWidget#SectionBackground {{

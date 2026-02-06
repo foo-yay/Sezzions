@@ -225,10 +225,10 @@ UI rules:
 - Bulk actions and destructive actions require confirmation.
 
 Window Constraints (Issue #76):
-- Maximum window size set to 90% of screen dimensions (respects taskbar/dock)
 - Tools tab wrapped in QScrollArea to prevent off-screen expansion
 - Collapsible sections can be expanded without resizing window beyond screen bounds
 - Scroll bars appear automatically when content exceeds visible area
+- Tools tab styling follows global theme patterns (no local overrides)
 
 Game Sessions convenience:
 - Sezzions keeps **1 game per session** (accounting clarity), but provides a fast workflow to chain sessions across games:

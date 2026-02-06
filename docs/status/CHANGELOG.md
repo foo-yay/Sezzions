@@ -12,6 +12,26 @@ Rules:
 ## 2026-02-06
 
 ```yaml
+id: 2026-02-06-08
+type: bugfix
+areas: [ui]
+summary: "Tools tab theming alignment + scroll area background fixes (Issue #76 follow-up)"
+issue: "#76"
+files_changed:
+  - ui/themes.py
+  - ui/tabs/tools_tab.py
+```
+
+Notes:
+- **Problem:** Tools tab background diverged from Setup pane and collapsible header styling felt inconsistent after scroll-area changes.
+- **Root Cause:** Scroll area + local widget styles interfered with global theme propagation.
+- **Solution:**
+  - Theme the Setup sub-tab scroll area and viewport to match the global surface
+  - Tag Tools tab and collapsible headers with theme-managed object names
+  - Remove hover style on collapsible headers to match standard patterns
+- **Impact:** Tools tab and section headers now match global theme backgrounds, inputs, and button patterns.
+
+```yaml
 id: 2026-02-06-07
 type: bugfix
 areas: [ui]
