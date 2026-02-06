@@ -563,7 +563,7 @@ class NotificationCenterDialog(QDialog):
         self._refresh_bell_badge()
     
     def _delete_notification(self, notification_id):
-        """Delete a notification"""
+        """Delete a notification with cooldown suppression"""
         reply = QMessageBox.question(
             self,
             "Delete Notification",
@@ -571,15 +571,43 @@ class NotificationCenterDialog(QDialog):
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
-            self.facade.notification_service.delete(notification_id)
+            # Determine cooldown based on notification type
+            notification = self.facade.notification_service.notification_repo.get_by_id(notification_id)
+            cooldown_days = self._get_cooldown_days_for_notification(notification)
+            
+            self.facade.notification_service.delete(notification_id, cooldown_days=cooldown_days)
             self.load_notifications()
             self._refresh_bell_badge()
 
     def _mark_read_notification(self, notification_id: int):
-        """Mark a notification as read (moves it into the Read group)."""
-        self.facade.notification_service.mark_read(notification_id)
+        """Mark a notification as read (moves it into the Read group) with cooldown suppression."""
+        # Determine cooldown based on notification type
+        notification = self.facade.notification_service.notification_repo.get_by_id(notification_id)
+        cooldown_days = self._get_cooldown_days_for_notification(notification)
+        
+        self.facade.notification_service.mark_read(notification_id, cooldown_days=cooldown_days)
         self.load_notifications()
         self._refresh_bell_badge()
+    
+    def _get_cooldown_days_for_notification(self, notification) -> int:
+        """Get cooldown period for a notification based on its type and settings"""
+        if not notification:
+            return 1  # Default 1 day
+        
+        # For redemption pending notifications, use the threshold from settings
+        if notification.type == 'redemption_pending_receipt':
+            settings_data = self.facade.settings.settings
+            threshold_days = settings_data.get('redemption_pending_receipt_threshold_days', 7)
+            return threshold_days
+        
+        # For backup notifications, use backup interval or default 1 day
+        if notification.type in ['backup_due', 'backup_failed', 'backup_directory_missing']:
+            backup_config = self.facade.settings.get_automatic_backup_config()
+            interval_days = backup_config.get('interval_days', 1)
+            return interval_days
+        
+        # Default: 1 day cooldown
+        return 1
 
     def _mark_unread_notification(self, notification_id: int):
         """Mark a notification as unread (moves it back to the Unread group)."""

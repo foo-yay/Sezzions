@@ -12,6 +12,44 @@ Rules:
 ## 2026-02-06
 
 ```yaml
+id: 2026-02-06-04
+type: bugfix
+areas: [models, services, repositories, ui, tests]
+summary: "Notification lifecycle cooldown delays prevent delete/read nag loops (resolves Issue #73)"
+issue: "#73"
+files_changed:
+  - models/notification.py
+  - services/notification_service.py
+  - repositories/notification_repository.py
+  - ui/notification_widgets.py
+  - tests/integration/test_notification_cooldown.py (new)
+```
+
+Notes:
+- **Problem:** Deleting or marking notifications as read caused immediate reappearance when notification rules re-evaluated (on dialog close, hourly timer). This created a "nag loop" UX issue.
+- **Root Cause:** `NotificationService.create_or_update()` recreated deleted notifications because it only checked `if existing and not existing.is_deleted`, treating deleted notifications as if they never existed.
+- **Solution:** Added cooldown suppression mechanism:
+  - New `suppressed_until` field in `Notification` model tracks cooldown period
+  - New `is_suppressed` property checks if `datetime.now() < suppressed_until`
+  - Updated `is_active` to exclude suppressed notifications
+  - `delete()` and `mark_read()` methods now accept `cooldown_days` parameter
+  - `create_or_update()` respects suppression: returns existing notification without recreation if suppressed
+  - When cooldown expires + condition still true → notification resurfaces as new/unread
+- **Cooldown Duration:** Based on notification type's configured threshold:
+  - Redemption pending: `redemption_pending_receipt_threshold_days` (default 7 days)
+  - Backup notifications: backup `interval_days` (default 1 day)
+  - Other notifications: 1 day default
+- **UI Integration:** `NotificationCenterDialog` determines cooldown_days from notification type and passes to service methods
+- **Tests:** 7 comprehensive integration tests validating:
+  - Delete with cooldown prevents immediate recreation
+  - Mark read with cooldown prevents immediate recreation
+  - Cooldown expiration allows resurfacing as unread
+  - Past suppression timestamps don't suppress
+  - Redemption rules respect suppression during evaluation
+  - Condition resolution during cooldown
+  - Multiple notifications with independent cooldowns
+
+```yaml
 id: 2026-02-06-03
 type: bugfix
 areas: [ui, tests]

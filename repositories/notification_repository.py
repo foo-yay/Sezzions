@@ -55,7 +55,7 @@ class NotificationRepository:
     def _dict_to_notification(self, data: dict) -> Notification:
         """Convert dict to Notification model"""
         # Parse datetime fields
-        for field in ['created_at', 'read_at', 'dismissed_at', 'snoozed_until', 'deleted_at', 'updated_at']:
+        for field in ['created_at', 'read_at', 'dismissed_at', 'snoozed_until', 'deleted_at', 'suppressed_until', 'updated_at']:
             if field in data and data[field]:
                 try:
                     data[field] = datetime.fromisoformat(data[field])
@@ -84,6 +84,7 @@ class NotificationRepository:
             'dismissed_at': notification.dismissed_at.isoformat() if notification.dismissed_at else None,
             'snoozed_until': notification.snoozed_until.isoformat() if notification.snoozed_until else None,
             'deleted_at': notification.deleted_at.isoformat() if notification.deleted_at else None,
+            'suppressed_until': notification.suppressed_until.isoformat() if notification.suppressed_until else None,
             'updated_at': notification.updated_at.isoformat() if notification.updated_at else None,
         }
         return data

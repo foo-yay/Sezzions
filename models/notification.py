@@ -38,6 +38,7 @@ class Notification:
     dismissed_at: Optional[datetime] = None
     snoozed_until: Optional[datetime] = None
     deleted_at: Optional[datetime] = None
+    suppressed_until: Optional[datetime] = None  # Cooldown period for delete/read actions
     
     # Metadata
     id: Optional[int] = None
@@ -79,9 +80,16 @@ class Notification:
         return self.deleted_at is not None
     
     @property
+    def is_suppressed(self) -> bool:
+        """Check if notification is currently suppressed (cooldown period)"""
+        if self.suppressed_until is None:
+            return False
+        return datetime.now() < self.suppressed_until
+    
+    @property
     def is_active(self) -> bool:
-        """Check if notification is active (not dismissed, deleted, or snoozed)"""
-        return not (self.is_dismissed or self.is_deleted or self.is_snoozed)
+        """Check if notification is active (not dismissed, deleted, snoozed, or suppressed)"""
+        return not (self.is_dismissed or self.is_deleted or self.is_snoozed or self.is_suppressed)
     
     @property
     def composite_key(self) -> tuple:
@@ -108,3 +116,7 @@ class Notification:
     def delete(self):
         """Mark notification as deleted"""
         self.deleted_at = datetime.now()
+    
+    def suppress(self, until: datetime):
+        """Suppress notification until specified time (cooldown period)"""
+        self.suppressed_until = until
