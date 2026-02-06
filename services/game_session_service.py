@@ -21,13 +21,15 @@ class GameSessionService:
                  fifo_service: Optional[FIFOService] = None,
                  purchase_repo=None,
                  redemption_repo=None,
-                 tax_withholding_service=None):
+                 tax_withholding_service=None,
+                 adjustment_service=None):
         self.session_repo = session_repo
         self.site_repo = site_repo
         self.fifo_service = fifo_service
         self.purchase_repo = purchase_repo
         self.redemption_repo = redemption_repo
         self.tax_withholding_service = tax_withholding_service
+        self.adjustment_service = adjustment_service
     
     def create_session(
         self,
@@ -340,18 +342,37 @@ class GameSessionService:
         cutoff = to_dt(session_date, session_time)
         checkpoint_dt = None
 
-        # Use last closed session as checkpoint when available (legacy behavior)
-        sessions = self.session_repo.get_by_user_and_site(user_id, site_id)
-        for sess in sessions:
-            if sess.status != "Closed":
-                continue
-            sess_end_date = sess.end_date or sess.session_date
-            sess_end_time = sess.end_time or sess.session_time
-            sess_dt = to_dt(sess_end_date, sess_end_time)
-            if sess_dt < cutoff and (checkpoint_dt is None or sess_dt > checkpoint_dt):
-                checkpoint_dt = sess_dt
-                expected_total = Decimal(str(sess.ending_balance))
-                expected_redeemable = Decimal(str(sess.ending_redeemable))
+        # DEBUG
+        print(f"[DEBUG compute_expected_balances] adjustment_service={self.adjustment_service}")
+        print(f"[DEBUG compute_expected_balances] user={user_id}, site={site_id}, date={session_date}, time={session_time}")
+
+        # Priority 1: Balance checkpoint adjustments (explicit anchors)
+        if self.adjustment_service is not None:
+            latest_checkpoint = self.adjustment_service.get_latest_checkpoint_before(
+                user_id, site_id, session_date, session_time
+            )
+            print(f"[DEBUG] latest_checkpoint={latest_checkpoint}")
+            if latest_checkpoint:
+                checkpoint_dt = to_dt(
+                    latest_checkpoint.effective_date,
+                    latest_checkpoint.effective_time
+                )
+                expected_total = latest_checkpoint.checkpoint_total_sc
+                expected_redeemable = latest_checkpoint.checkpoint_redeemable_sc
+
+        # Priority 2: Last closed session as checkpoint (legacy behavior, only if no adjustment checkpoint)
+        if checkpoint_dt is None:
+            sessions = self.session_repo.get_by_user_and_site(user_id, site_id)
+            for sess in sessions:
+                if sess.status != "Closed":
+                    continue
+                sess_end_date = sess.end_date or sess.session_date
+                sess_end_time = sess.end_time or sess.session_time
+                sess_dt = to_dt(sess_end_date, sess_end_time)
+                if sess_dt < cutoff and (checkpoint_dt is None or sess_dt > checkpoint_dt):
+                    checkpoint_dt = sess_dt
+                    expected_total = Decimal(str(sess.ending_balance))
+                    expected_redeemable = Decimal(str(sess.ending_redeemable))
 
         # Fall back to last purchase starting balance checkpoint
         # NOTE: starting_sc_balance is the POST-purchase balance (what user sees on site after purchase)

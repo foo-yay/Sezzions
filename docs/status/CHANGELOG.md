@@ -9,7 +9,87 @@ Rules:
 
 ---
 
+## 2026-02-06
+
+```yaml
+id: 2026-02-06-01
+type: bugfix
+areas: [ui, app_facade]
+summary: "Purchase balance check now respects balance checkpoints and adjustments"
+issue: "#54"
+files_changed:
+  - app_facade.py (adjustment_service initialization order)
+  - ui/tabs/purchases_tab.py (balance check logic)
+  - ui/adjustment_dialogs.py (date/time field patterns)
+```
+
+Notes:
+- **Bug Fix:** Purchase dialog balance check was using legacy logic that bypassed checkpoint calculations
+  - Previously: When period_purchases existed, used prev_purchase.starting_sc_balance as expected value
+  - Now: Always calls facade.compute_expected_balances() which respects checkpoints and adjustments
+  - Fixed in: ADD purchase flow, EDIT purchase flow, and live balance check (_update_balance_check)
+
+- **Bug Fix:** adjustment_service was initialized after game_session_service in AppFacade
+  - Moved adjustment_service initialization before game_session_service
+  - Now properly passed to game_session_service constructor
+  - Enables checkpoint logic in compute_expected_balances()
+
+- **UI Fix:** Adjustment dialogs now use correct date/time field pattern
+  - Changed from QDateEdit/QTimeEdit to QLineEdit with placeholders (MM/DD/YY, HH:MM)
+  - Added calendar picker button (📅) and "Today"/"Now" quick-fill buttons
+  - Matches global UI patterns (Purchase dialog, etc.)
+  - Fixed method names: get_user_by_id → get_user, get_site_by_id → get_site
+
+---
+
 ## 2026-02-05
+
+```yaml
+id: 2026-02-05-06
+type: feature
+areas: [models, repositories, services, ui, database]
+summary: "Adjustments & Corrections (Basis Adjustments + Balance Checkpoints)"
+issue: "#54"
+files_changed:
+  - models/adjustment.py (new)
+  - repositories/adjustment_repository.py (new)
+  - repositories/database.py (account_adjustments table)
+  - services/adjustment_service.py (new)
+  - services/game_session_service.py (checkpoint integration)
+  - services/recalculation_service.py (basis adjustment integration)
+  - ui/tabs/tools_tab.py (adjustments section)
+  - ui/adjustment_dialogs.py (new)
+  - tests/unit/test_adjustment_model.py (12 tests)
+  - tests/unit/test_adjustment_repository.py (10 tests)
+  - tests/unit/test_adjustment_service.py (15 tests)
+```
+
+Notes:
+- **Feature:** Two types of manual adjustments for correcting accounting issues:
+  1. **Basis Corrections** (BASIS_USD_CORRECTION): Delta adjustments to cost basis (e.g., missed fees, refunds)
+     - Integrated into FIFO pipeline as synthetic purchases with negative IDs
+     - Ordered by effective datetime for correct FIFO sequencing
+  2. **Balance Checkpoints** (BALANCE_CHECKPOINT_CORRECTION): Known balance anchors at specific timestamps
+     - Override closed sessions in expected balance calculations
+     - Used for reconciliation or importing external data
+
+- **Data Layer:**
+  - New `account_adjustments` table with soft delete support
+  - Indexes on (user_id, site_id, effective_date, effective_time) and (type, deleted_at)
+  - Fields: type, delta_basis_usd, checkpoint_total_sc, checkpoint_redeemable_sc, reason (required), notes, related_table/id
+
+- **Service Layer:**
+  - AdjustmentService with validation (delta != 0, checkpoints have non-zero balances)
+  - GameSessionService.compute_expected_balances() uses latest checkpoint before cutoff
+  - RecalculationService injects basis adjustments as synthetic lots in FIFO rebuild
+
+- **UI (Tools Tab):**
+  - New Adjustments section with three buttons: New Basis Adjustment, New Balance Checkpoint, View Adjustments
+  - BasisAdjustmentDialog: form for delta, user/site, date/time, reason
+  - CheckpointDialog: form for total/redeemable SC, user/site, date/time, reason
+  - ViewAdjustmentsDialog: table view with filters, soft delete, restore
+
+- **Test Coverage:** 37 new unit tests (100% coverage on new models/repos/services), 685 total tests passing
 
 ```yaml
 id: 2026-02-05-05

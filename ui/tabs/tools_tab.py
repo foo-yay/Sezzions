@@ -5,9 +5,9 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QMessageBox, QFileDialog,
     QComboBox, QCompleter, QListView, QDialog, QLineEdit,
-    QCheckBox, QSpinBox, QSizePolicy
+    QCheckBox, QSpinBox, QSizePolicy, QToolButton, QFrame
 )
-from PySide6.QtCore import QThreadPool, Qt, Signal
+from PySide6.QtCore import QThreadPool, Qt, Signal, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFontMetrics
 from typing import Optional
 import os
@@ -99,17 +99,83 @@ class ToolsTab(QWidget):
         
         # Recalculation Section
         recalc_group = self._create_recalculation_group()
-        layout.addWidget(recalc_group)
+        recalc_collapsible = self._create_collapsible_section("🔄 Recalculation Tools", recalc_group, expanded=True)
+        layout.addWidget(recalc_collapsible)
         
         # CSV Import/Export Section
         csv_group = self._create_csv_group()
-        layout.addWidget(csv_group)
+        csv_collapsible = self._create_collapsible_section("📄 CSV Import / Export", csv_group, expanded=False)
+        layout.addWidget(csv_collapsible)
+        
+        # Adjustments & Corrections Section
+        adjustments_group = self._create_adjustments_group()
+        adjustments_collapsible = self._create_collapsible_section("⚖️ Adjustments & Corrections", adjustments_group, expanded=False)
+        layout.addWidget(adjustments_collapsible)
         
         # Database Tools Section
         db_group = self._create_database_group()
-        layout.addWidget(db_group)
+        db_collapsible = self._create_collapsible_section("🔧 Database Tools", db_group, expanded=False)
+        layout.addWidget(db_collapsible)
         
         layout.addStretch()
+    
+    def _create_collapsible_section(self, title: str, content_widget: QWidget, expanded: bool = False) -> QWidget:
+        """Create a collapsible section with a title and content.
+        
+        Args:
+            title: Section title text
+            content_widget: Widget to show/hide
+            expanded: Initial expanded state
+        """
+        container = QFrame()
+        container.setFrameShape(QFrame.StyledPanel)
+        container.setObjectName("CollapsibleSection")
+        
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Header button
+        header_btn = QToolButton()
+        header_btn.setText(title)
+        header_btn.setCheckable(True)
+        header_btn.setChecked(expanded)
+        header_btn.setStyleSheet("""
+            QToolButton {
+                border: none;
+                background: transparent;
+                font-weight: bold;
+                font-size: 13px;
+                text-align: left;
+                padding: 8px;
+            }
+            QToolButton:hover {
+                background-color: rgba(255, 255, 255, 0.05);
+            }
+        """)
+        header_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        header_btn.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
+        
+        layout.addWidget(header_btn)
+        
+        # Content container
+        content_container = QWidget()
+        content_layout = QVBoxLayout(content_container)
+        content_layout.setContentsMargins(8, 4, 8, 8)
+        content_layout.addWidget(content_widget)
+        
+        content_container.setVisible(expanded)
+        layout.addWidget(content_container)
+        
+        # Toggle function
+        def toggle():
+            is_expanded = header_btn.isChecked()
+            header_btn.setArrowType(Qt.DownArrow if is_expanded else Qt.RightArrow)
+            content_container.setVisible(is_expanded)
+        
+        header_btn.toggled.connect(toggle)
+        
+        return container
         
     def _create_recalculation_group(self) -> QWidget:
         """Create the recalculation section"""
@@ -117,11 +183,6 @@ class ToolsTab(QWidget):
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(6)
-        
-        # Section header
-        header = QLabel("🧮 Data Recalculation")
-        header.setObjectName("SectionHeader")
-        container_layout.addWidget(header)
         
         # Section background
         section = QWidget()
@@ -200,11 +261,6 @@ class ToolsTab(QWidget):
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(6)
         
-        # Section header
-        header = QLabel("📄 CSV Import/Export")
-        header.setObjectName("SectionHeader")
-        container_layout.addWidget(header)
-        
         # Section background
         section = QWidget()
         section.setObjectName("SectionBackground")
@@ -243,6 +299,53 @@ class ToolsTab(QWidget):
         
         container_layout.addWidget(section)
         return container
+    
+    def _create_adjustments_group(self) -> QWidget:
+        """Create the Adjustments & Corrections section."""
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(6)
+        
+        # Section background
+        section = QWidget()
+        section.setObjectName("SectionBackground")
+        layout = QVBoxLayout(section)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+        
+        desc_label = QLabel(
+            "Create basis corrections and balance checkpoints. "
+            "Basis adjustments affect FIFO cost basis calculations. "
+            "Checkpoints override previous balances in expected balance computations."
+        )
+        desc_label.setWordWrap(True)
+        desc_label.setObjectName("HelperText")
+        layout.addWidget(desc_label)
+        
+        layout.addSpacing(6)
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+        
+        basis_btn = QPushButton("💵 New Basis Adjustment")
+        basis_btn.clicked.connect(self._on_create_basis_adjustment)
+        btn_layout.addWidget(basis_btn)
+        
+        checkpoint_btn = QPushButton("📌 New Balance Checkpoint")
+        checkpoint_btn.clicked.connect(self._on_create_checkpoint)
+        btn_layout.addWidget(checkpoint_btn)
+        
+        view_btn = QPushButton("📋 View Adjustments")
+        view_btn.clicked.connect(self._on_view_adjustments)
+        btn_layout.addWidget(view_btn)
+        
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+        
+        container_layout.addWidget(section)
+        return container
         
     def _create_database_group(self) -> QWidget:
         """Create unified database tools section with streamlined backup controls"""
@@ -252,11 +355,6 @@ class ToolsTab(QWidget):
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
         container_layout.setSpacing(6)
-        
-        # Section header
-        header = QLabel("🗄️ Database Tools")
-        header.setObjectName("SectionHeader")
-        container_layout.addWidget(header)
         
         # Section background
         section = QWidget()
@@ -1923,3 +2021,53 @@ class ToolsTab(QWidget):
         worker.signals.error.connect(on_error, Qt.QueuedConnection)
         self.thread_pool.start(worker)
     
+    # =========================================================================
+    # Adjustments & Corrections Handlers
+    # =========================================================================
+    
+    def _on_create_basis_adjustment(self):
+        """Show dialog to create a basis adjustment."""
+        from ui.adjustment_dialogs import BasisAdjustmentDialog
+        
+        dialog = BasisAdjustmentDialog(self.facade, parent=self)
+        if dialog.exec() == QDialog.Accepted:
+            adjustment = dialog.get_adjustment()
+            if adjustment:
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Basis adjustment created successfully.\n\n"
+                    f"Delta: ${adjustment.delta_basis_usd:,.2f}\n"
+                    f"Effective: {adjustment.effective_date} {adjustment.effective_time}"
+                )
+                self.data_changed.emit()
+    
+    def _on_create_checkpoint(self):
+        """Show dialog to create a balance checkpoint."""
+        from ui.adjustment_dialogs import CheckpointDialog
+        
+        dialog = CheckpointDialog(self.facade, parent=self)
+        if dialog.exec() == QDialog.Accepted:
+            adjustment = dialog.get_adjustment()
+            if adjustment:
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Balance checkpoint created successfully.\n\n"
+                    f"Total SC: {adjustment.checkpoint_total_sc:,.2f}\n"
+                    f"Redeemable SC: {adjustment.checkpoint_redeemable_sc:,.2f}\n"
+                    f"Effective: {adjustment.effective_date} {adjustment.effective_time}"
+                )
+                self.data_changed.emit()
+    
+    def _on_view_adjustments(self):
+        """Show dialog to view and manage adjustments."""
+        from ui.adjustment_dialogs import ViewAdjustmentsDialog
+        
+        dialog = ViewAdjustmentsDialog(self.facade, parent=self)
+        dialog.exec()
+        
+        # Emit data_changed if any modifications were made
+        if dialog.was_modified():
+            self.data_changed.emit()
+

@@ -84,10 +84,11 @@ class RecalculationService:
     code organization, but user-facing operations always do both together.
     """
 
-    def __init__(self, db: DatabaseManager, game_session_service: Optional['GameSessionService'] = None, tax_withholding_service=None):
+    def __init__(self, db: DatabaseManager, game_session_service: Optional['GameSessionService'] = None, tax_withholding_service=None, adjustment_service=None):
         self.db = db
         self._game_session_service = game_session_service
         self.tax_withholding_service = tax_withholding_service
+        self.adjustment_service = adjustment_service
 
     @property
     def game_session_service(self) -> 'GameSessionService':
@@ -184,6 +185,7 @@ class RecalculationService:
         conn = self.db._connection
         cursor = conn.cursor()
 
+        # Fetch purchases
         cursor.execute(
             """
             SELECT id, amount, purchase_date, COALESCE(purchase_time,'00:00:00') AS pt
@@ -203,6 +205,24 @@ class RecalculationService:
             dt = _to_dt(r["purchase_date"], r["pt"])
             purchases.append((purchase_id, dt, amt))
             remaining[purchase_id] = amt
+
+        # Fetch basis adjustments and merge them as synthetic purchases
+        # Adjustments with negative delta reduce basis, positive delta increases it
+        # They participate in FIFO allocation chronologically
+        if self.adjustment_service:
+            basis_adjustments = self.adjustment_service.get_active_basis_adjustments(user_id, site_id)
+            for adj in basis_adjustments:
+                # Create synthetic purchase ID using negative numbers to avoid collisions
+                synthetic_id = -(adj.id)
+                dt = _to_dt(adj.effective_date, adj.effective_time)
+                delta = adj.delta_basis_usd or Decimal("0.00")
+                
+                # Insert in chronological order
+                purchases.append((synthetic_id, dt, delta))
+                remaining[synthetic_id] = delta
+            
+            # Re-sort to ensure chronological order after merging adjustments
+            purchases.sort(key=lambda x: (x[1], x[0]))  # Sort by datetime, then ID
 
         cursor.execute(
             """
@@ -290,7 +310,10 @@ class RecalculationService:
                     remaining[purchase_id] = avail - alloc
                     remaining_to_allocate -= alloc
                     cost_basis += alloc
-                    allocations_to_write.append((redemption_id, purchase_id, str(alloc)))
+                    
+                    # Only write allocations for actual purchases (positive IDs), not synthetic adjustments
+                    if purchase_id > 0:
+                        allocations_to_write.append((redemption_id, purchase_id, str(alloc)))
 
             net_pl = payout - cost_basis
             realized_to_write.append(
@@ -305,9 +328,12 @@ class RecalculationService:
                 )
             )
 
-        # Write updated remaining_amount for all purchases in pair
+        # Write updated remaining_amount for all purchases in pair (excluding synthetic adjustment IDs)
         purchases_updated = 0
         for purchase_id, _dt, _amt in purchases:
+            # Skip synthetic adjustment IDs (negative)
+            if purchase_id < 0:
+                continue
             cursor.execute(
                 "UPDATE purchases SET remaining_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (str(remaining[purchase_id]), purchase_id),
@@ -376,6 +402,22 @@ class RecalculationService:
             dt = _to_dt(r["purchase_date"], r["pt"])
             purchases.append((purchase_id, dt, amt))
             remaining[purchase_id] = amt
+
+        # Fetch basis adjustments and merge them as synthetic purchases
+        if self.adjustment_service:
+            basis_adjustments = self.adjustment_service.get_active_basis_adjustments(user_id, site_id)
+            for adj in basis_adjustments:
+                # Create synthetic purchase ID using negative numbers to avoid collisions
+                synthetic_id = -(adj.id)
+                dt = _to_dt(adj.effective_date, adj.effective_time)
+                delta = adj.delta_basis_usd or Decimal("0.00")
+                
+                # Insert in chronological order
+                purchases.append((synthetic_id, dt, delta))
+                remaining[synthetic_id] = delta
+            
+            # Re-sort to ensure chronological order after merging adjustments
+            purchases.sort(key=lambda x: (x[1], x[0]))  # Sort by datetime, then ID
 
         cursor.execute(
             """
@@ -480,7 +522,10 @@ class RecalculationService:
                     remaining[purchase_id] = avail - alloc
                     remaining_to_allocate -= alloc
                     cost_basis += alloc
-                    allocations_to_write.append((redemption_id, purchase_id, str(alloc)))
+                    
+                    # Only write allocations for actual purchases (positive IDs), not synthetic adjustments
+                    if purchase_id > 0:
+                        allocations_to_write.append((redemption_id, purchase_id, str(alloc)))
 
             net_pl = payout - cost_basis
             realized_to_write.append(
@@ -497,6 +542,9 @@ class RecalculationService:
 
         purchases_updated = 0
         for purchase_id, _dt, _amt in purchases:
+            # Skip synthetic adjustment IDs (negative)
+            if purchase_id < 0:
+                continue
             cursor.execute(
                 "UPDATE purchases SET remaining_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (str(remaining[purchase_id]), purchase_id),
