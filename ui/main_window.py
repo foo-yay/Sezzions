@@ -17,6 +17,7 @@ from ui.notification_widgets import NotificationBellWidget, NotificationCenterDi
 from ui.settings_dialog import SettingsDialog
 from ui.maintenance_mode_dialog import MaintenanceModeDialog
 from services.data_integrity_service import DataIntegrityService
+from services.repair_mode_service import RepairModeService
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -26,7 +27,17 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.facade = facade
         self.settings = Settings()
-        self.setWindowTitle("Sezzions - Casino Session Tracker")
+        
+        # Wire Repair Mode service to facade with settings
+        from services.repair_mode_service import RepairModeService
+        self.facade.repair_mode_service = RepairModeService(self.settings)
+        
+        # Check initial repair mode state for window title
+        self.repair_mode = self.facade.repair_mode_service.is_enabled()
+        window_title = "Sezzions - Casino Session Tracker"
+        if self.repair_mode:
+            window_title += " - REPAIR MODE"
+        self.setWindowTitle(window_title)
         
         # Check data integrity before proceeding
         self.maintenance_mode = False
@@ -276,6 +287,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.main_content.layout().insertWidget(0, banner)
             
             return
+        
+        # Add repair mode banner if enabled (Issue #55)
+        if self.repair_mode:
+            repair_banner = QtWidgets.QLabel("🔧 REPAIR MODE — Auto-rebuild disabled")
+            repair_banner.setStyleSheet("background-color: #cc0000; color: white; padding: 8px; font-weight: bold;")
+            repair_banner.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            self.main_content.layout().insertWidget(0, repair_banner)
         
         # Normal mode: create all tabs
         # Primary tabs
