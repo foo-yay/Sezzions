@@ -12,6 +12,20 @@ Rules:
 ## 2026-02-06
 
 ```yaml
+id: 2026-02-06-12
+type: refactor
+areas: [ui]
+summary: "Move global theme stylesheet to editable QSS template"
+files_changed:
+  - ui/themes.py
+  - resources/theme.qss
+```
+
+Notes:
+- Global styles now live in resources/theme.qss with template placeholders for theme colors.
+- Theme application reads and substitutes colors at runtime for easier editing.
+
+```yaml
 id: 2026-02-06-09
 type: bugfix
 areas: [ui]
