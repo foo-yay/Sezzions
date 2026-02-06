@@ -8,6 +8,7 @@ Legacy is quarantined in `.LEGACY/`.
 - Product + build-from-scratch spec: [docs/PROJECT_SPEC.md](PROJECT_SPEC.md)
 - How to run/install/test: [GETTING_STARTED.md](../GETTING_STARTED.md)
 - Repo overview: [README.md](../README.md)
+- Operator guide (HTML, navigable): [docs/Readme/index.html](Readme/index.html)
 
 ## Canonical (Keep Updated)
 

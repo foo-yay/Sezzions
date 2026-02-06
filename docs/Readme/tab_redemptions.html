@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sezzions Readme — Redemptions</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>Sezzions Readme</h1>
+      <div class="sub">Operator guide + calculation scope</div>
+
+      <div class="nav-section">
+        <div class="title">Start</div>
+        <ul>
+          <li><a href="index.html">Overview</a></li>
+          <li><a href="workflow.html">Daily workflow</a></li>
+          <li><a href="architecture.html">Architecture + data</a></li>
+          <li><a href="recalculation.html">Recalculation & calculations</a></li>
+          <li><a href="tools.html">Tools (deep dive)</a></li>
+        </ul>
+      </div>
+      <div class="nav-section">
+        <div class="title">Tabs</div>
+        <ul>
+          <li><a href="tab_purchases.html">Purchases</a></li>
+          <li><a href="tab_redemptions.html">Redemptions</a></li>
+          <li><a href="tab_game_sessions.html">Game Sessions</a></li>
+          <li><a href="tab_daily_sessions.html">Daily Sessions</a></li>
+          <li><a href="tab_unrealized.html">Unrealized</a></li>
+          <li><a href="tab_realized.html">Realized</a></li>
+          <li><a href="tab_expenses.html">Expenses</a></li>
+          <li><a href="tab_setup.html">Setup</a></li>
+        </ul>
+      </div>
+      <div class="nav-section">
+        <div class="title">Dialogs</div>
+        <ul>
+          <li><a href="dialogs.html">Common dialogs</a></li>
+          <li><a href="glossary.html">Glossary</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="content">
+      <h1>Redemptions tab</h1>
+      <p>
+        Redemptions are the authoritative input for cashouts/withdrawals.
+        Redemptions drive FIFO consumption of purchases.
+      </p>
+
+      <h2>Common workflow</h2>
+      <ol>
+        <li>Filter to a specific User + Site.</li>
+        <li>Add each redemption with accurate timestamp and amount.</li>
+        <li>Use View Redemption to inspect allocations and related data.</li>
+      </ol>
+
+      <h2>Key derived columns</h2>
+      <ul>
+        <li><strong>Cost Basis</strong>: FIFO-allocated basis from purchases (derived).</li>
+        <li><strong>Unbased</strong>: portion of redemption amount not covered by basis (derived; clamped at 0).</li>
+      </ul>
+      <div class="callout">
+        These fields are rebuildable and come from the same underlying allocation logic as the View Redemption → Related tab.
+      </div>
+
+      <h2>What changes require rebuild</h2>
+      <ul>
+        <li>Editing redemption timestamp or amount can change FIFO allocations.</li>
+        <li>Editing purchases also changes redemption allocations.</li>
+      </ul>
+      <div class="callout warn">
+        If Repair Mode is enabled, redemptions may show stale basis/unbased until you rebuild from Tools.
+      </div>
+
+      <div class="footer">
+        Next: <a href="tab_game_sessions.html">Game Sessions</a>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
