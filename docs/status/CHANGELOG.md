@@ -12,6 +12,35 @@ Rules:
 ## 2026-02-06
 
 ```yaml
+id: 2026-02-06-13
+type: docs
+areas: [docs]
+summary: "Add navigable HTML operator Readme (tabs, tools, recalculation)"
+files_changed:
+  - docs/INDEX.md
+  - docs/Readme/index.html
+  - docs/Readme/workflow.html
+  - docs/Readme/architecture.html
+  - docs/Readme/recalculation.html
+  - docs/Readme/tools.html
+  - docs/Readme/tab_purchases.html
+  - docs/Readme/tab_redemptions.html
+  - docs/Readme/tab_game_sessions.html
+  - docs/Readme/tab_daily_sessions.html
+  - docs/Readme/tab_unrealized.html
+  - docs/Readme/tab_realized.html
+  - docs/Readme/tab_expenses.html
+  - docs/Readme/tab_setup.html
+  - docs/Readme/dialogs.html
+  - docs/Readme/glossary.html
+  - docs/Readme/assets/style.css
+```
+
+Notes:
+- New multi-page static HTML guide intended for operators, with special emphasis on recalculation scope and Tools safety/procedures.
+- Linked from docs/INDEX.md so it’s discoverable.
+
+```yaml
 id: 2026-02-06-09
 type: bugfix
 areas: [ui]

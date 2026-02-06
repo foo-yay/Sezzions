@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sezzions Readme</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>Sezzions Readme</h1>
+      <div class="sub">Operator guide + calculation scope</div>
+
+      <div class="nav-section">
+        <div class="title">Start</div>
+        <ul>
+          <li><a href="index.html">Overview</a></li>
+          <li><a href="workflow.html">Daily workflow</a></li>
+          <li><a href="architecture.html">Architecture + data</a></li>
+          <li><a href="recalculation.html">Recalculation & calculations</a></li>
+          <li><a href="tools.html">Tools (deep dive)</a></li>
+        </ul>
+      </div>
+
+      <div class="nav-section">
+        <div class="title">Tabs</div>
+        <ul>
+          <li><a href="tab_purchases.html">Purchases</a></li>
+          <li><a href="tab_redemptions.html">Redemptions</a></li>
+          <li><a href="tab_game_sessions.html">Game Sessions</a></li>
+          <li><a href="tab_daily_sessions.html">Daily Sessions</a></li>
+          <li><a href="tab_unrealized.html">Unrealized</a></li>
+          <li><a href="tab_realized.html">Realized</a></li>
+          <li><a href="tab_expenses.html">Expenses</a></li>
+          <li><a href="tab_setup.html">Setup</a></li>
+        </ul>
+      </div>
+
+      <div class="nav-section">
+        <div class="title">Dialogs</div>
+        <ul>
+          <li><a href="dialogs.html">Common dialogs</a></li>
+          <li><a href="glossary.html">Glossary</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="content">
+      <h1>Sezzions — Operator Readme</h1>
+
+      <div class="callout">
+        <strong>Open this file in a browser:</strong>
+        <div style="margin-top:6px; color: var(--muted);">
+          This is a static HTML guide meant to be easy to navigate. Start with <a href="workflow.html">Daily workflow</a>, then read <a href="recalculation.html">Recalculation & calculations</a> before using Tools.
+        </div>
+      </div>
+
+      <h2 id="what-it-is">What Sezzions is</h2>
+      <p>
+        Sezzions is a desktop app for tracking sweepstakes casino activity with accounting-grade outputs.
+        You record <em>purchases</em> and <em>redemptions</em>, optionally record <em>game sessions</em>, and the app computes derived views like FIFO basis allocations, realized cashflow, taxable session P/L, and open/unrealized positions.
+      </p>
+
+      <div class="grid2">
+        <div class="callout">
+          <strong>Authoritative inputs</strong>
+          <ul>
+            <li>Purchases (basis lots)</li>
+            <li>Redemptions (cashouts)</li>
+            <li>Game Sessions (for taxable P/L model)</li>
+            <li>Daily Sessions notes/rollups (for reporting)</li>
+            <li>Adjustments & checkpoints (Tools)</li>
+          </ul>
+        </div>
+        <div class="callout">
+          <strong>Derived / rebuildable data</strong>
+          <ul>
+            <li>FIFO allocations (purchase→redemption mapping)</li>
+            <li>Realized transactions (cashflow P/L rows)</li>
+            <li>Session-derived fields (taxable P/L components)</li>
+            <li>Event links (cross-navigation between sessions and events)</li>
+          </ul>
+        </div>
+      </div>
+
+      <h2 id="when-to-use-tools">When to use Tools</h2>
+      <p>
+        Most of the time, Sezzions rebuilds derived data automatically after edits. Tools becomes important when you:
+      </p>
+      <ul>
+        <li>import CSVs in bulk and need to rebuild derived data afterward</li>
+        <li>restore/merge/reset databases</li>
+        <li>enable Repair Mode (advanced) and need to manually rebuild stale pairs</li>
+        <li>create basis corrections or balance checkpoints</li>
+      </ul>
+      <div class="callout warn">
+        <strong>Key safety rule:</strong> Backup before restore/reset. And read <a href="tools.html">Tools (deep dive)</a> before using destructive operations.
+      </div>
+
+      <h2 id="quickstart">Quick start</h2>
+      <pre><code>python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python3 sezzions.py</code></pre>
+      <p>
+        Default DB file is <code>./sezzions.db</code> (repo root). Override with <code>SEZZIONS_DB_PATH</code>.
+      </p>
+
+      <div class="footer">
+        This guide is generated/maintained in docs/Readme/. If behavior changes, update docs/PROJECT_SPEC.md first, then update these pages as a user-facing walkthrough.
+      </div>
+    </main>
+  </div>
+</body>
+</html>

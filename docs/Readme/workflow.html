@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sezzions Readme — Daily workflow</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>Sezzions Readme</h1>
+      <div class="sub">Operator guide + calculation scope</div>
+
+      <div class="nav-section">
+        <div class="title">Start</div>
+        <ul>
+          <li><a href="index.html">Overview</a></li>
+          <li><a href="workflow.html">Daily workflow</a></li>
+          <li><a href="architecture.html">Architecture + data</a></li>
+          <li><a href="recalculation.html">Recalculation & calculations</a></li>
+          <li><a href="tools.html">Tools (deep dive)</a></li>
+        </ul>
+      </div>
+      <div class="nav-section">
+        <div class="title">Tabs</div>
+        <ul>
+          <li><a href="tab_purchases.html">Purchases</a></li>
+          <li><a href="tab_redemptions.html">Redemptions</a></li>
+          <li><a href="tab_game_sessions.html">Game Sessions</a></li>
+          <li><a href="tab_daily_sessions.html">Daily Sessions</a></li>
+          <li><a href="tab_unrealized.html">Unrealized</a></li>
+          <li><a href="tab_realized.html">Realized</a></li>
+          <li><a href="tab_expenses.html">Expenses</a></li>
+          <li><a href="tab_setup.html">Setup</a></li>
+        </ul>
+      </div>
+      <div class="nav-section">
+        <div class="title">Dialogs</div>
+        <ul>
+          <li><a href="dialogs.html">Common dialogs</a></li>
+          <li><a href="glossary.html">Glossary</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="content">
+      <h1>Daily workflow</h1>
+      <p>
+        This is a recommended “operator loop” for using Sezzions without accidentally drifting derived calculations.
+        It assumes you’re tracking sweep coins (SC) and want FIFO basis, realized cashflow, and (optionally) taxable session P/L.
+      </p>
+
+      <h2>One-time setup</h2>
+      <ol>
+        <li>Go to <a href="tab_setup.html">Setup</a> and create at least 1 User + 1 Site.</li>
+        <li>Optional but recommended: set up Cards, Redemption Methods, Game Types, and Games.</li>
+        <li>Open Settings (gear icon) and pick a Theme + tax/withholding settings if you use them.</li>
+      </ol>
+
+      <h2>Each time you buy SC</h2>
+      <ol>
+        <li>Open <a href="tab_purchases.html">Purchases</a> → <strong>Add Purchase</strong>.</li>
+        <li>Enter date/time, amount (USD basis), SC received, and (if you track it) starting SC balance snapshot.</li>
+        <li>Save. In normal mode Sezzions triggers a scoped rebuild for the affected (user, site) pair.</li>
+      </ol>
+      <div class="callout">
+        <strong>Tip:</strong> Starting SC balance snapshots are used in expected-balance checks. If you don’t track them, leave them consistent/blank per your workflow and rely more on recalculation + session checkpoints.
+      </div>
+
+      <h2>During play (optional, for taxable session P/L)</h2>
+      <ol>
+        <li>Open <a href="tab_game_sessions.html">Game Sessions</a> → <strong>Start Session</strong>.</li>
+        <li>Enter starting total SC and redeemable SC as shown on the site.</li>
+        <li>When done, select the active session → <strong>End Session</strong>.</li>
+      </ol>
+      <div class="callout warn">
+        <strong>Session P/L is model-driven:</strong> It’s sensitive to accurate start/end balances and can intentionally differ from a simple “money in / money out” story session-by-session.
+        Read <a href="recalculation.html#taxable">Taxable session calculations</a> before relying on the numbers.
+      </div>
+
+      <h2>Each time you cash out (redeem)</h2>
+      <ol>
+        <li>Open <a href="tab_redemptions.html">Redemptions</a> → <strong>Add Redemption</strong>.</li>
+        <li>Enter amount and pick the redemption type:
+          <ul>
+            <li><strong>Closeout</strong>: indicates no meaningful balance remains; closes the basis period.</li>
+            <li><strong>Partial</strong>: indicates you are leaving meaningful balance; basis period continues.</li>
+          </ul>
+        </li>
+        <li>Save. Sezzions rebuilds FIFO allocations and updates realized cashflow (and can affect sessions).</li>
+      </ol>
+
+      <h2>End of day / weekly hygiene</h2>
+      <ul>
+        <li>Check <a href="tab_unrealized.html">Unrealized</a> for open positions and sanity-check estimated SC.</li>
+        <li>Check <a href="tab_realized.html">Realized</a> for realized cashflow and position notes.</li>
+        <li>Check <a href="tab_daily_sessions.html">Daily Sessions</a> for tax rollups and notes.</li>
+        <li>Use <a href="tools.html#backup">Tools → Backup Now</a> routinely.</li>
+      </ul>
+
+      <h2>When things look wrong</h2>
+      <div class="callout danger">
+        <strong>First question:</strong> Are you in Repair Mode? If yes, derived results will stay stale until rebuilt.
+      </div>
+      <ol>
+        <li>Go to <a href="tools.html#repair-mode">Tools → Repair Mode</a> and confirm status.</li>
+        <li>If not in Repair Mode: run <a href="tools.html#recalculate">Tools → Recalculate Pair</a> for the affected user/site, or “Recalculate Everything” if unsure.</li>
+        <li>If you imported data: run <a href="tools.html#recalculate">Recalculate Everything</a>.</li>
+        <li>If the app starts in Maintenance Mode: follow the <a href="dialogs.html#maintenance-mode">Maintenance Mode</a> guidance.</li>
+      </ol>
+
+      <div class="footer">
+        Next: <a href="recalculation.html">Recalculation & calculations</a>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

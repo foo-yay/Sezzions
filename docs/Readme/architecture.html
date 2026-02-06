@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sezzions Readme — Architecture + data</title>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>Sezzions Readme</h1>
+      <div class="sub">Operator guide + calculation scope</div>
+
+      <div class="nav-section">
+        <div class="title">Start</div>
+        <ul>
+          <li><a href="index.html">Overview</a></li>
+          <li><a href="workflow.html">Daily workflow</a></li>
+          <li><a href="architecture.html">Architecture + data</a></li>
+          <li><a href="recalculation.html">Recalculation & calculations</a></li>
+          <li><a href="tools.html">Tools (deep dive)</a></li>
+        </ul>
+      </div>
+      <div class="nav-section">
+        <div class="title">Tabs</div>
+        <ul>
+          <li><a href="tab_purchases.html">Purchases</a></li>
+          <li><a href="tab_redemptions.html">Redemptions</a></li>
+          <li><a href="tab_game_sessions.html">Game Sessions</a></li>
+          <li><a href="tab_daily_sessions.html">Daily Sessions</a></li>
+          <li><a href="tab_unrealized.html">Unrealized</a></li>
+          <li><a href="tab_realized.html">Realized</a></li>
+          <li><a href="tab_expenses.html">Expenses</a></li>
+          <li><a href="tab_setup.html">Setup</a></li>
+        </ul>
+      </div>
+      <div class="nav-section">
+        <div class="title">Dialogs</div>
+        <ul>
+          <li><a href="dialogs.html">Common dialogs</a></li>
+          <li><a href="glossary.html">Glossary</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="content">
+      <h1>Architecture + data model (operator-focused)</h1>
+
+      <h2>App layers (why it matters)</h2>
+      <p>
+        Sezzions is structured as UI → services → repositories → SQLite.
+        For operators, the key implication is: most multi-step edits are <strong>atomic</strong>.
+        If an operation fails halfway through, it should roll back so you don’t get partial writes.
+      </p>
+
+      <table class="table">
+        <thead><tr><th>Layer</th><th>Role</th><th>Examples</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>UI</td>
+            <td>Forms, tables, dialogs, user workflows</td>
+            <td>Main tabs, View/Edit dialogs, Tools UI</td>
+          </tr>
+          <tr>
+            <td>Services</td>
+            <td>Business rules and orchestration</td>
+            <td>FIFO rules, session P/L model, recalculation orchestration</td>
+          </tr>
+          <tr>
+            <td>Repositories</td>
+            <td>SQLite reads/writes</td>
+            <td>Purchases/Redemptions queries, bulk merge/reset</td>
+          </tr>
+          <tr>
+            <td>SQLite</td>
+            <td>Single-file DB with transactional semantics</td>
+            <td>sezzions.db, backups/restores</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Database file</h2>
+      <ul>
+        <li>Default DB: <code>sezzions.db</code> in repo root</li>
+        <li>Override: set <code>SEZZIONS_DB_PATH</code> when starting the app</li>
+      </ul>
+
+      <h2>Authoritative vs derived data</h2>
+      <p>
+        When you see “wrong numbers”, it helps to know whether you’re looking at authoritative inputs (things you entered)
+        or derived data (things Sezzions can rebuild).
+      </p>
+
+      <div class="grid2">
+        <div class="callout">
+          <strong>Authoritative inputs (entered/edited)</strong>
+          <ul>
+            <li>Purchases</li>
+            <li>Redemptions</li>
+            <li>Game Sessions (start/end balances)</li>
+            <li>Expenses</li>
+            <li>Adjustments & checkpoints</li>
+          </ul>
+        </div>
+        <div class="callout">
+          <strong>Derived (rebuildable)</strong>
+          <ul>
+            <li>FIFO allocations</li>
+            <li>Realized transactions</li>
+            <li>Session recalculations</li>
+            <li>Event links</li>
+          </ul>
+        </div>
+      </div>
+
+      <h2>Maintenance Mode</h2>
+      <p>
+        If Sezzions detects data integrity issues at startup, it can enter <strong>Maintenance Mode</strong>.
+        This reduces what parts of the app are available so you can repair/restore/recalculate without the UI crashing.
+      </p>
+      <div class="callout warn">
+        <strong>Typical maintenance steps:</strong> finish any pending CSV import, then run “Recalculate Everything”, or restore a known-good backup.
+        See <a href="dialogs.html#maintenance-mode">Maintenance Mode dialog</a>.
+      </div>
+
+      <h2>Repair Mode (advanced)</h2>
+      <p>
+        Repair Mode disables automatic derived rebuilds after edits. Sezzions then tracks which (user, site) pairs are “stale”.
+        You must explicitly rebuild stale pairs using Tools.
+      </p>
+      <div class="callout danger">
+        <strong>Rule of thumb:</strong> Don’t enable Repair Mode unless you have a reason (e.g., corruption triage or huge bulk edits).
+      </div>
+
+      <div class="footer">
+        Next: <a href="recalculation.html">Recalculation & calculations</a>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
