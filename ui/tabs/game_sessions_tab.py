@@ -230,22 +230,32 @@ class GameSessionsTab(QWidget):
 
         search_text = self.search_edit.text().lower().strip()
         if search_text:
+            # Resolve names the same way _populate_table does (so search matches what's displayed)
+            users = {u.id: u.name for u in self.facade.get_all_users()}
+            sites = {s.id: s.name for s in self.facade.get_all_sites()}
+            games = {g.id: g for g in self.facade.list_all_games()}
+            
             filtered = []
             for s in rows:
+                user_name = users.get(s.user_id, '')
+                site_name = sites.get(s.site_id, '')
+                game = games.get(s.game_id)
+                game_name = game.name if game else ''
+                
                 parts = [
                     str(s.session_date),
-                    getattr(s, 'user_name', '') or '',
-                    getattr(s, 'site_name', '') or '',
-                    getattr(s, 'game_name', '') or '',
-                    getattr(s, 'status', '') or '',
+                    user_name,
+                    site_name,
+                    game_name,
+                    s.status or '',
                     str(s.starting_balance),
                     str(s.ending_balance),
                     str(s.starting_redeemable),
                     str(s.ending_redeemable),
-                    str(s.delta_total),
-                    str(s.delta_redeem),
-                    str(s.basis_consumed),
-                    str(s.net_taxable_pl),
+                    str(s.delta_total) if s.delta_total is not None else '',
+                    str(s.delta_redeem) if s.delta_redeem is not None else '',
+                    str(s.basis_consumed) if s.basis_consumed is not None else '',
+                    str(s.net_taxable_pl) if s.net_taxable_pl is not None else '',
                     s.notes or '',
                 ]
                 haystack = " ".join(parts).lower()

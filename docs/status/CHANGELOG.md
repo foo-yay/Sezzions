@@ -12,6 +12,24 @@ Rules:
 ## 2026-02-06
 
 ```yaml
+id: 2026-02-06-03
+type: bugfix
+areas: [ui, tests]
+summary: "Game Sessions tab search now filters by user/site/game names (resolves Issue #71)"
+issue: "#71"
+files_changed:
+  - ui/tabs/game_sessions_tab.py
+  - tests/integration/test_game_sessions_search.py (new)
+```
+
+Notes:
+- Fixed Game Sessions search to resolve user/site/game names using lookup dictionaries (same as table display logic).
+- Previously searched non-existent model attributes (`user_name`, `site_name`, `game_name`), causing empty results.
+- Search now matches displayed text: searching "Alice" finds sessions by that user, "CasinoX" finds sessions at that site, etc.
+- Added comprehensive integration tests (7 test cases): search by user/site/game name, numeric values, case-insensitive, clear search, no results.
+- Tests set date filter to "All Time" to ensure visibility of test data.
+
+```yaml
 id: 2026-02-06-02
 type: bugfix
 areas: [services, ui, app_facade, tests]
