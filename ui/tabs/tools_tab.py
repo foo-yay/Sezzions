@@ -676,6 +676,11 @@ class ToolsTab(QWidget):
     
     def _update_repair_mode_indicator(self):
         """Update the repair mode status indicator"""
+        if not self.facade.repair_mode_service:
+            self.repair_mode_indicator.setText("🟢 Disabled")
+            self.repair_mode_indicator.setStyleSheet("color: #28a745; font-weight: bold;")
+            return
+            
         is_enabled = self.facade.repair_mode_service.is_enabled()
         if is_enabled:
             self.repair_mode_indicator.setText("🔴 ENABLED")
@@ -686,6 +691,11 @@ class ToolsTab(QWidget):
     
     def _update_repair_mode_button(self):
         """Update the repair mode toggle button text"""
+        if not self.facade.repair_mode_service:
+            self.repair_mode_toggle_btn.setText("Enable Repair Mode")
+            self.repair_mode_toggle_btn.setStyleSheet("background-color: #cc0000; color: white;")
+            return
+            
         is_enabled = self.facade.repair_mode_service.is_enabled()
         if is_enabled:
             self.repair_mode_toggle_btn.setText("Disable Repair Mode")
@@ -696,6 +706,10 @@ class ToolsTab(QWidget):
     
     def _update_stale_pairs_count(self):
         """Update the stale pairs count label"""
+        if not self.facade.repair_mode_service:
+            self.stale_pairs_count_label.setText("0 stale pairs")
+            return
+            
         stale_pairs = self.facade.repair_mode_service.get_stale_pairs()
         count = len(stale_pairs)
         if count == 0:
@@ -707,11 +721,17 @@ class ToolsTab(QWidget):
     
     def _update_rebuild_stale_button(self):
         """Enable/disable rebuild stale button based on stale pairs count"""
+        if not self.facade.repair_mode_service:
+            self.rebuild_stale_btn.setEnabled(False)
+            return
         stale_pairs = self.facade.repair_mode_service.get_stale_pairs()
         self.rebuild_stale_btn.setEnabled(len(stale_pairs) > 0)
     
     def _update_clear_stale_button(self):
         """Enable/disable clear stale button based on stale pairs count"""
+        if not self.facade.repair_mode_service:
+            self.clear_stale_btn.setEnabled(False)
+            return
         stale_pairs = self.facade.repair_mode_service.get_stale_pairs()
         self.clear_stale_btn.setEnabled(len(stale_pairs) > 0)
     
@@ -725,6 +745,8 @@ class ToolsTab(QWidget):
     
     def _on_repair_mode_toggle(self):
         """Handle repair mode toggle button click"""
+        if not self.facade.repair_mode_service:
+            return
         is_enabled = self.facade.repair_mode_service.is_enabled()
         
         if is_enabled:
@@ -766,6 +788,8 @@ class ToolsTab(QWidget):
     
     def _on_rebuild_stale_pairs(self):
         """Handle rebuild stale pairs button click"""
+        if not self.facade.repair_mode_service:
+            return
         stale_pairs = self.facade.repair_mode_service.get_stale_pairs()
         if not stale_pairs:
             QMessageBox.information(self, "No Stale Pairs", "No stale pairs need rebuilding.")
@@ -804,6 +828,8 @@ class ToolsTab(QWidget):
     
     def _on_clear_stale_pairs(self):
         """Handle clear stale pairs button click"""
+        if not self.facade.repair_mode_service:
+            return
         stale_pairs = self.facade.repair_mode_service.get_stale_pairs()
         if not stale_pairs:
             QMessageBox.information(self, "No Stale Pairs", "No stale pairs to clear.")

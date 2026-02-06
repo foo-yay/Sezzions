@@ -309,18 +309,11 @@ class AppFacade:
             )
         else:
             # Normal mode: rebuild immediately
-            self._rebuild_or_mark_stale(
-
+            self.recalculation_service.rebuild_fifo_for_pair_from(
                 user_id,
-
                 site_id,
-
-                boundary_date,
-
-                boundary_time,
-
-                reason="data edit"
-
+                boundary_date.isoformat(),
+                boundary_time
             )
     
     # ==========================================================================
