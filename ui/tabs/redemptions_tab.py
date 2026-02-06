@@ -101,9 +101,9 @@ class RedemptionsTab(QtWidgets.QWidget):
         
         # Table
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(9)
+        self.table.setColumnCount(11)
         self.table.setHorizontalHeaderLabels([
-            "Date/Time", "User", "Site", "Amount", "Type", "Receipt", "Method", "Processed", "Notes"
+            "Date/Time", "User", "Site", "Cost Basis", "Amount", "Unbased", "Type", "Receipt", "Method", "Processed", "Notes"
         ])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
@@ -189,33 +189,55 @@ class RedemptionsTab(QtWidgets.QWidget):
                 site = getattr(redemption, 'site_name', None) or "—"
                 self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(site))
 
+                # Cost Basis
+                if redemption.cost_basis is None:
+                    cost_basis_display = "—"
+                else:
+                    cost_basis_display = f"${float(redemption.cost_basis):.2f}"
+                cost_basis_item = QtWidgets.QTableWidgetItem(cost_basis_display)
+                cost_basis_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row, 3, cost_basis_item)
+
                 # Amount
                 amount_str = f"${float(redemption.amount):.2f}"
                 amount_item = QtWidgets.QTableWidgetItem(amount_str)
                 amount_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-                self.table.setItem(row, 3, amount_item)
+                self.table.setItem(row, 4, amount_item)
+
+                # Unbased
+                if redemption.cost_basis is None:
+                    unbased_display = "—"
+                else:
+                    try:
+                        unbased_value = Decimal(str(redemption.amount)) - Decimal(str(redemption.cost_basis))
+                    except Exception:
+                        unbased_value = None
+                    unbased_display = "—" if unbased_value is None else f"${float(unbased_value):.2f}"
+                unbased_item = QtWidgets.QTableWidgetItem(unbased_display)
+                unbased_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row, 5, unbased_item)
 
                 # Type (Full/Partial)
                 type_display = "Full" if not redemption.more_remaining else "Partial"
                 type_item = QtWidgets.QTableWidgetItem(type_display)
                 type_item.setTextAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter)
-                self.table.setItem(row, 4, type_item)
+                self.table.setItem(row, 6, type_item)
 
                 # Receipt
                 receipt_item = QtWidgets.QTableWidgetItem(receipt_display)
-                self.table.setItem(row, 5, receipt_item)
+                self.table.setItem(row, 7, receipt_item)
 
                 # Method
-                self.table.setItem(row, 6, QtWidgets.QTableWidgetItem(method_display))
+                self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(method_display))
 
                 # Processed
                 processed_item = QtWidgets.QTableWidgetItem("✓" if redemption.processed else "")
                 processed_item.setTextAlignment(QtCore.Qt.AlignCenter)
-                self.table.setItem(row, 7, processed_item)
+                self.table.setItem(row, 9, processed_item)
 
                 # Notes
                 notes = (redemption.notes or "")[:100]
-                self.table.setItem(row, 8, QtWidgets.QTableWidgetItem(notes))
+                self.table.setItem(row, 10, QtWidgets.QTableWidgetItem(notes))
 
                 if status == "total_loss":
                     color = QtGui.QColor("#c0392b")
@@ -225,7 +247,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                     color = None
 
                 if color:
-                    for col in range(0, 8):
+                    for col in range(0, 10):
                         item = self.table.item(row, col)
                         if item:
                             item.setForeground(QtGui.QBrush(color))
@@ -254,12 +276,21 @@ class RedemptionsTab(QtWidgets.QWidget):
             for r in self.redemptions:
                 receipt_status = "pending" if not r.receipt_date else "received"
                 processed_status = "processed" if r.processed else "unprocessed"
+                if r.cost_basis is None:
+                    unbased_value = None
+                else:
+                    try:
+                        unbased_value = Decimal(str(r.amount)) - Decimal(str(r.cost_basis))
+                    except Exception:
+                        unbased_value = None
                 parts = [
                     str(r.redemption_date),
                     getattr(r, 'user_name', '') or '',
                     getattr(r, 'site_name', '') or '',
                     getattr(r, 'method_name', '') or '',
                     str(r.amount),
+                    str(r.cost_basis) if r.cost_basis is not None else '',
+                    str(unbased_value) if unbased_value is not None else '',
                     receipt_status,
                     processed_status,
                     r.notes or '',
