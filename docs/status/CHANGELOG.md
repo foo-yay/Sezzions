@@ -12,6 +12,20 @@ Rules:
 ## 2026-02-06
 
 ```yaml
+id: 2026-02-06-11
+type: refactor
+areas: [ui]
+summary: "Load theme stylesheet from resources/theme.qss and refresh theme palettes"
+files_changed:
+  - ui/themes.py
+  - docs/PROJECT_SPEC.md
+```
+
+Notes:
+- Theme stylesheet is now maintained in `resources/theme.qss` with variables substituted at runtime.
+- Updated Dark/Blue palettes and added a Custom theme option.
+
+```yaml
 id: 2026-02-06-10
 type: feature
 areas: [ui]
