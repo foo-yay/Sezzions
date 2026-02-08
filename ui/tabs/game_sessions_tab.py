@@ -2133,6 +2133,22 @@ class EditClosedSessionDialog(QDialog):
         
         datetime_layout.addLayout(end_row)
         
+        # Row 3: Start timestamp adjustment info banner
+        self.start_timestamp_info_label = QLabel()
+        self.start_timestamp_info_label.setObjectName("HelperText")
+        self.start_timestamp_info_label.setProperty("status", "info")
+        self.start_timestamp_info_label.setWordWrap(True)
+        self.start_timestamp_info_label.setVisible(False)
+        datetime_layout.addWidget(self.start_timestamp_info_label)
+        
+        # Row 4: End timestamp adjustment info banner
+        self.end_timestamp_info_label = QLabel()
+        self.end_timestamp_info_label.setObjectName("HelperText")
+        self.end_timestamp_info_label.setProperty("status", "info")
+        self.end_timestamp_info_label.setWordWrap(True)
+        self.end_timestamp_info_label.setVisible(False)
+        datetime_layout.addWidget(self.end_timestamp_info_label)
+        
         form.addWidget(datetime_section, 0, 0, 1, 7)
 
         # Section 1: Session Details (2-column grid)
@@ -2342,6 +2358,16 @@ class EditClosedSessionDialog(QDialog):
         self.end_total_edit.textChanged.connect(self._update_rtp_display)
         self.game_name_combo.currentTextChanged.connect(self._update_rtp_display)
         
+        # Connect timestamp info updates
+        self.user_combo.currentTextChanged.connect(self._update_start_timestamp_info)
+        self.site_combo.currentTextChanged.connect(self._update_start_timestamp_info)
+        self.date_edit.textChanged.connect(self._update_start_timestamp_info)
+        self.time_edit.textChanged.connect(self._update_start_timestamp_info)
+        self.user_combo.currentTextChanged.connect(self._update_end_timestamp_info)
+        self.site_combo.currentTextChanged.connect(self._update_end_timestamp_info)
+        self.end_date_edit.textChanged.connect(self._update_end_timestamp_info)
+        self.end_time_edit.textChanged.connect(self._update_end_timestamp_info)
+        
         # Set tab order: Start date -> Start time -> End Date -> End Time -> User -> Site -> 
         # Game Type -> Game Name -> Wager -> Start Total -> Start Redeem -> End total -> End redeem -> Notes -> Save
         self.setTabOrder(self.date_edit, self.time_edit)
@@ -2362,6 +2388,8 @@ class EditClosedSessionDialog(QDialog):
 
         self._load_session()
         self._validate_inline()
+        self._update_start_timestamp_info()
+        self._update_end_timestamp_info()
 
         # Start with notes collapsed and dialog tight.
         self._compute_height_presets()
@@ -3035,6 +3063,152 @@ class EditClosedSessionDialog(QDialog):
         
         self._update_balance_check()
         self._update_rtp_display()
+
+    def _update_start_timestamp_info(self):
+        """Check for START timestamp conflicts and show info banner if adjustment needed"""
+        from datetime import datetime
+        
+        site_text = self.site_combo.currentText().strip()
+        user_text = self.user_combo.currentText().strip()
+        date_text = self.date_edit.text().strip()
+        time_text = self.time_edit.text().strip()
+
+        # Hide banner if we don't have all required fields
+        if not site_text or not user_text or not date_text:
+            self.start_timestamp_info_label.setVisible(False)
+            return
+
+        # Validate lookups
+        if site_text.lower() not in self._site_lookup or user_text.lower() not in self._user_lookup:
+            self.start_timestamp_info_label.setVisible(False)
+            return
+
+        # Parse date
+        parsed_date = None
+        for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d"):
+            try:
+                parsed_date = datetime.strptime(date_text, fmt).date()
+                break
+            except ValueError:
+                continue
+        if parsed_date is None:
+            self.start_timestamp_info_label.setVisible(False)
+            return
+
+        # Parse time (use current time if not provided)
+        if time_text:
+            try:
+                if len(time_text) == 5:
+                    datetime.strptime(time_text, "%H:%M")
+                    parsed_time = f"{time_text}:00"
+                elif len(time_text) == 8:
+                    datetime.strptime(time_text, "%H:%M:%S")
+                    parsed_time = time_text
+                else:
+                    self.start_timestamp_info_label.setVisible(False)
+                    return
+            except Exception:
+                self.start_timestamp_info_label.setVisible(False)
+                return
+        else:
+            parsed_time = datetime.now().strftime("%H:%M:%S")
+
+        user = self._user_lookup[user_text.lower()]
+        site = self._site_lookup[site_text.lower()]
+
+        # Check for timestamp conflicts
+        try:
+            adjusted_date_str, adjusted_time_str, will_adjust = self.facade.timestamp_service.ensure_unique_timestamp(
+                user_id=user.id,
+                site_id=site.id,
+                date_val=parsed_date,
+                time_str=parsed_time,
+                exclude_id=self.session.id if self.session else None,
+                event_type="session_start"
+            )
+            
+            if will_adjust:
+                banner_text = f"ℹ️ Start time will be adjusted to {adjusted_time_str} ({parsed_time} already in use)"
+                self.start_timestamp_info_label.setText(banner_text)
+                self.start_timestamp_info_label.setVisible(True)
+            else:
+                self.start_timestamp_info_label.setVisible(False)
+        except Exception as e:
+            # Silently hide banner on error
+            self.start_timestamp_info_label.setVisible(False)
+
+    def _update_end_timestamp_info(self):
+        """Check for END timestamp conflicts and show info banner if adjustment needed"""
+        from datetime import datetime
+        
+        site_text = self.site_combo.currentText().strip()
+        user_text = self.user_combo.currentText().strip()
+        date_text = self.end_date_edit.text().strip()
+        time_text = self.end_time_edit.text().strip()
+
+        # Hide banner if we don't have all required fields
+        if not site_text or not user_text or not date_text:
+            self.end_timestamp_info_label.setVisible(False)
+            return
+
+        # Validate lookups
+        if site_text.lower() not in self._site_lookup or user_text.lower() not in self._user_lookup:
+            self.end_timestamp_info_label.setVisible(False)
+            return
+
+        # Parse date
+        parsed_date = None
+        for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d"):
+            try:
+                parsed_date = datetime.strptime(date_text, fmt).date()
+                break
+            except ValueError:
+                continue
+        if parsed_date is None:
+            self.end_timestamp_info_label.setVisible(False)
+            return
+
+        # Parse time (use current time if not provided)
+        if time_text:
+            try:
+                if len(time_text) == 5:
+                    datetime.strptime(time_text, "%H:%M")
+                    parsed_time = f"{time_text}:00"
+                elif len(time_text) == 8:
+                    datetime.strptime(time_text, "%H:%M:%S")
+                    parsed_time = time_text
+                else:
+                    self.end_timestamp_info_label.setVisible(False)
+                    return
+            except Exception:
+                self.end_timestamp_info_label.setVisible(False)
+                return
+        else:
+            parsed_time = datetime.now().strftime("%H:%M:%S")
+
+        user = self._user_lookup[user_text.lower()]
+        site = self._site_lookup[site_text.lower()]
+
+        # Check for timestamp conflicts
+        try:
+            adjusted_date_str, adjusted_time_str, will_adjust = self.facade.timestamp_service.ensure_unique_timestamp(
+                user_id=user.id,
+                site_id=site.id,
+                date_val=parsed_date,
+                time_str=parsed_time,
+                exclude_id=self.session.id if self.session else None,
+                event_type="session_end"
+            )
+            
+            if will_adjust:
+                banner_text = f"ℹ️ End time will be adjusted to {adjusted_time_str} ({parsed_time} already in use)"
+                self.end_timestamp_info_label.setText(banner_text)
+                self.end_timestamp_info_label.setVisible(True)
+            else:
+                self.end_timestamp_info_label.setVisible(False)
+        except Exception as e:
+            # Silently hide banner on error
+            self.end_timestamp_info_label.setVisible(False)
 
 
 class ViewSessionDialog(QDialog):
@@ -4156,6 +4330,11 @@ class EndSessionDialog(QDialog):
         self.date_edit.textChanged.connect(self._update_timestamp_info)
         self.time_edit.textChanged.connect(self._update_timestamp_info)
 
+        # Site and user combos (from parent session) affect timestamp checking
+        # but we don't have them as editable fields in this dialog - they're fixed
+        # from the session. The timestamp info banner will still update based on
+        # date/time changes.
+
         # Set tab order
         self.setTabOrder(self.date_edit, self.time_edit)
         self.setTabOrder(self.time_edit, self.end_total_edit)
@@ -4180,21 +4359,14 @@ class EndSessionDialog(QDialog):
         self.resize(self.width(), max(self.height(), self._min_height_no_notes))
 
     def _update_timestamp_info(self):
-        """Check for timestamp conflicts and show info banner if adjustment needed"""
+        """Check for timestamp conflicts and show info banner if adjustment needed (for END time)"""
         from datetime import datetime
         
-        site_text = self.site_combo.currentText().strip()
-        user_text = self.user_combo.currentText().strip()
         date_text = self.date_edit.text().strip()
         time_text = self.time_edit.text().strip()
 
         # Hide banner if we don't have all required fields
-        if not site_text or not user_text or not date_text:
-            self.timestamp_info_label.setVisible(False)
-            return
-
-        # Validate lookups
-        if site_text.lower() not in self._site_lookup or user_text.lower() not in self._user_lookup:
+        if not date_text:
             self.timestamp_info_label.setVisible(False)
             return
 
@@ -4228,26 +4400,39 @@ class EndSessionDialog(QDialog):
         else:
             parsed_time = datetime.now().strftime("%H:%M:%S")
 
-        user = self._user_lookup[user_text.lower()]
-        site = self._site_lookup[site_text.lower()]
+        # Use session's site_id and user_id (not from combos - they don't exist in this dialog)
+        user_id = self.session.user_id
+        site_id = self.session.site_id
 
         # Check for timestamp conflicts
         try:
             adjusted_date_str, adjusted_time_str, will_adjust = self.facade.timestamp_service.ensure_unique_timestamp(
-                user_id=user.id,
-                site_id=site.id,
+                user_id=user_id,
+                site_id=site_id,
                 date_val=parsed_date,
                 time_str=parsed_time,
                 exclude_id=self.session.id if self.session else None,
-                event_type="session_start"
+                event_type="session_end"
             )
             
             if will_adjust:
                 banner_text = f"ℹ️ Time will be adjusted to {adjusted_time_str} ({parsed_time} already in use)"
                 self.timestamp_info_label.setText(banner_text)
+                was_visible = self.timestamp_info_label.isVisible()
                 self.timestamp_info_label.setVisible(True)
+                # Expand dialog height when banner first appears
+                if not was_visible:
+                    self.adjustSize()
+                    current_height = self.height()
+                    self.setMinimumHeight(current_height + 40)
+                    self.resize(self.width(), current_height + 40)
             else:
+                was_visible = self.timestamp_info_label.isVisible()
                 self.timestamp_info_label.setVisible(False)
+                # Restore original height when banner disappears
+                if was_visible and hasattr(self, '_min_height_no_notes'):
+                    self.setMinimumHeight(self._min_height_no_notes)
+                    self.adjustSize()
         except Exception as e:
             # Silently hide banner on error
             self.timestamp_info_label.setVisible(False)

@@ -986,9 +986,9 @@ class RedemptionDialog(QtWidgets.QDialog):
         form.setSpacing(12)
 
         # Date/Time row (no header, compact)
-        datetime_section = QtWidgets.QWidget()
-        datetime_section.setObjectName("SectionBackground")
-        datetime_section_layout = QtWidgets.QVBoxLayout(datetime_section)
+        self.datetime_section = QtWidgets.QWidget()
+        self.datetime_section.setObjectName("SectionBackground")
+        datetime_section_layout = QtWidgets.QVBoxLayout(self.datetime_section)
         datetime_section_layout.setContentsMargins(12, 10, 12, 10)
         datetime_section_layout.setSpacing(8)
         
@@ -1031,7 +1031,7 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.timestamp_info_label.setVisible(False)
         datetime_section_layout.addWidget(self.timestamp_info_label)
         
-        form.addWidget(datetime_section)
+        form.addWidget(self.datetime_section)
 
         # Main Redemption Details card with 2-column grid
         main_header = self._create_section_header("💰  Redemption Details")
@@ -1228,6 +1228,7 @@ class RedemptionDialog(QtWidgets.QDialog):
             self._clear_form()
 
         self._validate_inline()
+        self._update_timestamp_info()
     
     def _toggle_notes(self):
         """Toggle notes section visibility"""
@@ -1833,7 +1834,26 @@ class RedemptionDialog(QtWidgets.QDialog):
         
         # Validate real redemptions require game sessions
         if amount > Decimal("0.00"):
+            # IMPORTANT: Get the ADJUSTED timestamp that will actually be used
+            # The timestamp service may auto-increment the time if there's a conflict
+            adjusted_date_str, adjusted_time_str, _ = self.facade.timestamp_service.ensure_unique_timestamp(
+                user_id=self.user_id,
+                site_id=self.site_id,
+                date_val=redemption_date,
+                time_str=redemption_time,
+                exclude_id=self.redemption.id if self.redemption else None,
+                event_type="redemption"
+            )
+            
+            # Convert adjusted date string back to date object if needed
+            if isinstance(adjusted_date_str, str):
+                from datetime import datetime as dt_module
+                adjusted_date = dt_module.strptime(adjusted_date_str, "%Y-%m-%d").date()
+            else:
+                adjusted_date = adjusted_date_str
+            
             # Check if there's at least one CLOSED session for this site/user
+            # using the ADJUSTED timestamp
             db = self.facade.game_session_repo.db
             cursor = db._connection.cursor()
             cursor.execute("""
@@ -1843,7 +1863,7 @@ class RedemptionDialog(QtWidgets.QDialog):
                   AND status = 'Closed'
                   AND end_date IS NOT NULL
                   AND (end_date < ? OR (end_date = ? AND end_time <= ?))
-            """, (self.site_id, self.user_id, redemption_date, redemption_date, redemption_time))
+            """, (self.site_id, self.user_id, adjusted_date, adjusted_date, adjusted_time_str))
             result = cursor.fetchone()
             has_closed_sessions = result["session_count"] > 0 if result else False
             
@@ -1882,8 +1902,8 @@ class RedemptionDialog(QtWidgets.QDialog):
                 expected_total, expected_redeemable = self.facade.compute_expected_balances(
                     self.user_id,
                     self.site_id,
-                    redemption_date,
-                    redemption_time
+                    adjusted_date,
+                    adjusted_time_str
                 )
                 site = self.facade.get_site(self.site_id)
                 sc_rate = Decimal(str(site.sc_rate if site else 1.0))
@@ -2036,14 +2056,14 @@ class RedemptionDialog(QtWidgets.QDialog):
         else:
             parsed_time = datetime.now().strftime("%H:%M:%S")
 
-        user = self._user_lookup[user_text.lower()]
-        site = self._site_lookup[site_text.lower()]
+        user_id = self._user_lookup[user_text.lower()]
+        site_id = self._site_lookup[site_text.lower()]
 
         # Check for timestamp conflicts
         try:
             adjusted_date_str, adjusted_time_str, will_adjust = self.facade.timestamp_service.ensure_unique_timestamp(
-                user_id=user.id,
-                site_id=site.id,
+                user_id=user_id,
+                site_id=site_id,
                 date_val=parsed_date,
                 time_str=parsed_time,
                 exclude_id=self.redemption.id if self.redemption else None,
@@ -2053,7 +2073,12 @@ class RedemptionDialog(QtWidgets.QDialog):
             if will_adjust:
                 banner_text = f"ℹ️ Time will be adjusted to {adjusted_time_str} ({parsed_time} already in use)"
                 self.timestamp_info_label.setText(banner_text)
+                was_visible = self.timestamp_info_label.isVisible()
                 self.timestamp_info_label.setVisible(True)
+                # Expand dialog slightly when banner first appears (just enough for the banner)
+                if not was_visible:
+                    self.timestamp_info_label.updateGeometry()
+                    self.datetime_section.updateGeometry()
             else:
                 self.timestamp_info_label.setVisible(False)
         except Exception as e:
