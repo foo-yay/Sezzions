@@ -315,6 +315,13 @@ class AppFacade:
                 boundary_date.isoformat(),
                 boundary_time
             )
+            # Rebuild session-event links to include newly added/edited events
+            self.game_session_event_link_service.rebuild_links_for_pair_from(
+                site_id,
+                user_id,
+                boundary_date.isoformat(),
+                boundary_time
+            )
     
     # ==========================================================================
     # User Operations

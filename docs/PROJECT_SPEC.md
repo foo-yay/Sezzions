@@ -366,7 +366,7 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
   - `clear_all()`: Clear entire stale list
   - `get_stale_pairs()`: Retrieve list of stale pairs with metadata
 - `AppFacade._rebuild_or_mark_stale()`: Conditional helper method used by all CRUD operations
-  - Normal mode: Immediately rebuilds derived data for affected pair
+  - Normal mode: Immediately rebuilds derived data (FIFO allocations + session-event links) for affected pair
   - Repair mode: Marks pair as stale and skips rebuild
 - Stale pair tracking:
   - Key: `{user_id}:{site_id}`

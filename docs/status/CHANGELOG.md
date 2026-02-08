@@ -9,6 +9,28 @@ Rules:
 
 ---
 
+## 2026-02-08
+
+```yaml
+id: 2026-02-08-01
+type: fix
+areas: [services, facade]
+summary: "Fix session-event links not updated when events added/edited (Issue #84)"
+files_changed:
+  - app_facade.py
+issue: 84
+pr: 85
+```
+
+Notes:
+- **Bug**: Adding or editing a purchase/redemption did not trigger session-event link rebuild.
+- Result: Related events would not appear in session view dialogs until app restart or manual "Recalculate Everything".
+- Root cause: `_rebuild_or_mark_stale()` only rebuilt FIFO allocations, not session-event links.
+- Lazy rebuild in `get_linked_events_for_session()` had flawed early-return: it skipped rebuild if ANY links existed, even if incomplete.
+- **Fix**: Added `rebuild_links_for_pair_from()` call in `_rebuild_or_mark_stale()` after FIFO rebuild (normal mode only).
+- This ensures session-event links are kept in sync whenever purchases/redemptions are created or edited.
+- All 729 tests pass after fix.
+
 ## 2026-02-07
 
 ```yaml
