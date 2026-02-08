@@ -162,8 +162,13 @@ class GameSessionService:
             session.notes = notes
         
         # Handle other kwargs (for compatibility)
+        # Special handling for game_id: allow None to clear the game
+        if "game_id" in kwargs:
+            session.game_id = kwargs["game_id"]
+        
+        # Handle remaining kwargs
         for key, value in kwargs.items():
-            if hasattr(session, key) and value is not None:
+            if key != "game_id" and hasattr(session, key) and value is not None:
                 setattr(session, key, value)
 
         target_status = getattr(session, "status", None)

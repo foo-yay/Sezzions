@@ -9,6 +9,31 @@ Rules:
 
 ---
 
+## 2026-02-07
+
+```yaml
+id: 2026-02-07-01
+type: fix
+areas: [services, ui]
+summary: "Fix game_id/game_type updates not persisting for active sessions (Issue #82)"
+files_changed:
+  - services/game_session_service.py
+  - tests/integration/test_issue_82_edit_active_session_game_type.py
+issue: 82
+pr: TBD
+```
+
+Notes:
+- Root cause: `update_session()` kwargs handler skipped `None` values with `if value is not None`.
+- This prevented clearing game_id (setting it to None) when user removes game from active session.
+- Fix: Special-case `game_id` in kwargs to allow None values (game removal).
+- Also applies to changing game_id to a different game.
+- Added comprehensive integration tests:
+  - Verify UI fields are enabled for editing
+  - Test changing game_id to a different game
+  - Test removing game_id (setting to None) — this was the reported bug
+- All 729 tests pass after fix.
+
 ## 2026-02-06
 
 ```yaml
