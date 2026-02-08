@@ -753,7 +753,7 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def _evaluate_notifications(self):
         """Evaluate notification rules and update badge"""
-        if hasattr(self.facade, 'notification_rules_service'):
+        if hasattr(self.facade, 'notification_rules_service') and self.facade.notification_rules_service.settings is not None:
             self.facade.notification_rules_service.evaluate_all_rules()
 
         self._refresh_notification_badge()
