@@ -1603,6 +1603,11 @@ class StartSessionDialog(QDialog):
         if game:
             type_obj = self._game_types_by_id.get(game.game_type_id)
             game_type_name = type_obj.name if type_obj else None
+        elif self.session.game_type_id:
+            # If no game but there's a game_type_id, load it directly
+            type_obj = self._game_types_by_id.get(self.session.game_type_id)
+            game_type_name = type_obj.name if type_obj else None
+        
         if game_type_name:
             self.game_type_combo.blockSignals(True)
             self.game_type_combo.setCurrentText(game_type_name)
