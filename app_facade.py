@@ -1306,12 +1306,14 @@ class AppFacade:
                            redemptions_during: Decimal = Decimal("0"),
                            session_time: Optional[str] = None,
                            notes: Optional[str] = None,
-                           calculate_pl: bool = True) -> GameSession:
+                           calculate_pl: bool = True,
+                           game_type_id: Optional[int] = None) -> GameSession:
         """Create new game session with automatic P/L calculation."""
         session = self.game_session_service.create_session(
             user_id=user_id,
             site_id=site_id,
             game_id=game_id,
+            game_type_id=game_type_id,
             session_date=session_date,
             starting_balance=starting_balance,
             ending_balance=ending_balance,
