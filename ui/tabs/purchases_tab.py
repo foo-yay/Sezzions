@@ -11,6 +11,12 @@ from ui.date_filter_widget import DateFilterWidget
 from ui.table_header_filters import TableHeaderFilter
 from ui.spreadsheet_ux import SpreadsheetUXController
 from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from tools.time_utils import (
+    parse_time_input,
+    current_time_with_seconds,
+    format_time_display,
+    time_to_db_string,
+)
 
 
 class PurchasesTab(QtWidgets.QWidget):
@@ -182,8 +188,7 @@ class PurchasesTab(QtWidgets.QWidget):
             for row, purchase in enumerate(filtered):
                 # Date/Time
                 time_val = purchase.purchase_time or ""
-                if time_val and len(time_val) > 5:
-                    time_val = time_val[:5]
+                # Display full HH:MM:SS format (Issue #90)
                 date_time = f"{purchase.purchase_date} {time_val}".strip()
                 date_item = QtWidgets.QTableWidgetItem(date_time)
                 date_item.setData(QtCore.Qt.UserRole, purchase.id)
@@ -1163,7 +1168,7 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.calendar_btn.clicked.connect(self._pick_date)
 
         self.time_edit = QtWidgets.QLineEdit()
-        self.time_edit.setPlaceholderText("HH:MM")
+        self.time_edit.setPlaceholderText("HH:MM:SS")
         self.now_btn = QtWidgets.QPushButton("Now")
         self.now_btn.clicked.connect(self._set_now)
 
@@ -1836,7 +1841,9 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.date_edit.setText(date.today().strftime("%m/%d/%y"))
 
     def _set_now(self):
-        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+        """Set time to current time with seconds precision."""
+        current_time = current_time_with_seconds()
+        self.time_edit.setText(format_time_display(current_time))
     
     def get_date(self) -> date:
         """Parse and return date"""
@@ -1851,12 +1858,27 @@ class PurchaseDialog(QtWidgets.QDialog):
         return date.today()
 
     def get_time(self) -> Optional[str]:
+        """
+        Parse time input and return database string with seconds precision.
+        
+        Rules (Issue #90):
+        - Empty → current time with seconds
+        - HH:MM → append :00
+        - HH:MM:SS → preserve
+        """
         time_str = self.time_edit.text().strip()
+        
         if not time_str:
-            return datetime.now().strftime("%H:%M:%S")
-        if len(time_str) == 5:
-            return f"{time_str}:00"
-        return time_str
+            # Blank time → current time with seconds
+            return time_to_db_string(current_time_with_seconds())
+        
+        # Parse user input (handles both HH:MM and HH:MM:SS)
+        parsed_time = parse_time_input(time_str)
+        if parsed_time is None:
+            # Invalid format → fallback to current time
+            return time_to_db_string(current_time_with_seconds())
+        
+        return time_to_db_string(parsed_time)
     
     def get_amount(self) -> Decimal:
         """Parse and return amount"""
@@ -2028,7 +2050,7 @@ class PurchaseDialog(QtWidgets.QDialog):
         if self.purchase.purchase_time:
             time_str = self.purchase.purchase_time
             if len(time_str) > 5:
-                time_str = time_str[:5]
+                time_str = time_str
             self.time_edit.setText(time_str)
 
         user_name = getattr(self.purchase, "user_name", None)
@@ -2136,7 +2158,8 @@ class PurchaseViewDialog(QtWidgets.QDialog):
                 return str(value)
 
         def format_time(value):
-            return value[:5] if value else "—"
+            """Format time for display with full HH:MM:SS precision (Issue #90)"""
+            return value if value else "—"
         
         def make_selectable_label(text, bold=False, align_right=False):
             """Create a selectable QLabel"""
@@ -2333,7 +2356,7 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             # Add header with period info
             if period_start:
                 start_date, start_time = period_start
-                period_label = f"Full Basis Period — All Purchases (since {start_date} {start_time[:5]})"
+                period_label = f"Full Basis Period — All Purchases (since {start_date} {start_time})"
             else:
                 period_label = "Full Basis Period — All Purchases (first period)"
             

@@ -12,6 +12,12 @@ from ui.table_header_filters import TableHeaderFilter
 from ui.input_parsers import parse_date_input
 from ui.spreadsheet_ux import SpreadsheetUXController
 from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from tools.time_utils import (
+    parse_time_input,
+    current_time_with_seconds,
+    format_time_display,
+    time_to_db_string,
+)
 
 
 class RedemptionsTab(QtWidgets.QWidget):
@@ -159,7 +165,7 @@ class RedemptionsTab(QtWidgets.QWidget):
             for row, redemption in enumerate(filtered):
                 time_val = redemption.redemption_time or "00:00:00"
                 if time_val and len(time_val) > 5:
-                    time_val = time_val[:5]
+                    time_val = time_val
                 date_time = f"{redemption.redemption_date} {time_val}".strip()
 
                 is_total_loss = float(redemption.amount) == 0
@@ -888,7 +894,7 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.calendar_btn.clicked.connect(lambda: self._pick_date(self.date_edit))
 
         self.time_edit = QtWidgets.QLineEdit()
-        self.time_edit.setPlaceholderText("HH:MM")
+        self.time_edit.setPlaceholderText("HH:MM:SS")
         self.now_btn = QtWidgets.QPushButton("Now")
         self.now_btn.clicked.connect(self._set_now)
 
@@ -1695,7 +1701,9 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.date_edit.setText(date.today().strftime("%m/%d/%y"))
 
     def _set_now(self):
-        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+        """Set time to current time with seconds precision."""
+        current_time = current_time_with_seconds()
+        self.time_edit.setText(format_time_display(current_time))
 
     def get_date(self) -> date:
         date_str = self.date_edit.text().strip()
@@ -1703,12 +1711,27 @@ class RedemptionDialog(QtWidgets.QDialog):
         return parsed if parsed else date.today()
 
     def get_time(self) -> Optional[str]:
+        """
+        Parse time input and return database string with seconds precision.
+        
+        Rules (Issue #90):
+        - Empty → current time with seconds
+        - HH:MM → append :00
+        - HH:MM:SS → preserve
+        """
         time_str = self.time_edit.text().strip()
+        
         if not time_str:
-            return datetime.now().strftime("%H:%M:%S")
-        if len(time_str) == 5:
-            return f"{time_str}:00"
-        return time_str
+            # Blank time → current time with seconds
+            return time_to_db_string(current_time_with_seconds())
+        
+        # Parse user input (handles both HH:MM and HH:MM:SS)
+        parsed_time = parse_time_input(time_str)
+        if parsed_time is None:
+            # Invalid format → fallback to current time
+            return time_to_db_string(current_time_with_seconds())
+        
+        return time_to_db_string(parsed_time)
 
     def get_receipt_date(self) -> Optional[date]:
         receipt_str = self.receipt_edit.text().strip()
@@ -1904,7 +1927,7 @@ class RedemptionDialog(QtWidgets.QDialog):
         if self.redemption.redemption_time:
             time_str = self.redemption.redemption_time
             if len(time_str) > 5:
-                time_str = time_str[:5]
+                time_str = time_str
             self.time_edit.setText(time_str)
 
         user_name = getattr(self.redemption, "user_name", None)
@@ -2039,7 +2062,8 @@ class RedemptionViewDialog(QtWidgets.QDialog):
                 return str(value)
 
         def format_time(value):
-            return value[:5] if value else "—"
+            """Format time for display with full HH:MM:SS precision (Issue #90)"""
+            return value if value else "—"
         
         def make_selectable_label(text, bold=False, align_right=False):
             """Create a selectable QLabel"""
@@ -2351,7 +2375,7 @@ class RedemptionViewDialog(QtWidgets.QDialog):
                 end_display = "—"
                 if getattr(session, "end_date", None):
                     end_time = (getattr(session, "end_time", None) or "00:00:00")
-                    end_display = f"{session.end_date} {end_time[:5]}"
+                    end_display = f"{session.end_date} {end_time}"
                 table.setItem(row_idx, 2, QtWidgets.QTableWidgetItem(end_display))
                 game = self._games.get(session.game_id)
                 game_type = self._game_types.get(game.game_type_id, "—") if game else "—"

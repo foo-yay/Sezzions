@@ -283,7 +283,7 @@ class GameSessionsTab(QWidget):
                 for row, session in enumerate(rows):
                     time_val = session.session_time or "00:00:00"
                     if time_val and len(time_val) > 5:
-                        time_val = time_val[:5]
+                        time_val = time_val
                     date_time = f"{session.session_date} {time_val}".strip()
                     
                     # Add multi-day indicator if session spans multiple days
@@ -946,7 +946,7 @@ class StartSessionDialog(QDialog):
         self.calendar_btn.clicked.connect(self._pick_date)
 
         self.time_edit = QLineEdit()
-        self.time_edit.setPlaceholderText("HH:MM")
+        self.time_edit.setPlaceholderText("HH:MM:SS")
         self.now_btn = QPushButton("Now")
         self.now_btn.clicked.connect(self._set_now)
 
@@ -1393,7 +1393,8 @@ class StartSessionDialog(QDialog):
         self.date_edit.setText(date.today().strftime("%m/%d/%y"))
 
     def _set_now(self):
-        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+        """Set time to current time with seconds precision."""
+        self.time_edit.setText(datetime.now().strftime("%H:%M:%S"))
 
     def _pick_date(self):
         dialog = QDialog(self)
@@ -1863,7 +1864,7 @@ class EditClosedSessionDialog(QDialog):
         self.start_today_btn.clicked.connect(self._set_start_today)
         
         self.time_edit = QLineEdit()
-        self.time_edit.setPlaceholderText("HH:MM")
+        self.time_edit.setPlaceholderText("HH:MM:SS")
         self.start_now_btn = QPushButton("Now")
         self.start_now_btn.clicked.connect(self._set_start_now)
 
@@ -1876,7 +1877,7 @@ class EditClosedSessionDialog(QDialog):
         self.end_today_btn.clicked.connect(self._set_end_today)
         
         self.end_time_edit = QLineEdit()
-        self.end_time_edit.setPlaceholderText("HH:MM")
+        self.end_time_edit.setPlaceholderText("HH:MM:SS")
         self.end_now_btn = QPushButton("Now")
         self.end_now_btn.clicked.connect(self._set_end_now)
 
@@ -2882,14 +2883,14 @@ class EditClosedSessionDialog(QDialog):
     def _load_session(self):
         """Load session data into fields"""
         self.date_edit.setText(self.session.session_date.strftime("%m/%d/%y") if self.session.session_date else "")
-        self.time_edit.setText(self.session.session_time[:5] if self.session.session_time else "")
+        self.time_edit.setText(self.session.session_time if self.session.session_time else "")
         
         end_date = self.session.end_date or self.session.session_date
         if end_date:
             self.end_date_edit.setText(end_date.strftime("%m/%d/%y"))
         end_time = self.session.end_time or self.session.session_time
         if end_time:
-            self.end_time_edit.setText(end_time[:5])
+            self.end_time_edit.setText(end_time)
 
         user_name = None
         for name, user_obj in self._user_lookup.items():
@@ -3457,7 +3458,7 @@ class ViewSessionDialog(QDialog):
         if not date_val:
             return "—"
         date_str = self._format_date(date_val)
-        time_str = time_val[:5] if time_val else "00:00"
+        time_str = time_val if time_val else "00:00"
         return f"{date_str} {time_str}"
 
     def _calculate_rtp_display(self, game):
@@ -3578,7 +3579,7 @@ class ViewSessionDialog(QDialog):
         self.purchases_table.setRowCount(len(purchases))
         for row_idx, purchase in enumerate(purchases):
             date_display = self._format_date(purchase.purchase_date) if purchase.purchase_date else "—"
-            time_display = purchase.purchase_time[:5] if purchase.purchase_time else "—"
+            time_display = purchase.purchase_time if purchase.purchase_time else "—"
             date_time_display = f"{date_display} {time_display}" if date_display != "—" else time_display
             amount = format_currency(purchase.amount)
             sc_received = f"{float(purchase.sc_received or 0.0):.2f}"
@@ -3757,7 +3758,7 @@ class EndSessionDialog(QDialog):
         end_time_layout.setSpacing(8)
         
         self.time_edit = QLineEdit()
-        self.time_edit.setPlaceholderText("HH:MM")
+        self.time_edit.setPlaceholderText("HH:MM:SS")
         self.time_edit.setFixedWidth(90)
         end_time_layout.addWidget(self.time_edit)
         
@@ -4156,7 +4157,7 @@ class EndSessionDialog(QDialog):
             return "—"
         if isinstance(time_val, str):
             # Already formatted as HH:MM:SS or HH:MM
-            return time_val[:5] if len(time_val) >= 5 else time_val
+            return time_val if len(time_val) >= 5 else time_val
         return time_val.strftime("%H:%M") if hasattr(time_val, 'strftime') else str(time_val)
     
     def _toggle_notes(self):
@@ -4180,7 +4181,8 @@ class EndSessionDialog(QDialog):
         self.date_edit.setText(date.today().strftime("%m/%d/%y"))
 
     def _set_now(self):
-        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+        """Set time to current time with seconds precision."""
+        self.time_edit.setText(datetime.now().strftime("%H:%M:%S"))
 
     def _pick_date(self):
         dialog = QDialog(self)

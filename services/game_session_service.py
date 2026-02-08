@@ -497,12 +497,19 @@ class GameSessionService:
             if site:
                 sc_rate = Decimal(str(getattr(site, "sc_rate", "1.0")))
 
-        def in_window(dt, start_exclusive, end_inclusive):
+        def in_window(dt, start_exclusive, end_exclusive):
+            """
+            Check if datetime is in window (Issue #90 boundary rules).
+            start_exclusive: checkpoint (EXCLUSIVE, >)
+            end_exclusive: session end (EXCLUSIVE, <)
+            """
             if dt is None:
                 return False
-            if start_exclusive is not None and dt < start_exclusive:
+            if start_exclusive is not None and dt <= start_exclusive:
                 return False
-            return dt <= end_inclusive
+            if end_exclusive is not None and dt >= end_exclusive:
+                return False
+            return True
 
         for sess in sessions:
             if sess.status != "Closed":
@@ -722,12 +729,19 @@ class GameSessionService:
             if site:
                 sc_rate = Decimal(str(getattr(site, "sc_rate", "1.0")))
 
-        def in_window(dt, start_exclusive, end_inclusive):
+        def in_window(dt, start_exclusive, end_exclusive):
+            """
+            Check if datetime is in window (Issue #90 boundary rules).
+            start_exclusive: checkpoint (EXCLUSIVE, >)
+            end_exclusive: session end (EXCLUSIVE, <)
+            """
             if dt is None:
                 return False
-            if start_exclusive is not None and dt < start_exclusive:
+            if start_exclusive is not None and dt <= start_exclusive:
                 return False
-            return dt <= end_inclusive
+            if end_exclusive is not None and dt >= end_exclusive:
+                return False
+            return True
 
         for sess in sessions:
             if sess.status != "Closed":
