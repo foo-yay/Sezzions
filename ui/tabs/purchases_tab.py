@@ -317,6 +317,58 @@ class PurchasesTab(QtWidgets.QWidget):
                 if value is not None:
                     ids.append(value)
         return ids
+
+    def _check_active_session_warning(self, user_id: int, site_id: int):
+        """Check for active session and show warning dialog if found.
+        
+        Returns:
+            Session ID (int) if user confirmed with active session present
+            None if no active session exists
+            False if user canceled the dialog
+        """
+        active_session = self.facade.get_active_game_session(user_id, site_id)
+        if not active_session:
+            return None
+        
+        # Get display names
+        user = self.facade.get_user(user_id)
+        site = self.facade.get_site(site_id)
+        user_name = user.name if user else f"User {user_id}"
+        site_name = site.name if site else f"Site {site_id}"
+        
+        # Get game/game type display
+        game_info = ""
+        if active_session.game_id:
+            game = self.facade.get_game(active_session.game_id)
+            if game:
+                game_info = f"\nGame: {game.name}"
+        elif active_session.game_type_id:
+            game_type = self.facade.get_game_type(active_session.game_type_id)
+            if game_type:
+                game_info = f"\nGame Type: {game_type.name}"
+        
+        msg_parts = [
+            f"There is an active gaming session for {user_name} at {site_name}.\n\n",
+            f"Session Details:\n",
+            f"Started: {active_session.session_date} {active_session.session_time or '(no time)'}",
+            game_info,
+            f"\nStarting Balance: {float(active_session.starting_balance):,.2f} SC\n\n",
+            "Recording a purchase during an active session requires careful attention to the ",
+            "Post-Purchase SC balance.\n\n",
+            "Continue saving this purchase?"
+        ]
+        
+        response = QtWidgets.QMessageBox.question(
+            self,
+            "Active Session Detected",
+            "".join(msg_parts),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        
+        if response == QtWidgets.QMessageBox.Yes:
+            return active_session.id
+        return False
     
     def _add_purchase(self):
         """Show dialog to add new purchase"""
@@ -328,6 +380,11 @@ class PurchasesTab(QtWidgets.QWidget):
                 # Get time once and reuse it - don't call get_time() multiple times
                 # because it returns datetime.now() each time if field is empty!
                 purchase_time = dialog.get_time()
+
+                # Check for active session before validation
+                active_session_id = self._check_active_session_warning(dialog.user_id, dialog.site_id)
+                if active_session_id is False:  # User canceled
+                    continue
 
                 starting_sc = dialog.get_starting_sc_balance()
                 sc_received = dialog.get_sc_received()
@@ -437,9 +494,19 @@ class PurchasesTab(QtWidgets.QWidget):
                     purchase_time=purchase_time,
                     notes=dialog.notes_edit.toPlainText() or None
                 )
+                
+                # If there was an active session, create explicit link
+                if active_session_id:
+                    self.facade.link_purchase_to_session(purchase.id, active_session_id, relation="DURING")
+                
                 self.refresh_data()
                 message = f"Purchase of ${float(purchase.amount):.2f} created"
-                QtCore.QTimer.singleShot(100, lambda: self._prompt_start_session(purchase.id, message))
+                
+                # Show linked session info if applicable
+                if active_session_id:
+                    QtCore.QTimer.singleShot(100, lambda: self._show_purchase_linked_to_session(purchase.id, active_session_id))
+                else:
+                    QtCore.QTimer.singleShot(100, lambda: self._prompt_start_session(purchase.id, message))
                 break  # Success - exit the loop
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
@@ -491,8 +558,24 @@ class PurchasesTab(QtWidgets.QWidget):
 
                 purchase_date = dialog.get_date()
                 purchase_time = dialog.get_time()
-                
                 starting_sc = dialog.get_starting_sc_balance()
+                
+                # Check for active session if user/site changed or on initial edit
+                # Only check if we're dealing with a different pair OR derived fields changed
+                check_active_session = (
+                    dialog.user_id != purchase.user_id or 
+                    dialog.site_id != purchase.site_id or
+                    purchase_date != purchase.purchase_date or
+                    purchase_time != purchase.purchase_time or
+                    starting_sc != purchase.starting_sc_balance
+                )
+                
+                active_session_id = None
+                if check_active_session:
+                    active_session_id = self._check_active_session_warning(dialog.user_id, dialog.site_id)
+                    if active_session_id is False:  # User canceled
+                        continue
+                
                 sc_received = dialog.get_sc_received()
                 pre_purchase_balance = Decimal(str(starting_sc)) - Decimal(str(sc_received))
                 
@@ -632,12 +715,23 @@ class PurchasesTab(QtWidgets.QWidget):
                     purchase_time=purchase_time,
                     notes=dialog.notes_edit.toPlainText() or None
                 )
+                
+                # If there was an active session, create explicit link
+                if active_session_id:
+                    self.facade.link_purchase_to_session(purchase.id, active_session_id, relation="DURING")
+                
                 self.refresh_data()
                 if hasattr(self, "main_window") and self.main_window is not None:
                     self.main_window.refresh_all_tabs()
-                QtWidgets.QMessageBox.information(
-                    self, "Success", f"Purchase updated"
-                )
+                
+                if active_session_id:
+                    QtWidgets.QMessageBox.information(
+                        self, "Success", f"Purchase updated and linked to active session"
+                    )
+                else:
+                    QtWidgets.QMessageBox.information(
+                        self, "Success", f"Purchase updated"
+                    )
                 break  # Success - exit the loop
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
@@ -789,6 +883,60 @@ class PurchasesTab(QtWidgets.QWidget):
             card_name=card_name
         )
         dialog.exec()
+
+    def _show_purchase_linked_to_session(self, purchase_id: int, session_id: int):
+        """Show success message with link to view the active session."""
+        purchase = self.facade.get_purchase(purchase_id)
+        session = self.facade.get_game_session(session_id)
+        
+        if not purchase or not session:
+            return
+        
+        prompt_dialog = QtWidgets.QDialog(self)
+        prompt_dialog.setWindowTitle("Purchase Linked to Session")
+        prompt_dialog.resize(450, 180)
+
+        layout = QtWidgets.QVBoxLayout(prompt_dialog)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+
+        success_label = QtWidgets.QLabel(
+            f"Purchase of ${float(purchase.amount):.2f} created and linked to active session."
+        )
+        success_label.setWordWrap(True)
+        layout.addWidget(success_label)
+
+        session_info = QtWidgets.QLabel(
+            f"Session started: {session.session_date} {session.session_time or '(no time)'}"
+        )
+        session_info.setObjectName("HelperText")
+        layout.addWidget(session_info)
+
+        btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout.addStretch()
+        
+        view_session_btn = QtWidgets.QPushButton("View Session")
+        view_session_btn.clicked.connect(lambda: self._open_session_from_link(session_id, prompt_dialog))
+        btn_layout.addWidget(view_session_btn)
+        
+        ok_btn = QtWidgets.QPushButton("OK")
+        ok_btn.setObjectName("PrimaryButton")
+        ok_btn.clicked.connect(prompt_dialog.accept)
+        btn_layout.addWidget(ok_btn)
+        
+        layout.addLayout(btn_layout)
+        prompt_dialog.exec()
+
+    def _open_session_from_link(self, session_id: int, parent_dialog: QtWidgets.QDialog):
+        """Open the session view and close the parent dialog."""
+        parent_dialog.accept()
+        if self.main_window and hasattr(self.main_window, "game_sessions_tab"):
+            self.main_window.game_sessions_tab.open_session_by_id(session_id)
+            # Switch to game sessions tab
+            for i in range(self.main_window.tabs.count()):
+                if self.main_window.tabs.widget(i) == self.main_window.game_sessions_tab:
+                    self.main_window.tabs.setCurrentIndex(i)
+                    break
 
     def _prompt_start_session(self, purchase_id: int, success_message: str):
         prompt_dialog = QtWidgets.QDialog(self)

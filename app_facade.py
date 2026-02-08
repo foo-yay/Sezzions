@@ -1495,6 +1495,26 @@ class AppFacade:
             return self.game_session_event_link_service.get_events_for_session(session_id)
         return events
 
+    def link_purchase_to_session(self, purchase_id: int, session_id: int, relation: str = "MANUAL") -> None:
+        """Create an explicit link between a purchase and a session.
+        
+        Args:
+            purchase_id: ID of the purchase to link
+            session_id: ID of the session to link to
+            relation: Link relation type (default: MANUAL for explicit user action)
+        """
+        conn = self.db._connection
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO game_session_event_links
+                (game_session_id, event_type, event_id, relation)
+            VALUES (?, 'purchase', ?, ?)
+            """,
+            (session_id, purchase_id, relation),
+        )
+        conn.commit()
+
     def get_redemptions_allocated_to_purchase(self, purchase_id: int):
         rows = self.db.fetch_all(
             """

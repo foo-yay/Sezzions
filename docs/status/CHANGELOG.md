@@ -12,6 +12,31 @@ Rules:
 ## 2026-02-08
 
 ```yaml
+id: 2026-02-08-03
+type: enhancement
+areas: [ui, services, facade]
+summary: "Warn and link purchases when active session exists (Issue #88)"
+files_changed:
+  - services/game_session_event_link_service.py
+  - app_facade.py
+  - ui/tabs/purchases_tab.py
+  - tests/integration/test_purchase_active_session_link.py
+issue: 88
+pr: TBD
+```
+
+Notes:
+- **Enhancement**: When saving a purchase for a user+site pair with an active gaming session, the UI now shows a blocking warning dialog with session details.
+- User must confirm before proceeding to save the purchase.
+- If confirmed, the purchase is explicitly linked to the active session with a DURING relation.
+- Success message includes a "View Session" button to navigate directly to the linked session in the Game Sessions tab.
+- **Link Builder Fix**: Updated link builder logic to support DURING classification for active sessions:
+  - Previously, purchases could only be DURING if the session had an `end_dt` (closed sessions).
+  - Now, purchases with timestamps >= session start are classified as DURING for active sessions (when no next session exists).
+- **New Facade Method**: `link_purchase_to_session(purchase_id, session_id, relation)` for explicit manual linking.
+- All existing tests pass + new integration tests for active session linking behavior.
+
+```yaml
 id: 2026-02-08-02
 type: enhancement
 areas: [ui]

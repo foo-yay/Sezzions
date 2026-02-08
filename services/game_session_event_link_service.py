@@ -132,7 +132,12 @@ class GameSessionEventLinkService:
                 p_dt = _to_dt(p["purchase_date"], p["purchase_time"])
 
                 if end_dt and start_dt <= p_dt <= end_dt:
+                    # Closed session: purchase within session window
                     links_to_insert.append((session_id, "purchase", p["id"], "DURING"))
+                elif end_dt is None and p_dt >= start_dt:
+                    # Active session: purchase on or after session start (and before next session if any)
+                    if next_start_dt is None or p_dt < next_start_dt:
+                        links_to_insert.append((session_id, "purchase", p["id"], "DURING"))
                 elif prev_end_dt is None or (prev_end_dt < p_dt < start_dt):
                     if prev_end_dt is None and p_dt < start_dt:
                         links_to_insert.append((session_id, "purchase", p["id"], "BEFORE"))
@@ -290,7 +295,12 @@ class GameSessionEventLinkService:
                 p_dt = _to_dt(p["purchase_date"], p["purchase_time"])
 
                 if end_dt and start_dt <= p_dt <= end_dt:
+                    # Closed session: purchase within session window
                     links_to_insert.append((session_id, "purchase", p["id"], "DURING"))
+                elif end_dt is None and p_dt >= start_dt:
+                    # Active session: purchase on or after session start (and before next session if any)
+                    if next_start_dt is None or p_dt < next_start_dt:
+                        links_to_insert.append((session_id, "purchase", p["id"], "DURING"))
                 elif current_prev_end_dt is None or (current_prev_end_dt < p_dt < start_dt):
                     if current_prev_end_dt is None and p_dt < start_dt:
                         links_to_insert.append((session_id, "purchase", p["id"], "BEFORE"))
