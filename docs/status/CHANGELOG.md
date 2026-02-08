@@ -12,6 +12,27 @@ Rules:
 ## 2026-02-08
 
 ```yaml
+id: 2026-02-08-04
+type: bug-fix
+areas: [services]
+summary: "Fix basis consumption calculation for purchases during active session"
+files_changed:
+  - services/game_session_service.py
+issue: 88
+pr: 89
+```
+
+Notes:
+- **Bug Fix**: Corrected `locked_processed_sc` calculation to account for locked SC added by purchases during an active session.
+- Previous logic: `locked_processed_sc = locked_start - locked_end` (only counted SC at session start).
+- Fixed logic: `locked_processed_sc = locked_start + purchases_during_sc - locked_end` (includes SC from DURING purchases).
+- Impact: Basis consumption now correctly matches the actual amount of locked SC processed during the session.
+- Example: $100 BEFORE + $50 DURING purchases, 100→150→0 locked processing now correctly consumes $150 basis (was $100).
+- All 734 tests pass.
+
+---
+
+```yaml
 id: 2026-02-08-03
 type: enhancement
 areas: [ui, services, facade]

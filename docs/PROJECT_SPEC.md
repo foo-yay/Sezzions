@@ -163,8 +163,11 @@ So if redeemable SC appears between sessions (becomes discoverable at next start
 
 #### Basis consumption and cash-in/cash-out alignment
 
-- `basis_consumed` is **not** simply “cash spent this session”. It is consumed when locked/bonus SC is processed into redeemable through play, and it can draw from a rolling pending-basis pool.
-- As a result, **single-session net taxable P/L may diverge from a simple money-in/money-out story** whenever:
+- `basis_consumed` is **not** simply “cash spent this session”. It is consumed when locked/bonus SC is processed into redeemable through play, and it can draw from a rolling pending-basis pool.- **Calculation**: The amount of locked SC processed is calculated as: `locked_start + purchases_during_sc - locked_end`, where:
+  - `locked_start` = locked SC at session start
+  - `purchases_during_sc` = total SC from purchases made during the session (linked as DURING)
+  - `locked_end` = locked SC at session end
+  - This ensures purchases made during an active session are properly accounted for in basis consumption.- As a result, **single-session net taxable P/L may diverge from a simple money-in/money-out story** whenever:
   - purchases are not fully “processed” (locked SC remains locked),
   - basis is carried across sessions (pending basis pool is non-zero),
   - or session segmentation/balances are inaccurate.

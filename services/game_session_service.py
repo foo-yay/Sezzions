@@ -539,6 +539,7 @@ class GameSessionService:
             delta_total = end_total - start_total
             delta_redeem = end_red - start_red
 
+            # session_basis includes all purchases from checkpoint to end (BEFORE + DURING)
             session_basis = pur_cash_to_end
 
             pending_basis_pool += session_basis
@@ -548,7 +549,9 @@ class GameSessionService:
             discoverable_sc = max(Decimal("0.00"), start_red - expected_start_redeem)
             locked_start = max(Decimal("0.00"), start_total - start_red)
             locked_end = max(Decimal("0.00"), end_total - end_red)
-            locked_processed_sc = max(Decimal("0.00"), locked_start - locked_end)
+            # Account for locked SC added by purchases during the session
+            purchases_during_sc = self._sum_linked_purchases_during(sess.id)
+            locked_processed_sc = max(Decimal("0.00"), locked_start + purchases_during_sc - locked_end)
             locked_processed_value = locked_processed_sc * sc_rate
             basis_consumed = min(pending_basis_pool, locked_processed_value)
             pending_basis_pool = max(Decimal("0.00"), pending_basis_pool - basis_consumed)
@@ -565,6 +568,10 @@ class GameSessionService:
             sess.session_basis = session_basis
             sess.basis_consumed = basis_consumed
             sess.net_taxable_pl = net_taxable_pl
+
+            # Populate purchases_during and redemptions_during from linked events
+            sess.purchases_during = self._sum_linked_purchases_during(sess.id)
+            sess.redemptions_during = self._sum_linked_redemptions_during(sess.id)
 
             # Tax withholding is calculated at DATE level (not per-session)
             # via TaxWithholdingService.apply_to_date() or bulk_recalculate()
@@ -647,6 +654,48 @@ class GameSessionService:
             return new_boundary
         return old_boundary
 
+    def _sum_linked_purchases_during(self, session_id: int) -> Decimal:
+        """Sum sc_received from purchases linked as DURING to this session."""
+        conn = self.session_repo.db._connection
+        cursor = conn.cursor()
+        row = cursor.execute("""
+            SELECT COALESCE(SUM(p.sc_received), 0) as total
+            FROM game_session_event_links gsel
+            JOIN purchases p ON p.id = gsel.event_id
+            WHERE gsel.game_session_id = ? 
+              AND gsel.event_type = 'purchase'
+              AND gsel.relation = 'DURING'
+        """, (session_id,)).fetchone()
+        return Decimal(str(row['total'])) if row else Decimal("0.00")
+
+    def _sum_linked_purchases_during_cash(self, session_id: int) -> Decimal:
+        """Sum cash amounts (basis) from purchases linked as DURING to this session."""
+        conn = self.session_repo.db._connection
+        cursor = conn.cursor()
+        row = cursor.execute("""
+            SELECT COALESCE(SUM(p.amount), 0) as total
+            FROM game_session_event_links gsel
+            JOIN purchases p ON p.id = gsel.event_id
+            WHERE gsel.game_session_id = ? 
+              AND gsel.event_type = 'purchase'
+              AND gsel.relation = 'DURING'
+        """, (session_id,)).fetchone()
+        return Decimal(str(row['total'])) if row else Decimal("0.00")
+
+    def _sum_linked_redemptions_during(self, session_id: int) -> Decimal:
+        """Sum amounts from redemptions linked as DURING to this session."""
+        conn = self.session_repo.db._connection
+        cursor = conn.cursor()
+        row = cursor.execute("""
+            SELECT COALESCE(SUM(r.amount), 0) as total
+            FROM game_session_event_links gsel
+            JOIN redemptions r ON r.id = gsel.event_id
+            WHERE gsel.game_session_id = ? 
+              AND gsel.event_type = 'redemption'
+              AND gsel.relation = 'DURING'
+        """, (session_id,)).fetchone()
+        return Decimal(str(row['total'])) if row else Decimal("0.00")
+
     def _recalculate_closed_sessions_for_pair_from(
         self,
         user_id: int,
@@ -727,6 +776,7 @@ class GameSessionService:
             delta_total = end_total - start_total
             delta_redeem = end_red - start_red
 
+            # session_basis includes all purchases from checkpoint to end (BEFORE + DURING)
             session_basis = pur_cash_to_end
 
             pending_basis_pool += session_basis
@@ -736,7 +786,9 @@ class GameSessionService:
             discoverable_sc = max(Decimal("0.00"), start_red - expected_start_redeem)
             locked_start = max(Decimal("0.00"), start_total - start_red)
             locked_end = max(Decimal("0.00"), end_total - end_red)
-            locked_processed_sc = max(Decimal("0.00"), locked_start - locked_end)
+            # Account for locked SC added by purchases during the session
+            purchases_during_sc = self._sum_linked_purchases_during(sess.id)
+            locked_processed_sc = max(Decimal("0.00"), locked_start + purchases_during_sc - locked_end)
             locked_processed_value = locked_processed_sc * sc_rate
             basis_consumed = min(pending_basis_pool, locked_processed_value)
             pending_basis_pool = max(Decimal("0.00"), pending_basis_pool - basis_consumed)
@@ -753,6 +805,10 @@ class GameSessionService:
             sess.session_basis = session_basis
             sess.basis_consumed = basis_consumed
             sess.net_taxable_pl = net_taxable_pl
+
+            # Populate purchases_during and redemptions_during from linked events
+            sess.purchases_during = self._sum_linked_purchases_during(sess.id)
+            sess.redemptions_during = self._sum_linked_redemptions_during(sess.id)
 
             self.session_repo.update(sess)
 
