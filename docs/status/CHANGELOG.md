@@ -23,6 +23,7 @@ files_changed:
   - services/game_session_service.py
   - app_facade.py
   - ui/tabs/game_sessions_tab.py
+  - services/tools/schemas.py
   - tests/integration/test_issue_82_edit_active_session_game_type.py
 issue: 82
 pr: 83
@@ -37,6 +38,9 @@ Notes:
   - Game Type is required IF there is a Game
   - Game Type is optional and can be stored by itself
 - Migration automatically adds `game_type_id` column to existing databases.
+- **Downstream coverage**: EditClosedSessionDialog now extracts and persists game_type_id (critical for edit closed session flow).
+- **CSV support**: Added game_type_id field to GAME_SESSION_SCHEMA for CSV import/export with Game Type column.
+- Recalculation services unaffected (P/L calculation does not depend on game_id or game_type_id).
 - All 729 tests pass after changes.
 
 ## 2026-02-06
