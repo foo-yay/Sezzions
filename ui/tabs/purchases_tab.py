@@ -1151,8 +1151,8 @@ class PurchaseDialog(QtWidgets.QDialog):
         
         self.setWindowTitle("Edit Purchase" if purchase else "Add Purchase")
         self.setMinimumWidth(750)
-        self.setMinimumHeight(520)
-        self.resize(750, 520)
+        self.setMinimumHeight(560)
+        self.resize(750, 560)
         
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -1217,16 +1217,20 @@ class PurchaseDialog(QtWidgets.QDialog):
         form = QtWidgets.QVBoxLayout()
         form.setSpacing(12)
 
-        # Date/Time row (no header, compact)
+        # Date/Time section with timestamp info banner
         datetime_section = QtWidgets.QWidget()
         datetime_section.setObjectName("SectionBackground")
-        datetime_layout = QtWidgets.QHBoxLayout(datetime_section)
-        datetime_layout.setContentsMargins(12, 10, 12, 10)
-        datetime_layout.setSpacing(12)
+        datetime_section_layout = QtWidgets.QVBoxLayout(datetime_section)
+        datetime_section_layout.setContentsMargins(12, 10, 12, 10)
+        datetime_section_layout.setSpacing(8)
+        
+        # Date/Time row
+        datetime_row = QtWidgets.QHBoxLayout()
+        datetime_row.setSpacing(12)
         
         date_label = QtWidgets.QLabel("Date:")
         date_label.setObjectName("FieldLabel")
-        datetime_layout.addWidget(date_label)
+        datetime_row.addWidget(date_label)
         
         # Date field with embedded calendar button
         date_container = QtWidgets.QWidget()
@@ -1236,19 +1240,29 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.date_edit.setFixedWidth(110)
         date_layout.addWidget(self.date_edit)
         date_layout.addWidget(self.calendar_btn)
-        datetime_layout.addWidget(date_container)
+        datetime_row.addWidget(date_container)
         
-        datetime_layout.addWidget(self.today_btn)
-        datetime_layout.addSpacing(30)
+        datetime_row.addWidget(self.today_btn)
+        datetime_row.addSpacing(30)
         
         time_label = QtWidgets.QLabel("Time:")
         time_label.setObjectName("FieldLabel")
-        datetime_layout.addWidget(time_label)
+        datetime_row.addWidget(time_label)
         
         self.time_edit.setFixedWidth(90)
-        datetime_layout.addWidget(self.time_edit)
-        datetime_layout.addWidget(self.now_btn)
-        datetime_layout.addStretch(1)
+        datetime_row.addWidget(self.time_edit)
+        datetime_row.addWidget(self.now_btn)
+        datetime_row.addStretch(1)
+        
+        datetime_section_layout.addLayout(datetime_row)
+        
+        # Timestamp adjustment info banner (hidden by default, styled like balance check)
+        self.timestamp_info_label = QtWidgets.QLabel()
+        self.timestamp_info_label.setObjectName("HelperText")
+        self.timestamp_info_label.setProperty("status", "info")
+        self.timestamp_info_label.setWordWrap(True)
+        self.timestamp_info_label.setVisible(False)
+        datetime_section_layout.addWidget(self.timestamp_info_label)
         
         form.addWidget(datetime_section)
 
@@ -1336,17 +1350,8 @@ class PurchaseDialog(QtWidgets.QDialog):
         # Balance check (spans all columns)
         balance_container = QtWidgets.QWidget()
         balance_container.setObjectName("BalanceCheck")
-        balance_layout = QtWidgets.QVBoxLayout(balance_container)
+        balance_layout = QtWidgets.QHBoxLayout(balance_container)
         balance_layout.setContentsMargins(8, 8, 8, 8)
-        balance_layout.setSpacing(4)
-        
-        # Timestamp adjustment info banner (hidden by default)
-        self.timestamp_info_label = QtWidgets.QLabel()
-        self.timestamp_info_label.setObjectName("InfoBanner")
-        self.timestamp_info_label.setWordWrap(True)
-        self.timestamp_info_label.setVisible(False)
-        balance_layout.addWidget(self.timestamp_info_label)
-        
         balance_layout.addWidget(self.balance_check_label)
         main_grid.addWidget(balance_container, row, 0, 1, 4)
         
@@ -1407,6 +1412,10 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.user_combo.currentTextChanged.connect(self._update_balance_check)
         self.site_combo.currentTextChanged.connect(self._update_balance_check)
         self.date_edit.textChanged.connect(self._update_balance_check)
+        self.user_combo.currentTextChanged.connect(self._update_timestamp_info)
+        self.site_combo.currentTextChanged.connect(self._update_timestamp_info)
+        self.date_edit.textChanged.connect(self._update_timestamp_info)
+        self.time_edit.textChanged.connect(self._update_timestamp_info)
         self.time_edit.textChanged.connect(self._update_balance_check)
         self.start_sc_edit.textChanged.connect(self._update_balance_check)
         
@@ -1430,6 +1439,7 @@ class PurchaseDialog(QtWidgets.QDialog):
 
         self._update_completers()
         self._validate_inline()
+        self._update_timestamp_info()
         self._update_balance_check()
     
     def _toggle_notes(self):
@@ -1607,6 +1617,77 @@ class PurchaseDialog(QtWidgets.QDialog):
 
         return valid
 
+    def _update_timestamp_info(self):
+        """Check for timestamp conflicts and show info banner if adjustment needed"""
+        site_text = self.site_combo.currentText().strip()
+        user_text = self.user_combo.currentText().strip()
+        date_text = self.date_edit.text().strip()
+        time_text = self.time_edit.text().strip()
+
+        # Hide banner if we don't have all required fields
+        if not site_text or not user_text or not date_text:
+            self.timestamp_info_label.setVisible(False)
+            return
+
+        # Validate lookups
+        if site_text.lower() not in self._site_lookup or user_text.lower() not in self._user_lookup:
+            self.timestamp_info_label.setVisible(False)
+            return
+
+        # Parse date
+        parsed_date = None
+        for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d"):
+            try:
+                parsed_date = datetime.strptime(date_text, fmt).date()
+                break
+            except ValueError:
+                continue
+        if parsed_date is None:
+            self.timestamp_info_label.setVisible(False)
+            return
+
+        # Parse time (use current time if not provided)
+        if time_text:
+            try:
+                if len(time_text) == 5:
+                    datetime.strptime(time_text, "%H:%M")
+                    parsed_time = f"{time_text}:00"
+                elif len(time_text) == 8:
+                    datetime.strptime(time_text, "%H:%M:%S")
+                    parsed_time = time_text
+                else:
+                    self.timestamp_info_label.setVisible(False)
+                    return
+            except Exception:
+                self.timestamp_info_label.setVisible(False)
+                return
+        else:
+            parsed_time = datetime.now().strftime("%H:%M:%S")
+
+        user_id = self._user_lookup[user_text.lower()]
+        site_id = self._site_lookup[site_text.lower()]
+
+        # Check for timestamp conflicts
+        try:
+            adjusted_date_str, adjusted_time_str, will_adjust = self.facade.timestamp_service.ensure_unique_timestamp(
+                user_id=user_id,
+                site_id=site_id,
+                date_val=parsed_date,
+                time_str=parsed_time,
+                exclude_id=self.purchase.id if self.purchase else None,
+                event_type="purchase"
+            )
+            
+            if will_adjust:
+                banner_text = f"ℹ️ Time will be adjusted to {adjusted_time_str} ({parsed_time} already in use)"
+                self.timestamp_info_label.setText(banner_text)
+                self.timestamp_info_label.setVisible(True)
+            else:
+                self.timestamp_info_label.setVisible(False)
+        except Exception as e:
+            # Silently hide banner on error
+            self.timestamp_info_label.setVisible(False)
+
     def _update_balance_check(self):
         site_text = self.site_combo.currentText().strip()
         user_text = self.user_combo.currentText().strip()
@@ -1676,48 +1757,33 @@ class PurchaseDialog(QtWidgets.QDialog):
         user_id = self._user_lookup[user_text.lower()]
         site_id = self._site_lookup[site_text.lower()]
 
-        # Pre-validate timestamp: check what will actually be saved
+        # Pre-validate timestamp: check what will actually be saved (for accurate balance check)
         try:
             from datetime import datetime as dt_module
             adjusted_date_str, adjusted_time_str, will_adjust = self.facade.timestamp_service.ensure_unique_timestamp(
                 user_id=user_id,
                 site_id=site_id,
                 date_val=parsed_date,
-                time_str=parsed_time if isinstance(parsed_time, str) else parsed_time.strftime("%H:%M:%S"),
+                time_str=parsed_time,
                 exclude_id=self.purchase.id if self.purchase else None,
                 event_type="purchase"
             )
             
-            # Show info banner if timestamp will be adjusted
-            if will_adjust:
-                # Convert back to display format
-                from tools.time_utils import format_time_display
-                entered_time_display = format_time_display(parsed_time if isinstance(parsed_time, str) else parsed_time.strftime("%H:%M:%S"))
-                adjusted_time_display = format_time_display(adjusted_time_str)
-                self.timestamp_info_label.setText(
-                    f"ℹ️ Time will be adjusted to {adjusted_time_display} ({entered_time_display} already in use)"
-                )
-                self.timestamp_info_label.setVisible(True)
-            else:
-                self.timestamp_info_label.setVisible(False)
-            
-            # Convert adjusted timestamp back to date/time objects for validation
+            # Convert adjusted timestamp back to date/time for validation
             if isinstance(adjusted_date_str, str):
                 validation_date = dt_module.strptime(adjusted_date_str, "%Y-%m-%d").date()
             else:
                 validation_date = adjusted_date_str
             
-            # Parse adjusted time string to time object
             if isinstance(adjusted_time_str, str):
                 validation_time = dt_module.strptime(adjusted_time_str, "%H:%M:%S").time()
             else:
                 validation_time = adjusted_time_str
             
-        except Exception as e:
+        except Exception:
             # If timestamp service fails, fall back to using entered values
             validation_date = parsed_date
-            validation_time = parsed_time if isinstance(parsed_time, str) else dt_module.strptime(parsed_time, "%H:%M:%S").time() if isinstance(parsed_time, str) else parsed_time
-            self.timestamp_info_label.setVisible(False)
+            validation_time = dt_module.strptime(parsed_time, "%H:%M:%S").time() if isinstance(parsed_time, str) else parsed_time
 
         # When editing, exclude the purchase being edited from expected balance calculation
         exclude_purchase_id = self.purchase.id if self.purchase else None

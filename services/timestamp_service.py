@@ -91,72 +91,71 @@ class TimestampService:
     ) -> bool:
         """
         Check if timestamp conflicts with any existing event.
+        
+        ALWAYS checks across ALL event types (purchases, redemptions, sessions)
+        to ensure cross-event uniqueness.
 
         Returns True if conflict exists, False if timestamp is unique.
         """
         # Check purchases
-        if event_type is None or event_type == "purchase":
-            query = """
-                SELECT COUNT(*) as cnt FROM purchases
-                WHERE user_id = ? AND site_id = ?
-                  AND purchase_date = ? AND purchase_time = ?
-            """
-            params = [user_id, site_id, date_str, time_str]
-            if exclude_id and event_type == "purchase":
-                query += " AND id != ?"
-                params.append(exclude_id)
+        query = """
+            SELECT COUNT(*) as cnt FROM purchases
+            WHERE user_id = ? AND site_id = ?
+              AND purchase_date = ? AND purchase_time = ?
+        """
+        params = [user_id, site_id, date_str, time_str]
+        if exclude_id and event_type == "purchase":
+            query += " AND id != ?"
+            params.append(exclude_id)
 
-            result = self.db.fetch_one(query, tuple(params))
-            if result and result["cnt"] > 0:
-                return True
+        result = self.db.fetch_one(query, tuple(params))
+        if result and result["cnt"] > 0:
+            return True
 
         # Check redemptions
-        if event_type is None or event_type == "redemption":
-            query = """
-                SELECT COUNT(*) as cnt FROM redemptions
-                WHERE user_id = ? AND site_id = ?
-                  AND redemption_date = ? AND redemption_time = ?
-            """
-            params = [user_id, site_id, date_str, time_str]
-            if exclude_id and event_type == "redemption":
-                query += " AND id != ?"
-                params.append(exclude_id)
+        query = """
+            SELECT COUNT(*) as cnt FROM redemptions
+            WHERE user_id = ? AND site_id = ?
+              AND redemption_date = ? AND redemption_time = ?
+        """
+        params = [user_id, site_id, date_str, time_str]
+        if exclude_id and event_type == "redemption":
+            query += " AND id != ?"
+            params.append(exclude_id)
 
-            result = self.db.fetch_one(query, tuple(params))
-            if result and result["cnt"] > 0:
-                return True
+        result = self.db.fetch_one(query, tuple(params))
+        if result and result["cnt"] > 0:
+            return True
 
         # Check session start times
-        if event_type is None or event_type == "session_start":
-            query = """
-                SELECT COUNT(*) as cnt FROM game_sessions
-                WHERE user_id = ? AND site_id = ?
-                  AND session_date = ? AND session_time = ?
-            """
-            params = [user_id, site_id, date_str, time_str]
-            if exclude_id and event_type == "session_start":
-                query += " AND id != ?"
-                params.append(exclude_id)
+        query = """
+            SELECT COUNT(*) as cnt FROM game_sessions
+            WHERE user_id = ? AND site_id = ?
+              AND session_date = ? AND session_time = ?
+        """
+        params = [user_id, site_id, date_str, time_str]
+        if exclude_id and event_type == "session_start":
+            query += " AND id != ?"
+            params.append(exclude_id)
 
-            result = self.db.fetch_one(query, tuple(params))
-            if result and result["cnt"] > 0:
-                return True
+        result = self.db.fetch_one(query, tuple(params))
+        if result and result["cnt"] > 0:
+            return True
 
         # Check session end times
-        if event_type is None or event_type == "session_end":
-            query = """
-                SELECT COUNT(*) as cnt FROM game_sessions
-                WHERE user_id = ? AND site_id = ?
-                  AND end_date = ? AND end_time = ?
-                  AND status = 'Closed'
-            """
-            params = [user_id, site_id, date_str, time_str]
-            if exclude_id and event_type == "session_end":
-                query += " AND id != ?"
-                params.append(exclude_id)
+        query = """
+            SELECT COUNT(*) as cnt FROM game_sessions
+            WHERE user_id = ? AND site_id = ?
+              AND end_date = ? AND end_time = ?
+              AND status = 'Closed'
+        """
+        params = [user_id, site_id, date_str, time_str]
+        if exclude_id and event_type == "session_end":
+            query += " AND id != ?"
+            params.append(exclude_id)
 
-            result = self.db.fetch_one(query, tuple(params))
-            if result and result["cnt"] > 0:
-                return True
+        result = self.db.fetch_one(query, tuple(params))
+        if result and result["cnt"] > 0:
+            return True
 
         return False

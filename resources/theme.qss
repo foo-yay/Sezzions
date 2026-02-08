@@ -90,6 +90,7 @@ QLabel#HelperText { color: $text_muted; font-size: 11px; }
 QLabel#HelperText[status="match"] { color: #2e7d32; }
 QLabel#HelperText[status="warning"] { color: #f57c00; }
 QLabel#HelperText[status="error"] { color: #c0392b; }
+QLabel#HelperText[status="info"] { color: #3498db; font-size: 12px; }
 QLabel#TabTip {
     background: $surface;
     border: 1px solid $border;
@@ -399,14 +400,6 @@ QWidget#BalanceCheck {
     border: 1px solid $border;
     border-radius: 6px;
     padding: 8px;
-}
-QLabel#InfoBanner {
-    background: #E8F4F8;
-    border: 1px solid #3498db;
-    border-radius: 4px;
-    padding: 6px 10px;
-    color: #2980b9;
-    font-size: 12px;
 }
 QWidget#RemainingBasis {
     background: $surface;
