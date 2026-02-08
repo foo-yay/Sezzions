@@ -20,7 +20,7 @@ files_changed:
   - services/game_session_service.py
   - tests/integration/test_issue_82_edit_active_session_game_type.py
 issue: 82
-pr: TBD
+pr: 83
 ```
 
 Notes:
