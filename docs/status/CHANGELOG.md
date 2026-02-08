@@ -22,7 +22,7 @@ files_changed:
   - ui/tabs/purchases_tab.py
   - tests/integration/test_purchase_active_session_link.py
 issue: 88
-pr: TBD
+pr: 89
 ```
 
 Notes:
