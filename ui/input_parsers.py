@@ -4,6 +4,10 @@ Centralized date and time parsing functions used across dialogs and forms.
 """
 from datetime import date, datetime
 from typing import Optional
+from tools.time_utils import (
+    parse_time_input as parse_time_obj,
+    time_to_db_string
+)
 
 
 def parse_date_input(value: str) -> Optional[date]:
@@ -60,9 +64,11 @@ def parse_time_input(value: str) -> Optional[str]:
     """
     Parse time from various user input formats.
     
-    Supported formats:
+    Supported formats (Issue #90):
     - HH:MM or HH:MM:SS (24-hour)
     - H:MM AM/PM or HH:MM AM/PM (12-hour with AM/PM)
+    
+    Returns HH:MM:SS format with seconds precision.
     
     Args:
         value: Time string from user input
@@ -74,14 +80,18 @@ def parse_time_input(value: str) -> Optional[str]:
     if not value:
         return None
     
-    formats = [
-        "%H:%M:%S",      # 14:30:00
-        "%H:%M",         # 14:30
+    # Try standard formats first (HH:MM and HH:MM:SS)
+    time_obj = parse_time_obj(value)
+    if time_obj is not None:
+        return time_to_db_string(time_obj)
+    
+    # Try 12-hour formats with AM/PM
+    formats_12h = [
         "%I:%M%p",       # 02:30PM
         "%I:%M %p",      # 02:30 PM
     ]
     
-    for fmt in formats:
+    for fmt in formats_12h:
         try:
             parsed_time = datetime.strptime(value, fmt)
             return parsed_time.strftime("%H:%M:%S")
@@ -121,19 +131,20 @@ def format_date_for_display(value) -> str:
 
 def format_time_for_display(value: str) -> str:
     """
-    Format a time for display in the UI (HH:MM format).
+    Format a time for display in the UI (HH:MM:SS format with seconds precision).
     
     Args:
         value: Time string (any format)
         
     Returns:
-        Formatted time string (HH:MM) or "—" if invalid
+        Formatted time string (HH:MM:SS) or "—" if invalid
     """
     if not value:
         return "—"
     
-    # If already HH:MM:SS, just trim to HH:MM
-    if len(value) >= 5:
-        return value[:5]
+    # Parse and format to ensure HH:MM:SS format
+    parsed = parse_time_input(value)
+    if parsed:
+        return parsed  # Already in HH:MM:SS format
     
     return "—"

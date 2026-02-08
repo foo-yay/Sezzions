@@ -420,7 +420,7 @@ class ExpenseDialog(QtWidgets.QDialog):
         self.calendar_btn.clicked.connect(self._pick_date)
 
         self.time_edit = QtWidgets.QLineEdit()
-        self.time_edit.setPlaceholderText("HH:MM")
+        self.time_edit.setPlaceholderText("HH:MM:SS")
         self.now_btn = QtWidgets.QPushButton("Now")
         self.now_btn.clicked.connect(self._set_now)
 
@@ -668,7 +668,7 @@ class ExpenseDialog(QtWidgets.QDialog):
         
         # Time
         if self.expense.expense_time:
-            self.time_edit.setText(self.expense.expense_time[:5] if len(self.expense.expense_time) >= 5 else self.expense.expense_time)
+            self.time_edit.setText(self.expense.expense_time if len(self.expense.expense_time) >= 5 else self.expense.expense_time)
         
         # Amount
         if self.expense.amount:
@@ -758,7 +758,8 @@ class ExpenseDialog(QtWidgets.QDialog):
         self._validate_inline()
 
     def _set_now(self):
-        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+        """Set time to current time with seconds precision."""
+        self.time_edit.setText(datetime.now().strftime("%H:%M:%S"))
 
     def _set_invalid(self, widget, message):
         widget.setProperty("invalid", True)
@@ -867,7 +868,7 @@ class ExpenseViewDialog(QtWidgets.QDialog):
         left_grid.addWidget(date_label, 0, 0)
         date_time_str = self._format_date(expense.expense_date)
         if expense.expense_time:
-            time_display = expense.expense_time[:5] if len(expense.expense_time) >= 5 else expense.expense_time
+            time_display = expense.expense_time if len(expense.expense_time) >= 5 else expense.expense_time
             date_time_str += f" {time_display}"
         left_grid.addWidget(self._make_selectable_label(date_time_str), 0, 1)
         

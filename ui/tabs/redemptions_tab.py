@@ -12,6 +12,12 @@ from ui.table_header_filters import TableHeaderFilter
 from ui.input_parsers import parse_date_input
 from ui.spreadsheet_ux import SpreadsheetUXController
 from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from tools.time_utils import (
+    parse_time_input,
+    current_time_with_seconds,
+    format_time_display,
+    time_to_db_string,
+)
 
 
 class RedemptionsTab(QtWidgets.QWidget):
@@ -159,7 +165,7 @@ class RedemptionsTab(QtWidgets.QWidget):
             for row, redemption in enumerate(filtered):
                 time_val = redemption.redemption_time or "00:00:00"
                 if time_val and len(time_val) > 5:
-                    time_val = time_val[:5]
+                    time_val = time_val
                 date_time = f"{redemption.redemption_date} {time_val}".strip()
 
                 is_total_loss = float(redemption.amount) == 0
@@ -871,8 +877,8 @@ class RedemptionDialog(QtWidgets.QDialog):
 
         self.setWindowTitle("Edit Redemption" if redemption else "Add Redemption")
         self.setMinimumWidth(850)
-        self.setMinimumHeight(520)
-        self.resize(850, 520)
+        self.setMinimumHeight(560)
+        self.resize(850, 560)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -888,7 +894,7 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.calendar_btn.clicked.connect(lambda: self._pick_date(self.date_edit))
 
         self.time_edit = QtWidgets.QLineEdit()
-        self.time_edit.setPlaceholderText("HH:MM")
+        self.time_edit.setPlaceholderText("HH:MM:SS")
         self.now_btn = QtWidgets.QPushButton("Now")
         self.now_btn.clicked.connect(self._set_now)
 
@@ -980,15 +986,18 @@ class RedemptionDialog(QtWidgets.QDialog):
         form.setSpacing(12)
 
         # Date/Time row (no header, compact)
-        datetime_section = QtWidgets.QWidget()
-        datetime_section.setObjectName("SectionBackground")
-        datetime_layout = QtWidgets.QHBoxLayout(datetime_section)
-        datetime_layout.setContentsMargins(12, 10, 12, 10)
-        datetime_layout.setSpacing(12)
+        self.datetime_section = QtWidgets.QWidget()
+        self.datetime_section.setObjectName("SectionBackground")
+        datetime_section_layout = QtWidgets.QVBoxLayout(self.datetime_section)
+        datetime_section_layout.setContentsMargins(12, 10, 12, 10)
+        datetime_section_layout.setSpacing(8)
+        
+        datetime_row = QtWidgets.QHBoxLayout()
+        datetime_row.setSpacing(12)
         
         date_label = QtWidgets.QLabel("Date:")
         date_label.setObjectName("FieldLabel")
-        datetime_layout.addWidget(date_label)
+        datetime_row.addWidget(date_label)
         
         # Date field with embedded calendar button
         date_container = QtWidgets.QWidget()
@@ -998,21 +1007,31 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.date_edit.setFixedWidth(110)
         date_layout.addWidget(self.date_edit)
         date_layout.addWidget(self.calendar_btn)
-        datetime_layout.addWidget(date_container)
+        datetime_row.addWidget(date_container)
         
-        datetime_layout.addWidget(self.today_btn)
-        datetime_layout.addSpacing(30)
+        datetime_row.addWidget(self.today_btn)
+        datetime_row.addSpacing(30)
         
         time_label = QtWidgets.QLabel("Time:")
         time_label.setObjectName("FieldLabel")
-        datetime_layout.addWidget(time_label)
+        datetime_row.addWidget(time_label)
         
         self.time_edit.setFixedWidth(90)
-        datetime_layout.addWidget(self.time_edit)
-        datetime_layout.addWidget(self.now_btn)
-        datetime_layout.addStretch(1)
+        datetime_row.addWidget(self.time_edit)
+        datetime_row.addWidget(self.now_btn)
+        datetime_row.addStretch(1)
         
-        form.addWidget(datetime_section)
+        datetime_section_layout.addLayout(datetime_row)
+        
+        # Timestamp adjustment info banner (hidden by default, styled like balance check)
+        self.timestamp_info_label = QtWidgets.QLabel()
+        self.timestamp_info_label.setObjectName("HelperText")
+        self.timestamp_info_label.setProperty("status", "info")
+        self.timestamp_info_label.setWordWrap(True)
+        self.timestamp_info_label.setVisible(False)
+        datetime_section_layout.addWidget(self.timestamp_info_label)
+        
+        form.addWidget(self.datetime_section)
 
         # Main Redemption Details card with 2-column grid
         main_header = self._create_section_header("💰  Redemption Details")
@@ -1182,6 +1201,10 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.receipt_edit.textChanged.connect(self._validate_inline)
         self.partial_radio.toggled.connect(self._validate_inline)
         self.full_radio.toggled.connect(self._validate_inline)
+        self.user_combo.currentTextChanged.connect(self._update_timestamp_info)
+        self.site_combo.currentTextChanged.connect(self._update_timestamp_info)
+        self.date_edit.textChanged.connect(self._update_timestamp_info)
+        self.time_edit.textChanged.connect(self._update_timestamp_info)
 
         # Set tab order: User -> Site -> Method Type -> Method -> Amount -> Fees -> Redemption Type -> Receipt Date -> Processed -> Save
         self.setTabOrder(self.user_combo, self.site_combo)
@@ -1205,6 +1228,7 @@ class RedemptionDialog(QtWidgets.QDialog):
             self._clear_form()
 
         self._validate_inline()
+        self._update_timestamp_info()
     
     def _toggle_notes(self):
         """Toggle notes section visibility"""
@@ -1212,14 +1236,14 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.notes_section.setVisible(not self.notes_collapsed)
         if self.notes_collapsed:
             self.notes_toggle.setText("📝 Add Notes...")
-            self.setMinimumHeight(520)
-            self.setMaximumHeight(520)
-            self.resize(self.width(), 520)
+            self.setMinimumHeight(560)
+            self.setMaximumHeight(560)
+            self.resize(self.width(), 560)
         else:
             self.notes_toggle.setText("📝 Notes ▼")
-            self.setMinimumHeight(650)
+            self.setMinimumHeight(690)
             self.setMaximumHeight(16777215)
-            self.resize(self.width(), 650)
+            self.resize(self.width(), 690)
     
     def _show_redemption_type_help(self):
         """Show help dialog explaining redemption types"""
@@ -1695,7 +1719,9 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.date_edit.setText(date.today().strftime("%m/%d/%y"))
 
     def _set_now(self):
-        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+        """Set time to current time with seconds precision."""
+        current_time = current_time_with_seconds()
+        self.time_edit.setText(format_time_display(current_time))
 
     def get_date(self) -> date:
         date_str = self.date_edit.text().strip()
@@ -1703,12 +1729,27 @@ class RedemptionDialog(QtWidgets.QDialog):
         return parsed if parsed else date.today()
 
     def get_time(self) -> Optional[str]:
+        """
+        Parse time input and return database string with seconds precision.
+        
+        Rules (Issue #90):
+        - Empty → current time with seconds
+        - HH:MM → append :00
+        - HH:MM:SS → preserve
+        """
         time_str = self.time_edit.text().strip()
+        
         if not time_str:
-            return datetime.now().strftime("%H:%M:%S")
-        if len(time_str) == 5:
-            return f"{time_str}:00"
-        return time_str
+            # Blank time → current time with seconds
+            return time_to_db_string(current_time_with_seconds())
+        
+        # Parse user input (handles both HH:MM and HH:MM:SS)
+        parsed_time = parse_time_input(time_str)
+        if parsed_time is None:
+            # Invalid format → fallback to current time
+            return time_to_db_string(current_time_with_seconds())
+        
+        return time_to_db_string(parsed_time)
 
     def get_receipt_date(self) -> Optional[date]:
         receipt_str = self.receipt_edit.text().strip()
@@ -1793,7 +1834,26 @@ class RedemptionDialog(QtWidgets.QDialog):
         
         # Validate real redemptions require game sessions
         if amount > Decimal("0.00"):
+            # IMPORTANT: Get the ADJUSTED timestamp that will actually be used
+            # The timestamp service may auto-increment the time if there's a conflict
+            adjusted_date_str, adjusted_time_str, _ = self.facade.timestamp_service.ensure_unique_timestamp(
+                user_id=self.user_id,
+                site_id=self.site_id,
+                date_val=redemption_date,
+                time_str=redemption_time,
+                exclude_id=self.redemption.id if self.redemption else None,
+                event_type="redemption"
+            )
+            
+            # Convert adjusted date string back to date object if needed
+            if isinstance(adjusted_date_str, str):
+                from datetime import datetime as dt_module
+                adjusted_date = dt_module.strptime(adjusted_date_str, "%Y-%m-%d").date()
+            else:
+                adjusted_date = adjusted_date_str
+            
             # Check if there's at least one CLOSED session for this site/user
+            # using the ADJUSTED timestamp
             db = self.facade.game_session_repo.db
             cursor = db._connection.cursor()
             cursor.execute("""
@@ -1803,7 +1863,7 @@ class RedemptionDialog(QtWidgets.QDialog):
                   AND status = 'Closed'
                   AND end_date IS NOT NULL
                   AND (end_date < ? OR (end_date = ? AND end_time <= ?))
-            """, (self.site_id, self.user_id, redemption_date, redemption_date, redemption_time))
+            """, (self.site_id, self.user_id, adjusted_date, adjusted_date, adjusted_time_str))
             result = cursor.fetchone()
             has_closed_sessions = result["session_count"] > 0 if result else False
             
@@ -1842,8 +1902,8 @@ class RedemptionDialog(QtWidgets.QDialog):
                 expected_total, expected_redeemable = self.facade.compute_expected_balances(
                     self.user_id,
                     self.site_id,
-                    redemption_date,
-                    redemption_time
+                    adjusted_date,
+                    adjusted_time_str
                 )
                 site = self.facade.get_site(self.site_id)
                 sc_rate = Decimal(str(site.sc_rate if site else 1.0))
@@ -1904,7 +1964,7 @@ class RedemptionDialog(QtWidgets.QDialog):
         if self.redemption.redemption_time:
             time_str = self.redemption.redemption_time
             if len(time_str) > 5:
-                time_str = time_str[:5]
+                time_str = time_str
             self.time_edit.setText(time_str)
 
         user_name = getattr(self.redemption, "user_name", None)
@@ -1946,6 +2006,84 @@ class RedemptionDialog(QtWidgets.QDialog):
             self.full_radio.setChecked(True)
         if self.redemption.notes:
             self.notes_edit.setPlainText(self.redemption.notes)
+
+    def _update_timestamp_info(self):
+        """Check for timestamp conflicts and show info banner if adjustment needed"""
+        from datetime import datetime
+        
+        site_text = self.site_combo.currentText().strip()
+        user_text = self.user_combo.currentText().strip()
+        date_text = self.date_edit.text().strip()
+        time_text = self.time_edit.text().strip()
+
+        # Hide banner if we don't have all required fields
+        if not site_text or not user_text or not date_text:
+            self.timestamp_info_label.setVisible(False)
+            return
+
+        # Validate lookups
+        if site_text.lower() not in self._site_lookup or user_text.lower() not in self._user_lookup:
+            self.timestamp_info_label.setVisible(False)
+            return
+
+        # Parse date
+        parsed_date = None
+        for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d"):
+            try:
+                parsed_date = datetime.strptime(date_text, fmt).date()
+                break
+            except ValueError:
+                continue
+        if parsed_date is None:
+            self.timestamp_info_label.setVisible(False)
+            return
+
+        # Parse time (use current time if not provided)
+        if time_text:
+            try:
+                if len(time_text) == 5:
+                    datetime.strptime(time_text, "%H:%M")
+                    parsed_time = f"{time_text}:00"
+                elif len(time_text) == 8:
+                    datetime.strptime(time_text, "%H:%M:%S")
+                    parsed_time = time_text
+                else:
+                    self.timestamp_info_label.setVisible(False)
+                    return
+            except Exception:
+                self.timestamp_info_label.setVisible(False)
+                return
+        else:
+            parsed_time = datetime.now().strftime("%H:%M:%S")
+
+        user_id = self._user_lookup[user_text.lower()]
+        site_id = self._site_lookup[site_text.lower()]
+
+        # Check for timestamp conflicts
+        try:
+            adjusted_date_str, adjusted_time_str, will_adjust = self.facade.timestamp_service.ensure_unique_timestamp(
+                user_id=user_id,
+                site_id=site_id,
+                date_val=parsed_date,
+                time_str=parsed_time,
+                exclude_id=self.redemption.id if self.redemption else None,
+                event_type="redemption"
+            )
+            
+            if will_adjust:
+                banner_text = f"ℹ️ Time will be adjusted to {adjusted_time_str} ({parsed_time} already in use)"
+                self.timestamp_info_label.setText(banner_text)
+                was_visible = self.timestamp_info_label.isVisible()
+                self.timestamp_info_label.setVisible(True)
+                # Expand dialog slightly when banner first appears (just enough for the banner)
+                if not was_visible:
+                    self.timestamp_info_label.updateGeometry()
+                    self.datetime_section.updateGeometry()
+            else:
+                self.timestamp_info_label.setVisible(False)
+        except Exception as e:
+            # Silently hide banner on error
+            self.timestamp_info_label.setVisible(False)
 
 
 class RedemptionViewDialog(QtWidgets.QDialog):
@@ -2039,7 +2177,8 @@ class RedemptionViewDialog(QtWidgets.QDialog):
                 return str(value)
 
         def format_time(value):
-            return value[:5] if value else "—"
+            """Format time for display with full HH:MM:SS precision (Issue #90)"""
+            return value if value else "—"
         
         def make_selectable_label(text, bold=False, align_right=False):
             """Create a selectable QLabel"""
@@ -2351,7 +2490,7 @@ class RedemptionViewDialog(QtWidgets.QDialog):
                 end_display = "—"
                 if getattr(session, "end_date", None):
                     end_time = (getattr(session, "end_time", None) or "00:00:00")
-                    end_display = f"{session.end_date} {end_time[:5]}"
+                    end_display = f"{session.end_date} {end_time}"
                 table.setItem(row_idx, 2, QtWidgets.QTableWidgetItem(end_display))
                 game = self._games.get(session.game_id)
                 game_type = self._game_types.get(game.game_type_id, "—") if game else "—"

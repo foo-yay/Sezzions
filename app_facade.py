@@ -53,6 +53,7 @@ from services.notification_service import NotificationService
 from services.notification_rules_service import NotificationRulesService
 from services.adjustment_service import AdjustmentService
 from services.repair_mode_service import RepairModeService
+from services.timestamp_service import TimestampService
 from repositories.notification_repository import NotificationRepository
 
 from models.user import User
@@ -187,6 +188,9 @@ class AppFacade:
         # Repair Mode service (Issue #55)
         # Will be wired to MainWindow settings after construction
         self.repair_mode_service = None
+        
+        # Timestamp uniqueness enforcement
+        self.timestamp_service = TimestampService(self.db)
 
     @staticmethod
     def _normalize_time(value: Optional[str]) -> str:
@@ -570,8 +574,29 @@ class AppFacade:
                        card_id: Optional[int] = None,
                        purchase_time: Optional[str] = None,
                        notes: Optional[str] = None) -> Purchase:
-        """Create new purchase with atomic transaction."""
+        """
+        Create new purchase with atomic transaction and timestamp uniqueness.
+        
+        Note: Timestamps are automatically adjusted if conflicts exist (auto-incremented by 1s).
+        """
         with self.db.transaction():
+            # Ensure timestamp uniqueness (silently auto-increment if needed)
+            time_str = self._normalize_time(purchase_time)
+            adjusted_date_str, adjusted_time_str, was_adjusted = self.timestamp_service.ensure_unique_timestamp(
+                user_id=user_id,
+                site_id=site_id,
+                date_val=purchase_date,
+                time_str=time_str,
+                event_type="purchase"
+            )
+            
+            # Convert string date back to date object if needed
+            if isinstance(adjusted_date_str, str):
+                from datetime import datetime as dt_module
+                adjusted_date = dt_module.strptime(adjusted_date_str, "%Y-%m-%d").date()
+            else:
+                adjusted_date = adjusted_date_str
+            
             purchase = self.purchase_service.create_purchase(
                 user_id=user_id,
                 site_id=site_id,
@@ -579,9 +604,9 @@ class AppFacade:
                 sc_received=sc_received,
                 starting_sc_balance=starting_sc_balance,
                 cashback_earned=cashback_earned,
-                purchase_date=purchase_date,
+                purchase_date=adjusted_date,
                 card_id=card_id,
-                purchase_time=purchase_time,
+                purchase_time=adjusted_time_str,
                 notes=notes
             )
             boundary_date, boundary_time = self._containing_boundary(
@@ -600,16 +625,45 @@ class AppFacade:
             return purchase
     
     def update_purchase(self, purchase_id: int, force_site_user_change: bool = False, **kwargs) -> Purchase:
-        """Update purchase and trigger scoped rebuild when needed with atomic transaction.
+        """
+        Update purchase and trigger scoped rebuild when needed with atomic transaction.
 
         Legacy parity:
         - Allow editing consumed purchases, but protect amount/date unless a full rebuild is performed.
         - Allow site/user change only if explicitly forced (clears derived allocations via rebuild).
+        
+        Note: Timestamps are automatically adjusted if conflicts exist (auto-incremented by 1s).
         """
         with self.db.transaction():
             old_purchase = self.purchase_repo.get_by_id(purchase_id)
             if not old_purchase:
                 raise ValueError(f"Purchase {purchase_id} not found")
+            
+            # Ensure timestamp uniqueness if date/time is being changed
+            was_adjusted = False
+            if "purchase_date" in kwargs or "purchase_time" in kwargs:
+                new_date = kwargs.get("purchase_date", old_purchase.purchase_date)
+                new_time = kwargs.get("purchase_time", old_purchase.purchase_time)
+                new_time_str = self._normalize_time(new_time)
+                
+                adjusted_date_str, adjusted_time_str, was_adjusted = self.timestamp_service.ensure_unique_timestamp(
+                    user_id=old_purchase.user_id,
+                    site_id=old_purchase.site_id,
+                    date_val=new_date,
+                    time_str=new_time_str,
+                    exclude_id=purchase_id,
+                    event_type="purchase"
+                )
+                
+                # Convert string date back to date object
+                if isinstance(adjusted_date_str, str):
+                    from datetime import datetime as dt_module
+                    adjusted_date = dt_module.strptime(adjusted_date_str, "%Y-%m-%d").date()
+                else:
+                    adjusted_date = adjusted_date_str
+                
+                kwargs["purchase_date"] = adjusted_date
+                kwargs["purchase_time"] = adjusted_time_str
 
             updated = self.purchase_service.update_purchase(
                 purchase_id,
@@ -939,17 +993,38 @@ class AppFacade:
                          more_remaining: bool = False,
                          notes: Optional[str] = None,
                          fees: Decimal = Decimal("0.00")) -> Redemption:
-        """Create new redemption with optional FIFO processing, using atomic transaction."""
+        """
+        Create new redemption with optional FIFO processing, using atomic transaction.
+        
+        Note: Timestamps are automatically adjusted if conflicts exist (auto-incremented by 1s).
+        """
         with self.db.transaction():
+            # Ensure timestamp uniqueness
+            time_str = self._normalize_time(redemption_time)
+            adjusted_date_str, adjusted_time_str, was_adjusted = self.timestamp_service.ensure_unique_timestamp(
+                user_id=user_id,
+                site_id=site_id,
+                date_val=redemption_date,
+                time_str=time_str,
+                event_type="redemption"
+            )
+            
+            # Convert string date back to date object
+            if isinstance(adjusted_date_str, str):
+                from datetime import datetime as dt_module
+                adjusted_date = dt_module.strptime(adjusted_date_str, "%Y-%m-%d").date()
+            else:
+                adjusted_date = adjusted_date_str
+            
             redemption = self.redemption_service.create_redemption(
                 user_id=user_id,
                 site_id=site_id,
                 amount=amount,
                 fees=fees,
-                redemption_date=redemption_date,
+                redemption_date=adjusted_date,
                 apply_fifo=apply_fifo,
                 redemption_method_id=redemption_method_id,
-                redemption_time=redemption_time,
+                redemption_time=adjusted_time_str,
                 receipt_date=receipt_date,
                 processed=processed,
                 more_remaining=more_remaining,
@@ -978,10 +1053,40 @@ class AppFacade:
             return redemption
 
     def update_redemption_reprocess(self, redemption_id: int, **kwargs) -> Redemption:
-        """Update redemption and fully reprocess FIFO/realized/session cascades (legacy parity)."""
+        """
+        Update redemption and fully reprocess FIFO/realized/session cascades (legacy parity).
+        
+        Note: Timestamps are automatically adjusted if conflicts exist (auto-incremented by 1s).
+        """
         old_redemption = self.redemption_repo.get_by_id(redemption_id)
         if not old_redemption:
             raise ValueError(f"Redemption {redemption_id} not found")
+
+        # Ensure timestamp uniqueness if date/time is being changed
+        was_adjusted = False
+        if "redemption_date" in kwargs or "redemption_time" in kwargs:
+            new_date = kwargs.get("redemption_date", old_redemption.redemption_date)
+            new_time = kwargs.get("redemption_time", old_redemption.redemption_time)
+            new_time_str = self._normalize_time(new_time)
+            
+            adjusted_date_str, adjusted_time_str, was_adjusted = self.timestamp_service.ensure_unique_timestamp(
+                user_id=old_redemption.user_id,
+                site_id=old_redemption.site_id,
+                date_val=new_date,
+                time_str=new_time_str,
+                exclude_id=redemption_id,
+                event_type="redemption"
+            )
+            
+            # Convert string date back to date object
+            if isinstance(adjusted_date_str, str):
+                from datetime import datetime as dt_module
+                adjusted_date = dt_module.strptime(adjusted_date_str, "%Y-%m-%d").date()
+            else:
+                adjusted_date = adjusted_date_str
+            
+            kwargs["redemption_date"] = adjusted_date
+            kwargs["redemption_time"] = adjusted_time_str
 
         updated = Redemption(
             id=old_redemption.id,
@@ -1315,20 +1420,41 @@ class AppFacade:
                            notes: Optional[str] = None,
                            calculate_pl: bool = True,
                            game_type_id: Optional[int] = None) -> GameSession:
-        """Create new game session with automatic P/L calculation."""
+        """
+        Create new game session with automatic P/L calculation and timestamp uniqueness.
+        
+        Note: Timestamps are automatically adjusted if conflicts exist (auto-incremented by 1s).
+        """
+        # Ensure start timestamp uniqueness
+        time_str = self._normalize_time(session_time)
+        adjusted_date_str, adjusted_time_str, was_adjusted = self.timestamp_service.ensure_unique_timestamp(
+            user_id=user_id,
+            site_id=site_id,
+            date_val=session_date,
+            time_str=time_str,
+            event_type="session_start"
+        )
+        
+        # Convert string date back to date object
+        if isinstance(adjusted_date_str, str):
+            from datetime import datetime as dt_module
+            adjusted_date = dt_module.strptime(adjusted_date_str, "%Y-%m-%d").date()
+        else:
+            adjusted_date = adjusted_date_str
+        
         session = self.game_session_service.create_session(
             user_id=user_id,
             site_id=site_id,
             game_id=game_id,
             game_type_id=game_type_id,
-            session_date=session_date,
+            session_date=adjusted_date,
             starting_balance=starting_balance,
             ending_balance=ending_balance,
             starting_redeemable=starting_redeemable,
             ending_redeemable=ending_redeemable,
             purchases_during=purchases_during,
             redemptions_during=redemptions_during,
-            session_time=session_time or "00:00:00",
+            session_time=adjusted_time_str,
             notes=notes or "",
             calculate_pl=calculate_pl
         )
@@ -1348,8 +1474,61 @@ class AppFacade:
     
     def update_game_session(self, session_id: int, recalculate_pl: bool = True, 
                            **kwargs) -> GameSession:
-        """Update game session with optional P/L recalculation."""
+        """
+        Update game session with optional P/L recalculation and timestamp uniqueness.
+        
+        Note: Timestamps are automatically adjusted if conflicts exist (auto-incremented by 1s).
+        """
         old_session = self.game_session_repo.get_by_id(session_id)
+        
+        # Ensure timestamp uniqueness for session_time (start)
+        start_adjusted = False
+        if "session_time" in kwargs or "session_date" in kwargs:
+            new_date = kwargs.get("session_date", old_session.session_date if old_session else None)
+            new_time = kwargs.get("session_time", old_session.session_time if old_session else None)
+            if new_date and new_time:
+                new_time_str = self._normalize_time(new_time)
+                adjusted_date_str, adjusted_time_str, start_adjusted = self.timestamp_service.ensure_unique_timestamp(
+                    user_id=old_session.user_id,
+                    site_id=old_session.site_id,
+                    date_val=new_date,
+                    time_str=new_time_str,
+                    exclude_id=session_id,
+                    event_type="session_start"
+                )
+                # Convert string date back to date object
+                if isinstance(adjusted_date_str, str):
+                    from datetime import datetime as dt_module
+                    adjusted_date = dt_module.strptime(adjusted_date_str, "%Y-%m-%d").date()
+                else:
+                    adjusted_date = adjusted_date_str
+                kwargs["session_date"] = adjusted_date
+                kwargs["session_time"] = adjusted_time_str
+        
+        # Ensure timestamp uniqueness for end_time
+        end_adjusted = False
+        if "end_time" in kwargs or "end_date" in kwargs:
+            new_end_date = kwargs.get("end_date", old_session.end_date if old_session else None)
+            new_end_time = kwargs.get("end_time", old_session.end_time if old_session else None)
+            if new_end_date and new_end_time:
+                new_end_time_str = self._normalize_time(new_end_time)
+                adjusted_end_date_str, adjusted_end_time_str, end_adjusted = self.timestamp_service.ensure_unique_timestamp(
+                    user_id=old_session.user_id,
+                    site_id=old_session.site_id,
+                    date_val=new_end_date,
+                    time_str=new_end_time_str,
+                    exclude_id=session_id,
+                    event_type="session_end"
+                )
+                # Convert string date back to date object
+                if isinstance(adjusted_end_date_str, str):
+                    from datetime import datetime as dt_module
+                    adjusted_end_date = dt_module.strptime(adjusted_end_date_str, "%Y-%m-%d").date()
+                else:
+                    adjusted_end_date = adjusted_end_date_str
+                kwargs["end_date"] = adjusted_end_date
+                kwargs["end_time"] = adjusted_end_time_str
+        
         updated = self.game_session_service.update_session(
             session_id, 
             recalculate_pl=recalculate_pl, 

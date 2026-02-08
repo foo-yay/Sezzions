@@ -129,7 +129,8 @@ class RealizedPositionDialog(QtWidgets.QDialog):
                 return str(value)
 
         def format_time(value):
-            return value[:5] if value else "—"
+            """Format time for display with full HH:MM:SS precision (Issue #90)"""
+            return value if value else "—"
 
         def make_selectable_label(text, bold=False, align_right=False, color=None):
             """Create a selectable QLabel"""

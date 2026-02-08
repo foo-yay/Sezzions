@@ -131,17 +131,18 @@ class GameSessionEventLinkService:
             for p in purchases:
                 p_dt = _to_dt(p["purchase_date"], p["purchase_time"])
 
-                if end_dt and start_dt <= p_dt <= end_dt:
+                # Issue #90: start INCLUSIVE (>=), end EXCLUSIVE (<)
+                if end_dt and start_dt <= p_dt < end_dt:
                     # Closed session: purchase within session window
                     links_to_insert.append((session_id, "purchase", p["id"], "DURING"))
                 elif end_dt is None and p_dt >= start_dt:
                     # Active session: purchase on or after session start (and before next session if any)
                     if next_start_dt is None or p_dt < next_start_dt:
                         links_to_insert.append((session_id, "purchase", p["id"], "DURING"))
-                elif prev_end_dt is None or (prev_end_dt < p_dt < start_dt):
+                elif prev_end_dt is None or (prev_end_dt <= p_dt < start_dt):
                     if prev_end_dt is None and p_dt < start_dt:
                         links_to_insert.append((session_id, "purchase", p["id"], "BEFORE"))
-                    elif prev_end_dt is not None and prev_end_dt < p_dt < start_dt:
+                    elif prev_end_dt is not None and prev_end_dt <= p_dt < start_dt:
                         links_to_insert.append((session_id, "purchase", p["id"], "BEFORE"))
 
             # Link redemptions (closed sessions only)
@@ -149,12 +150,13 @@ class GameSessionEventLinkService:
                 for r in redemptions:
                     r_dt = _to_dt(r["redemption_date"], r["redemption_time"])
 
-                    if start_dt <= r_dt <= end_dt:
+                    # Issue #90: start INCLUSIVE (>=), end EXCLUSIVE (<)
+                    if start_dt <= r_dt < end_dt:
                         links_to_insert.append((session_id, "redemption", r["id"], "DURING"))
-                    elif next_start_dt is None or (end_dt < r_dt < next_start_dt):
-                        if next_start_dt is None and r_dt > end_dt:
+                    elif next_start_dt is None or (end_dt <= r_dt < next_start_dt):
+                        if next_start_dt is None and r_dt >= end_dt:
                             links_to_insert.append((session_id, "redemption", r["id"], "AFTER"))
-                        elif next_start_dt is not None and end_dt < r_dt < next_start_dt:
+                        elif next_start_dt is not None and end_dt <= r_dt < next_start_dt:
                             links_to_insert.append((session_id, "redemption", r["id"], "AFTER"))
 
         if links_to_insert:
@@ -294,27 +296,29 @@ class GameSessionEventLinkService:
             for p in purchases:
                 p_dt = _to_dt(p["purchase_date"], p["purchase_time"])
 
-                if end_dt and start_dt <= p_dt <= end_dt:
+                # Issue #90: start INCLUSIVE (>=), end EXCLUSIVE (<)
+                if end_dt and start_dt <= p_dt < end_dt:
                     # Closed session: purchase within session window
                     links_to_insert.append((session_id, "purchase", p["id"], "DURING"))
                 elif end_dt is None and p_dt >= start_dt:
                     # Active session: purchase on or after session start (and before next session if any)
                     if next_start_dt is None or p_dt < next_start_dt:
                         links_to_insert.append((session_id, "purchase", p["id"], "DURING"))
-                elif current_prev_end_dt is None or (current_prev_end_dt < p_dt < start_dt):
+                elif current_prev_end_dt is None or (current_prev_end_dt <= p_dt < start_dt):
                     if current_prev_end_dt is None and p_dt < start_dt:
                         links_to_insert.append((session_id, "purchase", p["id"], "BEFORE"))
-                    elif current_prev_end_dt is not None and current_prev_end_dt < p_dt < start_dt:
+                    elif current_prev_end_dt is not None and current_prev_end_dt <= p_dt < start_dt:
                         links_to_insert.append((session_id, "purchase", p["id"], "BEFORE"))
 
             if end_dt:
                 for r in redemptions:
                     r_dt = _to_dt(r["redemption_date"], r["redemption_time"])
 
-                    if start_dt <= r_dt <= end_dt:
+                    # Issue #90: start INCLUSIVE (>=), end EXCLUSIVE (<)
+                    if start_dt <= r_dt < end_dt:
                         links_to_insert.append((session_id, "redemption", r["id"], "DURING"))
-                    elif next_start_dt is None or (end_dt < r_dt < next_start_dt):
-                        if next_start_dt is None and r_dt > end_dt:
+                    elif next_start_dt is None or (end_dt <= r_dt < next_start_dt):
+                        if next_start_dt is None and r_dt >= end_dt:
                             links_to_insert.append((session_id, "redemption", r["id"], "AFTER"))
                         elif next_start_dt is not None and end_dt < r_dt < next_start_dt:
                             links_to_insert.append((session_id, "redemption", r["id"], "AFTER"))

@@ -283,7 +283,7 @@ class GameSessionsTab(QWidget):
                 for row, session in enumerate(rows):
                     time_val = session.session_time or "00:00:00"
                     if time_val and len(time_val) > 5:
-                        time_val = time_val[:5]
+                        time_val = time_val
                     date_time = f"{session.session_date} {time_val}".strip()
                     
                     # Add multi-day indicator if session spans multiple days
@@ -946,7 +946,7 @@ class StartSessionDialog(QDialog):
         self.calendar_btn.clicked.connect(self._pick_date)
 
         self.time_edit = QLineEdit()
-        self.time_edit.setPlaceholderText("HH:MM")
+        self.time_edit.setPlaceholderText("HH:MM:SS")
         self.now_btn = QPushButton("Now")
         self.now_btn.clicked.connect(self._set_now)
 
@@ -1003,13 +1003,16 @@ class StartSessionDialog(QDialog):
         # Date/Time section (no header, compact like Add Purchase)
         datetime_section = QWidget()
         datetime_section.setObjectName("SectionBackground")
-        datetime_layout = QHBoxLayout(datetime_section)
-        datetime_layout.setContentsMargins(12, 10, 12, 10)
-        datetime_layout.setSpacing(12)
+        datetime_section_layout = QVBoxLayout(datetime_section)
+        datetime_section_layout.setContentsMargins(12, 10, 12, 10)
+        datetime_section_layout.setSpacing(8)
+        
+        datetime_row = QHBoxLayout()
+        datetime_row.setSpacing(12)
         
         date_label = QLabel("Date:")
         date_label.setObjectName("FieldLabel")
-        datetime_layout.addWidget(date_label)
+        datetime_row.addWidget(date_label)
         
         # Date field with embedded calendar button
         date_container = QWidget()
@@ -1019,19 +1022,29 @@ class StartSessionDialog(QDialog):
         self.date_edit.setFixedWidth(110)
         date_layout.addWidget(self.date_edit)
         date_layout.addWidget(self.calendar_btn)
-        datetime_layout.addWidget(date_container)
+        datetime_row.addWidget(date_container)
         
-        datetime_layout.addWidget(self.today_btn)
-        datetime_layout.addSpacing(30)
+        datetime_row.addWidget(self.today_btn)
+        datetime_row.addSpacing(30)
         
         time_label = QLabel("Time:")
         time_label.setObjectName("FieldLabel")
-        datetime_layout.addWidget(time_label)
+        datetime_row.addWidget(time_label)
         
         self.time_edit.setFixedWidth(90)
-        datetime_layout.addWidget(self.time_edit)
-        datetime_layout.addWidget(self.now_btn)
-        datetime_layout.addStretch(1)
+        datetime_row.addWidget(self.time_edit)
+        datetime_row.addWidget(self.now_btn)
+        datetime_row.addStretch(1)
+        
+        datetime_section_layout.addLayout(datetime_row)
+        
+        # Timestamp adjustment info banner (hidden by default, styled like balance check)
+        self.timestamp_info_label = QLabel()
+        self.timestamp_info_label.setObjectName("HelperText")
+        self.timestamp_info_label.setProperty("status", "info")
+        self.timestamp_info_label.setWordWrap(True)
+        self.timestamp_info_label.setVisible(False)
+        datetime_section_layout.addWidget(self.timestamp_info_label)
         
         form.addWidget(datetime_section, 0, 0, 1, 7)
 
@@ -1199,6 +1212,10 @@ class StartSessionDialog(QDialog):
         self.site_combo.currentTextChanged.connect(self._validate_inline)
         self.start_total_edit.textChanged.connect(self._validate_inline)
         self.start_redeem_edit.textChanged.connect(self._validate_inline)
+        self.user_combo.currentTextChanged.connect(self._update_timestamp_info)
+        self.site_combo.currentTextChanged.connect(self._update_timestamp_info)
+        self.date_edit.textChanged.connect(self._update_timestamp_info)
+        self.time_edit.textChanged.connect(self._update_timestamp_info)
         
         # Set tab order: Date -> Time -> User -> Site -> Game Type -> Game -> Starting SC -> Starting Redeemable -> Notes -> Save
         self.setTabOrder(self.date_edit, self.time_edit)
@@ -1220,6 +1237,7 @@ class StartSessionDialog(QDialog):
 
         self._update_completers()
         self._validate_inline()
+        self._update_timestamp_info()
 
         # Start with notes collapsed and dialog tight.
         self._compute_height_presets()
@@ -1393,7 +1411,8 @@ class StartSessionDialog(QDialog):
         self.date_edit.setText(date.today().strftime("%m/%d/%y"))
 
     def _set_now(self):
-        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+        """Set time to current time with seconds precision."""
+        self.time_edit.setText(datetime.now().strftime("%H:%M:%S"))
 
     def _pick_date(self):
         dialog = QDialog(self)
@@ -1719,6 +1738,78 @@ class StartSessionDialog(QDialog):
     def _mark_time_edited(self, _text):
         self._time_edited = True
 
+    def _update_timestamp_info(self):
+        """Check for timestamp conflicts and show info banner if adjustment needed"""
+        site_text = self.site_combo.currentText().strip()
+        user_text = self.user_combo.currentText().strip()
+        date_text = self.date_edit.text().strip()
+        time_text = self.time_edit.text().strip()
+
+        # Hide banner if we don't have all required fields
+        if not site_text or not user_text or not date_text:
+            self.timestamp_info_label.setVisible(False)
+            return
+
+        # Validate lookups
+        if site_text.lower() not in self._site_lookup or user_text.lower() not in self._user_lookup:
+            self.timestamp_info_label.setVisible(False)
+            return
+
+        # Parse date
+        from datetime import datetime as dt_module
+        parsed_date = None
+        for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d"):
+            try:
+                parsed_date = dt_module.strptime(date_text, fmt).date()
+                break
+            except ValueError:
+                continue
+        if parsed_date is None:
+            self.timestamp_info_label.setVisible(False)
+            return
+
+        # Parse time (use current time if not provided)
+        if time_text:
+            try:
+                if len(time_text) == 5:
+                    dt_module.strptime(time_text, "%H:%M")
+                    parsed_time = f"{time_text}:00"
+                elif len(time_text) == 8:
+                    dt_module.strptime(time_text, "%H:%M:%S")
+                    parsed_time = time_text
+                else:
+                    self.timestamp_info_label.setVisible(False)
+                    return
+            except Exception:
+                self.timestamp_info_label.setVisible(False)
+                return
+        else:
+            parsed_time = dt_module.now().strftime("%H:%M:%S")
+
+        user = self._user_lookup[user_text.lower()]
+        site = self._site_lookup[site_text.lower()]
+
+        # Check for timestamp conflicts
+        try:
+            adjusted_date_str, adjusted_time_str, will_adjust = self.facade.timestamp_service.ensure_unique_timestamp(
+                user_id=user.id,
+                site_id=site.id,
+                date_val=parsed_date,
+                time_str=parsed_time,
+                exclude_id=self.session.id if self.session else None,
+                event_type="session_start"
+            )
+            
+            if will_adjust:
+                banner_text = f"ℹ️ Time will be adjusted to {adjusted_time_str} ({parsed_time} already in use)"
+                self.timestamp_info_label.setText(banner_text)
+                self.timestamp_info_label.setVisible(True)
+            else:
+                self.timestamp_info_label.setVisible(False)
+        except Exception:
+            # Silently hide banner on error
+            self.timestamp_info_label.setVisible(False)
+
     def collect_data(self):
         user_name = self.user_combo.currentText().strip()
         site_name = self.site_combo.currentText().strip()
@@ -1863,7 +1954,7 @@ class EditClosedSessionDialog(QDialog):
         self.start_today_btn.clicked.connect(self._set_start_today)
         
         self.time_edit = QLineEdit()
-        self.time_edit.setPlaceholderText("HH:MM")
+        self.time_edit.setPlaceholderText("HH:MM:SS")
         self.start_now_btn = QPushButton("Now")
         self.start_now_btn.clicked.connect(self._set_start_now)
 
@@ -1876,7 +1967,7 @@ class EditClosedSessionDialog(QDialog):
         self.end_today_btn.clicked.connect(self._set_end_today)
         
         self.end_time_edit = QLineEdit()
-        self.end_time_edit.setPlaceholderText("HH:MM")
+        self.end_time_edit.setPlaceholderText("HH:MM:SS")
         self.end_now_btn = QPushButton("Now")
         self.end_now_btn.clicked.connect(self._set_end_now)
 
@@ -2041,6 +2132,22 @@ class EditClosedSessionDialog(QDialog):
         end_row.addStretch(1)
         
         datetime_layout.addLayout(end_row)
+        
+        # Row 3: Start timestamp adjustment info banner
+        self.start_timestamp_info_label = QLabel()
+        self.start_timestamp_info_label.setObjectName("HelperText")
+        self.start_timestamp_info_label.setProperty("status", "info")
+        self.start_timestamp_info_label.setWordWrap(True)
+        self.start_timestamp_info_label.setVisible(False)
+        datetime_layout.addWidget(self.start_timestamp_info_label)
+        
+        # Row 4: End timestamp adjustment info banner
+        self.end_timestamp_info_label = QLabel()
+        self.end_timestamp_info_label.setObjectName("HelperText")
+        self.end_timestamp_info_label.setProperty("status", "info")
+        self.end_timestamp_info_label.setWordWrap(True)
+        self.end_timestamp_info_label.setVisible(False)
+        datetime_layout.addWidget(self.end_timestamp_info_label)
         
         form.addWidget(datetime_section, 0, 0, 1, 7)
 
@@ -2251,6 +2358,16 @@ class EditClosedSessionDialog(QDialog):
         self.end_total_edit.textChanged.connect(self._update_rtp_display)
         self.game_name_combo.currentTextChanged.connect(self._update_rtp_display)
         
+        # Connect timestamp info updates
+        self.user_combo.currentTextChanged.connect(self._update_start_timestamp_info)
+        self.site_combo.currentTextChanged.connect(self._update_start_timestamp_info)
+        self.date_edit.textChanged.connect(self._update_start_timestamp_info)
+        self.time_edit.textChanged.connect(self._update_start_timestamp_info)
+        self.user_combo.currentTextChanged.connect(self._update_end_timestamp_info)
+        self.site_combo.currentTextChanged.connect(self._update_end_timestamp_info)
+        self.end_date_edit.textChanged.connect(self._update_end_timestamp_info)
+        self.end_time_edit.textChanged.connect(self._update_end_timestamp_info)
+        
         # Set tab order: Start date -> Start time -> End Date -> End Time -> User -> Site -> 
         # Game Type -> Game Name -> Wager -> Start Total -> Start Redeem -> End total -> End redeem -> Notes -> Save
         self.setTabOrder(self.date_edit, self.time_edit)
@@ -2271,6 +2388,8 @@ class EditClosedSessionDialog(QDialog):
 
         self._load_session()
         self._validate_inline()
+        self._update_start_timestamp_info()
+        self._update_end_timestamp_info()
 
         # Start with notes collapsed and dialog tight.
         self._compute_height_presets()
@@ -2882,14 +3001,14 @@ class EditClosedSessionDialog(QDialog):
     def _load_session(self):
         """Load session data into fields"""
         self.date_edit.setText(self.session.session_date.strftime("%m/%d/%y") if self.session.session_date else "")
-        self.time_edit.setText(self.session.session_time[:5] if self.session.session_time else "")
+        self.time_edit.setText(self.session.session_time if self.session.session_time else "")
         
         end_date = self.session.end_date or self.session.session_date
         if end_date:
             self.end_date_edit.setText(end_date.strftime("%m/%d/%y"))
         end_time = self.session.end_time or self.session.session_time
         if end_time:
-            self.end_time_edit.setText(end_time[:5])
+            self.end_time_edit.setText(end_time)
 
         user_name = None
         for name, user_obj in self._user_lookup.items():
@@ -2944,6 +3063,152 @@ class EditClosedSessionDialog(QDialog):
         
         self._update_balance_check()
         self._update_rtp_display()
+
+    def _update_start_timestamp_info(self):
+        """Check for START timestamp conflicts and show info banner if adjustment needed"""
+        from datetime import datetime
+        
+        site_text = self.site_combo.currentText().strip()
+        user_text = self.user_combo.currentText().strip()
+        date_text = self.date_edit.text().strip()
+        time_text = self.time_edit.text().strip()
+
+        # Hide banner if we don't have all required fields
+        if not site_text or not user_text or not date_text:
+            self.start_timestamp_info_label.setVisible(False)
+            return
+
+        # Validate lookups
+        if site_text.lower() not in self._site_lookup or user_text.lower() not in self._user_lookup:
+            self.start_timestamp_info_label.setVisible(False)
+            return
+
+        # Parse date
+        parsed_date = None
+        for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d"):
+            try:
+                parsed_date = datetime.strptime(date_text, fmt).date()
+                break
+            except ValueError:
+                continue
+        if parsed_date is None:
+            self.start_timestamp_info_label.setVisible(False)
+            return
+
+        # Parse time (use current time if not provided)
+        if time_text:
+            try:
+                if len(time_text) == 5:
+                    datetime.strptime(time_text, "%H:%M")
+                    parsed_time = f"{time_text}:00"
+                elif len(time_text) == 8:
+                    datetime.strptime(time_text, "%H:%M:%S")
+                    parsed_time = time_text
+                else:
+                    self.start_timestamp_info_label.setVisible(False)
+                    return
+            except Exception:
+                self.start_timestamp_info_label.setVisible(False)
+                return
+        else:
+            parsed_time = datetime.now().strftime("%H:%M:%S")
+
+        user = self._user_lookup[user_text.lower()]
+        site = self._site_lookup[site_text.lower()]
+
+        # Check for timestamp conflicts
+        try:
+            adjusted_date_str, adjusted_time_str, will_adjust = self.facade.timestamp_service.ensure_unique_timestamp(
+                user_id=user.id,
+                site_id=site.id,
+                date_val=parsed_date,
+                time_str=parsed_time,
+                exclude_id=self.session.id if self.session else None,
+                event_type="session_start"
+            )
+            
+            if will_adjust:
+                banner_text = f"ℹ️ Start time will be adjusted to {adjusted_time_str} ({parsed_time} already in use)"
+                self.start_timestamp_info_label.setText(banner_text)
+                self.start_timestamp_info_label.setVisible(True)
+            else:
+                self.start_timestamp_info_label.setVisible(False)
+        except Exception as e:
+            # Silently hide banner on error
+            self.start_timestamp_info_label.setVisible(False)
+
+    def _update_end_timestamp_info(self):
+        """Check for END timestamp conflicts and show info banner if adjustment needed"""
+        from datetime import datetime
+        
+        site_text = self.site_combo.currentText().strip()
+        user_text = self.user_combo.currentText().strip()
+        date_text = self.end_date_edit.text().strip()
+        time_text = self.end_time_edit.text().strip()
+
+        # Hide banner if we don't have all required fields
+        if not site_text or not user_text or not date_text:
+            self.end_timestamp_info_label.setVisible(False)
+            return
+
+        # Validate lookups
+        if site_text.lower() not in self._site_lookup or user_text.lower() not in self._user_lookup:
+            self.end_timestamp_info_label.setVisible(False)
+            return
+
+        # Parse date
+        parsed_date = None
+        for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d"):
+            try:
+                parsed_date = datetime.strptime(date_text, fmt).date()
+                break
+            except ValueError:
+                continue
+        if parsed_date is None:
+            self.end_timestamp_info_label.setVisible(False)
+            return
+
+        # Parse time (use current time if not provided)
+        if time_text:
+            try:
+                if len(time_text) == 5:
+                    datetime.strptime(time_text, "%H:%M")
+                    parsed_time = f"{time_text}:00"
+                elif len(time_text) == 8:
+                    datetime.strptime(time_text, "%H:%M:%S")
+                    parsed_time = time_text
+                else:
+                    self.end_timestamp_info_label.setVisible(False)
+                    return
+            except Exception:
+                self.end_timestamp_info_label.setVisible(False)
+                return
+        else:
+            parsed_time = datetime.now().strftime("%H:%M:%S")
+
+        user = self._user_lookup[user_text.lower()]
+        site = self._site_lookup[site_text.lower()]
+
+        # Check for timestamp conflicts
+        try:
+            adjusted_date_str, adjusted_time_str, will_adjust = self.facade.timestamp_service.ensure_unique_timestamp(
+                user_id=user.id,
+                site_id=site.id,
+                date_val=parsed_date,
+                time_str=parsed_time,
+                exclude_id=self.session.id if self.session else None,
+                event_type="session_end"
+            )
+            
+            if will_adjust:
+                banner_text = f"ℹ️ End time will be adjusted to {adjusted_time_str} ({parsed_time} already in use)"
+                self.end_timestamp_info_label.setText(banner_text)
+                self.end_timestamp_info_label.setVisible(True)
+            else:
+                self.end_timestamp_info_label.setVisible(False)
+        except Exception as e:
+            # Silently hide banner on error
+            self.end_timestamp_info_label.setVisible(False)
 
 
 class ViewSessionDialog(QDialog):
@@ -3457,7 +3722,7 @@ class ViewSessionDialog(QDialog):
         if not date_val:
             return "—"
         date_str = self._format_date(date_val)
-        time_str = time_val[:5] if time_val else "00:00"
+        time_str = time_val if time_val else "00:00"
         return f"{date_str} {time_str}"
 
     def _calculate_rtp_display(self, game):
@@ -3578,7 +3843,7 @@ class ViewSessionDialog(QDialog):
         self.purchases_table.setRowCount(len(purchases))
         for row_idx, purchase in enumerate(purchases):
             date_display = self._format_date(purchase.purchase_date) if purchase.purchase_date else "—"
-            time_display = purchase.purchase_time[:5] if purchase.purchase_time else "—"
+            time_display = purchase.purchase_time if purchase.purchase_time else "—"
             date_time_display = f"{date_display} {time_display}" if date_display != "—" else time_display
             amount = format_currency(purchase.amount)
             sc_received = f"{float(purchase.sc_received or 0.0):.2f}"
@@ -3757,7 +4022,7 @@ class EndSessionDialog(QDialog):
         end_time_layout.setSpacing(8)
         
         self.time_edit = QLineEdit()
-        self.time_edit.setPlaceholderText("HH:MM")
+        self.time_edit.setPlaceholderText("HH:MM:SS")
         self.time_edit.setFixedWidth(90)
         end_time_layout.addWidget(self.time_edit)
         
@@ -3766,6 +4031,14 @@ class EndSessionDialog(QDialog):
         end_time_layout.addStretch(1)
         
         datetime_layout.addWidget(end_time_container, 1, 3)
+
+        # Row 2: Timestamp adjustment info banner (hidden by default, styled like balance check)
+        self.timestamp_info_label = QLabel()
+        self.timestamp_info_label.setObjectName("HelperText")
+        self.timestamp_info_label.setProperty("status", "info")
+        self.timestamp_info_label.setWordWrap(True)
+        self.timestamp_info_label.setVisible(False)
+        datetime_layout.addWidget(self.timestamp_info_label, 2, 0, 1, 4)
 
         form.addWidget(datetime_section, 0, 0, 1, 7)
 
@@ -4054,6 +4327,13 @@ class EndSessionDialog(QDialog):
         self.end_total_edit.textChanged.connect(self._validate_inline)
         self.end_redeem_edit.textChanged.connect(self._validate_inline)
         self.wager_edit.textChanged.connect(self._validate_inline)
+        self.date_edit.textChanged.connect(self._update_timestamp_info)
+        self.time_edit.textChanged.connect(self._update_timestamp_info)
+
+        # Site and user combos (from parent session) affect timestamp checking
+        # but we don't have them as editable fields in this dialog - they're fixed
+        # from the session. The timestamp info banner will still update based on
+        # date/time changes.
 
         # Set tab order
         self.setTabOrder(self.date_edit, self.time_edit)
@@ -4067,6 +4347,7 @@ class EndSessionDialog(QDialog):
         self._set_today()
         self._set_now()
         self._validate_inline()
+        self._update_timestamp_info()
         
         self._update_session_details()
 
@@ -4077,12 +4358,91 @@ class EndSessionDialog(QDialog):
         self.setMinimumHeight(self._min_height_no_notes)
         self.resize(self.width(), max(self.height(), self._min_height_no_notes))
 
+    def _update_timestamp_info(self):
+        """Check for timestamp conflicts and show info banner if adjustment needed (for END time)"""
+        from datetime import datetime
+        
+        date_text = self.date_edit.text().strip()
+        time_text = self.time_edit.text().strip()
+
+        # Hide banner if we don't have all required fields
+        if not date_text:
+            self.timestamp_info_label.setVisible(False)
+            return
+
+        # Parse date
+        parsed_date = None
+        for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d"):
+            try:
+                parsed_date = datetime.strptime(date_text, fmt).date()
+                break
+            except ValueError:
+                continue
+        if parsed_date is None:
+            self.timestamp_info_label.setVisible(False)
+            return
+
+        # Parse time (use current time if not provided)
+        if time_text:
+            try:
+                if len(time_text) == 5:
+                    datetime.strptime(time_text, "%H:%M")
+                    parsed_time = f"{time_text}:00"
+                elif len(time_text) == 8:
+                    datetime.strptime(time_text, "%H:%M:%S")
+                    parsed_time = time_text
+                else:
+                    self.timestamp_info_label.setVisible(False)
+                    return
+            except Exception:
+                self.timestamp_info_label.setVisible(False)
+                return
+        else:
+            parsed_time = datetime.now().strftime("%H:%M:%S")
+
+        # Use session's site_id and user_id (not from combos - they don't exist in this dialog)
+        user_id = self.session.user_id
+        site_id = self.session.site_id
+
+        # Check for timestamp conflicts
+        try:
+            adjusted_date_str, adjusted_time_str, will_adjust = self.facade.timestamp_service.ensure_unique_timestamp(
+                user_id=user_id,
+                site_id=site_id,
+                date_val=parsed_date,
+                time_str=parsed_time,
+                exclude_id=self.session.id if self.session else None,
+                event_type="session_end"
+            )
+            
+            if will_adjust:
+                banner_text = f"ℹ️ Time will be adjusted to {adjusted_time_str} ({parsed_time} already in use)"
+                self.timestamp_info_label.setText(banner_text)
+                was_visible = self.timestamp_info_label.isVisible()
+                self.timestamp_info_label.setVisible(True)
+                # Expand dialog height when banner first appears
+                if not was_visible:
+                    self.adjustSize()
+                    current_height = self.height()
+                    self.setMinimumHeight(current_height + 40)
+                    self.resize(self.width(), current_height + 40)
+            else:
+                was_visible = self.timestamp_info_label.isVisible()
+                self.timestamp_info_label.setVisible(False)
+                # Restore original height when banner disappears
+                if was_visible and hasattr(self, '_min_height_no_notes'):
+                    self.setMinimumHeight(self._min_height_no_notes)
+                    self.adjustSize()
+        except Exception as e:
+            # Silently hide banner on error
+            self.timestamp_info_label.setVisible(False)
+
     def _compute_height_presets(self) -> None:
         """Compute min heights for collapsed vs expanded notes states."""
         self.notes_section.setVisible(False)
         self.adjustSize()
         collapsed_hint = int(self.sizeHint().height())
-        self._min_height_no_notes = max(collapsed_hint, 580)
+        self._min_height_no_notes = max(collapsed_hint, 620)
 
         self.notes_section.setVisible(True)
         self.adjustSize()
@@ -4103,6 +4463,66 @@ class EndSessionDialog(QDialog):
             self.notes_toggle.setText("📝 Add Notes...")
         self.setMinimumHeight(self._min_height_no_notes)
         self.resize(self.width(), self._min_height_no_notes)
+    
+    def _update_timestamp_info(self):
+        """Check for timestamp conflicts and show info banner if adjustment needed"""
+        from datetime import datetime
+        
+        date_text = self.date_edit.text().strip()
+        time_text = self.time_edit.text().strip()
+
+        # Hide banner if we don't have required fields
+        if not date_text or not time_text:
+            self.timestamp_info_label.setVisible(False)
+            return
+
+        # Parse date
+        parsed_date = None
+        for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d"):
+            try:
+                parsed_date = datetime.strptime(date_text, fmt).date()
+                break
+            except ValueError:
+                continue
+        if parsed_date is None:
+            self.timestamp_info_label.setVisible(False)
+            return
+
+        # Parse time
+        try:
+            if len(time_text) == 5:
+                datetime.strptime(time_text, "%H:%M")
+                parsed_time = f"{time_text}:00"
+            elif len(time_text) == 8:
+                datetime.strptime(time_text, "%H:%M:%S")
+                parsed_time = time_text
+            else:
+                self.timestamp_info_label.setVisible(False)
+                return
+        except Exception:
+            self.timestamp_info_label.setVisible(False)
+            return
+
+        # Check for timestamp conflicts (use session's user_id and site_id)
+        try:
+            adjusted_date_str, adjusted_time_str, will_adjust = self.facade.timestamp_service.ensure_unique_timestamp(
+                user_id=self.session.user_id,
+                site_id=self.session.site_id,
+                date_val=parsed_date,
+                time_str=parsed_time,
+                exclude_id=self.session.id,
+                event_type="session_end"
+            )
+            
+            if will_adjust:
+                banner_text = f"ℹ️ Time will be adjusted to {adjusted_time_str} ({parsed_time} already in use)"
+                self.timestamp_info_label.setText(banner_text)
+                self.timestamp_info_label.setVisible(True)
+            else:
+                self.timestamp_info_label.setVisible(False)
+        except Exception as e:
+            # Silently hide banner on error
+            self.timestamp_info_label.setVisible(False)
     
     def _get_game_type(self) -> str:
         """Get game type name for this session"""
@@ -4156,7 +4576,7 @@ class EndSessionDialog(QDialog):
             return "—"
         if isinstance(time_val, str):
             # Already formatted as HH:MM:SS or HH:MM
-            return time_val[:5] if len(time_val) >= 5 else time_val
+            return time_val if len(time_val) >= 5 else time_val
         return time_val.strftime("%H:%M") if hasattr(time_val, 'strftime') else str(time_val)
     
     def _toggle_notes(self):
@@ -4180,7 +4600,8 @@ class EndSessionDialog(QDialog):
         self.date_edit.setText(date.today().strftime("%m/%d/%y"))
 
     def _set_now(self):
-        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+        """Set time to current time with seconds precision."""
+        self.time_edit.setText(datetime.now().strftime("%H:%M:%S"))
 
     def _pick_date(self):
         dialog = QDialog(self)

@@ -45,7 +45,7 @@ class ModernPurchaseDialog(QtWidgets.QDialog):
         self.calendar_btn.clicked.connect(self._pick_date)
 
         self.time_edit = QtWidgets.QLineEdit()
-        self.time_edit.setPlaceholderText("HH:MM")
+        self.time_edit.setPlaceholderText("HH:MM:SS")
         self.now_btn = QtWidgets.QPushButton("Now")
         self.now_btn.clicked.connect(self._set_now)
 
@@ -642,7 +642,7 @@ class ModernPurchaseDialog(QtWidgets.QDialog):
         self.date_edit.setText(date.today().strftime("%m/%d/%y"))
 
     def _set_now(self):
-        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+        self.time_edit.setText(datetime.now().strftime("%H:%M:%S"))
     
     def get_date(self) -> date:
         """Parse and return date"""
@@ -829,7 +829,7 @@ class ModernPurchaseDialog(QtWidgets.QDialog):
         if self.purchase.purchase_time:
             time_str = self.purchase.purchase_time
             if len(time_str) > 5:
-                time_str = time_str[:5]
+                time_str = time_str
             self.time_edit.setText(time_str)
 
         user_name = getattr(self.purchase, "user_name", None)
@@ -941,7 +941,8 @@ class ModernPurchaseViewDialog(QtWidgets.QDialog):
                 return str(value)
 
         def format_time(value):
-            return value[:5] if value else "—"
+            """Format time for display with full HH:MM:SS precision (Issue #90)"""
+            return value if value else "—"
 
         # Section 1: When (Date/Time)
         section1_header = self._create_section_header("📅  When")
@@ -1485,7 +1486,7 @@ class ModernPurchaseViewDialog(QtWidgets.QDialog):
         if self.purchase.purchase_time:
             time_str = self.purchase.purchase_time
             if len(time_str) > 5:
-                time_str = time_str[:5]
+                time_str = time_str
             self.time_edit.setText(time_str)
 
         user_name = getattr(self.purchase, "user_name", None)
@@ -1540,7 +1541,7 @@ class ModernPurchaseViewDialog(QtWidgets.QDialog):
         self.date_edit.setText(date.today().strftime("%m/%d/%y"))
     
     def _set_now(self):
-        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+        self.time_edit.setText(datetime.now().strftime("%H:%M:%S"))
     
     def _on_user_changed(self, _value: str = ""):
         user_name = self.user_combo.currentText().strip()

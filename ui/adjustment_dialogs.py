@@ -10,6 +10,12 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QDate, QTime, Signal
 from PySide6.QtGui import QColor
+from tools.time_utils import (
+    parse_time_input,
+    current_time_with_seconds,
+    format_time_display,
+    time_to_db_string,
+)
 
 
 class BasisAdjustmentDialog(QDialog):
@@ -129,8 +135,8 @@ class BasisAdjustmentDialog(QDialog):
         time_layout.setSpacing(4)
         
         self.time_edit = QLineEdit()
-        self.time_edit.setPlaceholderText("HH:MM")
-        self.time_edit.setFixedWidth(90)
+        self.time_edit.setPlaceholderText("HH:MM:SS")
+        self.time_edit.setFixedWidth(110)
         time_layout.addWidget(self.time_edit)
         
         now_btn = QPushButton("Now")
@@ -237,7 +243,8 @@ class BasisAdjustmentDialog(QDialog):
     
     def _set_now(self):
         """Set time to current time"""
-        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+        current_time = current_time_with_seconds()
+        self.time_edit.setText(format_time_display(current_time))
     
     def _pick_date(self):
         """Show calendar picker"""
@@ -525,8 +532,8 @@ class CheckpointDialog(QDialog):
         time_layout.setSpacing(4)
         
         self.time_edit = QLineEdit()
-        self.time_edit.setPlaceholderText("HH:MM")
-        self.time_edit.setFixedWidth(90)
+        self.time_edit.setPlaceholderText("HH:MM:SS")
+        self.time_edit.setFixedWidth(110)
         time_layout.addWidget(self.time_edit)
         
         now_btn = QPushButton("Now")
@@ -644,7 +651,8 @@ class CheckpointDialog(QDialog):
     
     def _set_now(self):
         """Set time to current time"""
-        self.time_edit.setText(datetime.now().strftime("%H:%M"))
+        current_time = current_time_with_seconds()
+        self.time_edit.setText(format_time_display(current_time))
     
     def _pick_date(self):
         """Show calendar picker"""

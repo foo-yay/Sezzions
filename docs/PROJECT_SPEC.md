@@ -177,11 +177,69 @@ So if redeemable SC appears between sessions (becomes discoverable at next start
 
 Tax-session logic is high-risk correctness territory. Any changes must be anchored by explicit scenario tests (hand-computable datasets) and validated via full recalculation.
 
-### 4.5 Adjustments & Corrections
+### 4.5 Cross-Event Timestamp Uniqueness (Issue #90)
+
+To maintain data integrity and prevent ambiguous event ordering, Sezzions enforces **cross-event timestamp uniqueness** across all transaction and session event types.
+
+#### Uniqueness Rules
+
+- **Event types**: purchases, redemptions, session_start, session_end
+- **Scope**: Per (user_id, site_id) pair
+- **Enforcement**: `services/timestamp_service.py` → `ensure_unique_timestamp(user_id, site_id, date_str, time_str, event_type, exclude_id)`
+- **Behavior**: If the requested timestamp conflicts with an existing event, auto-increment by 1 second until unique (max 3600 attempts)
+- **Return value**: `(adjusted_date_str, adjusted_time_str, was_adjusted)`
+
+#### UI Integration (Real-Time Warnings)
+
+**Affected dialogs**: All transaction/event entry/edit dialogs:
+- PurchaseDialog, EditPurchaseDialog
+- RedemptionDialog, EditRedemptionDialog
+- StartSessionDialog, EditSessionDialog
+- EndSessionDialog
+- EditClosedSessionDialog (two banners: start and end timestamps)
+
+**Banner behavior**:
+- QLabel with `ObjectName="HelperText"`, `status="info"`
+- Text: "ℹ️ Time will be adjusted to HH:MM:SS (original already in use)"
+- Hidden by default; shown when conflicts detected
+- Connected to user/site/date/time field changes via `_update_timestamp_info()` methods
+- Uses `ensure_unique_timestamp()` to check for conflicts and display adjusted time
+
+**Layout management**:
+- Banners inserted into existing datetime_section layouts
+- `updateGeometry()` calls force Qt to recalculate dialog height
+- No explicit height management needed; Qt handles resizing automatically
+
+#### Validation Impact
+
+**Redemption validation** (Issue #90 bug fix):
+- Previously checked for game sessions using user-entered timestamp → false "No game sessions" errors
+- Now uses ADJUSTED timestamp from `ensure_unique_timestamp()` → correct validation
+- Code: `ui/tabs/redemptions_tab.py` lines 1846-1889
+
+**Session end validation**:
+- Previously used wrong event_type ("session_start" instead of "session_end")
+- Fixed to use correct event_type and `self.session.user_id/site_id`
+
+#### Implementation Notes
+
+**Lookup patterns**: Different dialogs use different lookup dictionary patterns:
+- Purchases: `{name.lower(): user_id}` → use `user_id` directly
+- Redemptions: `{name.lower(): id}` → use `id` directly (not `object.id`)
+- Sessions: `{name.lower(): object}` → use `object.id`
+
+**EditClosedSessionDialog**: Requires TWO timestamp banners:
+- `start_timestamp_info_label` (event_type="session_start")
+- `end_timestamp_info_label` (event_type="session_end")
+- Each connected to separate `_update_start_timestamp_info()` and `_update_end_timestamp_info()` methods
+
+**Transaction atomicity**: Timestamp adjustments occur during save operation within `AppFacade` transaction context; rollback on any failure prevents partial writes.
+
+### 4.6 Adjustments & Corrections
 
 Sezzions supports two types of manual adjustments to correct accounting issues or incorporate external data:
 
-#### 4.5.1 Basis Corrections (BASIS_USD_CORRECTION)
+#### 4.6.1 Basis Corrections (BASIS_USD_CORRECTION)
 
 Basis adjustments allow manual corrections to cost basis when errors occur or external factors require adjustment.
 
@@ -191,7 +249,7 @@ Basis adjustments allow manual corrections to cost basis when errors occur or ex
 - **Effective timestamp**: Adjustments participate in FIFO ordering based on their `effective_date` and `effective_time`
 - **Use case example**: A $25 purchase fee was missed; create a +$25 basis adjustment to correct total cost
 
-#### 4.5.2 Balance Checkpoints (BALANCE_CHECKPOINT_CORRECTION)
+#### 4.6.2 Balance Checkpoints (BALANCE_CHECKPOINT_CORRECTION)
 
 Balance checkpoints establish known balances at specific timestamps, overriding prior calculations.
 
@@ -201,7 +259,7 @@ Balance checkpoints establish known balances at specific timestamps, overriding 
 - **Fields**: `checkpoint_total_sc` and `checkpoint_redeemable_sc` specify known balances
 - **Use case example**: After reconciling with casino site, establish a known $1,500 SC balance at a specific date/time
 
-#### 4.5.3 Adjustment Properties
+#### 4.6.3 Adjustment Properties
 
 All adjustments share:
 - **Soft delete**: Adjustments can be deleted without losing audit history (`deleted_at`, `deleted_reason`)
@@ -210,7 +268,7 @@ All adjustments share:
 - **Recalculation trigger**: Creating/deleting/restoring adjustments requires recalculation for the affected (user_id, site_id) pair
 - **Audit fields**: `reason` (required), `notes` (optional), `related_table`/`related_id` (optional foreign reference)
 
-#### 4.5.4 UI Access (Tools Tab)
+#### 4.6.4 UI Access (Tools Tab)
 
 The Tools tab provides:
 - **New Basis Adjustment** dialog: user/site selectors, date/time, delta amount, reason
