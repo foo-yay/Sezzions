@@ -244,6 +244,7 @@ class DatabaseManager:
                 user_id INTEGER NOT NULL,
                 site_id INTEGER NOT NULL,
                 game_id INTEGER,
+                game_type_id INTEGER,
                 session_date TEXT NOT NULL,
                 session_time TEXT DEFAULT '00:00:00',
                 end_date TEXT,
@@ -270,7 +271,8 @@ class DatabaseManager:
                 updated_at TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
-                FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+                FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
+                FOREIGN KEY (game_type_id) REFERENCES game_types(id) ON DELETE SET NULL
             )
         ''')
 
@@ -544,6 +546,7 @@ class DatabaseManager:
                         user_id INTEGER NOT NULL,
                         site_id INTEGER NOT NULL,
                         game_id INTEGER,
+                        game_type_id INTEGER,
                         session_date TEXT NOT NULL,
                         session_time TEXT DEFAULT '00:00:00',
                         end_date TEXT,
@@ -571,7 +574,8 @@ class DatabaseManager:
                         updated_at TIMESTAMP,
                         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                         FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
-                        FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+                        FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
+                        FOREIGN KEY (game_type_id) REFERENCES game_types(id) ON DELETE SET NULL
                     )
                 ''')
 
@@ -580,6 +584,7 @@ class DatabaseManager:
                     "user_id",
                     "site_id",
                     "game_id",
+                    "game_type_id",
                     "session_date",
                     "session_time",
                     "end_date",
@@ -622,6 +627,7 @@ class DatabaseManager:
         
         # Add missing columns
         migrations = [
+            ("game_type_id", "INTEGER REFERENCES game_types(id) ON DELETE SET NULL"),
             ("starting_redeemable", "TEXT DEFAULT '0.00'"),
             ("ending_redeemable", "TEXT DEFAULT '0.00'"),
             ("end_date", "TEXT"),

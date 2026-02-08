@@ -30,6 +30,7 @@ class GameSessionRepository:
             user_id=row["user_id"],
             site_id=row["site_id"],
             game_id=row["game_id"],
+            game_type_id=row_value("game_type_id"),
             session_date=row["session_date"],
             end_date=row_value("end_date"),
             end_time=row_value("end_time"),
@@ -133,14 +134,14 @@ class GameSessionRepository:
         """Create a new session"""
         query = """
             INSERT INTO game_sessions (
-                user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+                user_id, site_id, game_id, game_type_id, session_date, session_time, end_date, end_time,
                 starting_balance, ending_balance, starting_redeemable, ending_redeemable,
                 purchases_during, redemptions_during, wager_amount, rtp,
                 expected_start_total, expected_start_redeemable,
                 discoverable_sc, delta_total, delta_redeem,
                 session_basis, basis_consumed, net_taxable_pl,
                 status, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         def str_or_none(val):
             return str(val) if val is not None else None
@@ -148,7 +149,7 @@ class GameSessionRepository:
         session_id = self.db.execute(
             query,
             (
-                session.user_id, session.site_id, session.game_id,
+                session.user_id, session.site_id, session.game_id, session.game_type_id,
                 session.session_date.isoformat(), session.session_time,
                 session.end_date.isoformat() if session.end_date else None,
                 session.end_time,
@@ -174,7 +175,7 @@ class GameSessionRepository:
         """Update an existing session"""
         query = """
             UPDATE game_sessions SET
-                user_id = ?, site_id = ?, game_id = ?, session_date = ?, session_time = ?, end_date = ?, end_time = ?,
+                user_id = ?, site_id = ?, game_id = ?, game_type_id = ?, session_date = ?, session_time = ?, end_date = ?, end_time = ?,
                 starting_balance = ?, ending_balance = ?, starting_redeemable = ?, ending_redeemable = ?,
                 purchases_during = ?, redemptions_during = ?, wager_amount = ?, rtp = ?,
                 expected_start_total = ?, expected_start_redeemable = ?,
@@ -189,7 +190,7 @@ class GameSessionRepository:
         self.db.execute(
             query,
             (
-                session.user_id, session.site_id, session.game_id,
+                session.user_id, session.site_id, session.game_id, session.game_type_id,
                 session.session_date.isoformat(), session.session_time,
                 session.end_date.isoformat() if session.end_date else None,
                 session.end_time,

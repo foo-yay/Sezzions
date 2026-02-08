@@ -15,9 +15,14 @@ Rules:
 id: 2026-02-07-01
 type: fix
 areas: [services, ui]
-summary: "Fix game_id/game_type updates not persisting for active sessions (Issue #82)"
+summary: "Fix game_id/game_type updates not persisting for active sessions; add game_type_id field (Issue #82)"
 files_changed:
+  - models/game_session.py
+  - repositories/database.py
+  - repositories/game_session_repository.py
   - services/game_session_service.py
+  - app_facade.py
+  - ui/tabs/game_sessions_tab.py
   - tests/integration/test_issue_82_edit_active_session_game_type.py
 issue: 82
 pr: 83
@@ -26,13 +31,13 @@ pr: 83
 Notes:
 - Root cause: `update_session()` kwargs handler skipped `None` values with `if value is not None`.
 - This prevented clearing game_id (setting it to None) when user removes game from active session.
-- Fix: Special-case `game_id` in kwargs to allow None values (game removal).
-- Also applies to changing game_id to a different game.
-- Added comprehensive integration tests:
-  - Verify UI fields are enabled for editing
-  - Test changing game_id to a different game
-  - Test removing game_id (setting to None) — this was the reported bug
-- All 729 tests pass after fix.
+- Fix: Special-case `game_id` and `game_type_id` in kwargs to allow None values (game removal).
+- **Database schema change**: Added `game_type_id` column to `game_sessions` table to support storing Game Type without a specific Game.
+- Workflow change: Users can now select Game Type alone without selecting a specific Game.
+  - Game Type is required IF there is a Game
+  - Game Type is optional and can be stored by itself
+- Migration automatically adds `game_type_id` column to existing databases.
+- All 729 tests pass after changes.
 
 ## 2026-02-06
 

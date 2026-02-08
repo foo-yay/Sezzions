@@ -36,7 +36,8 @@ class GameSessionService:
         user_id: int,
         site_id: int,
         game_id: Optional[int],
-        session_date: date,
+        game_type_id: Optional[int] = None,
+        session_date: date = None,
         starting_balance: Decimal = Decimal("0.00"),
         ending_balance: Decimal = Decimal("0.00"),
         starting_redeemable: Decimal = Decimal("0.00"),
@@ -74,8 +75,9 @@ class GameSessionService:
         session = GameSession(
             user_id=user_id,
             site_id=site_id,
-            game_id=game_id,
             session_date=session_date,
+            game_id=game_id,
+            game_type_id=game_type_id,
             starting_balance=starting_balance,
             ending_balance=ending_balance,
             starting_redeemable=starting_redeemable,
@@ -162,13 +164,15 @@ class GameSessionService:
             session.notes = notes
         
         # Handle other kwargs (for compatibility)
-        # Special handling for game_id: allow None to clear the game
+        # Special handling for game_id and game_type_id: allow None to clear these fields
         if "game_id" in kwargs:
             session.game_id = kwargs["game_id"]
+        if "game_type_id" in kwargs:
+            session.game_type_id = kwargs["game_type_id"]
         
         # Handle remaining kwargs
         for key, value in kwargs.items():
-            if key != "game_id" and hasattr(session, key) and value is not None:
+            if key not in ("game_id", "game_type_id") and hasattr(session, key) and value is not None:
                 setattr(session, key, value)
 
         target_status = getattr(session, "status", None)

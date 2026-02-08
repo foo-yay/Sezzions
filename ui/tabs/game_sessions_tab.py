@@ -363,6 +363,7 @@ class GameSessionsTab(QWidget):
                     user_id=data["user_id"],
                     site_id=data["site_id"],
                     game_id=data["game_id"],
+                    game_type_id=data["game_type_id"],
                     session_date=data["session_date"],
                     starting_balance=data["starting_total_sc"],
                     ending_balance=Decimal("0.00"),
@@ -427,6 +428,7 @@ class GameSessionsTab(QWidget):
                     "user_id": data["user_id"],
                     "site_id": data["site_id"],
                     "game_id": data["game_id"],
+                    "game_type_id": data["game_type_id"],
                     "session_date": data["session_date"],
                     "starting_balance": data["starting_total_sc"],
                     "starting_redeemable": data["starting_redeemable_sc"],
@@ -597,6 +599,7 @@ class GameSessionsTab(QWidget):
                         user_id=data["user_id"],
                         site_id=data["site_id"],
                         game_id=data["game_id"],
+                        game_type_id=data["game_type_id"],
                         session_date=data["session_date"],
                         starting_balance=data["starting_total_sc"],
                         ending_balance=Decimal("0.00"),
@@ -1762,6 +1765,14 @@ class StartSessionDialog(QDialog):
             if not game:
                 return None, "Please select a valid Game Name for the chosen type."
         game_id = game.id if game else None
+        
+        # Get game_type_id: from selected game, or from game_type selection
+        game_type_id = None
+        if game:
+            game_type_id = game.game_type_id
+        elif game_type:
+            game_type_obj = self._game_type_lookup.get(game_type.lower())
+            game_type_id = game_type_obj.id if game_type_obj else None
 
         user = self._user_lookup.get(user_name.lower())
         site = self._site_lookup.get(site_name.lower())
@@ -1776,6 +1787,7 @@ class StartSessionDialog(QDialog):
             "user_id": user.id,
             "site_id": site.id,
             "game_id": game_id,
+            "game_type_id": game_type_id,
             "starting_total_sc": Decimal(str(start_total)),
             "starting_redeemable_sc": Decimal(str(start_redeem)),
             "notes": notes,

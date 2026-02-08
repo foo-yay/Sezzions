@@ -20,8 +20,9 @@ class GameSession:
     """
     user_id: int
     site_id: int
-    game_id: Optional[int]
     session_date: date
+    game_id: Optional[int] = None
+    game_type_id: Optional[int] = None
     end_date: Optional[date] = None
     end_time: Optional[str] = None
     
