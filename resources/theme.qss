@@ -400,6 +400,14 @@ QWidget#BalanceCheck {
     border-radius: 6px;
     padding: 8px;
 }
+QLabel#InfoBanner {
+    background: #E8F4F8;
+    border: 1px solid #3498db;
+    border-radius: 4px;
+    padding: 6px 10px;
+    color: #2980b9;
+    font-size: 12px;
+}
 QWidget#RemainingBasis {
     background: $surface;
     border: 1px solid $border;

@@ -1336,8 +1336,17 @@ class PurchaseDialog(QtWidgets.QDialog):
         # Balance check (spans all columns)
         balance_container = QtWidgets.QWidget()
         balance_container.setObjectName("BalanceCheck")
-        balance_layout = QtWidgets.QHBoxLayout(balance_container)
+        balance_layout = QtWidgets.QVBoxLayout(balance_container)
         balance_layout.setContentsMargins(8, 8, 8, 8)
+        balance_layout.setSpacing(4)
+        
+        # Timestamp adjustment info banner (hidden by default)
+        self.timestamp_info_label = QtWidgets.QLabel()
+        self.timestamp_info_label.setObjectName("InfoBanner")
+        self.timestamp_info_label.setWordWrap(True)
+        self.timestamp_info_label.setVisible(False)
+        balance_layout.addWidget(self.timestamp_info_label)
+        
         balance_layout.addWidget(self.balance_check_label)
         main_grid.addWidget(balance_container, row, 0, 1, 4)
         
@@ -1667,6 +1676,49 @@ class PurchaseDialog(QtWidgets.QDialog):
         user_id = self._user_lookup[user_text.lower()]
         site_id = self._site_lookup[site_text.lower()]
 
+        # Pre-validate timestamp: check what will actually be saved
+        try:
+            from datetime import datetime as dt_module
+            adjusted_date_str, adjusted_time_str, will_adjust = self.facade.timestamp_service.ensure_unique_timestamp(
+                user_id=user_id,
+                site_id=site_id,
+                date_val=parsed_date,
+                time_str=parsed_time if isinstance(parsed_time, str) else parsed_time.strftime("%H:%M:%S"),
+                exclude_id=self.purchase.id if self.purchase else None,
+                event_type="purchase"
+            )
+            
+            # Show info banner if timestamp will be adjusted
+            if will_adjust:
+                # Convert back to display format
+                from tools.time_utils import format_time_display
+                entered_time_display = format_time_display(parsed_time if isinstance(parsed_time, str) else parsed_time.strftime("%H:%M:%S"))
+                adjusted_time_display = format_time_display(adjusted_time_str)
+                self.timestamp_info_label.setText(
+                    f"ℹ️ Time will be adjusted to {adjusted_time_display} ({entered_time_display} already in use)"
+                )
+                self.timestamp_info_label.setVisible(True)
+            else:
+                self.timestamp_info_label.setVisible(False)
+            
+            # Convert adjusted timestamp back to date/time objects for validation
+            if isinstance(adjusted_date_str, str):
+                validation_date = dt_module.strptime(adjusted_date_str, "%Y-%m-%d").date()
+            else:
+                validation_date = adjusted_date_str
+            
+            # Parse adjusted time string to time object
+            if isinstance(adjusted_time_str, str):
+                validation_time = dt_module.strptime(adjusted_time_str, "%H:%M:%S").time()
+            else:
+                validation_time = adjusted_time_str
+            
+        except Exception as e:
+            # If timestamp service fails, fall back to using entered values
+            validation_date = parsed_date
+            validation_time = parsed_time if isinstance(parsed_time, str) else dt_module.strptime(parsed_time, "%H:%M:%S").time() if isinstance(parsed_time, str) else parsed_time
+            self.timestamp_info_label.setVisible(False)
+
         # When editing, exclude the purchase being edited from expected balance calculation
         exclude_purchase_id = self.purchase.id if self.purchase else None
         
@@ -1680,22 +1732,25 @@ class PurchaseDialog(QtWidgets.QDialog):
         # Calculate the pre-purchase balance (what balance was BEFORE this purchase)
         pre_purchase_balance = Decimal(str(start_sc_val)) - sc_received_val
         
-        # Get previous purchases in this basis period
+        # Get previous purchases in this basis period (use adjusted timestamp)
+        # Convert time object to string if needed
+        validation_time_str = validation_time.strftime("%H:%M:%S") if hasattr(validation_time, 'strftime') else validation_time
+        
         period_purchases = self.facade.get_basis_period_purchases(
             user_id=user_id,
             site_id=site_id,
-            purchase_date=parsed_date,
-            purchase_time=parsed_time,
+            purchase_date=validation_date,
+            purchase_time=validation_time_str,
             exclude_purchase_id=exclude_purchase_id
         )
         
-        # Determine expected pre-purchase balance using the same logic as the submission check
+        # Determine expected pre-purchase balance using the ADJUSTED timestamp
         # Always use compute_expected_balances to respect checkpoints and adjustments
         expected_total, _expected_redeem = self.facade.compute_expected_balances(
             user_id=user_id,
             site_id=site_id,
-            session_date=parsed_date,
-            session_time=parsed_time,
+            session_date=validation_date,
+            session_time=validation_time_str,
             exclude_purchase_id=exclude_purchase_id
         )
         
