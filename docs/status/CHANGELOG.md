@@ -19,7 +19,7 @@ summary: "Fix session-event links not updated when events added/edited (Issue #8
 files_changed:
   - app_facade.py
 issue: 84
-pr: TBD
+pr: 85
 ```
 
 Notes:
