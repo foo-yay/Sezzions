@@ -2664,6 +2664,14 @@ class EditClosedSessionDialog(QDialog):
                 return None, "Please select a valid Game Name for the chosen type."
             game_id = game.id
         
+        # Get game_type_id: from selected game, or from game_type selection
+        game_type_id = None
+        if game:
+            game_type_id = game.game_type_id
+        elif game_type:
+            game_type_obj = self._game_type_lookup.get(game_type.lower())
+            game_type_id = game_type_obj.id if game_type_obj else None
+        
         # Validate wager amount
         wager_str = self.wager_edit.text().strip()
         wager_amount = None
@@ -2723,6 +2731,7 @@ class EditClosedSessionDialog(QDialog):
             "user_id": user.id,
             "site_id": site.id,
             "game_id": game_id,
+            "game_type_id": game_type_id,
             "game_name": game_name,
             "starting_total_sc": Decimal(str(start_total)),
             "starting_redeemable_sc": Decimal(str(start_redeem)),
