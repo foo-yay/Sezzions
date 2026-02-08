@@ -48,9 +48,20 @@ class MainWindow(QtWidgets.QMainWindow):
         height = self.settings.get('window_height', 900)
         self.resize(width, height)
         
-        # Create central widget and layout
+        # Allow window to be resized below content minimum size
+        self.setMinimumSize(400, 300)
+        
+        # Create scroll area as central widget to allow resizing below content size
+        scroll_area = QtWidgets.QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.setCentralWidget(scroll_area)
+        
+        # Create central widget and layout (now inside scroll area)
         central_widget = QtWidgets.QWidget()
-        self.setCentralWidget(central_widget)
+        scroll_area.setWidget(central_widget)
         layout = QtWidgets.QVBoxLayout(central_widget)
         layout.setContentsMargins(25, 25, 25, 25)
         layout.setSpacing(12)

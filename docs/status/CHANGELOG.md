@@ -12,6 +12,25 @@ Rules:
 ## 2026-02-08
 
 ```yaml
+id: 2026-02-08-02
+type: enhancement
+areas: [ui]
+summary: "Allow main window resize below minimum width with scroll bars (Issue #86)"
+files_changed:
+  - ui/main_window.py
+issue: 86
+pr: 87
+```
+
+Notes:
+- **Enhancement**: Main window can now be resized below the natural content width.
+- Added QScrollArea wrapper around central widget with horizontal/vertical scroll bars as needed.
+- Set minimum window size to 400x300 (previously constrained by content).
+- Useful for smaller screens or side-by-side window viewing.
+- All tabs and functionality remain accessible when scrolled.
+- All 729 tests pass.
+
+```yaml
 id: 2026-02-08-01
 type: fix
 areas: [services, facade]
