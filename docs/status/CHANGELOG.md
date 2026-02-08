@@ -19,7 +19,7 @@ summary: "Allow main window resize below minimum width with scroll bars (Issue #
 files_changed:
   - ui/main_window.py
 issue: 86
-pr: TBD
+pr: 87
 ```
 
 Notes:
