@@ -102,6 +102,14 @@ When editing a purchase or creating/editing a game session, the system computes 
 - **Warning behavior:** Warns on ANY non-zero `total_extra` (no tolerance). Real-time label shows "✓ Balance Check: OK" or "✗ Balance Check: X.XX SC HIGHER/LOWER than expected (Y.YY SC)".
 - **UI visibility:** Purchase View dialog's Related tab includes a "Full Basis Period" section showing ALL purchases (past, current, future) in the basis period. Current purchase shown in **bold**. View Purchase buttons enable easy navigation through the purchase chain.
 
+**Active session warning (Issue #88, 2026-02-08):**
+- When saving a purchase for a (user, site) pair with an **Active** gaming session, the UI shows a blocking confirmation dialog before save.
+- Dialog displays session details: start date/time, game/game type, starting balance, and reminds user to verify Post-Purchase SC accuracy.
+- If user confirms, purchase is saved and explicitly linked to the active session with relation `DURING`.
+- Success message includes a "View Session" button to navigate directly to the linked session.
+- **Link Builder Enhancement:** Link rebuilder now classifies purchases as `DURING` for active sessions (timestamp >= session start) in addition to closed sessions (timestamp within session window).
+- Rationale: "Current SC" is a moving target during play; explicit confirmation reduces risk of incorrect balance entry and ensures immediate session-event linkage.
+
 ### 4.3 Cashflow P/L
 
 - Cashflow P/L is primarily produced from redemptions (payout vs basis).
@@ -155,8 +163,11 @@ So if redeemable SC appears between sessions (becomes discoverable at next start
 
 #### Basis consumption and cash-in/cash-out alignment
 
-- `basis_consumed` is **not** simply “cash spent this session”. It is consumed when locked/bonus SC is processed into redeemable through play, and it can draw from a rolling pending-basis pool.
-- As a result, **single-session net taxable P/L may diverge from a simple money-in/money-out story** whenever:
+- `basis_consumed` is **not** simply “cash spent this session”. It is consumed when locked/bonus SC is processed into redeemable through play, and it can draw from a rolling pending-basis pool.- **Calculation**: The amount of locked SC processed is calculated as: `locked_start + purchases_during_sc - locked_end`, where:
+  - `locked_start` = locked SC at session start
+  - `purchases_during_sc` = total SC from purchases made during the session (linked as DURING)
+  - `locked_end` = locked SC at session end
+  - This ensures purchases made during an active session are properly accounted for in basis consumption.- As a result, **single-session net taxable P/L may diverge from a simple money-in/money-out story** whenever:
   - purchases are not fully “processed” (locked SC remains locked),
   - basis is carried across sessions (pending basis pool is non-zero),
   - or session segmentation/balances are inaccurate.
