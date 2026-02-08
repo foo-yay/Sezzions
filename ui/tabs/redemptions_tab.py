@@ -469,6 +469,8 @@ class RedemptionsTab(QtWidgets.QWidget):
                     notes=dialog.notes_edit.toPlainText() or None
                 )
                 self.refresh_data()
+                if hasattr(self, "main_window") and self.main_window is not None:
+                    self.main_window.refresh_all_tabs()
 
                 QtWidgets.QMessageBox.information(
                     self, "Success", f"Redemption of ${float(redemption.amount):.2f} created"
@@ -653,6 +655,8 @@ class RedemptionsTab(QtWidgets.QWidget):
                     )
                 
                 self.refresh_data()
+                if hasattr(self, "main_window") and self.main_window is not None:
+                    self.main_window.refresh_all_tabs()
                 QtWidgets.QMessageBox.information(
                     self, "Success", "Redemption updated"
                 )
