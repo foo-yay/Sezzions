@@ -12,6 +12,33 @@ Rules:
 ## 2026-02-08
 
 ```yaml
+id: 2026-02-08-05
+type: enhancement
+areas: [ui, services]
+summary: "Add timestamp conflict banners to all dialogs (Issue #90)"
+files_changed:
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/game_sessions_tab.py
+issue: 90
+pr: 91
+```
+
+Notes:
+- **Enhancement**: Added real-time timestamp conflict warning banners to RedemptionDialog, EditClosedSessionDialog, and EndSessionDialog.
+- **User Experience**: All transaction/event dialogs now show an informational banner when the user-entered timestamp conflicts with existing events (purchases, redemptions, session starts, session ends).
+- **Banner behavior**: Shows "ℹ️ Time will be adjusted to HH:MM:SS (original already in use)" when conflicts detected; auto-hides when timestamp is unique.
+- **Cross-event uniqueness**: Enforces uniqueness across ALL event types using `timestamp_service.ensure_unique_timestamp()`.
+- **Bug fixes**:
+  - Fixed RedemptionDialog lookup bug (user_id/site_id are integers, not objects with .id attributes)
+  - Fixed EndSessionDialog to use `self.session.user_id/site_id` instead of non-existent combo boxes
+  - Fixed EndSessionDialog to use correct event_type ("session_end" instead of "session_start")
+  - Fixed redemption validation to use ADJUSTED timestamps (prevents false "No game sessions" errors)
+- **Layout improvements**: Removed excessive height adjustment; Qt's `updateGeometry()` now handles dialog resizing automatically.
+- All 764 tests pass.
+
+---
+
+```yaml
 id: 2026-02-08-04
 type: bug-fix
 areas: [services]
