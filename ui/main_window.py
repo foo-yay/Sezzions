@@ -778,12 +778,10 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def _show_audit_log(self):
         """Show audit log viewer dialog (Issue #92)"""
-        # Placeholder for now; will be implemented in Task 7
-        QtWidgets.QMessageBox.information(
-            self,
-            "Audit Log",
-            "Audit Log viewer coming soon (Task 7)"
-        )
+        from ui.audit_log_viewer_dialog import AuditLogViewerDialog
+        
+        dialog = AuditLogViewerDialog(self.facade.audit_service, parent=self)
+        dialog.exec()
     
     def _update_undo_redo_states(self):
         """Update undo/redo action enabled states based on stack availability (Issue #92)"""
