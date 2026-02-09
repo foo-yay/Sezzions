@@ -324,7 +324,7 @@ class GameSessionService:
                 )
     
     def delete_sessions_bulk(self, session_ids: List[int]) -> None:
-        """Delete multiple sessions efficiently in a single transaction"""
+        """Delete multiple sessions efficiently in a single transaction (soft delete)"""
         if not session_ids:
             return
         
@@ -340,14 +340,31 @@ class GameSessionService:
             if session:
                 self._remove_session_from_game_rtp(session)
         
-        # Delete all sessions in one transaction
+        # Soft delete all sessions in one transaction
         conn = self.session_repo.db._connection
         cursor = conn.cursor()
         placeholders = ','.join(['?'] * len(session_ids))
-        cursor.execute(f"DELETE FROM game_sessions WHERE id IN ({placeholders})", session_ids)
+        cursor.execute(
+            f"UPDATE game_sessions SET deleted_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})",
+            session_ids
+        )
         conn.commit()
         
         # Log bulk deletion to audit
+        if self.audit_service:
+            for session in sessions:
+                if session:
+                    old_data = asdict(session)
+                    self.audit_service.log_delete('game_sessions', session.id, old_data, group_id=group_id, auto_commit=False)
+            conn.commit()  # Commit audit entries
+        
+        # Log to undo/redo stack
+        if self.undo_redo_service:
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Delete {len([s for s in sessions if s])} session(s)",
+                timestamp=datetime.now().isoformat()
+            )
         if self.audit_service:
             for session in sessions:
                 if session:
