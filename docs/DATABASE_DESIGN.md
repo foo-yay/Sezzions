@@ -440,6 +440,7 @@ CREATE TABLE users (
 - **JSON Snapshots:** `old_data` and `new_data` store complete record state as JSON TEXT, enabling atomic rollback via `UndoRedoService`.
 - **group_id:** UUID linking related audit entries (e.g., multi-table cascading deletes, bulk imports). Used by undo/redo to atomically reverse operation groups.
 - **Undo/Redo:** Persistent stacks stored in `settings` table. Service layer uses audit log to reverse/replay operations.
+- **Architectural Decision (ADR-0002):** Audit logging is performed at the **service layer** (not centralized in AppFacade). Each service's CRUD methods call `audit_service.log_create/update/delete()` directly after repository operations. This ensures atomicity (services own transactions), simplicity (services know what changed), and type safety (no reflection). See [docs/adr/0002-audit-logging-at-service-layer.md](adr/0002-audit-logging-at-service-layer.md) for full rationale.
 
 ---
 

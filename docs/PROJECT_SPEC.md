@@ -275,6 +275,142 @@ The Tools tab provides:
 - **New Balance Checkpoint** dialog: user/site selectors, date/time, total SC, redeemable SC, reason
 - **View Adjustments** dialog: table view with filters, soft delete, restore functionality
 
+### 4.7 Audit Logging, Soft Delete, and Undo/Redo (Issue #92)
+
+Sezzions provides comprehensive audit trails, soft deletion for core entities, and Excel-like in-order undo/redo functionality to enable safe data recovery and change tracking.
+
+#### 4.7.1 Soft Delete for Core Entities
+
+**Schema:**
+- `purchases.deleted_at TIMESTAMP NULL`
+- `redemptions.deleted_at TIMESTAMP NULL`
+- `game_sessions.deleted_at TIMESTAMP NULL`
+- Indexes: `idx_purchases_deleted`, `idx_redemptions_deleted`, `idx_sessions_deleted`
+
+**Behavior:**
+- "Delete" operations set `deleted_at = CURRENT_TIMESTAMP` instead of removing rows
+- All default queries filter `WHERE deleted_at IS NULL`
+- Soft-deleted records are excluded from calculations, reports, and UI lists
+- Records can be restored by clearing `deleted_at` (via undo/redo or explicit restore)
+
+**Rationale:**
+- Enables recovery from accidental deletions
+- Preserves audit history
+- Supports undo/redo without data loss
+
+#### 4.7.2 Audit Logging
+
+**Purpose:**
+Capture a durable, structured log of all CRUD operations on core entities (purchases, redemptions, game_sessions) with sufficient detail to drive undo/redo and provide compliance/debugging trails.
+
+**Schema (`audit_log` table):**
+- `action`: CREATE, UPDATE, DELETE, RESTORE, UNDO, REDO
+- `table_name`: Entity table (purchases, redemptions, game_sessions)
+- `record_id`: Primary key of affected record
+- `user_name`: Operator (defaults to "system")
+- `timestamp`: Operation timestamp (CURRENT_TIMESTAMP)
+- `details`: Human-readable summary
+- `old_data`: JSON snapshot before change (TEXT, nullable)
+- `new_data`: JSON snapshot after change (TEXT, nullable)
+- `group_id`: UUID linking related operations (e.g., bulk deletes)
+
+**Implementation Architecture:**
+Audit logging happens at the **service layer** (not AppFacade). See ADR-0002 for detailed rationale.
+
+**Pattern (service methods):**
+```python
+# UPDATE example
+def update_entity(self, entity_id, **kwargs):
+    entity = self.repo.get_by_id(entity_id)
+    old_data = asdict(entity)  # Capture BEFORE mutations
+    
+    # Apply changes...
+    result = self.repo.update(entity)
+    
+    if self.audit_service:
+        self.audit_service.log_update('table', entity.id, old_data, asdict(result))
+    return result
+```
+
+**Key characteristics:**
+- Services own audit logging (purchases, redemptions, sessions)
+- `old_data` captured immediately after fetch, before any modifications
+- `AuditService` injected via property (not constructor) in `AppFacade`
+- `auto_commit=True` by default; services can use `auto_commit=False` for explicit transaction management
+- Bulk operations use `group_id` to link related audits
+- Snapshots use `dataclasses.asdict()` to serialize model state as JSON
+
+**Atomicity:**
+- Audit calls happen within the same service method as data mutation
+- Services manage transactional boundaries
+- Audit logging uses `auto_commit` parameter to participate in parent transactions
+- If operation fails, both data change and audit log roll back together
+
+#### 4.7.3 In-Order Undo/Redo
+
+**Behavior:**
+Excel-like undo/redo: strictly in-order (LIFO for undo, FIFO for redo). New operations after undo clear the redo stack.
+
+**Persistence:**
+- Undo/redo stacks stored in `settings` table as JSON arrays
+- Each stack entry references an `audit_log` entry via `group_id`
+- Stacks survive app restart
+
+**Service (`UndoRedoService`):**
+- `can_undo()` / `can_redo()`: Check stack state (for UI enable/disable)
+- `undo()`: Pop undo stack, reverse operation, push to redo stack
+- `redo()`: Pop redo stack, replay operation, push to undo stack
+- `record_undoable(group_id)`: Push new operation to undo stack, clear redo stack
+
+**Reversal strategy:**
+- CREATE → soft-delete
+- UPDATE → restore old snapshot
+- DELETE → restore (clear deleted_at)
+- Operations go through same service layer to ensure downstream recalculation
+
+**Limitations:**
+- Cannot selectively undo past operations (no "undo item from last week")
+- Stack cleared on certain operations (e.g., bulk rebuild, schema migration)
+- UI must call `_update_undo_redo_states()` after operations to refresh menu states
+
+#### 4.7.4 UI Access
+
+**Main Menu (Tools):**
+- **Undo** (Ctrl+Z / Cmd+Z): Undo last operation
+- **Redo** (Ctrl+Shift+Z / Cmd+Shift+Z): Redo last undone operation
+- **View Audit Log…**: Open audit viewer dialog
+- Actions disabled when stacks are empty
+
+**Tools Tab (Setup → Tools):**
+- **Audit Log section**: Collapsible section with description of audit capabilities
+- **Open Audit Log…** button: Opens viewer dialog
+
+**Audit Log Viewer Dialog:**
+- Filters: Date range, table name, action type, search text
+- Table columns: Timestamp, User, Action, Entity, Record ID, Summary
+- Details panel: Expandable JSON view of old_data/new_data
+- Future: Export to CSV (currently out of scope)
+
+**Undo/Redo Confirmation:**
+- Simple confirmation dialog: "Undo last change? This will recalculate derived totals."
+- No "undo preview" (complex to implement accurately)
+
+#### 4.7.5 Architectural Decision (ADR-0002)
+
+Audit logging was implemented at the **service layer** rather than centralized in `AppFacade`, despite the Issue #92 preference for centralization.
+
+**Rationale:**
+- Atomicity: Services own transactional boundaries
+- Simplicity: Services know what changed (old vs new state)
+- Type safety: No reflection/introspection needed
+- Flexibility: Per-entity customization possible
+
+**Trade-offs:**
+- Distributed code (audit calls in multiple services)
+- Requires discipline when adding new CRUD methods
+
+See `docs/adr/0002-audit-logging-at-service-layer.md` for full justification.
+
 ## 5) UI/UX (Product Behavior)
 
 ### Navigation

@@ -44,6 +44,8 @@ branch: feature/issue-92-audit-undo-soft-delete
 **Services:**
 - **AuditService** (`services/audit_service.py`): Structured audit logging with JSON snapshots (`old_data`, `new_data`), `group_id` for operation grouping, `auto_commit` flag for transactional logging. Methods: `log_create/update/delete/restore/undo/redo`, `get_audit_log(filters)`, `generate_group_id()`.
 - **UndoRedoService** (`services/undo_redo_service.py`): Persistent undo/redo stacks (stored in `settings` table as JSON). `undo()` reverses audit entries in LIFO order; `redo()` replays in FIFO order. Excel-like behavior: new operations clear redo stack. Atomic rollback via `_reverse_audit_entry()` and `_replay_audit_entry()`.
+- **Service-layer audit integration**: All CRUD methods in `PurchaseService`, `RedemptionService`, and `GameSessionService` call `audit_service.log_create/update/delete()` directly. Audit logging happens at service layer (not AppFacade) to ensure atomicity with data mutations. See ADR-0002 for architectural rationale.
+- **CRUD audit coverage**: CREATE/UPDATE/DELETE operations for purchases, redemptions, and game_sessions all log structured audit entries with before/after snapshots using `dataclasses.asdict()` for serialization.
 
 **Repository Layer:**
 - **Soft delete pattern**: All `delete()` methods converted to `UPDATE SET deleted_at = CURRENT_TIMESTAMP`. Added `restore()` methods to clear `deleted_at`.
@@ -74,6 +76,14 @@ branch: feature/issue-92-audit-undo-soft-delete
 8. `1723415`: Audit Log Viewer dialog
 9. `1fde0ff`: Comprehensive tests (soft delete + audit)
 10. `40cf5a0`: Headless UI smoke tests
+11. `5817a81`: Wire audit_service CREATE operations into services
+12. `35a4562`: Wire UPDATE/DELETE audit logging + fix repo create() return type bug
+13. `1e8b2f4`: Fix missing imports and return statement - all 787 tests passing
+
+**Implementation Notes:**
+- **Architectural Decision (ADR-0002)**: Audit logging implemented at service layer rather than centralized in AppFacade. Rationale: atomicity (services own transactions), simplicity (services know what changed), type safety (no reflection needed). Trade-off: distributed code requires discipline when adding CRUD methods.
+- **Bug fixes during implementation**: Repository `create()` methods return model objects (not int IDs), but services were treating them as IDs. Fixed by using `entity = repo.create(entity)` pattern and accessing `entity.id`.
+- **Snapshot serialization**: Uses `dataclasses.asdict()` since models don't have `to_dict()` methods.
 
 All tests pass (764 existing + 23 new = 787 total).
 
