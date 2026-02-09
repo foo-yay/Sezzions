@@ -294,6 +294,15 @@ class UndoRedoService:
         elif action == "DELETE":
             # Reverse delete: restore full record state from old_data, then clear deleted_at
             if entry.get('old_data'):
+                # Check if record exists before attempting restore
+                check_query = f"SELECT id, deleted_at FROM {table_name} WHERE id = ?"
+                existing = self.db.fetch_one(check_query, (record_id,))
+                if existing:
+                    print(f"[UNDO/REDO DEBUG] Record {record_id} exists before restore: deleted_at={existing.get('deleted_at')}")
+                else:
+                    print(f"[UNDO/REDO DEBUG] ERROR: Record {record_id} does NOT exist in {table_name} before restore!")
+                    return
+                
                 # Parse old_data if it's a JSON string
                 import json
                 old_data = entry['old_data']
