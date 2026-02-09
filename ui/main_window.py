@@ -214,30 +214,33 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Update undo/redo states (Issue #92)
         import sys
-        print(f"[UI INIT] About to call _update_undo_redo_states()", flush=True)
-        sys.stdout.flush()
-        print(f"[UI INIT] facade.undo_redo_service exists: {hasattr(self, 'facade') and hasattr(self.facade, 'undo_redo_service')}", flush=True)
-        sys.stdout.flush()
-        if hasattr(self, 'facade') and hasattr(self.facade, 'undo_redo_service'):
-            print(f"[UI INIT] can_undo(): {self.facade.undo_redo_service.can_undo()}", flush=True)
-            print(f"[UI INIT] can_redo(): {self.facade.undo_redo_service.can_redo()}", flush=True)
-            sys.stdout.flush()
+        with open('/tmp/sezzions_debug.log', 'a') as f:
+            f.write(f"[UI INIT] About to call _update_undo_redo_states()\n")
+            f.write(f"[UI INIT] facade.undo_redo_service exists: {hasattr(self, 'facade') and hasattr(self.facade, 'undo_redo_service')}\n")
+            if hasattr(self, 'facade') and hasattr(self.facade, 'undo_redo_service'):
+                can_undo = self.facade.undo_redo_service.can_undo()
+                can_redo = self.facade.undo_redo_service.can_redo()
+                f.write(f"[UI INIT] can_undo(): {can_undo}\n")
+                f.write(f"[UI INIT] can_redo(): {can_redo}\n")
+                f.write(f"[UI INIT] undo_stack length: {len(self.facade.undo_redo_service._undo_stack)}\n")
+                f.write(f"[UI INIT] redo_stack length: {len(self.facade.undo_redo_service._redo_stack)}\n")
         try:
             self._update_undo_redo_states()
-            print(f"[UI INIT] _update_undo_redo_states() completed successfully", flush=True)
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write(f"[UI INIT] _update_undo_redo_states() completed successfully\n")
         except Exception as e:
-            print(f"[UI INIT] ERROR in _update_undo_redo_states(): {e}", flush=True)
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write(f"[UI INIT] ERROR in _update_undo_redo_states(): {e}\n")
             import traceback
             traceback.print_exc()
-        sys.stdout.flush()
         
         # Debug: Show undo/redo state on startup
         can_undo = self.facade.undo_redo_service.can_undo()
         can_redo = self.facade.undo_redo_service.can_redo()
-        print(f"[UI INIT] After _update_undo_redo_states: can_undo={can_undo}, can_redo={can_redo}", flush=True)
-        print(f"[UI INIT] undo_action.isEnabled(): {self.undo_action.isEnabled()}", flush=True)
-        print(f"[UI INIT] redo_action.isEnabled(): {self.redo_action.isEnabled()}", flush=True)
-        sys.stdout.flush()
+        with open('/tmp/sezzions_debug.log', 'a') as f:
+            f.write(f"[UI INIT] After _update_undo_redo_states: can_undo={can_undo}, can_redo={can_redo}\n")
+            f.write(f"[UI INIT] undo_action.isEnabled(): {self.undo_action.isEnabled()}\n")
+            f.write(f"[UI INIT] redo_action.isEnabled(): {self.redo_action.isEnabled()}\n")
         if can_undo or can_redo:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.information(
