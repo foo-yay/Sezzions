@@ -463,6 +463,9 @@ class DatabaseManager:
             )
         ''')
         
+        # Migration: Add JSON snapshot columns for Issue #92
+        self._migrate_audit_log_table()
+        
         # Settings table (key-value store)
         # Reference: DATABASE_DESIGN.md §13
         cursor.execute('''
@@ -513,6 +516,7 @@ class DatabaseManager:
         # Audit log indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_table ON audit_log(table_name)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_group ON audit_log(group_id)')
         
         # Users indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active)')
@@ -906,6 +910,23 @@ class DatabaseManager:
                 except Exception:
                     pass
 
+    def _migrate_audit_log_table(self):
+        """Add JSON snapshots and group_id columns to audit_log for Issue #92"""
+        cursor = self._connection.cursor()
+        cursor.execute("PRAGMA table_info(audit_log)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        migrations = [
+            ("old_data", "TEXT NULL"),  # JSON snapshot before change
+            ("new_data", "TEXT NULL"),  # JSON snapshot after change
+            ("group_id", "TEXT NULL"),  # UUID grouping related operations (e.g., undo sets)
+        ]
+        for column_name, column_def in migrations:
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE audit_log ADD COLUMN {column_name} {column_def}")
+                except Exception:
+                    pass
+
     def _normalize_time_fields(self):
         """Backfill NULL/blank time strings to '00:00:00' (safe to rerun)."""
         cursor = self._connection.cursor()
@@ -1025,24 +1046,33 @@ class DatabaseManager:
             self._notify_change()
     
     def log_audit(self, action: str, table_name: str, record_id: Optional[int] = None, 
-                  details: Optional[str] = None, user_name: Optional[str] = None):
+                  details: Optional[str] = None, user_name: Optional[str] = None,
+                  old_data: Optional[str] = None, new_data: Optional[str] = None,
+                  group_id: Optional[str] = None, auto_commit: bool = True):
         """
         Log an audit trail entry.
         
         Args:
-            action: Action type (BACKUP, RESTORE, RESET, INSERT, UPDATE, DELETE, etc.)
+            action: Action type (BACKUP, RESTORE, RESET, INSERT, UPDATE, DELETE, UNDO, etc.)
             table_name: Table or entity affected
             record_id: Optional record ID
             details: Optional details text
             user_name: Optional user name (defaults to 'system')
+            old_data: Optional JSON snapshot of data before change (Issue #92)
+            new_data: Optional JSON snapshot of data after change (Issue #92)
+            group_id: Optional UUID grouping related operations (e.g., undo sets) (Issue #92)
+            auto_commit: If True (default), commits immediately; if False, caller must commit
         """
         self._assert_writes_allowed("INSERT")
         cursor = self._connection.cursor()
         cursor.execute(
-            'INSERT INTO audit_log (action, table_name, record_id, details, user_name) VALUES (?, ?, ?, ?, ?)',
-            (action, table_name, record_id, details, user_name or 'system')
+            '''INSERT INTO audit_log 
+               (action, table_name, record_id, details, user_name, old_data, new_data, group_id) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+            (action, table_name, record_id, details, user_name or 'system', old_data, new_data, group_id)
         )
-        self._connection.commit()
+        if auto_commit:
+            self._connection.commit()
     
     def close(self):
         """Close database connection"""
