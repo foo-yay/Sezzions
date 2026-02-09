@@ -217,6 +217,13 @@ class MainWindow(QtWidgets.QMainWindow):
         # Initial state
         self._update_tools_busy_indicator()
         
+        try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] After status bar/tools busy indicator\n")
+                f.flush()
+        except:
+            pass
+        
         # Debounced refresh system (Issue #9)
         self._refresh_timer = QtCore.QTimer(self)
         self._refresh_timer.setSingleShot(True)
@@ -244,6 +251,13 @@ class MainWindow(QtWidgets.QMainWindow):
         """Save Setup sub-tab selection when it changes"""
         self.settings.set('last_setup_subtab', index)
 
+        try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] After theme/tab restoration, before data listeners\n")
+                f.flush()
+        except:
+            pass
+
         # Register for data change events (unified refresh system)
         if hasattr(self.facade, "add_data_change_listener"):
             self.facade.add_data_change_listener(self._on_data_changed)
@@ -252,8 +266,22 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self.facade, "db") and hasattr(self.facade.db, "add_change_listener"):
             self.facade.db.add_change_listener(self._schedule_refresh_all)
         
+        try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] Before _init_notification_system()\n")
+                f.flush()
+        except:
+            pass
+        
         # Initialize notification system
         self._init_notification_system()
+        
+        try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] After _init_notification_system()\n")
+                f.flush()
+        except:
+            pass
 
         # Wire tax withholding service with settings (Issue #29)
         if hasattr(self.facade, 'tax_withholding_service'):
