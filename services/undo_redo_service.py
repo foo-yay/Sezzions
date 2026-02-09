@@ -1,0 +1,323 @@
+"""
+Undo/Redo Service - In-order undo/redo with persistent stacks
+
+Provides Excel-like undo/redo functionality backed by persistent storage.
+Uses audit log snapshots to reconstruct operation state and rollback atomically.
+
+Reference: Issue #92 - Audit Log + Undo/Redo + Soft Delete
+"""
+import json
+from typing import Optional, Dict, Any, List
+from decimal import Decimal
+from datetime import date
+from repositories.database import DatabaseManager
+from services.audit_service import AuditService
+
+
+class UndoOperation:
+    """Represents a single undoable operation"""
+    def __init__(self, group_id: str, description: str, timestamp: str):
+        self.group_id = group_id
+        self.description = description
+        self.timestamp = timestamp
+
+
+class UndoRedoService:
+    """Service for in-order undo/redo with persistent stacks"""
+    
+    def __init__(self, db: DatabaseManager, audit_service: AuditService):
+        self.db = db
+        self.audit_service = audit_service
+        self._undo_stack = []  # List of UndoOperation
+        self._redo_stack = []  # List of UndoOperation
+        self._load_stacks()
+    
+    def _load_stacks(self) -> None:
+        """Load undo/redo stacks from persistent settings"""
+        # Fetch undo stack from settings
+        undo_json = self.db.fetch_one("SELECT value FROM settings WHERE key = ?", ("undo_stack",))
+        if undo_json and undo_json['value']:
+            try:
+                undo_data = json.loads(undo_json['value'])
+                self._undo_stack = [
+                    UndoOperation(op['group_id'], op['description'], op['timestamp'])
+                    for op in undo_data
+                ]
+            except (json.JSONDecodeError, KeyError):
+                self._undo_stack = []
+        
+        # Fetch redo stack from settings
+        redo_json = self.db.fetch_one("SELECT value FROM settings WHERE key = ?", ("redo_stack",))
+        if redo_json and redo_json['value']:
+            try:
+                redo_data = json.loads(redo_json['value'])
+                self._redo_stack = [
+                    UndoOperation(op['group_id'], op['description'], op['timestamp'])
+                    for op in redo_data
+                ]
+            except (json.JSONDecodeError, KeyError):
+                self._redo_stack = []
+    
+    def _save_stacks(self) -> None:
+        """Persist undo/redo stacks to settings table"""
+        undo_data = [
+            {"group_id": op.group_id, "description": op.description, "timestamp": op.timestamp}
+            for op in self._undo_stack
+        ]
+        redo_data = [
+            {"group_id": op.group_id, "description": op.description, "timestamp": op.timestamp}
+            for op in self._redo_stack
+        ]
+        
+        # Upsert undo_stack
+        self.db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            ("undo_stack", json.dumps(undo_data))
+        )
+        
+        # Upsert redo_stack
+        self.db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            ("redo_stack", json.dumps(redo_data))
+        )
+    
+    def can_undo(self) -> bool:
+        """Check if undo is available"""
+        return len(self._undo_stack) > 0
+    
+    def can_redo(self) -> bool:
+        """Check if redo is available"""
+        return len(self._redo_stack) > 0
+    
+    def get_undo_description(self) -> Optional[str]:
+        """Get description of the next undo operation"""
+        if self.can_undo():
+            return self._undo_stack[-1].description
+        return None
+    
+    def get_redo_description(self) -> Optional[str]:
+        """Get description of the next redo operation"""
+        if self.can_redo():
+            return self._redo_stack[-1].description
+        return None
+    
+    def push_operation(self, group_id: str, description: str, timestamp: str) -> None:
+        """
+        Push a new operation onto the undo stack.
+        
+        This is called after a successful CRUD operation to make it undoable.
+        Clears the redo stack (Excel-like behavior).
+        
+        Args:
+            group_id: UUID of the operation group (from audit log)
+            description: Human-readable description
+            timestamp: ISO timestamp of the operation
+        """
+        self._undo_stack.append(UndoOperation(group_id, description, timestamp))
+        self._redo_stack.clear()  # Invalidate redo after new operation
+        self._save_stacks()
+    
+    def undo(self) -> Optional[str]:
+        """
+        Undo the last operation by reversing changes from audit log.
+        
+        Returns:
+            Description of the undone operation, or None if nothing to undo
+        """
+        if not self.can_undo():
+            return None
+        
+        operation = self._undo_stack.pop()
+        
+        # Fetch all audit entries for this group_id
+        audit_entries = self.audit_service.get_audit_log(group_id=operation.group_id, limit=1000)
+        
+        if not audit_entries:
+            # No audit data found; push back to stack
+            self._undo_stack.append(operation)
+            self._save_stacks()
+            return None
+        
+        try:
+            # Begin transaction
+            with self.db.transaction():
+                # Reverse operations in LIFO order (last change first)
+                for entry in audit_entries:
+                    self._reverse_audit_entry(entry)
+                
+                # Log the undo operation
+                affected_records = [
+                    {
+                        "table_name": e['table_name'],
+                        "record_id": e['record_id'],
+                        "old_data": e.get('old_data'),
+                        "new_data": e.get('new_data')
+                    }
+                    for e in audit_entries
+                ]
+                
+                undo_group_id = self.audit_service.generate_group_id()
+                self.audit_service.log_undo(
+                    description=f"Undid: {operation.description}",
+                    affected_records=affected_records,
+                    group_id=undo_group_id,
+                    auto_commit=False  # Within transaction
+                )
+            
+            # Move to redo stack
+            self._redo_stack.append(operation)
+            self._save_stacks()
+            
+            return operation.description
+        
+        except Exception as e:
+            # Rollback happened; restore stack state
+            self._undo_stack.append(operation)
+            self._save_stacks()
+            raise RuntimeError(f"Undo failed: {e}")
+    
+    def redo(self) -> Optional[str]:
+        """
+        Redo the last undone operation by replaying changes from audit log.
+        
+        Returns:
+            Description of the redone operation, or None if nothing to redo
+        """
+        if not self.can_redo():
+            return None
+        
+        operation = self._redo_stack.pop()
+        
+        # Fetch all audit entries for this group_id
+        audit_entries = self.audit_service.get_audit_log(group_id=operation.group_id, limit=1000)
+        
+        if not audit_entries:
+            # No audit data found; push back to stack
+            self._redo_stack.append(operation)
+            self._save_stacks()
+            return None
+        
+        try:
+            # Begin transaction
+            with self.db.transaction():
+                # Replay operations in FIFO order (first change first)
+                for entry in reversed(audit_entries):
+                    self._replay_audit_entry(entry)
+                
+                # Log the redo operation
+                affected_records = [
+                    {
+                        "table_name": e['table_name'],
+                        "record_id": e['record_id'],
+                        "old_data": e.get('old_data'),
+                        "new_data": e.get('new_data')
+                    }
+                    for e in audit_entries
+                ]
+                
+                redo_group_id = self.audit_service.generate_group_id()
+                self.audit_service.log_redo(
+                    description=f"Redid: {operation.description}",
+                    affected_records=affected_records,
+                    group_id=redo_group_id,
+                    auto_commit=False  # Within transaction
+                )
+            
+            # Move back to undo stack
+            self._undo_stack.append(operation)
+            self._save_stacks()
+            
+            return operation.description
+        
+        except Exception as e:
+            # Rollback happened; restore stack state
+            self._redo_stack.append(operation)
+            self._save_stacks()
+            raise RuntimeError(f"Redo failed: {e}")
+    
+    def _reverse_audit_entry(self, entry: Dict[str, Any]) -> None:
+        """
+        Reverse a single audit log entry.
+        
+        For CREATE: soft-delete the record
+        For UPDATE: restore old_data
+        For DELETE: restore the record (clear deleted_at)
+        """
+        action = entry['action']
+        table_name = entry['table_name']
+        record_id = entry['record_id']
+        
+        if action == "CREATE":
+            # Reverse create: soft-delete the record
+            self.db.execute(
+                f"UPDATE {table_name} SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (record_id,)
+            )
+        
+        elif action == "UPDATE":
+            # Reverse update: restore old_data
+            if entry.get('old_data'):
+                self._apply_update(table_name, record_id, entry['old_data'])
+        
+        elif action == "DELETE":
+            # Reverse delete: clear deleted_at
+            self.db.execute(
+                f"UPDATE {table_name} SET deleted_at = NULL WHERE id = ?",
+                (record_id,)
+            )
+    
+    def _replay_audit_entry(self, entry: Dict[str, Any]) -> None:
+        """
+        Replay a single audit log entry (for redo).
+        
+        For CREATE: clear deleted_at (un-soft-delete)
+        For UPDATE: restore new_data
+        For DELETE: re-apply soft delete
+        """
+        action = entry['action']
+        table_name = entry['table_name']
+        record_id = entry['record_id']
+        
+        if action == "CREATE":
+            # Replay create: clear deleted_at
+            self.db.execute(
+                f"UPDATE {table_name} SET deleted_at = NULL WHERE id = ?",
+                (record_id,)
+            )
+        
+        elif action == "UPDATE":
+            # Replay update: restore new_data
+            if entry.get('new_data'):
+                self._apply_update(table_name, record_id, entry['new_data'])
+        
+        elif action == "DELETE":
+            # Replay delete: re-soft-delete
+            self.db.execute(
+                f"UPDATE {table_name} SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (record_id,)
+            )
+    
+    def _apply_update(self, table_name: str, record_id: int, data: Dict[str, Any]) -> None:
+        """
+        Apply an UPDATE by reconstructing SET clause from data dictionary.
+        
+        Skips id, created_at, updated_at, deleted_at (managed by DB).
+        """
+        skip_fields = {'id', 'created_at', 'updated_at', 'deleted_at'}
+        fields = {k: v for k, v in data.items() if k not in skip_fields}
+        
+        if not fields:
+            return
+        
+        set_clause = ", ".join([f"{k} = ?" for k in fields.keys()])
+        values = list(fields.values())
+        values.append(record_id)
+        
+        query = f"UPDATE {table_name} SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        self.db.execute(query, tuple(values))
+    
+    def clear_stacks(self) -> None:
+        """Clear both undo and redo stacks (for testing or reset)"""
+        self._undo_stack.clear()
+        self._redo_stack.clear()
+        self._save_stacks()
