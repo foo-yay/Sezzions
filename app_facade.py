@@ -1727,6 +1727,7 @@ class AppFacade:
                 session.session_date,
                 session.session_time,
             )
+            print(f"[DELETE DEBUG] Triggering recalculation for session {session_id}: user={session.user_id}, site={session.site_id}, from={boundary_date} {boundary_time}")
             # Full recalculation: FIFO + Event Links + Session P/L
             self._rebuild_or_mark_stale(
                 session.user_id,
@@ -1734,6 +1735,7 @@ class AppFacade:
                 boundary_date,
                 boundary_time
             )
+            print(f"[DELETE DEBUG] Recalculation completed for session {session_id}")
 
     def delete_game_sessions_bulk(self, session_ids: List[int]) -> None:
         """Delete multiple game sessions efficiently."""
