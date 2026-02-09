@@ -274,17 +274,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 f.flush()
         except:
             pass
-    
-    def _on_setup_subtab_changed(self, index: int):
-        """Save Setup sub-tab selection when it changes"""
-        self.settings.set('last_setup_subtab', index)
-
-        try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] After theme/tab restoration, before data listeners\n")
-                f.flush()
-        except:
-            pass
 
         # Register for data change events (unified refresh system)
         if hasattr(self.facade, "add_data_change_listener"):
@@ -363,6 +352,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Position bell after initial layout pass
         QtCore.QTimer.singleShot(0, self._position_notification_bell)
+
+    def _on_setup_subtab_changed(self, index: int):
+        """Save Setup sub-tab selection when it changes"""
+        self.settings.set('last_setup_subtab', index)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
