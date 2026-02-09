@@ -1,20 +1,24 @@
 """
 Purchase service - Business logic for Purchase operations
 """
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from decimal import Decimal
 from datetime import date
 from models.purchase import Purchase
 from repositories.purchase_repository import PurchaseRepository
 from repositories.card_repository import CardRepository
 
+if TYPE_CHECKING:
+    from services.audit_service import AuditService
+
 
 class PurchaseService:
     """Business logic for Purchase operations"""
     
-    def __init__(self, purchase_repo: PurchaseRepository, card_repo: Optional[CardRepository] = None):
+    def __init__(self, purchase_repo: PurchaseRepository, card_repo: Optional[CardRepository] = None, audit_service: Optional['AuditService'] = None):
         self.purchase_repo = purchase_repo
         self.card_repo = card_repo
+        self.audit_service = audit_service
     
     def _calculate_cashback(self, amount: Decimal, card_id: Optional[int]) -> Decimal:
         """Calculate cashback based on card rate.
@@ -80,7 +84,18 @@ class PurchaseService:
         )
         
         # Save to database
-        return self.purchase_repo.create(purchase)
+        purchase_id = self.purchase_repo.create(purchase)
+        purchase.id = purchase_id
+        
+        # Log to audit if available
+        if self.audit_service:
+            self.audit_service.log_create(
+                table_name="purchases",
+                record_id=purchase_id,
+                new_data=purchase.to_dict()
+            )
+        
+        return purchase
     
     def update_purchase(self, purchase_id: int, force_site_user_change: bool = False, **kwargs) -> Purchase:
         """Update purchase with business rules validation.

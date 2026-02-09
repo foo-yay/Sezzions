@@ -1,12 +1,15 @@
 """
 Redemption service - Business logic for Redemption operations
 """
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, TYPE_CHECKING
 from decimal import Decimal
 from datetime import date
 from models.redemption import Redemption
 from repositories.redemption_repository import RedemptionRepository
 from services.fifo_service import FIFOService
+
+if TYPE_CHECKING:
+    from services.audit_service import AuditService
 
 
 class RedemptionService:
@@ -21,6 +24,7 @@ class RedemptionService:
         self.redemption_repo = redemption_repo
         self.fifo_service = fifo_service
         self.db = db_manager
+        self.audit_service: Optional['AuditService'] = None
     
     def create_redemption(
         self,
@@ -102,7 +106,16 @@ class RedemptionService:
             redemption._has_fifo_allocation = True
             
             # Save redemption first (without FIFO results)
-            redemption = self.redemption_repo.create(redemption)
+            redemption_id = self.redemption_repo.create(redemption)
+            redemption.id = redemption_id
+            
+            # Log to audit if available
+            if self.audit_service:
+                self.audit_service.log_create(
+                    table_name="redemptions",
+                    record_id=redemption_id,
+                    new_data=redemption.to_dict()
+                )
             
             # Save allocations to redemption_allocations table
             self._save_allocations(redemption.id, allocations)
@@ -122,7 +135,16 @@ class RedemptionService:
             )
         else:
             # Save without FIFO
-            redemption = self.redemption_repo.create(redemption)
+            redemption_id = self.redemption_repo.create(redemption)
+            redemption.id = redemption_id
+            
+            # Log to audit if available
+            if self.audit_service:
+                self.audit_service.log_create(
+                    table_name="redemptions",
+                    record_id=redemption_id,
+                    new_data=redemption.to_dict()
+                )
         
         return redemption
     

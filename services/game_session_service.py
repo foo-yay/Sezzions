@@ -4,13 +4,16 @@ Service layer for GameSession business logic - CORRECT P/L CALCULATION
 CRITICAL: This implements the correct tax calculation algorithm from business_logic.py.
 Do NOT simplify or change this formula without verifying against legacy app.
 """
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, TYPE_CHECKING
 from decimal import Decimal
 from datetime import date, datetime
 from repositories.game_session_repository import GameSessionRepository
 from repositories.site_repository import SiteRepository
 from models.game_session import GameSession
 from services.fifo_service import FIFOService
+
+if TYPE_CHECKING:
+    from services.audit_service import AuditService
 
 
 class GameSessionService:
@@ -30,6 +33,7 @@ class GameSessionService:
         self.redemption_repo = redemption_repo
         self.tax_withholding_service = tax_withholding_service
         self.adjustment_service = adjustment_service
+        self.audit_service: Optional['AuditService'] = None
     
     def create_session(
         self,
@@ -91,7 +95,18 @@ class GameSessionService:
         )
         
         # Save to database
-        created = self.session_repo.create(session)
+        session_id = self.session_repo.create(session)
+        session.id = session_id
+        
+        # Log to audit if available
+        if self.audit_service:
+            self.audit_service.log_create(
+                table_name="game_sessions",
+                record_id=session_id,
+                new_data=session.to_dict()
+            )
+        
+        created = session
 
         # Calculate P/L if requested (recompute chain per legacy algorithm)
         if calculate_pl:
