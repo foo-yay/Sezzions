@@ -9,6 +9,27 @@ Rules:
 
 ---
 
+## 2026-02-09
+
+```yaml
+id: 2026-02-09-01
+type: fix
+areas: [ui, services]
+summary: "Fix undo/redo persistence across app restarts (Issue #92)"
+files_changed:
+  - ui/main_window.py
+```
+
+**Problem:** Undo/redo stacks persisted correctly in database but UI actions remained disabled after app restart due to indentation bug in MainWindow.__init__() that prevented _update_undo_redo_states() from executing.
+
+**Root Cause:** During previous edit, the entire undo/redo initialization section (lines ~220-350) was accidentally indented into the `_on_setup_subtab_changed()` method, causing __init__() to terminate prematurely.
+
+**Fix:** Restored correct method structure - moved undo/redo state update and remaining init code back into __init__() at proper indentation level.
+
+**Verification:** Added extensive checkpoint logging to trace execution flow, identified exact location where init terminated, fixed indentation, confirmed undo/redo actions now enable correctly on restart with persisted stacks (43 undo, 1 redo operations verified).
+
+---
+
 ## 2026-02-08
 
 ```yaml
