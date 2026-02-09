@@ -4,6 +4,7 @@ Service layer for GameSession business logic - CORRECT P/L CALCULATION
 CRITICAL: This implements the correct tax calculation algorithm from business_logic.py.
 Do NOT simplify or change this formula without verifying against legacy app.
 """
+from dataclasses import asdict
 from typing import List, Optional, Tuple, TYPE_CHECKING
 from decimal import Decimal
 from datetime import date, datetime

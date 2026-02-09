@@ -1,6 +1,7 @@
 """
 Redemption service - Business logic for Redemption operations
 """
+from dataclasses import asdict
 from typing import List, Optional, Tuple, TYPE_CHECKING
 from decimal import Decimal
 from datetime import date
@@ -132,6 +133,8 @@ class RedemptionService:
                 payout=amount,
                 net_pl=taxable_profit
             )
+            
+            return redemption
         else:
             # Save without FIFO - returns Redemption with ID set
             redemption = self.redemption_repo.create(redemption)
@@ -155,6 +158,9 @@ class RedemptionService:
         redemption = self.redemption_repo.get_by_id(redemption_id)
         if not redemption:
             raise ValueError(f"Redemption {redemption_id} not found")
+        
+        # Capture old state for audit (BEFORE any modifications)
+        old_data = asdict(redemption)
         
         # Check if FIFO has been allocated
         if redemption.has_fifo_allocation:

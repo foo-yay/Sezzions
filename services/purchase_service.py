@@ -1,6 +1,7 @@
 """
 Purchase service - Business logic for Purchase operations
 """
+from dataclasses import asdict
 from typing import List, Optional, TYPE_CHECKING
 from decimal import Decimal
 from datetime import date
