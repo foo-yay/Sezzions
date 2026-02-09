@@ -208,6 +208,13 @@ class GameSessionsTab(QWidget):
     def refresh_data(self):
         """Standardized refresh method for global refresh system (Issue #9)."""
         self.load_data()
+
+    def _refresh_after_mutation(self) -> None:
+        """Refresh all tabs after a mutation (keeps Unrealized/Realized in sync)."""
+        if self.main_window is not None and hasattr(self.main_window, "refresh_all_tabs"):
+            self.main_window.refresh_all_tabs()
+        else:
+            self.load_data()
     
     def _filter_sessions(self):
         """Filter sessions based on search text"""
@@ -376,7 +383,7 @@ class GameSessionsTab(QWidget):
                     calculate_pl=False,
                 )
                 dialog.accept()
-                self.load_data()
+                self._refresh_after_mutation()
                 QMessageBox.information(self, "Success", "Session started successfully!")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to start session: {e}")
@@ -448,7 +455,7 @@ class GameSessionsTab(QWidget):
                     )
                 self.facade.update_game_session(session_id=session_id, **update_kwargs)
                 dialog.accept()
-                self.load_data()
+                self._refresh_after_mutation()
                 QMessageBox.information(self, "Success", "Session updated successfully!")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to update session: {e}")
@@ -612,7 +619,7 @@ class GameSessionsTab(QWidget):
                         calculate_pl=False,
                     )
                     start_dialog.accept()
-                    self.load_data()
+                    self._refresh_after_mutation()
                     QMessageBox.information(self, "Success", "Session started successfully!")
                 except Exception as e:
                     QMessageBox.critical(self, "Error", f"Failed to start session: {e}")
@@ -638,7 +645,7 @@ class GameSessionsTab(QWidget):
                     recalculate_pl=True,
                 )
                 dialog.accept()
-                self.load_data()
+                self._refresh_after_mutation()
                 if then_start_new:
                     open_prefilled_next_session_dialog(data["ending_total_sc"], data["ending_redeemable_sc"])
                 else:
@@ -756,7 +763,7 @@ class GameSessionsTab(QWidget):
             else:
                 for session_id in ids:
                     self.facade.delete_game_session(session_id)
-            self.load_data()
+            self._refresh_after_mutation()
             QMessageBox.information(self, "Success", "Session(s) deleted successfully!")
         except Exception as e:
             import traceback

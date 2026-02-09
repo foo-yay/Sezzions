@@ -503,8 +503,11 @@ class PurchasesTab(QtWidgets.QWidget):
                 # If there was an active session, create explicit link
                 if active_session_id:
                     self.facade.link_purchase_to_session(purchase.id, active_session_id, relation="DURING")
-                
-                self.refresh_data()
+
+                if hasattr(self, "main_window") and self.main_window is not None:
+                    self.main_window.refresh_all_tabs()
+                else:
+                    self.refresh_data()
                 message = f"Purchase of ${float(purchase.amount):.2f} created"
                 
                 # Show linked session info if applicable
