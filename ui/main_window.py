@@ -25,6 +25,9 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def __init__(self, facade: AppFacade):
         super().__init__()
+        import sys
+        print("[MAIN_WINDOW] __init__ started", flush=True)
+        sys.stdout.flush()
         self.facade = facade
         self.settings = Settings()
         
