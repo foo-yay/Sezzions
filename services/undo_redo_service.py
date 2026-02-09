@@ -294,8 +294,17 @@ class UndoRedoService:
         elif action == "DELETE":
             # Reverse delete: restore full record state from old_data, then clear deleted_at
             if entry.get('old_data'):
+                # Parse old_data if it's a JSON string
+                import json
+                old_data = entry['old_data']
+                if isinstance(old_data, str):
+                    print(f"[UNDO/REDO DEBUG] Parsing old_data from JSON string")
+                    old_data = json.loads(old_data)
+                
+                print(f"[UNDO/REDO DEBUG] old_data type: {type(old_data)}, keys: {list(old_data.keys()) if isinstance(old_data, dict) else 'N/A'}")
+                
                 # First restore the old field values (deleted record still exists with old data)
-                self._apply_update(table_name, record_id, entry['old_data'], repo)
+                self._apply_update(table_name, record_id, old_data, repo)
             
             # Then clear deleted_at to make record visible again
             if repo and hasattr(repo, 'restore'):
