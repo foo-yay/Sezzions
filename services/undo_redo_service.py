@@ -364,6 +364,18 @@ class UndoRedoService:
             # (deleted_at is in DB but not in model classes)
             model_data.pop('deleted_at', None)
             
+            # Debug: Log what we're restoring for game_sessions
+            if table_name == 'game_sessions':
+                print(f"[UNDO/REDO DEBUG] Restoring session {record_id}")
+                print(f"  status: {model_data.get('status')}")
+                print(f"  starting_balance: {model_data.get('starting_balance')}")
+                print(f"  ending_balance: {model_data.get('ending_balance')}")
+                print(f"  starting_redeemable: {model_data.get('starting_redeemable')}")
+                print(f"  ending_redeemable: {model_data.get('ending_redeemable')}")
+                print(f"  delta_redeem: {model_data.get('delta_redeem')}")
+                print(f"  basis_consumed: {model_data.get('basis_consumed')}")
+                print(f"  net_taxable_pl: {model_data.get('net_taxable_pl')}")
+            
             # Model's __post_init__ will validate and coerce types
             model = model_class(**model_data)
             
