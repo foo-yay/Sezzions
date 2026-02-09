@@ -59,9 +59,11 @@ class NotificationService:
             existing.action_key = action_key
             existing.action_payload = action_payload
             
-            # Reset dismissed/snoozed state (notification is relevant again)
+            # Reset dismissed state (notification is relevant again)
             existing.dismissed_at = None
-            existing.snoozed_until = None
+            # Only clear snooze if it has expired (preserve active snoozes)
+            if not existing.is_snoozed:
+                existing.snoozed_until = None
             existing.updated_at = datetime.now()
             
             return self.notification_repo.update(existing)
