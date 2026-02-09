@@ -299,9 +299,12 @@ class UndoRedoService:
             
             # Then clear deleted_at to make record visible again
             if repo and hasattr(repo, 'restore'):
+                print(f"[UNDO/REDO DEBUG] Calling repo.restore({record_id}) for {table_name}")
                 repo.restore(record_id)
+                print(f"[UNDO/REDO DEBUG] repo.restore() completed")
             else:
                 # Fallback to raw SQL if no repository available
+                print(f"[UNDO/REDO DEBUG] Using raw SQL to clear deleted_at for {table_name} id={record_id}")
                 self.db.execute(
                     f"UPDATE {table_name} SET deleted_at = NULL WHERE id = ?",
                     (record_id,)
