@@ -803,8 +803,6 @@ class GameSessionService:
         from_time: str = "00:00:00",
     ) -> None:
         sessions = self.session_repo.get_chronological(user_id, site_id)
-        print(f"[P/L RECALC DEBUG] Recalculating for user={user_id}, site={site_id}, from={from_date} {from_time}")
-        print(f"[P/L RECALC DEBUG] Found {len(sessions)} total sessions (excluding soft-deleted)")
         purchases, redemptions = self._load_pair_events(user_id, site_id)
 
         boundary_dt = self._to_dt(from_date, from_time)

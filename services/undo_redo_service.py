@@ -294,43 +294,20 @@ class UndoRedoService:
         elif action == "DELETE":
             # Reverse delete: restore full record state from old_data, then clear deleted_at
             if entry.get('old_data'):
-                # Check if record exists before attempting restore
-                check_query = f"SELECT id, deleted_at FROM {table_name} WHERE id = ?"
-                existing = self.db.fetch_one(check_query, (record_id,))
-                if existing:
-                    print(f"[UNDO/REDO DEBUG] Record {record_id} exists before restore: deleted_at={existing.get('deleted_at')}")
-                else:
-                    print(f"[UNDO/REDO DEBUG] ERROR: Record {record_id} does NOT exist in {table_name} before restore!")
-                    return
-                
                 # Parse old_data if it's a JSON string
                 import json
                 old_data = entry['old_data']
                 if isinstance(old_data, str):
-                    print(f"[UNDO/REDO DEBUG] Parsing old_data from JSON string")
                     old_data = json.loads(old_data)
-                
-                print(f"[UNDO/REDO DEBUG] old_data type: {type(old_data)}, keys: {list(old_data.keys()) if isinstance(old_data, dict) else 'N/A'}")
                 
                 # First restore the old field values (deleted record still exists with old data)
                 self._apply_update(table_name, record_id, old_data, repo)
             
             # Then clear deleted_at to make record visible again
             if repo and hasattr(repo, 'restore'):
-                print(f"[UNDO/REDO DEBUG] Calling repo.restore({record_id}) for {table_name}")
                 repo.restore(record_id)
-                print(f"[UNDO/REDO DEBUG] repo.restore() completed")
-                
-                # Verify the restore worked
-                verify_query = f"SELECT deleted_at, status FROM {table_name} WHERE id = ?"
-                result = self.db.fetch_one(verify_query, (record_id,))
-                if result:
-                    print(f"[UNDO/REDO DEBUG] Verification: deleted_at={result.get('deleted_at')}, status={result.get('status')}")
-                else:
-                    print(f"[UNDO/REDO DEBUG] WARNING: Record {record_id} not found after restore!")
             else:
                 # Fallback to raw SQL if no repository available
-                print(f"[UNDO/REDO DEBUG] Using raw SQL to clear deleted_at for {table_name} id={record_id}")
                 self.db.execute(
                     f"UPDATE {table_name} SET deleted_at = NULL WHERE id = ?",
                     (record_id,)
@@ -393,43 +370,11 @@ class UndoRedoService:
             # (deleted_at is in DB but not in model classes)
             model_data.pop('deleted_at', None)
             
-            # Debug: Log what we're restoring for game_sessions
-            if table_name == 'game_sessions':
-                print(f"[UNDO/REDO DEBUG] Restoring session {record_id}")
-                print(f"  status: {model_data.get('status')}")
-                print(f"  starting_balance: {model_data.get('starting_balance')}")
-                print(f"  ending_balance: {model_data.get('ending_balance')}")
-                print(f"  starting_redeemable: {model_data.get('starting_redeemable')}")
-                print(f"  ending_redeemable: {model_data.get('ending_redeemable')}")
-                print(f"  delta_redeem: {model_data.get('delta_redeem')}")
-                print(f"  basis_consumed: {model_data.get('basis_consumed')}")
-                print(f"  net_taxable_pl: {model_data.get('net_taxable_pl')}")
-            
             # Model's __post_init__ will validate and coerce types
             model = model_class(**model_data)
             
-            # Debug: Check if record exists before update
-            if table_name == 'game_sessions':
-                check_query = f"SELECT id, deleted_at FROM {table_name} WHERE id = ?"
-                before_update = self.db.fetch_one(check_query, (record_id,))
-                if before_update:
-                    print(f"[UNDO/REDO DEBUG] Before repo.update(): id={before_update.get('id')}, deleted_at={before_update.get('deleted_at')}")
-                else:
-                    print(f"[UNDO/REDO DEBUG] ERROR: Record {record_id} not found BEFORE repo.update()!")
-            
             # Use repository update (gets validation, type safety, consistency)
-            print(f"[UNDO/REDO DEBUG] Calling repo.update() for {table_name} id={record_id}")
             repo.update(model)
-            print(f"[UNDO/REDO DEBUG] repo.update() completed")
-            
-            # Debug: Check if record exists after update
-            if table_name == 'game_sessions':
-                check_query = f"SELECT id, deleted_at, status FROM {table_name} WHERE id = ?"
-                after_update = self.db.fetch_one(check_query, (record_id,))
-                if after_update:
-                    print(f"[UNDO/REDO DEBUG] After repo.update(): id={after_update.get('id')}, deleted_at={after_update.get('deleted_at')}, status={after_update.get('status')}")
-                else:
-                    print(f"[UNDO/REDO DEBUG] ERROR: Record {record_id} not found AFTER repo.update()!")
         else:
             # Fallback to raw SQL for tables without models (e.g., lookup tables)
             skip_fields = {'id', 'created_at', 'updated_at', 'deleted_at'}

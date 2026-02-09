@@ -1588,11 +1588,13 @@ class AppFacade:
             session.session_date,
             session.session_time,
         )
-        self.game_session_event_link_service.rebuild_links_for_pair_from(
-            site_id,
+        # Full recalculation: FIFO + Event Links + Session P/L
+        self._rebuild_or_mark_stale(
             user_id,
-            boundary_date.isoformat(),
+            site_id,
+            boundary_date,
             boundary_time,
+            reason="session create"
         )
         return session
     
@@ -1670,11 +1672,13 @@ class AppFacade:
                     updated.session_date,
                     updated.session_time,
                 )
-                self.game_session_event_link_service.rebuild_links_for_pair_from(
-                    new_pair[1],
+                # Full recalculation: FIFO + Event Links + Session P/L
+                self._rebuild_or_mark_stale(
                     new_pair[0],
-                    boundary_date.isoformat(),
+                    new_pair[1],
+                    boundary_date,
                     boundary_time,
+                    reason="session update"
                 )
             else:
                 old_date, old_time = self._containing_boundary(
@@ -1683,11 +1687,13 @@ class AppFacade:
                     old_session.session_date,
                     old_session.session_time,
                 )
-                self.game_session_event_link_service.rebuild_links_for_pair_from(
-                    old_pair[1],
+                # Full recalculation for old pair: FIFO + Event Links + Session P/L
+                self._rebuild_or_mark_stale(
                     old_pair[0],
-                    old_date.isoformat(),
+                    old_pair[1],
+                    old_date,
                     old_time,
+                    reason="session update (old pair)"
                 )
                 new_date, new_time = self._containing_boundary(
                     new_pair[1],
@@ -1695,11 +1701,13 @@ class AppFacade:
                     updated.session_date,
                     updated.session_time,
                 )
-                self.game_session_event_link_service.rebuild_links_for_pair_from(
-                    new_pair[1],
+                # Full recalculation for new pair: FIFO + Event Links + Session P/L
+                self._rebuild_or_mark_stale(
                     new_pair[0],
-                    new_date.isoformat(),
+                    new_pair[1],
+                    new_date,
                     new_time,
+                    reason="session update (new pair)"
                 )
         else:
             boundary_date, boundary_time = self._containing_boundary(
@@ -1708,11 +1716,13 @@ class AppFacade:
                 updated.session_date,
                 updated.session_time,
             )
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
-                updated.site_id,
+            # Full recalculation: FIFO + Event Links + Session P/L
+            self._rebuild_or_mark_stale(
                 updated.user_id,
-                boundary_date.isoformat(),
+                updated.site_id,
+                boundary_date,
                 boundary_time,
+                reason="session update"
             )
         return updated
     
@@ -1727,7 +1737,6 @@ class AppFacade:
                 session.session_date,
                 session.session_time,
             )
-            print(f"[DELETE DEBUG] Triggering recalculation for session {session_id}: user={session.user_id}, site={session.site_id}, from={boundary_date} {boundary_time}")
             # Full recalculation: FIFO + Event Links + Session P/L
             self._rebuild_or_mark_stale(
                 session.user_id,
@@ -1735,7 +1744,6 @@ class AppFacade:
                 boundary_date,
                 boundary_time
             )
-            print(f"[DELETE DEBUG] Recalculation completed for session {session_id}")
 
     def delete_game_sessions_bulk(self, session_ids: List[int]) -> None:
         """Delete multiple game sessions efficiently."""
