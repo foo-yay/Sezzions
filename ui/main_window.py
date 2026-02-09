@@ -28,6 +28,15 @@ class MainWindow(QtWidgets.QMainWindow):
         import sys
         print("[MAIN_WINDOW] __init__ started", flush=True)
         sys.stdout.flush()
+        
+        # Immediate file write test
+        try:
+            with open('/tmp/sezzions_debug.log', 'w') as f:
+                f.write("[INIT] MainWindow.__init__() started\n")
+                f.flush()
+        except Exception as e:
+            print(f"[ERROR] Could not write to debug log: {e}", flush=True)
+        
         self.facade = facade
         self.settings = Settings()
         
@@ -213,6 +222,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.facade.tax_withholding_service.settings = self.settings
 
         # Update undo/redo states (Issue #92)
+        try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] Reached undo/redo section (line ~221)\n")
+                f.flush()
+        except:
+            pass
+        
         import sys
         with open('/tmp/sezzions_debug.log', 'a') as f:
             f.write(f"[UI INIT] About to call _update_undo_redo_states()\n")
