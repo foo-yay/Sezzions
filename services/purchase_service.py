@@ -83,16 +83,15 @@ class PurchaseService:
             notes=notes
         )
         
-        # Save to database
-        purchase_id = self.purchase_repo.create(purchase)
-        purchase.id = purchase_id
+        # Save to database (returns Purchase with ID set)
+        purchase = self.purchase_repo.create(purchase)
         
         # Log to audit if available
         if self.audit_service:
             self.audit_service.log_create(
                 table_name="purchases",
-                record_id=purchase_id,
-                new_data=purchase.to_dict()
+                record_id=purchase.id,
+                new_data=asdict(purchase)
             )
         
         return purchase
@@ -107,6 +106,9 @@ class PurchaseService:
         purchase = self.purchase_repo.get_by_id(purchase_id)
         if not purchase:
             raise ValueError(f"Purchase {purchase_id} not found")
+        
+        # Capture old state for audit (BEFORE any modifications)
+        old_data = asdict(purchase)
         
         # Check if purchase has been consumed
         if purchase.consumed_amount > 0:
@@ -164,7 +166,13 @@ class PurchaseService:
         # Validate (will raise if invalid)
         purchase.__post_init__()
         
-        return self.purchase_repo.update(purchase)
+        result = self.purchase_repo.update(purchase)
+        
+        # Log update to audit
+        if self.audit_service:
+            self.audit_service.log_update('purchases', purchase.id, old_data, asdict(result))
+        
+        return result
     
     def delete_purchase(self, purchase_id: int) -> None:
         """Delete purchase with validation"""
@@ -179,7 +187,14 @@ class PurchaseService:
                 f"Consumed: ${purchase.consumed_amount}"
             )
         
+        # Capture old state for audit
+        old_data = asdict(purchase)
+        
         self.purchase_repo.delete(purchase_id)
+        
+        # Log deletion to audit
+        if self.audit_service:
+            self.audit_service.log_delete('purchases', purchase_id, old_data)
     
     def get_purchase(self, purchase_id: int) -> Optional[Purchase]:
         """Get purchase by ID"""

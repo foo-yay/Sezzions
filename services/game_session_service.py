@@ -94,16 +94,15 @@ class GameSessionService:
             notes=notes
         )
         
-        # Save to database
-        session_id = self.session_repo.create(session)
-        session.id = session_id
+        # Save to database (returns GameSession with ID set)
+        session = self.session_repo.create(session)
         
         # Log to audit if available
         if self.audit_service:
             self.audit_service.log_create(
                 table_name="game_sessions",
-                record_id=session_id,
-                new_data=session.to_dict()
+                record_id=session.id,
+                new_data=asdict(session)
             )
         
         created = session
@@ -145,6 +144,9 @@ class GameSessionService:
         session = self.session_repo.get_by_id(session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
+
+        # Capture old state for audit (BEFORE any modifications)
+        old_data = asdict(session)
 
         old_session_date = session.session_date
         old_session_time = session.session_time
@@ -197,6 +199,10 @@ class GameSessionService:
                 raise ValueError("An active session already exists for this User/Site.")
 
         updated = self.session_repo.update(session)
+        
+        # Log update to audit
+        if self.audit_service:
+            self.audit_service.log_update('game_sessions', session.id, old_data, asdict(updated))
 
         # Recalculate P/L if requested
         if recalculate_pl:
@@ -278,8 +284,15 @@ class GameSessionService:
         """Delete a session"""
         session = self.session_repo.get_by_id(session_id)
         if session:
+            # Capture old state for audit
+            old_data = asdict(session)
+            
             self._remove_session_from_game_rtp(session)
-        self.session_repo.delete(session_id)
+            self.session_repo.delete(session_id)
+            
+            # Log deletion to audit
+            if self.audit_service:
+                self.audit_service.log_delete('game_sessions', session_id, old_data)
     
     def delete_sessions_bulk(self, session_ids: List[int]) -> None:
         """Delete multiple sessions efficiently in a single transaction"""
@@ -288,6 +301,10 @@ class GameSessionService:
         
         # Fetch all sessions first
         sessions = [self.session_repo.get_by_id(sid) for sid in session_ids]
+        
+        # Capture old states for audit (before deletion)
+        import uuid
+        group_id = str(uuid.uuid4())
         
         # Remove from RTP aggregates
         for session in sessions:
@@ -300,6 +317,12 @@ class GameSessionService:
         placeholders = ','.join(['?'] * len(session_ids))
         cursor.execute(f"DELETE FROM game_sessions WHERE id IN ({placeholders})", session_ids)
         conn.commit()
+        
+        # Log bulk deletion to audit
+        if self.audit_service:
+            for session in sessions:
+                if session:
+                    self.audit_service.log_delete('game_sessions', session.id, asdict(session), group_id=group_id)
     
     def get_session(self, session_id: int) -> Optional[GameSession]:
         """Get session by ID"""

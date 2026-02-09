@@ -105,16 +105,15 @@ class RedemptionService:
             redemption.taxable_profit = taxable_profit
             redemption._has_fifo_allocation = True
             
-            # Save redemption first (without FIFO results)
-            redemption_id = self.redemption_repo.create(redemption)
-            redemption.id = redemption_id
+            # Save redemption first (without FIFO results) - returns Redemption with ID set
+            redemption = self.redemption_repo.create(redemption)
             
             # Log to audit if available
             if self.audit_service:
                 self.audit_service.log_create(
                     table_name="redemptions",
-                    record_id=redemption_id,
-                    new_data=redemption.to_dict()
+                    record_id=redemption.id,
+                    new_data=asdict(redemption)
                 )
             
             # Save allocations to redemption_allocations table
@@ -134,19 +133,18 @@ class RedemptionService:
                 net_pl=taxable_profit
             )
         else:
-            # Save without FIFO
-            redemption_id = self.redemption_repo.create(redemption)
-            redemption.id = redemption_id
+            # Save without FIFO - returns Redemption with ID set
+            redemption = self.redemption_repo.create(redemption)
             
             # Log to audit if available
             if self.audit_service:
                 self.audit_service.log_create(
                     table_name="redemptions",
-                    record_id=redemption_id,
-                    new_data=redemption.to_dict()
+                    record_id=redemption.id,
+                    new_data=asdict(redemption)
                 )
-        
-        return redemption
+            
+            return redemption
     
     def update_redemption(
         self, 
@@ -177,7 +175,13 @@ class RedemptionService:
         # Validate
         redemption.__post_init__()
         
-        return self.redemption_repo.update(redemption)
+        result = self.redemption_repo.update(redemption)
+        
+        # Log update to audit
+        if self.audit_service:
+            self.audit_service.log_update('redemptions', redemption.id, old_data, asdict(result))
+        
+        return result
     
     def delete_redemption(self, redemption_id: int) -> None:
         """
@@ -186,6 +190,9 @@ class RedemptionService:
         redemption = self.redemption_repo.get_by_id(redemption_id)
         if not redemption:
             raise ValueError(f"Redemption {redemption_id} not found")
+        
+        # Capture old state for audit
+        old_data = asdict(redemption)
         
         # Check if allocations exist
         allocations = self._get_allocations(redemption_id)
@@ -202,6 +209,10 @@ class RedemptionService:
         
         # Delete the redemption
         self.redemption_repo.delete(redemption_id)
+        
+        # Log deletion to audit
+        if self.audit_service:
+            self.audit_service.log_delete('redemptions', redemption_id, old_data)
     
     def delete_redemptions_bulk(self, redemption_ids: List[int]) -> None:
         """
@@ -211,11 +222,18 @@ class RedemptionService:
         if not redemption_ids:
             return
         
+        # Generate group_id for bulk operation
+        import uuid
+        group_id = str(uuid.uuid4())
+        
         # Process all deletes in a single transaction
         for redemption_id in redemption_ids:
             redemption = self.redemption_repo.get_by_id(redemption_id)
             if not redemption:
                 continue
+            
+            # Capture old state for audit
+            old_data = asdict(redemption)
             
             # Check if allocations exist
             allocations = self._get_allocations(redemption_id)
@@ -229,6 +247,13 @@ class RedemptionService:
                 
                 # Delete realized_transaction record
                 self._delete_realized_transaction(redemption_id)
+            
+            # Delete the redemption
+            self.redemption_repo.delete(redemption_id)
+            
+            # Log deletion to audit with group_id
+            if self.audit_service:
+                self.audit_service.log_delete('redemptions', redemption_id, old_data, group_id=group_id)
             
             # Delete the redemption
             self.redemption_repo.delete(redemption_id)
