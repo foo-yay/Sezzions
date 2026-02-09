@@ -54,6 +54,8 @@ from services.notification_rules_service import NotificationRulesService
 from services.adjustment_service import AdjustmentService
 from services.repair_mode_service import RepairModeService
 from services.timestamp_service import TimestampService
+from services.audit_service import AuditService
+from services.undo_redo_service import UndoRedoService
 from repositories.notification_repository import NotificationRepository
 
 from models.user import User
@@ -191,6 +193,27 @@ class AppFacade:
         
         # Timestamp uniqueness enforcement
         self.timestamp_service = TimestampService(self.db)
+        
+        # Audit and Undo/Redo services (Issue #92)
+        self.audit_service = AuditService(self.db)
+        self.undo_redo_service = UndoRedoService(
+            self.db, 
+            self.audit_service,
+            post_operation_callback=self._handle_undo_redo_recalculation,
+            repositories={
+                'purchases': self.purchase_repo,
+                'redemptions': self.redemption_repo,
+                'game_sessions': self.game_session_repo,
+            }
+        )
+        
+        # Wire audit_service and undo_redo_service into existing services
+        self.purchase_service.audit_service = self.audit_service
+        self.purchase_service.undo_redo_service = self.undo_redo_service
+        self.redemption_service.audit_service = self.audit_service
+        self.redemption_service.undo_redo_service = self.undo_redo_service
+        self.game_session_service.audit_service = self.audit_service
+        self.game_session_service.undo_redo_service = self.undo_redo_service
 
     @staticmethod
     def _normalize_time(value: Optional[str]) -> str:
@@ -325,6 +348,107 @@ class AppFacade:
                 user_id,
                 boundary_date.isoformat(),
                 boundary_time
+            )
+            # Recalculate session P/L fields (delta_redeem, basis_consumed, net_taxable_pl)
+            self.game_session_service._recalculate_closed_sessions_for_pair_from(
+                user_id,
+                site_id,
+                boundary_date,
+                boundary_time
+            )
+    
+    def _handle_undo_redo_recalculation(self, operation: str, audit_entries: List[Dict]) -> None:
+        """
+        Callback for undo/redo operations to trigger recalculations (Issue #92).
+        
+        After undo/redo modifies purchases, redemptions, or game_sessions,
+        we need to trigger the same recalculation logic that normal CRUD operations use.
+        
+        Args:
+            operation: 'undo' or 'redo'
+            audit_entries: List of audit log entries that were reversed/replayed
+        """
+        import json
+        from datetime import datetime
+        
+        # Group affected records by (user_id, site_id)
+        affected_pairs = {}  # (user_id, site_id) -> earliest (date, time)
+        
+        for entry in audit_entries:
+            table_name = entry.get('table_name')
+            
+            # Only recalculate for tables that affect accounting
+            if table_name not in ('purchases', 'redemptions', 'game_sessions'):
+                continue
+            
+            # Parse the data to get user_id, site_id, date, time
+            # For UPDATE: use old_data (what it was before undo) or new_data (what it became after undo)
+            # For CREATE/DELETE: use whatever data is available
+            data_json = entry.get('old_data') or entry.get('new_data')
+            if not data_json:
+                continue
+            
+            try:
+                data = json.loads(data_json)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            
+            user_id = data.get('user_id')
+            site_id = data.get('site_id')
+            
+            if not user_id or not site_id:
+                continue
+            
+            # Get date/time based on table
+            if table_name == 'purchases':
+                date_str = data.get('purchase_date')
+                time_str = data.get('purchase_time', '00:00:00')
+            elif table_name == 'redemptions':
+                date_str = data.get('redemption_date')
+                time_str = data.get('redemption_time', '00:00:00')
+            elif table_name == 'game_sessions':
+                date_str = data.get('session_date')
+                time_str = data.get('session_time', '00:00:00')
+            else:
+                continue
+            
+            if not date_str:
+                continue
+            
+            # Parse date
+            try:
+                if isinstance(date_str, str):
+                    record_date = datetime.fromisoformat(date_str).date()
+                else:
+                    record_date = date_str
+            except (ValueError, AttributeError):
+                continue
+            
+            # Track earliest date/time per pair
+            pair = (user_id, site_id)
+            time_normalized = self._normalize_time(time_str)
+            
+            if pair not in affected_pairs:
+                affected_pairs[pair] = (record_date, time_normalized)
+            else:
+                current_date, current_time = affected_pairs[pair]
+                if (record_date, time_normalized) < (current_date, current_time):
+                    affected_pairs[pair] = (record_date, time_normalized)
+        
+        # Trigger recalculation for each affected pair
+        for (user_id, site_id), (boundary_date, boundary_time) in affected_pairs.items():
+            # Use containing boundary logic to find actual rebuild point
+            boundary_date, boundary_time = self._containing_boundary(
+                site_id, user_id, boundary_date, boundary_time
+            )
+            
+            # Trigger rebuild or mark stale
+            self._rebuild_or_mark_stale(
+                user_id=user_id,
+                site_id=site_id,
+                boundary_date=boundary_date,
+                boundary_time=boundary_time,
+                reason=f"{operation} operation"
             )
     
     # ==========================================================================
@@ -1464,11 +1588,13 @@ class AppFacade:
             session.session_date,
             session.session_time,
         )
-        self.game_session_event_link_service.rebuild_links_for_pair_from(
-            site_id,
+        # Full recalculation: FIFO + Event Links + Session P/L
+        self._rebuild_or_mark_stale(
             user_id,
-            boundary_date.isoformat(),
+            site_id,
+            boundary_date,
             boundary_time,
+            reason="session create"
         )
         return session
     
@@ -1546,11 +1672,13 @@ class AppFacade:
                     updated.session_date,
                     updated.session_time,
                 )
-                self.game_session_event_link_service.rebuild_links_for_pair_from(
-                    new_pair[1],
+                # Full recalculation: FIFO + Event Links + Session P/L
+                self._rebuild_or_mark_stale(
                     new_pair[0],
-                    boundary_date.isoformat(),
+                    new_pair[1],
+                    boundary_date,
                     boundary_time,
+                    reason="session update"
                 )
             else:
                 old_date, old_time = self._containing_boundary(
@@ -1559,11 +1687,13 @@ class AppFacade:
                     old_session.session_date,
                     old_session.session_time,
                 )
-                self.game_session_event_link_service.rebuild_links_for_pair_from(
-                    old_pair[1],
+                # Full recalculation for old pair: FIFO + Event Links + Session P/L
+                self._rebuild_or_mark_stale(
                     old_pair[0],
-                    old_date.isoformat(),
+                    old_pair[1],
+                    old_date,
                     old_time,
+                    reason="session update (old pair)"
                 )
                 new_date, new_time = self._containing_boundary(
                     new_pair[1],
@@ -1571,11 +1701,13 @@ class AppFacade:
                     updated.session_date,
                     updated.session_time,
                 )
-                self.game_session_event_link_service.rebuild_links_for_pair_from(
-                    new_pair[1],
+                # Full recalculation for new pair: FIFO + Event Links + Session P/L
+                self._rebuild_or_mark_stale(
                     new_pair[0],
-                    new_date.isoformat(),
+                    new_pair[1],
+                    new_date,
                     new_time,
+                    reason="session update (new pair)"
                 )
         else:
             boundary_date, boundary_time = self._containing_boundary(
@@ -1584,11 +1716,13 @@ class AppFacade:
                 updated.session_date,
                 updated.session_time,
             )
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
-                updated.site_id,
+            # Full recalculation: FIFO + Event Links + Session P/L
+            self._rebuild_or_mark_stale(
                 updated.user_id,
-                boundary_date.isoformat(),
+                updated.site_id,
+                boundary_date,
                 boundary_time,
+                reason="session update"
             )
         return updated
     
@@ -1603,11 +1737,12 @@ class AppFacade:
                 session.session_date,
                 session.session_time,
             )
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
-                session.site_id,
+            # Full recalculation: FIFO + Event Links + Session P/L
+            self._rebuild_or_mark_stale(
                 session.user_id,
-                boundary_date.isoformat(),
-                boundary_time,
+                session.site_id,
+                boundary_date,
+                boundary_time
             )
 
     def delete_game_sessions_bulk(self, session_ids: List[int]) -> None:
@@ -1632,13 +1767,11 @@ class AppFacade:
         # Bulk delete
         self.game_session_service.delete_sessions_bulk(session_ids)
         
-        # Rebuild once per affected pair
+        # Full recalculation once per affected pair: FIFO + Event Links + Session P/L
         for site_id, user_id in affected_pairs:
             date, time = earliest_dates[(site_id, user_id)]
             boundary_date, boundary_time = self._containing_boundary(site_id, user_id, date, time)
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
-                site_id, user_id, boundary_date.isoformat(), boundary_time
-            )
+            self._rebuild_or_mark_stale(user_id, site_id, boundary_date, boundary_time)
 
     def recalculate_game_rtp(self, game_id: int) -> None:
         """Recalculate RTP aggregates for a game (full rebuild)."""

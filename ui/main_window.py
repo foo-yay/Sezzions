@@ -189,10 +189,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.setup_tab.sub_tabs.setCurrentIndex(last_setup_subtab)
             # Connect to track future changes
             self.setup_tab.sub_tabs.currentChanged.connect(self._on_setup_subtab_changed)
-    
-    def _on_setup_subtab_changed(self, index: int):
-        """Save Setup sub-tab selection when it changes"""
-        self.settings.set('last_setup_subtab', index)
 
         # Register for data change events (unified refresh system)
         if hasattr(self.facade, "add_data_change_listener"):
@@ -209,8 +205,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self.facade, 'tax_withholding_service'):
             self.facade.tax_withholding_service.settings = self.settings
 
+        # Update undo/redo states (Issue #92)
+        self._update_undo_redo_states()
+
         # Position bell after initial layout pass
         QtCore.QTimer.singleShot(0, self._position_notification_bell)
+
+    def _on_setup_subtab_changed(self, index: int):
+        """Save Setup sub-tab selection when it changes"""
+        self.settings.set('last_setup_subtab', index)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -453,6 +456,27 @@ class MainWindow(QtWidgets.QMainWindow):
         
         tools_menu.addSeparator()
         
+        # Undo/Redo actions (Issue #92)
+        self.undo_action = QtGui.QAction("&Undo", self)
+        self.undo_action.setShortcut("Ctrl+Z")
+        self.undo_action.setEnabled(False)  # Initially disabled
+        self.undo_action.triggered.connect(self._perform_undo)
+        tools_menu.addAction(self.undo_action)
+        
+        self.redo_action = QtGui.QAction("&Redo", self)
+        self.redo_action.setShortcut("Ctrl+Shift+Z")
+        self.redo_action.setEnabled(False)  # Initially disabled
+        self.redo_action.triggered.connect(self._perform_redo)
+        tools_menu.addAction(self.redo_action)
+        
+        tools_menu.addSeparator()
+        
+        audit_log_action = QtGui.QAction("View &Audit Log…", self)
+        audit_log_action.triggered.connect(self._show_audit_log)
+        tools_menu.addAction(audit_log_action)
+        
+        tools_menu.addSeparator()
+        
         open_tools_action = QtGui.QAction("Open &Tools Tab", self)
         open_tools_action.triggered.connect(self.open_tools_tab)
         tools_menu.addAction(open_tools_action)
@@ -533,6 +557,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # Execute the refresh
         self.refresh_all_tabs()
         
+        # Update undo/redo button states after data changes (Issue #92)
+        self._update_undo_redo_states()
+        
         # Optional status message
         if self._pending_refresh_event:
             # Only show message for major operations (not manual edits)
@@ -606,6 +633,9 @@ class MainWindow(QtWidgets.QMainWindow):
                     widget.load_data()
                 except Exception:
                     continue
+        
+        # Update undo/redo button states after refresh (Issue #92)
+        self._update_undo_redo_states()
     
     def refresh_repair_mode_ui(self):
         """
@@ -709,6 +739,80 @@ class MainWindow(QtWidgets.QMainWindow):
         self.open_tools_tab()
         # Use QTimer to ensure tab is visible before triggering
         QtCore.QTimer.singleShot(100, self.tools_tab._on_recalculate_all)
+    
+    def _perform_undo(self):
+        """Perform undo operation (Issue #92)"""
+        try:
+            description = self.facade.undo_redo_service.undo()
+            if description:
+                self.statusBar().showMessage(f"Undid: {description}", 3000)
+                self.refresh_all_tabs()
+                self._update_undo_redo_states()
+            else:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Undo",
+                    "Nothing to undo."
+                )
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Undo Failed",
+                f"Failed to undo operation:\n\n{str(e)}"
+            )
+    
+    def _perform_redo(self):
+        """Perform redo operation (Issue #92)"""
+        try:
+            description = self.facade.undo_redo_service.redo()
+            if description:
+                self.statusBar().showMessage(f"Redid: {description}", 3000)
+                self.refresh_all_tabs()
+                self._update_undo_redo_states()
+            else:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Redo",
+                    "Nothing to redo."
+                )
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Redo Failed",
+                f"Failed to redo operation:\n\n{str(e)}"
+            )
+    
+    def _show_audit_log(self):
+        """Show audit log viewer dialog (Issue #92)"""
+        from ui.audit_log_viewer_dialog import AuditLogViewerDialog
+        
+        dialog = AuditLogViewerDialog(self.facade.audit_service, parent=self)
+        dialog.exec()
+    
+    def _update_undo_redo_states(self):
+        """Update undo/redo action enabled states based on stack availability (Issue #92)"""
+        can_undo = self.facade.undo_redo_service.can_undo()
+        can_redo = self.facade.undo_redo_service.can_redo()
+        
+        print(f"[UNDO/REDO INIT] _update_undo_redo_states called: can_undo={can_undo}, can_redo={can_redo}")
+        
+        self.undo_action.setEnabled(can_undo)
+        self.redo_action.setEnabled(can_redo)
+        
+        # Update text with descriptions
+        if can_undo:
+            desc = self.facade.undo_redo_service.get_undo_description()
+            self.undo_action.setText(f"&Undo {desc}" if desc else "&Undo")
+            print(f"[UNDO/REDO INIT] Undo enabled with description: {desc}")
+        else:
+            self.undo_action.setText("&Undo")
+        
+        if can_redo:
+            desc = self.facade.undo_redo_service.get_redo_description()
+            self.redo_action.setText(f"&Redo {desc}" if desc else "&Redo")
+            print(f"[UNDO/REDO INIT] Redo enabled with description: {desc}")
+        else:
+            self.redo_action.setText("&Redo")
     
     def _apply_theme(self, theme_name: str):
         """Apply theme to application"""

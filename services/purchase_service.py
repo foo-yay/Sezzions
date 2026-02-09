@@ -1,20 +1,28 @@
 """
 Purchase service - Business logic for Purchase operations
 """
-from typing import List, Optional
+import uuid
+from dataclasses import asdict
+from typing import List, Optional, TYPE_CHECKING
 from decimal import Decimal
 from datetime import date
 from models.purchase import Purchase
 from repositories.purchase_repository import PurchaseRepository
 from repositories.card_repository import CardRepository
 
+if TYPE_CHECKING:
+    from services.audit_service import AuditService
+    from services.undo_redo_service import UndoRedoService
+
 
 class PurchaseService:
     """Business logic for Purchase operations"""
     
-    def __init__(self, purchase_repo: PurchaseRepository, card_repo: Optional[CardRepository] = None):
+    def __init__(self, purchase_repo: PurchaseRepository, card_repo: Optional[CardRepository] = None, audit_service: Optional['AuditService'] = None, undo_redo_service: Optional['UndoRedoService'] = None):
         self.purchase_repo = purchase_repo
         self.card_repo = card_repo
+        self.audit_service = audit_service
+        self.undo_redo_service = undo_redo_service
     
     def _calculate_cashback(self, amount: Decimal, card_id: Optional[int]) -> Decimal:
         """Calculate cashback based on card rate.
@@ -79,8 +87,28 @@ class PurchaseService:
             notes=notes
         )
         
-        # Save to database
-        return self.purchase_repo.create(purchase)
+        # Save to database (returns Purchase with ID set)
+        purchase = self.purchase_repo.create(purchase)
+        
+        # Log to audit and undo/redo stack
+        group_id = str(uuid.uuid4())
+        if self.audit_service:
+            self.audit_service.log_create(
+                table_name="purchases",
+                record_id=purchase.id,
+                new_data=asdict(purchase),
+                group_id=group_id
+            )
+        
+        if self.undo_redo_service:
+            from datetime import datetime
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Create purchase (${purchase.amount})",
+                timestamp=datetime.now().isoformat()
+            )
+        
+        return purchase
     
     def update_purchase(self, purchase_id: int, force_site_user_change: bool = False, **kwargs) -> Purchase:
         """Update purchase with business rules validation.
@@ -92,6 +120,9 @@ class PurchaseService:
         purchase = self.purchase_repo.get_by_id(purchase_id)
         if not purchase:
             raise ValueError(f"Purchase {purchase_id} not found")
+        
+        # Capture old state for audit (BEFORE any modifications)
+        old_data = asdict(purchase)
         
         # Check if purchase has been consumed
         if purchase.consumed_amount > 0:
@@ -149,7 +180,22 @@ class PurchaseService:
         # Validate (will raise if invalid)
         purchase.__post_init__()
         
-        return self.purchase_repo.update(purchase)
+        result = self.purchase_repo.update(purchase)
+        
+        # Log update to audit and undo/redo stack
+        group_id = str(uuid.uuid4())
+        if self.audit_service:
+            self.audit_service.log_update('purchases', purchase.id, old_data, asdict(result), group_id=group_id)
+        
+        if self.undo_redo_service:
+            from datetime import datetime
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Update purchase #{purchase.id}",
+                timestamp=datetime.now().isoformat()
+            )
+        
+        return result
     
     def delete_purchase(self, purchase_id: int) -> None:
         """Delete purchase with validation"""
@@ -164,7 +210,23 @@ class PurchaseService:
                 f"Consumed: ${purchase.consumed_amount}"
             )
         
+        # Capture old state for audit
+        old_data = asdict(purchase)
+        
         self.purchase_repo.delete(purchase_id)
+        
+        # Log deletion to audit and undo/redo stack
+        group_id = str(uuid.uuid4())
+        if self.audit_service:
+            self.audit_service.log_delete('purchases', purchase_id, old_data, group_id=group_id)
+        
+        if self.undo_redo_service:
+            from datetime import datetime
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Delete purchase #{purchase_id}",
+                timestamp=datetime.now().isoformat()
+            )
     
     def get_purchase(self, purchase_id: int) -> Optional[Purchase]:
         """Get purchase by ID"""
