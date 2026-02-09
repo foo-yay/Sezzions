@@ -349,6 +349,13 @@ class AppFacade:
                 boundary_date.isoformat(),
                 boundary_time
             )
+            # Recalculate session P/L fields (delta_redeem, basis_consumed, net_taxable_pl)
+            self.game_session_service._recalculate_closed_sessions_for_pair_from(
+                user_id,
+                site_id,
+                boundary_date,
+                boundary_time
+            )
     
     def _handle_undo_redo_recalculation(self, operation: str, audit_entries: List[Dict]) -> None:
         """
