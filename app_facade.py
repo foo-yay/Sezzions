@@ -1727,11 +1727,12 @@ class AppFacade:
                 session.session_date,
                 session.session_time,
             )
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
-                session.site_id,
+            # Full recalculation: FIFO + Event Links + Session P/L
+            self._rebuild_or_mark_stale(
                 session.user_id,
-                boundary_date.isoformat(),
-                boundary_time,
+                session.site_id,
+                boundary_date,
+                boundary_time
             )
 
     def delete_game_sessions_bulk(self, session_ids: List[int]) -> None:
@@ -1756,13 +1757,11 @@ class AppFacade:
         # Bulk delete
         self.game_session_service.delete_sessions_bulk(session_ids)
         
-        # Rebuild once per affected pair
+        # Full recalculation once per affected pair: FIFO + Event Links + Session P/L
         for site_id, user_id in affected_pairs:
             date, time = earliest_dates[(site_id, user_id)]
             boundary_date, boundary_time = self._containing_boundary(site_id, user_id, date, time)
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
-                site_id, user_id, boundary_date.isoformat(), boundary_time
-            )
+            self._rebuild_or_mark_stale(user_id, site_id, boundary_date, boundary_time)
 
     def recalculate_game_rtp(self, game_id: int) -> None:
         """Recalculate RTP aggregates for a game (full rebuild)."""
