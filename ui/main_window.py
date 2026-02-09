@@ -633,6 +633,9 @@ class MainWindow(QtWidgets.QMainWindow):
                     widget.load_data()
                 except Exception:
                     continue
+        
+        # Update undo/redo button states after refresh (Issue #92)
+        self._update_undo_redo_states()
     
     def refresh_repair_mode_ui(self):
         """
