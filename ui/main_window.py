@@ -40,6 +40,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.facade = facade
         self.settings = Settings()
         
+        try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] facade and settings assigned\n")
+                f.flush()
+        except:
+            pass
+        
         # Wire Repair Mode service to facade with settings and db_manager
         from services.repair_mode_service import RepairModeService
         self.facade.repair_mode_service = RepairModeService(self.settings, self.facade.db)
@@ -53,7 +60,19 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Check data integrity before proceeding
         self.maintenance_mode = False
+        try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] Before _check_data_integrity()\n")
+                f.flush()
+        except:
+            pass
         self._check_data_integrity()
+        try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] After _check_data_integrity()\n")
+                f.flush()
+        except:
+            pass
         
         # Restore window size
         width = self.settings.get('window_width', 1400)
@@ -141,6 +160,12 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Create tabs (with error recovery)
         try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] Before _create_tabs()\n")
+                f.flush()
+        except:
+            pass
+        try:
             self._create_tabs()
         except (ValueError, Exception) as e:
             # Data integrity error during tab creation - enter maintenance mode
@@ -151,10 +176,23 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.tab_bar.currentChanged.connect(self.stack.setCurrentIndex)
         
+        try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] After _create_tabs(), before _create_menu_bar()\n")
+                f.flush()
+        except:
+            pass
+        
         # Status bar handled in __init__
         
         # Create menu bar
         self._create_menu_bar()
+        try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] After _create_menu_bar()\n")
+                f.flush()
+        except:
+            pass
 
         # Passive indicator for Tools maintenance operations (backup/restore/reset).
         # Uses a small indeterminate progress bar + label in the status bar.
