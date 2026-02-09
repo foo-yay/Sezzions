@@ -51,7 +51,7 @@ class DailySessionsService:
             JOIN sites s ON gs.site_id = s.id
             LEFT JOIN games g ON gs.game_id = g.id
             LEFT JOIN game_types gt ON g.game_type_id = gt.id
-            WHERE gs.status = 'Closed'
+            WHERE gs.status = 'Closed' AND gs.deleted_at IS NULL
         """
         params: List = []
 
