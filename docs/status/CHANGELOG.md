@@ -12,6 +12,74 @@ Rules:
 ## 2026-02-08
 
 ```yaml
+id: 2026-02-08-06
+type: feature
+areas: [database, services, ui, testing]
+summary: "Audit Log + Undo/Redo + Soft Delete (Issue #92)"
+files_changed:
+  - repositories/database.py
+  - repositories/purchase_repository.py
+  - repositories/redemption_repository.py
+  - repositories/game_session_repository.py
+  - services/audit_service.py
+  - services/undo_redo_service.py
+  - ui/main_window.py
+  - ui/tabs/tools_tab.py
+  - ui/audit_log_viewer_dialog.py
+  - tests/unit/test_soft_delete.py
+  - tests/unit/test_audit_service.py
+  - tests/ui/test_issue_92_ui_smoke.py
+  - docs/DATABASE_DESIGN.md
+issue: 92
+branch: feature/issue-92-audit-undo-soft-delete
+```
+
+**Feature: Audit Log + Undo/Redo + Soft Delete**
+
+**Schema Changes:**
+- **audit_log table expansion**: Added `old_data` (JSON TEXT), `new_data` (JSON TEXT), `group_id` (TEXT UUID) columns + `idx_audit_group` index.
+- **Soft delete columns**: Added `deleted_at` (TIMESTAMP NULL) + `idx_*_deleted` indexes to `purchases`, `redemptions`, `game_sessions`.
+- **Migration pattern**: Idempotent `ALTER TABLE ADD COLUMN IF NOT EXISTS` guarded by `PRAGMA table_info()`.
+
+**Services:**
+- **AuditService** (`services/audit_service.py`): Structured audit logging with JSON snapshots (`old_data`, `new_data`), `group_id` for operation grouping, `auto_commit` flag for transactional logging. Methods: `log_create/update/delete/restore/undo/redo`, `get_audit_log(filters)`, `generate_group_id()`.
+- **UndoRedoService** (`services/undo_redo_service.py`): Persistent undo/redo stacks (stored in `settings` table as JSON). `undo()` reverses audit entries in LIFO order; `redo()` replays in FIFO order. Excel-like behavior: new operations clear redo stack. Atomic rollback via `_reverse_audit_entry()` and `_replay_audit_entry()`.
+
+**Repository Layer:**
+- **Soft delete pattern**: All `delete()` methods converted to `UPDATE SET deleted_at = CURRENT_TIMESTAMP`. Added `restore()` methods to clear `deleted_at`.
+- **Query filters**: All `get_*()` queries automatically filter `WHERE deleted_at IS NULL`.
+- **FIFO integrity**: `get_available_for_fifo()` excludes soft-deleted purchases to maintain accurate basis tracking.
+
+**UI:**
+- **Menu actions**: "Edit → Undo (Ctrl+Z)", "Edit → Redo (Ctrl+Shift+Z)", "Tools → View Audit Log…"
+- **Action state updates**: `_update_undo_redo_states()` updates menu action text with operation descriptions (e.g., "Undo CREATE purchase #123").
+- **Tools tab section**: Collapsible "📋 Audit Log" section with helper text and "Open Audit Log…" button.
+- **Audit Log Viewer Dialog**: Full-featured browser with filters (table/action/limit), split view (table + JSON details panel), color-coded actions (green=CREATE, red=DELETE, orange=UPDATE/RESTORE).
+
+**Testing:**
+- **Unit tests**: 15 tests across `test_soft_delete.py` (7 tests) and `test_audit_service.py` (8 tests). Coverage: soft delete behavior, restore, FIFO exclusion, JSON snapshots, group_id linking, filters, auto_commit flag.
+- **Headless UI smoke tests**: 8 tests in `test_issue_92_ui_smoke.py` verifying menu actions exist, handlers are wired, and MainWindow instantiates cleanly without displaying GUI.
+
+**Documentation:**
+- **DATABASE_DESIGN.md**: Updated `audit_log` schema docs, added soft delete behavior notes to `purchases`, `redemptions`, `game_sessions`.
+
+**Commits:**
+1. `59b2502`: Schema layer (deleted_at + indexes)
+2. `5b50b1f`: Repository soft delete + restore methods
+3. `2d36227`: Audit schema expansion (old_data/new_data/group_id)
+4. `658b5a6`: AuditService implementation
+5. `8062abb`: UndoRedoService implementation
+6. `2dbcf1e`: UI menu actions (Undo/Redo/Audit Log)
+7. `0971198`: Tools tab Audit Log section
+8. `1723415`: Audit Log Viewer dialog
+9. `1fde0ff`: Comprehensive tests (soft delete + audit)
+10. `40cf5a0`: Headless UI smoke tests
+
+All tests pass (764 existing + 23 new = 787 total).
+
+---
+
+```yaml
 id: 2026-02-08-05
 type: enhancement
 areas: [ui, services]

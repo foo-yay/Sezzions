@@ -194,6 +194,7 @@ CREATE TABLE users (
 | card_id | INTEGER | NULL, FK → cards(id) | Payment card |
 | remaining_amount | DECIMAL(10,2) | NOT NULL | Unconsumed basis (FIFO) |
 | notes | TEXT | NULL | Purchase notes |
+| deleted_at | TIMESTAMP | NULL | Soft delete timestamp (Issue #92) |
 | created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Creation timestamp |
 | updated_at | TIMESTAMP | NULL | Last update timestamp |
 
@@ -204,10 +205,17 @@ CREATE TABLE users (
 - `idx_purchases_site_user` ON (site_id, user_id)
 - `idx_purchases_date` ON (purchase_date, purchase_time)
 - `idx_purchases_remaining` ON (remaining_amount) WHERE remaining_amount > 0
+- `idx_purchases_deleted` ON (deleted_at) – for soft delete queries (Issue #92)
 
 **Foreign Keys:**
 - site_id REFERENCES sites(id) ON DELETE RESTRICT
 - user_id REFERENCES users(id) ON DELETE RESTRICT
+
+**Soft Delete Behavior (Issue #92):**
+- **delete():** Sets `deleted_at = CURRENT_TIMESTAMP` instead of DELETE. Record remains in database.
+- **restore():** Clears `deleted_at` to NULL, making record visible again.
+- **All queries:** Automatically filter `WHERE deleted_at IS NULL` to exclude soft-deleted records.
+- **FIFO:** `get_available_for_fifo()` excludes soft-deleted purchases to maintain accurate basis tracking.
 - card_id REFERENCES cards(id) ON DELETE SET NULL
 
 **Business Rules:**
@@ -232,17 +240,24 @@ CREATE TABLE users (
 | is_free_sc | BOOLEAN/INTEGER | DEFAULT 0 | Discoverable SC redemption |
 | fees | DECIMAL(10,2) | DEFAULT 0.0 | Redemption fees |
 | notes | TEXT | NULL | Redemption notes |
+| deleted_at | TIMESTAMP | NULL | Soft delete timestamp (Issue #92) |
 | created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Creation timestamp |
 | updated_at | TIMESTAMP | NULL | Last update timestamp |
 
 **Indexes:**
 - `idx_redemptions_site_user` ON (site_id, user_id)
 - `idx_redemptions_date` ON (redemption_date, redemption_time)
+- `idx_redemptions_deleted` ON (deleted_at) – for soft delete queries (Issue #92)
 
 **Foreign Keys:**
 - site_id REFERENCES sites(id) ON DELETE RESTRICT
 - user_id REFERENCES users(id) ON DELETE RESTRICT
 - method_id REFERENCES redemption_methods(id) ON DELETE SET NULL
+
+**Soft Delete Behavior (Issue #92):**
+- **delete():** Sets `deleted_at = CURRENT_TIMESTAMP`.
+- **restore():** Clears `deleted_at`.
+- **All queries:** Filter `WHERE deleted_at IS NULL`.
 
 ---
 
@@ -324,6 +339,7 @@ CREATE TABLE users (
 | net_taxable_pl | DECIMAL(10,2) | DEFAULT 0.0 | Net taxable P/L |
 | is_closed | BOOLEAN/INTEGER | DEFAULT 0 | Session closed flag |
 | notes | TEXT | NULL | Session notes |
+| deleted_at | TIMESTAMP | NULL | Soft delete timestamp (Issue #92) |
 | created_at | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Creation timestamp |
 | updated_at | TIMESTAMP | NULL | Last update timestamp |
 
@@ -335,11 +351,17 @@ CREATE TABLE users (
 - `idx_sessions_site_user` ON (site_id, user_id)
 - `idx_sessions_date` ON (session_date, session_time)
 - `idx_sessions_open` ON (is_closed) WHERE is_closed = 0
+- `idx_sessions_deleted` ON (deleted_at) – for soft delete queries (Issue #92)
 
 **Foreign Keys:**
 - site_id REFERENCES sites(id) ON DELETE RESTRICT
 - user_id REFERENCES users(id) ON DELETE RESTRICT
 - game_id REFERENCES games(id) ON DELETE SET NULL
+
+**Soft Delete Behavior (Issue #92):**
+- **delete():** Sets `deleted_at = CURRENT_TIMESTAMP`.
+- **restore():** Clears `deleted_at`.
+- **All queries:** Filter `WHERE deleted_at IS NULL`.
 
 ---
 
@@ -393,14 +415,17 @@ CREATE TABLE users (
 
 ### 12. audit_log
 
-**Purpose:** Audit trail for compliance
+**Purpose:** Audit trail for compliance and undo/redo support (Issue #92)
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | INTEGER/SERIAL | PRIMARY KEY | Auto-increment ID |
-| action | TEXT/VARCHAR(50) | NOT NULL | Action type (INSERT, UPDATE, DELETE) |
+| action | TEXT/VARCHAR(50) | NOT NULL | Action type (CREATE, UPDATE, DELETE, RESTORE, UNDO, REDO) |
 | table_name | TEXT/VARCHAR(100) | NOT NULL | Table affected |
 | record_id | INTEGER | NULL | Record ID affected |
+| old_data | TEXT | NULL | JSON snapshot of record before change (for UPDATE/DELETE/RESTORE) |
+| new_data | TEXT | NULL | JSON snapshot of record after change (for CREATE/UPDATE/RESTORE) |
+| group_id | TEXT | NULL | UUID linking related operations (e.g., batch updates) |
 | details | TEXT | NULL | Additional details |
 | user_name | TEXT/VARCHAR(255) | NULL | User who performed action |
 | timestamp | TIMESTAMP | DEFAULT CURRENT_TIMESTAMP | Action timestamp |
@@ -408,6 +433,13 @@ CREATE TABLE users (
 **Indexes:**
 - `idx_audit_table` ON (table_name)
 - `idx_audit_timestamp` ON (timestamp)
+- `idx_audit_group` ON (group_id) – for retrieving operation groups
+
+**Notes:**
+- **Soft Delete Pattern:** Records are NOT deleted; instead, `deleted_at` timestamp is set. `restore()` clears `deleted_at`.
+- **JSON Snapshots:** `old_data` and `new_data` store complete record state as JSON TEXT, enabling atomic rollback via `UndoRedoService`.
+- **group_id:** UUID linking related audit entries (e.g., multi-table cascading deletes, bulk imports). Used by undo/redo to atomically reverse operation groups.
+- **Undo/Redo:** Persistent stacks stored in `settings` table. Service layer uses audit log to reverse/replay operations.
 
 ---
 
