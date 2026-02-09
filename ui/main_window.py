@@ -794,6 +794,8 @@ class MainWindow(QtWidgets.QMainWindow):
         can_undo = self.facade.undo_redo_service.can_undo()
         can_redo = self.facade.undo_redo_service.can_redo()
         
+        print(f"[UNDO/REDO INIT] _update_undo_redo_states called: can_undo={can_undo}, can_redo={can_redo}")
+        
         self.undo_action.setEnabled(can_undo)
         self.redo_action.setEnabled(can_redo)
         
@@ -801,12 +803,14 @@ class MainWindow(QtWidgets.QMainWindow):
         if can_undo:
             desc = self.facade.undo_redo_service.get_undo_description()
             self.undo_action.setText(f"&Undo {desc}" if desc else "&Undo")
+            print(f"[UNDO/REDO INIT] Undo enabled with description: {desc}")
         else:
             self.undo_action.setText("&Undo")
         
         if can_redo:
             desc = self.facade.undo_redo_service.get_redo_description()
             self.redo_action.setText(f"&Redo {desc}" if desc else "&Redo")
+            print(f"[UNDO/REDO INIT] Redo enabled with description: {desc}")
         else:
             self.redo_action.setText("&Redo")
     
