@@ -292,7 +292,12 @@ class UndoRedoService:
                 self._apply_update(table_name, record_id, entry['old_data'], repo)
         
         elif action == "DELETE":
-            # Reverse delete: clear deleted_at
+            # Reverse delete: restore full record state from old_data, then clear deleted_at
+            if entry.get('old_data'):
+                # First restore the old field values (deleted record still exists with old data)
+                self._apply_update(table_name, record_id, entry['old_data'], repo)
+            
+            # Then clear deleted_at to make record visible again
             if repo and hasattr(repo, 'restore'):
                 repo.restore(record_id)
             else:
@@ -408,6 +413,7 @@ class UndoRedoService:
                         'purchases_during', 'redemptions_during', 'wager_amount',
                         'expected_start_total', 'expected_start_redeemable', 'discoverable_sc',
                         'delta_total', 'delta_redeem', 'session_basis', 'basis_consumed',
+                        'net_taxable_pl', 'profit_loss',
                         'taxable_earnings', 'ending_basis'}:
                 if isinstance(value, (str, int, float)):
                     result[key] = Decimal(str(value))
