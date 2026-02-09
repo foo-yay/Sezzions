@@ -25,27 +25,8 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def __init__(self, facade: AppFacade):
         super().__init__()
-        import sys
-        print("[MAIN_WINDOW] __init__ started", flush=True)
-        sys.stdout.flush()
-        
-        # Immediate file write test
-        try:
-            with open('/tmp/sezzions_debug.log', 'w') as f:
-                f.write("[INIT] MainWindow.__init__() started\n")
-                f.flush()
-        except Exception as e:
-            print(f"[ERROR] Could not write to debug log: {e}", flush=True)
-        
         self.facade = facade
         self.settings = Settings()
-        
-        try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] facade and settings assigned\n")
-                f.flush()
-        except:
-            pass
         
         # Wire Repair Mode service to facade with settings and db_manager
         from services.repair_mode_service import RepairModeService
@@ -60,19 +41,7 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Check data integrity before proceeding
         self.maintenance_mode = False
-        try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] Before _check_data_integrity()\n")
-                f.flush()
-        except:
-            pass
         self._check_data_integrity()
-        try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] After _check_data_integrity()\n")
-                f.flush()
-        except:
-            pass
         
         # Restore window size
         width = self.settings.get('window_width', 1400)
@@ -160,12 +129,6 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Create tabs (with error recovery)
         try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] Before _create_tabs()\n")
-                f.flush()
-        except:
-            pass
-        try:
             self._create_tabs()
         except (ValueError, Exception) as e:
             # Data integrity error during tab creation - enter maintenance mode
@@ -176,23 +139,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.tab_bar.currentChanged.connect(self.stack.setCurrentIndex)
         
-        try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] After _create_tabs(), before _create_menu_bar()\n")
-                f.flush()
-        except:
-            pass
-        
         # Status bar handled in __init__
         
         # Create menu bar
         self._create_menu_bar()
-        try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] After _create_menu_bar()\n")
-                f.flush()
-        except:
-            pass
 
         # Passive indicator for Tools maintenance operations (backup/restore/reset).
         # Uses a small indeterminate progress bar + label in the status bar.
@@ -217,13 +167,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # Initial state
         self._update_tools_busy_indicator()
         
-        try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] After status bar/tools busy indicator\n")
-                f.flush()
-        except:
-            pass
-        
         # Debounced refresh system (Issue #9)
         self._refresh_timer = QtCore.QTimer(self)
         self._refresh_timer.setSingleShot(True)
@@ -231,34 +174,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_timer.timeout.connect(self._execute_refresh)
         self._pending_refresh_event = None
         
-        try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] After debounced refresh setup\n")
-                f.flush()
-        except:
-            pass
-        
         # Apply saved theme
         self._apply_theme(self.settings.get_theme())
-        
-        try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] After _apply_theme()\n")
-                f.flush()
-        except:
-            pass
         
         # Restore last tab
         last_tab = self.settings.get('last_tab', 0)
         if last_tab < self.tab_bar.count():
             self.tab_bar.setCurrentIndex(last_tab)
-        
-        try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] After restore last tab\n")
-                f.flush()
-        except:
-            pass
         
         # Restore last Setup sub-tab
         if hasattr(self, 'setup_tab') and hasattr(self.setup_tab, 'sub_tabs'):
@@ -267,13 +189,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.setup_tab.sub_tabs.setCurrentIndex(last_setup_subtab)
             # Connect to track future changes
             self.setup_tab.sub_tabs.currentChanged.connect(self._on_setup_subtab_changed)
-        
-        try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] After restore Setup sub-tab\n")
-                f.flush()
-        except:
-            pass
 
         # Register for data change events (unified refresh system)
         if hasattr(self.facade, "add_data_change_listener"):
@@ -283,72 +198,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self.facade, "db") and hasattr(self.facade.db, "add_change_listener"):
             self.facade.db.add_change_listener(self._schedule_refresh_all)
         
-        try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] Before _init_notification_system()\n")
-                f.flush()
-        except:
-            pass
-        
         # Initialize notification system
         self._init_notification_system()
-        
-        try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] After _init_notification_system()\n")
-                f.flush()
-        except:
-            pass
 
         # Wire tax withholding service with settings (Issue #29)
         if hasattr(self.facade, 'tax_withholding_service'):
             self.facade.tax_withholding_service.settings = self.settings
 
         # Update undo/redo states (Issue #92)
-        try:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write("[INIT] Reached undo/redo section (line ~221)\n")
-                f.flush()
-        except:
-            pass
-        
-        import sys
-        with open('/tmp/sezzions_debug.log', 'a') as f:
-            f.write(f"[UI INIT] About to call _update_undo_redo_states()\n")
-            f.write(f"[UI INIT] facade.undo_redo_service exists: {hasattr(self, 'facade') and hasattr(self.facade, 'undo_redo_service')}\n")
-            if hasattr(self, 'facade') and hasattr(self.facade, 'undo_redo_service'):
-                can_undo = self.facade.undo_redo_service.can_undo()
-                can_redo = self.facade.undo_redo_service.can_redo()
-                f.write(f"[UI INIT] can_undo(): {can_undo}\n")
-                f.write(f"[UI INIT] can_redo(): {can_redo}\n")
-                f.write(f"[UI INIT] undo_stack length: {len(self.facade.undo_redo_service._undo_stack)}\n")
-                f.write(f"[UI INIT] redo_stack length: {len(self.facade.undo_redo_service._redo_stack)}\n")
-        try:
-            self._update_undo_redo_states()
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write(f"[UI INIT] _update_undo_redo_states() completed successfully\n")
-        except Exception as e:
-            with open('/tmp/sezzions_debug.log', 'a') as f:
-                f.write(f"[UI INIT] ERROR in _update_undo_redo_states(): {e}\n")
-            import traceback
-            traceback.print_exc()
-        
-        # Debug: Show undo/redo state on startup
-        can_undo = self.facade.undo_redo_service.can_undo()
-        can_redo = self.facade.undo_redo_service.can_redo()
-        with open('/tmp/sezzions_debug.log', 'a') as f:
-            f.write(f"[UI INIT] After _update_undo_redo_states: can_undo={can_undo}, can_redo={can_redo}\n")
-            f.write(f"[UI INIT] undo_action.isEnabled(): {self.undo_action.isEnabled()}\n")
-            f.write(f"[UI INIT] redo_action.isEnabled(): {self.redo_action.isEnabled()}\n")
-        if can_undo or can_redo:
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.information(
-                self,
-                "Undo/Redo State",
-                f"Startup state:\nCan undo: {can_undo}\nCan redo: {can_redo}\n\n"
-                f"Undo enabled: {self.undo_action.isEnabled()}\n"
-                f"Redo enabled: {self.redo_action.isEnabled()}"
-            )
+        self._update_undo_redo_states()
 
         # Position bell after initial layout pass
         QtCore.QTimer.singleShot(0, self._position_notification_bell)
