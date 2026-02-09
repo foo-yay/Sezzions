@@ -360,6 +360,10 @@ class UndoRedoService:
             # Reconstruct full model from snapshot
             model_data = self._prepare_model_data(data.copy())
             
+            # Remove metadata fields that aren't in the model
+            # (deleted_at is in DB but not in model classes)
+            model_data.pop('deleted_at', None)
+            
             # Model's __post_init__ will validate and coerce types
             model = model_class(**model_data)
             
