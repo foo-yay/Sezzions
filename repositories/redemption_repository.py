@@ -14,7 +14,7 @@ class RedemptionRepository:
         self.db = db_manager
     
     def get_by_id(self, redemption_id: int) -> Optional[Redemption]:
-        """Get redemption by ID"""
+        """Get redemption by ID (excludes soft-deleted)"""
         query = """
             SELECT r.*,
                    EXISTS(
@@ -22,13 +22,13 @@ class RedemptionRepository:
                        WHERE ra.redemption_id = r.id
                    ) AS has_fifo_allocation
             FROM redemptions r
-            WHERE r.id = ?
+            WHERE r.id = ? AND r.deleted_at IS NULL
         """
         row = self.db.fetch_one(query, (redemption_id,))
         return self._row_to_model(row) if row else None
     
     def get_all(self, start_date: Optional[date] = None, end_date: Optional[date] = None) -> List[Redemption]:
-        """Get all redemptions with related names and optional date filters"""
+        """Get all redemptions with related names and optional date filters (excludes soft-deleted)"""
         query = """
                  SELECT r.*, 
                      u.name as user_name,
@@ -49,7 +49,7 @@ class RedemptionRepository:
             LEFT JOIN users u ON r.user_id = u.id
             LEFT JOIN sites s ON r.site_id = s.id
             LEFT JOIN redemption_methods rm ON r.redemption_method_id = rm.id
-            WHERE 1=1
+            WHERE r.deleted_at IS NULL
         """
         params = []
         
@@ -67,7 +67,7 @@ class RedemptionRepository:
         return [self._row_to_model(row) for row in rows]
     
     def get_by_user(self, user_id: int) -> List[Redemption]:
-        """Get all redemptions for a user"""
+        """Get all redemptions for a user (excludes soft-deleted)"""
         query = """
             SELECT r.*, 
                    EXISTS(
@@ -75,14 +75,14 @@ class RedemptionRepository:
                        WHERE ra.redemption_id = r.id
                    ) AS has_fifo_allocation
             FROM redemptions r
-            WHERE r.user_id = ? 
+            WHERE r.user_id = ? AND r.deleted_at IS NULL
             ORDER BY redemption_date DESC, redemption_time DESC
         """
         rows = self.db.fetch_all(query, (user_id,))
         return [self._row_to_model(row) for row in rows]
     
     def get_by_site(self, site_id: int) -> List[Redemption]:
-        """Get all redemptions for a site"""
+        """Get all redemptions for a site (excludes soft-deleted)"""
         query = """
             SELECT r.*, 
                    EXISTS(
@@ -90,14 +90,14 @@ class RedemptionRepository:
                        WHERE ra.redemption_id = r.id
                    ) AS has_fifo_allocation
             FROM redemptions r
-            WHERE r.site_id = ? 
+            WHERE r.site_id = ? AND r.deleted_at IS NULL
             ORDER BY redemption_date DESC, redemption_time DESC
         """
         rows = self.db.fetch_all(query, (site_id,))
         return [self._row_to_model(row) for row in rows]
     
     def get_by_user_and_site(self, user_id: int, site_id: int) -> List[Redemption]:
-        """Get redemptions for a specific user and site"""
+        """Get redemptions for a specific user and site (excludes soft-deleted)"""
         query = """
             SELECT r.*, 
                    EXISTS(
@@ -105,7 +105,7 @@ class RedemptionRepository:
                        WHERE ra.redemption_id = r.id
                    ) AS has_fifo_allocation
             FROM redemptions r
-            WHERE r.user_id = ? AND r.site_id = ? 
+            WHERE r.user_id = ? AND r.site_id = ? AND r.deleted_at IS NULL
             ORDER BY redemption_date DESC, redemption_time DESC
         """
         rows = self.db.fetch_all(query, (user_id, site_id))
@@ -167,8 +167,13 @@ class RedemptionRepository:
         return redemption
     
     def delete(self, redemption_id: int) -> None:
-        """Delete redemption (hard delete)"""
-        query = "DELETE FROM redemptions WHERE id = ?"
+        """Soft delete redemption by setting deleted_at timestamp"""
+        query = "UPDATE redemptions SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?"
+        self.db.execute(query, (redemption_id,))
+    
+    def restore(self, redemption_id: int) -> None:
+        """Restore a soft-deleted redemption by clearing deleted_at"""
+        query = "UPDATE redemptions SET deleted_at = NULL WHERE id = ?"
         self.db.execute(query, (redemption_id,))
     
     def _row_to_model(self, row: dict) -> Redemption:

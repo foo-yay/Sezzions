@@ -61,18 +61,18 @@ class GameSessionRepository:
         )
     
     def get_by_id(self, session_id: int) -> Optional[GameSession]:
-        """Get session by ID"""
-        query = "SELECT * FROM game_sessions WHERE id = ?"
+        """Get session by ID (excludes soft-deleted)"""
+        query = "SELECT * FROM game_sessions WHERE id = ? AND deleted_at IS NULL"
         row = self.db.fetch_one(query, (session_id,))
         return self._row_to_model(row) if row else None
     
     def get_all(self, status: Optional[str] = None) -> List[GameSession]:
-        """Get all sessions, optionally filtered by status"""
-        query = "SELECT * FROM game_sessions"
+        """Get all sessions, optionally filtered by status (excludes soft-deleted)"""
+        query = "SELECT * FROM game_sessions WHERE deleted_at IS NULL"
         params = []
         
         if status:
-            query += " WHERE status = ?"
+            query += " AND status = ?"
             params.append(status)
         
         query += " ORDER BY session_date DESC, session_time DESC"
@@ -212,6 +212,11 @@ class GameSessionRepository:
         return session
     
     def delete(self, session_id: int) -> None:
-        """Delete a session"""
-        query = "DELETE FROM game_sessions WHERE id = ?"
+        """Soft delete a session by setting deleted_at timestamp"""
+        query = "UPDATE game_sessions SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?"
+        self.db.execute(query, (session_id,))
+    
+    def restore(self, session_id: int) -> None:
+        """Restore a soft-deleted session by clearing deleted_at"""
+        query = "UPDATE game_sessions SET deleted_at = NULL WHERE id = ?"
         self.db.execute(query, (session_id,))

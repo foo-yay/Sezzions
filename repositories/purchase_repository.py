@@ -14,13 +14,13 @@ class PurchaseRepository:
         self.db = db_manager
     
     def get_by_id(self, purchase_id: int) -> Optional[Purchase]:
-        """Get purchase by ID"""
-        query = "SELECT * FROM purchases WHERE id = ?"
+        """Get purchase by ID (excludes soft-deleted)"""
+        query = "SELECT * FROM purchases WHERE id = ? AND deleted_at IS NULL"
         row = self.db.fetch_one(query, (purchase_id,))
         return self._row_to_model(row) if row else None
     
     def get_all(self, start_date: Optional[date] = None, end_date: Optional[date] = None) -> List[Purchase]:
-        """Get all purchases with related names, optionally filtered by date range"""
+        """Get all purchases with related names, optionally filtered by date range (excludes soft-deleted)"""
         query = """
             SELECT p.*, 
                    u.name as user_name,
@@ -30,7 +30,7 @@ class PurchaseRepository:
             LEFT JOIN users u ON p.user_id = u.id
             LEFT JOIN sites s ON p.site_id = s.id
             LEFT JOIN cards c ON p.card_id = c.id
-            WHERE 1=1
+            WHERE p.deleted_at IS NULL
         """
         params = []
         
@@ -48,40 +48,42 @@ class PurchaseRepository:
         return [self._row_to_model(row) for row in rows]
     
     def get_by_user(self, user_id: int) -> List[Purchase]:
-        """Get all purchases for a user"""
+        """Get all purchases for a user (excludes soft-deleted)"""
         query = """
             SELECT * FROM purchases 
-            WHERE user_id = ? 
+            WHERE user_id = ? AND deleted_at IS NULL
             ORDER BY purchase_date DESC, purchase_time DESC
         """
         rows = self.db.fetch_all(query, (user_id,))
         return [self._row_to_model(row) for row in rows]
     
     def get_by_site(self, site_id: int) -> List[Purchase]:
-        """Get all purchases for a site"""
+        """Get all purchases for a site (excludes soft-deleted)"""
         query = """
             SELECT * FROM purchases 
-            WHERE site_id = ? 
+            WHERE site_id = ? AND deleted_at IS NULL
             ORDER BY purchase_date DESC, purchase_time DESC
         """
         rows = self.db.fetch_all(query, (site_id,))
         return [self._row_to_model(row) for row in rows]
     
     def get_by_user_and_site(self, user_id: int, site_id: int) -> List[Purchase]:
-        """Get purchases for a specific user and site"""
+        """Get purchases for a specific user and site (excludes soft-deleted)"""
         query = """
             SELECT * FROM purchases 
-            WHERE user_id = ? AND site_id = ? 
+            WHERE user_id = ? AND site_id = ? AND deleted_at IS NULL
             ORDER BY purchase_date DESC, purchase_time DESC
         """
         rows = self.db.fetch_all(query, (user_id, site_id))
         return [self._row_to_model(row) for row in rows]
     
     def get_available_for_fifo(self, user_id: int, site_id: int) -> List[Purchase]:
-        """Get purchases with remaining balance for FIFO allocation"""
+        """Get purchases with remaining balance for FIFO allocation (excludes soft-deleted)"""
         query = """
             SELECT * FROM purchases 
-            WHERE user_id = ? AND site_id = ? AND CAST(remaining_amount AS REAL) > 0
+            WHERE user_id = ? AND site_id = ? 
+              AND CAST(remaining_amount AS REAL) > 0
+              AND deleted_at IS NULL
             ORDER BY purchase_date ASC, purchase_time ASC
         """
         rows = self.db.fetch_all(query, (user_id, site_id))
@@ -94,13 +96,15 @@ class PurchaseRepository:
         redemption_date: str,
         redemption_time: Optional[str] = None,
     ) -> List[Purchase]:
-        """Get purchases with remaining balance up to a redemption timestamp."""
+        """Get purchases with remaining balance up to a redemption timestamp (excludes soft-deleted)."""
         if not redemption_time:
             redemption_time = "23:59:59"
 
         query = """
             SELECT * FROM purchases
-            WHERE user_id = ? AND site_id = ? AND CAST(remaining_amount AS REAL) > 0
+            WHERE user_id = ? AND site_id = ? 
+              AND CAST(remaining_amount AS REAL) > 0
+              AND deleted_at IS NULL
               AND (
                     purchase_date < ? OR
                     (purchase_date = ? AND COALESCE(purchase_time, '00:00:00') <= ?)
@@ -168,8 +172,13 @@ class PurchaseRepository:
         return purchase
     
     def delete(self, purchase_id: int) -> None:
-        """Delete purchase (hard delete)"""
-        query = "DELETE FROM purchases WHERE id = ?"
+        """Soft delete purchase by setting deleted_at timestamp"""
+        query = "UPDATE purchases SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?"
+        self.db.execute(query, (purchase_id,))
+    
+    def restore(self, purchase_id: int) -> None:
+        """Restore a soft-deleted purchase by clearing deleted_at"""
+        query = "UPDATE purchases SET deleted_at = NULL WHERE id = ?"
         self.db.execute(query, (purchase_id,))
     
     def _row_to_model(self, row: dict) -> Purchase:
