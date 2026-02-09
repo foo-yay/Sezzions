@@ -9,9 +9,12 @@ Reference: Issue #92 - Audit Log + Undo/Redo + Soft Delete
 import json
 from typing import Optional, Dict, Any, List
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime
 from repositories.database import DatabaseManager
 from services.audit_service import AuditService
+from models.purchase import Purchase
+from models.redemption import Redemption
+from models.game_session import GameSession
 
 
 class UndoOperation:
@@ -24,6 +27,13 @@ class UndoOperation:
 
 class UndoRedoService:
     """Service for in-order undo/redo with persistent stacks"""
+    
+    # Model mapping for reconstruction from JSON
+    MODEL_MAP = {
+        'purchases': Purchase,
+        'redemptions': Redemption,
+        'game_sessions': GameSession
+    }
     
     def __init__(self, db: DatabaseManager, audit_service: AuditService, post_operation_callback=None, repositories=None):
         self.db = db
@@ -334,28 +344,79 @@ class UndoRedoService:
     
     def _apply_update(self, table_name: str, record_id: int, data: Dict[str, Any], repo=None) -> None:
         """
-        Apply an UPDATE by reconstructing SET clause from data dictionary.
+        Apply an UPDATE by reconstructing the full model object.
         
-        Skips id, created_at, updated_at, deleted_at (managed by DB).
-        Uses repository update method if available, otherwise falls back to raw SQL.
+        This ensures all model validation, type coercion, and business logic is applied.
+        Falls back to raw SQL only for tables without model definitions.
         """
-        skip_fields = {'id', 'created_at', 'updated_at', 'deleted_at'}
-        fields = {k: v for k, v in data.items() if k not in skip_fields}
+        model_class = self.MODEL_MAP.get(table_name)
         
-        if not fields:
-            return
-        
-        # Try using repository update method if it has a generic update_fields method
-        if repo and hasattr(repo, 'update_raw_fields'):
-            repo.update_raw_fields(record_id, fields)
+        if model_class and repo and hasattr(repo, 'update'):
+            # Reconstruct full model from snapshot
+            model_data = self._prepare_model_data(data.copy())
+            
+            # Model's __post_init__ will validate and coerce types
+            model = model_class(**model_data)
+            
+            # Use repository update (gets validation, type safety, consistency)
+            repo.update(model)
         else:
-            # Fallback to raw SQL
+            # Fallback to raw SQL for tables without models (e.g., lookup tables)
+            skip_fields = {'id', 'created_at', 'updated_at', 'deleted_at'}
+            fields = {k: v for k, v in data.items() if k not in skip_fields}
+            
+            if not fields:
+                return
+            
             set_clause = ", ".join([f"{k} = ?" for k in fields.keys()])
             values = list(fields.values())
             values.append(record_id)
             
             query = f"UPDATE {table_name} SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
             self.db.execute(query, tuple(values))
+    
+    def _prepare_model_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Prepare JSON snapshot data for model reconstruction.
+        
+        Handles type coercion for:
+        - Decimal fields (stored as strings in JSON)
+        - Date fields (stored as ISO strings)
+        - Datetime fields (stored as ISO strings)
+        """
+        result = {}
+        
+        for key, value in data.items():
+            if value is None:
+                result[key] = value
+            # Date fields: purchase_date, redemption_date, session_date, end_date, receipt_date
+            elif key.endswith('_date') or key == 'session_date':
+                if isinstance(value, str):
+                    result[key] = datetime.strptime(value, '%Y-%m-%d').date()
+                else:
+                    result[key] = value
+            # Datetime fields: created_at, updated_at, deleted_at
+            elif key.endswith('_at'):
+                if isinstance(value, str) and value:
+                    result[key] = datetime.fromisoformat(value)
+                else:
+                    result[key] = value
+            # Decimal fields: amount, fees, cost_basis, balances, etc.
+            elif key in {'amount', 'sc_received', 'starting_sc_balance', 'cashback_earned', 
+                        'remaining_amount', 'fees', 'cost_basis', 'taxable_profit',
+                        'starting_balance', 'ending_balance', 'starting_redeemable', 'ending_redeemable',
+                        'purchases_during', 'redemptions_during', 'wager_amount',
+                        'expected_start_total', 'expected_start_redeemable', 'discoverable_sc',
+                        'delta_total', 'delta_redeem', 'session_basis', 'basis_consumed',
+                        'taxable_earnings', 'ending_basis'}:
+                if isinstance(value, (str, int, float)):
+                    result[key] = Decimal(str(value))
+                else:
+                    result[key] = value
+            else:
+                result[key] = value
+        
+        return result
     
     def clear_stacks(self) -> None:
         """Clear both undo and redo stacks (for testing or reset)"""
