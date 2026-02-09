@@ -25,10 +25,11 @@ class UndoOperation:
 class UndoRedoService:
     """Service for in-order undo/redo with persistent stacks"""
     
-    def __init__(self, db: DatabaseManager, audit_service: AuditService, post_operation_callback=None):
+    def __init__(self, db: DatabaseManager, audit_service: AuditService, post_operation_callback=None, repositories=None):
         self.db = db
         self.audit_service = audit_service
         self.post_operation_callback = post_operation_callback  # Called after undo/redo to trigger recalculations
+        self.repositories = repositories or {}  # Map of table_name -> repository instance
         self._undo_stack = []  # List of UndoOperation
         self._redo_stack = []  # List of UndoOperation
         self._load_stacks()
@@ -253,8 +254,7 @@ class UndoRedoService:
             raise RuntimeError(f"Redo failed: {e}")
     
     def _reverse_audit_entry(self, entry: Dict[str, Any]) -> None:
-        """
-        Reverse a single audit log entry.
+        """        Reverse a single audit log entry.
         
         For CREATE: soft-delete the record
         For UPDATE: restore old_data
@@ -263,25 +263,34 @@ class UndoRedoService:
         action = entry['action']
         table_name = entry['table_name']
         record_id = entry['record_id']
+        repo = self.repositories.get(table_name)
         
         if action == "CREATE":
             # Reverse create: soft-delete the record
-            self.db.execute(
-                f"UPDATE {table_name} SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (record_id,)
-            )
+            if repo and hasattr(repo, 'delete'):
+                repo.delete(record_id)
+            else:
+                # Fallback to raw SQL if no repository available
+                self.db.execute(
+                    f"UPDATE {table_name} SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (record_id,)
+                )
         
         elif action == "UPDATE":
             # Reverse update: restore old_data
             if entry.get('old_data'):
-                self._apply_update(table_name, record_id, entry['old_data'])
+                self._apply_update(table_name, record_id, entry['old_data'], repo)
         
         elif action == "DELETE":
             # Reverse delete: clear deleted_at
-            self.db.execute(
-                f"UPDATE {table_name} SET deleted_at = NULL WHERE id = ?",
-                (record_id,)
-            )
+            if repo and hasattr(repo, 'restore'):
+                repo.restore(record_id)
+            else:
+                # Fallback to raw SQL if no repository available
+                self.db.execute(
+                    f"UPDATE {table_name} SET deleted_at = NULL WHERE id = ?",
+                    (record_id,)
+                )
     
     def _replay_audit_entry(self, entry: Dict[str, Any]) -> None:
         """
@@ -294,31 +303,41 @@ class UndoRedoService:
         action = entry['action']
         table_name = entry['table_name']
         record_id = entry['record_id']
+        repo = self.repositories.get(table_name)
         
         if action == "CREATE":
             # Replay create: clear deleted_at
-            self.db.execute(
-                f"UPDATE {table_name} SET deleted_at = NULL WHERE id = ?",
-                (record_id,)
-            )
+            if repo and hasattr(repo, 'restore'):
+                repo.restore(record_id)
+            else:
+                # Fallback to raw SQL if no repository available
+                self.db.execute(
+                    f"UPDATE {table_name} SET deleted_at = NULL WHERE id = ?",
+                    (record_id,)
+                )
         
         elif action == "UPDATE":
             # Replay update: restore new_data
             if entry.get('new_data'):
-                self._apply_update(table_name, record_id, entry['new_data'])
+                self._apply_update(table_name, record_id, entry['new_data'], repo)
         
         elif action == "DELETE":
             # Replay delete: re-soft-delete
-            self.db.execute(
-                f"UPDATE {table_name} SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (record_id,)
-            )
+            if repo and hasattr(repo, 'delete'):
+                repo.delete(record_id)
+            else:
+                # Fallback to raw SQL if no repository available
+                self.db.execute(
+                    f"UPDATE {table_name} SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (record_id,)
+                )
     
-    def _apply_update(self, table_name: str, record_id: int, data: Dict[str, Any]) -> None:
+    def _apply_update(self, table_name: str, record_id: int, data: Dict[str, Any], repo=None) -> None:
         """
         Apply an UPDATE by reconstructing SET clause from data dictionary.
         
         Skips id, created_at, updated_at, deleted_at (managed by DB).
+        Uses repository update method if available, otherwise falls back to raw SQL.
         """
         skip_fields = {'id', 'created_at', 'updated_at', 'deleted_at'}
         fields = {k: v for k, v in data.items() if k not in skip_fields}
@@ -326,12 +345,17 @@ class UndoRedoService:
         if not fields:
             return
         
-        set_clause = ", ".join([f"{k} = ?" for k in fields.keys()])
-        values = list(fields.values())
-        values.append(record_id)
-        
-        query = f"UPDATE {table_name} SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-        self.db.execute(query, tuple(values))
+        # Try using repository update method if it has a generic update_fields method
+        if repo and hasattr(repo, 'update_raw_fields'):
+            repo.update_raw_fields(record_id, fields)
+        else:
+            # Fallback to raw SQL
+            set_clause = ", ".join([f"{k} = ?" for k in fields.keys()])
+            values = list(fields.values())
+            values.append(record_id)
+            
+            query = f"UPDATE {table_name} SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            self.db.execute(query, tuple(values))
     
     def clear_stacks(self) -> None:
         """Clear both undo and redo stacks (for testing or reset)"""

@@ -199,7 +199,12 @@ class AppFacade:
         self.undo_redo_service = UndoRedoService(
             self.db, 
             self.audit_service,
-            post_operation_callback=self._handle_undo_redo_recalculation
+            post_operation_callback=self._handle_undo_redo_recalculation,
+            repositories={
+                'purchases': self.purchase_repo,
+                'redemptions': self.redemption_repo,
+                'game_sessions': self.game_session_repo,
+            }
         )
         
         # Wire audit_service and undo_redo_service into existing services
