@@ -231,13 +231,34 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_timer.timeout.connect(self._execute_refresh)
         self._pending_refresh_event = None
         
+        try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] After debounced refresh setup\n")
+                f.flush()
+        except:
+            pass
+        
         # Apply saved theme
         self._apply_theme(self.settings.get_theme())
+        
+        try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] After _apply_theme()\n")
+                f.flush()
+        except:
+            pass
         
         # Restore last tab
         last_tab = self.settings.get('last_tab', 0)
         if last_tab < self.tab_bar.count():
             self.tab_bar.setCurrentIndex(last_tab)
+        
+        try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] After restore last tab\n")
+                f.flush()
+        except:
+            pass
         
         # Restore last Setup sub-tab
         if hasattr(self, 'setup_tab') and hasattr(self.setup_tab, 'sub_tabs'):
@@ -246,6 +267,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.setup_tab.sub_tabs.setCurrentIndex(last_setup_subtab)
             # Connect to track future changes
             self.setup_tab.sub_tabs.currentChanged.connect(self._on_setup_subtab_changed)
+        
+        try:
+            with open('/tmp/sezzions_debug.log', 'a') as f:
+                f.write("[INIT] After restore Setup sub-tab\n")
+                f.flush()
+        except:
+            pass
     
     def _on_setup_subtab_changed(self, index: int):
         """Save Setup sub-tab selection when it changes"""
