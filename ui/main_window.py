@@ -557,6 +557,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # Execute the refresh
         self.refresh_all_tabs()
         
+        # Update undo/redo button states after data changes (Issue #92)
+        self._update_undo_redo_states()
+        
         # Optional status message
         if self._pending_refresh_event:
             # Only show message for major operations (not manual edits)
