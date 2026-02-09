@@ -143,6 +143,11 @@ class ToolsTab(QWidget):
         db_collapsible = self._create_collapsible_section("🔧 Database Tools", db_group, section_id="database_tools", expanded=False)
         layout.addWidget(db_collapsible)
         
+        # Audit Log Section (Issue #92)
+        audit_group = self._create_audit_log_group()
+        audit_collapsible = self._create_collapsible_section("📋 Audit Log", audit_group, section_id="audit_log", expanded=False)
+        layout.addWidget(audit_collapsible)
+        
         layout.addStretch()
     
     def _create_collapsible_section(self, title: str, content_widget: QWidget, section_id: str = None, expanded: bool = False) -> QWidget:
@@ -587,6 +592,48 @@ class ToolsTab(QWidget):
         width = max(120, self.backup_dir_input.width() - 16)
         elided = metrics.elidedText(directory, Qt.ElideMiddle, width)
         self.backup_dir_input.setText(elided)
+    
+    def _create_audit_log_group(self) -> QWidget:
+        """Create audit log section (Issue #92)"""
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(6)
+        
+        # Section background
+        section = QWidget()
+        section.setObjectName("SectionBackground")
+        layout = QVBoxLayout(section)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
+        
+        desc_label = QLabel(
+            "View audit trail of CRUD operations, including JSON snapshots, undo/redo history, "
+            "and database maintenance activities. Use filters to find specific operations or groups."
+        )
+        desc_label.setWordWrap(True)
+        desc_label.setObjectName("HelperText")
+        layout.addWidget(desc_label)
+        
+        layout.addSpacing(6)
+        
+        # Action row
+        action_layout = QHBoxLayout()
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(8)
+        
+        # Open Audit Log button
+        open_audit_btn = QPushButton("📋 Open Audit Log…")
+        open_audit_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        open_audit_btn.clicked.connect(self._on_open_audit_log)
+        action_layout.addWidget(open_audit_btn)
+        
+        action_layout.addStretch()
+        
+        layout.addLayout(action_layout)
+        
+        container_layout.addWidget(section)
+        return container
         
     def _load_users(self):
         """Load users into combo box"""
@@ -1428,6 +1475,27 @@ class ToolsTab(QWidget):
                 "Template Error",
                 f"Failed to create template ZIP:\n\n{str(e)}"
             )
+    
+    # ========================================================================
+    # Audit Log Handlers (Issue #92)
+    # ========================================================================
+    
+    def _on_open_audit_log(self):
+        """Open the audit log viewer dialog"""
+        # For now, delegate to main window's handler (placeholder for Task 7)
+        parent = self.parentWidget()
+        while parent:
+            if hasattr(parent, '_show_audit_log'):
+                parent._show_audit_log()
+                return
+            parent = parent.parentWidget()
+        
+        # Fallback if main window not found
+        QMessageBox.information(
+            self,
+            "Audit Log",
+            "Audit Log viewer coming soon (Task 7)"
+        )
     
     # ========================================================================
     # Database Tools Handlers
