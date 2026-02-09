@@ -1,6 +1,7 @@
 """
 Redemption service - Business logic for Redemption operations
 """
+import uuid
 from dataclasses import asdict
 from typing import List, Optional, Tuple, TYPE_CHECKING
 from decimal import Decimal
@@ -11,6 +12,7 @@ from services.fifo_service import FIFOService
 
 if TYPE_CHECKING:
     from services.audit_service import AuditService
+    from services.undo_redo_service import UndoRedoService
 
 
 class RedemptionService:
@@ -26,6 +28,7 @@ class RedemptionService:
         self.fifo_service = fifo_service
         self.db = db_manager
         self.audit_service: Optional['AuditService'] = None
+        self.undo_redo_service: Optional['UndoRedoService'] = None
     
     def create_redemption(
         self,
@@ -109,12 +112,22 @@ class RedemptionService:
             # Save redemption first (without FIFO results) - returns Redemption with ID set
             redemption = self.redemption_repo.create(redemption)
             
-            # Log to audit if available
+            # Log to audit and undo/redo stack
+            group_id = str(uuid.uuid4())
             if self.audit_service:
                 self.audit_service.log_create(
                     table_name="redemptions",
                     record_id=redemption.id,
-                    new_data=asdict(redemption)
+                    new_data=asdict(redemption),
+                    group_id=group_id
+                )
+            
+            if self.undo_redo_service:
+                from datetime import datetime
+                self.undo_redo_service.push_operation(
+                    group_id=group_id,
+                    description=f"Create redemption (${amount})",
+                    timestamp=datetime.now().isoformat()
                 )
             
             # Save allocations to redemption_allocations table
@@ -139,12 +152,22 @@ class RedemptionService:
             # Save without FIFO - returns Redemption with ID set
             redemption = self.redemption_repo.create(redemption)
             
-            # Log to audit if available
+            # Log to audit and undo/redo stack
+            group_id = str(uuid.uuid4())
             if self.audit_service:
                 self.audit_service.log_create(
                     table_name="redemptions",
                     record_id=redemption.id,
-                    new_data=asdict(redemption)
+                    new_data=asdict(redemption),
+                    group_id=group_id
+                )
+            
+            if self.undo_redo_service:
+                from datetime import datetime
+                self.undo_redo_service.push_operation(
+                    group_id=group_id,
+                    description=f"Create redemption (${redemption.amount})",
+                    timestamp=datetime.now().isoformat()
                 )
             
             return redemption
@@ -183,9 +206,18 @@ class RedemptionService:
         
         result = self.redemption_repo.update(redemption)
         
-        # Log update to audit
+        # Log update to audit and undo/redo stack
+        group_id = str(uuid.uuid4())
         if self.audit_service:
-            self.audit_service.log_update('redemptions', redemption.id, old_data, asdict(result))
+            self.audit_service.log_update('redemptions', redemption.id, old_data, asdict(result), group_id=group_id)
+        
+        if self.undo_redo_service:
+            from datetime import datetime
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Update redemption #{redemption.id}",
+                timestamp=datetime.now().isoformat()
+            )
         
         return result
     
@@ -216,9 +248,18 @@ class RedemptionService:
         # Delete the redemption
         self.redemption_repo.delete(redemption_id)
         
-        # Log deletion to audit
+        # Log deletion to audit and undo/redo stack
+        group_id = str(uuid.uuid4())
         if self.audit_service:
-            self.audit_service.log_delete('redemptions', redemption_id, old_data)
+            self.audit_service.log_delete('redemptions', redemption_id, old_data, group_id=group_id)
+        
+        if self.undo_redo_service:
+            from datetime import datetime
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Delete redemption #{redemption_id}",
+                timestamp=datetime.now().isoformat()
+            )
     
     def delete_redemptions_bulk(self, redemption_ids: List[int]) -> None:
         """
@@ -266,6 +307,15 @@ class RedemptionService:
         
         # Commit once at the end
         self.db.commit()
+        
+        # Push bulk operation to undo/redo stack (after successful commit)
+        if self.undo_redo_service:
+            from datetime import datetime
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Delete {len(redemption_ids)} redemptions",
+                timestamp=datetime.now().isoformat()
+            )
     
     def get_redemption(self, redemption_id: int) -> Optional[Redemption]:
         """Get redemption by ID"""

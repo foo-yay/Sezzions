@@ -1,6 +1,7 @@
 """
 Purchase service - Business logic for Purchase operations
 """
+import uuid
 from dataclasses import asdict
 from typing import List, Optional, TYPE_CHECKING
 from decimal import Decimal
@@ -11,15 +12,17 @@ from repositories.card_repository import CardRepository
 
 if TYPE_CHECKING:
     from services.audit_service import AuditService
+    from services.undo_redo_service import UndoRedoService
 
 
 class PurchaseService:
     """Business logic for Purchase operations"""
     
-    def __init__(self, purchase_repo: PurchaseRepository, card_repo: Optional[CardRepository] = None, audit_service: Optional['AuditService'] = None):
+    def __init__(self, purchase_repo: PurchaseRepository, card_repo: Optional[CardRepository] = None, audit_service: Optional['AuditService'] = None, undo_redo_service: Optional['UndoRedoService'] = None):
         self.purchase_repo = purchase_repo
         self.card_repo = card_repo
         self.audit_service = audit_service
+        self.undo_redo_service = undo_redo_service
     
     def _calculate_cashback(self, amount: Decimal, card_id: Optional[int]) -> Decimal:
         """Calculate cashback based on card rate.
@@ -87,12 +90,22 @@ class PurchaseService:
         # Save to database (returns Purchase with ID set)
         purchase = self.purchase_repo.create(purchase)
         
-        # Log to audit if available
+        # Log to audit and undo/redo stack
+        group_id = str(uuid.uuid4())
         if self.audit_service:
             self.audit_service.log_create(
                 table_name="purchases",
                 record_id=purchase.id,
-                new_data=asdict(purchase)
+                new_data=asdict(purchase),
+                group_id=group_id
+            )
+        
+        if self.undo_redo_service:
+            from datetime import datetime
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Create purchase (${purchase.amount})",
+                timestamp=datetime.now().isoformat()
             )
         
         return purchase
@@ -169,9 +182,18 @@ class PurchaseService:
         
         result = self.purchase_repo.update(purchase)
         
-        # Log update to audit
+        # Log update to audit and undo/redo stack
+        group_id = str(uuid.uuid4())
         if self.audit_service:
-            self.audit_service.log_update('purchases', purchase.id, old_data, asdict(result))
+            self.audit_service.log_update('purchases', purchase.id, old_data, asdict(result), group_id=group_id)
+        
+        if self.undo_redo_service:
+            from datetime import datetime
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Update purchase #{purchase.id}",
+                timestamp=datetime.now().isoformat()
+            )
         
         return result
     
@@ -193,9 +215,18 @@ class PurchaseService:
         
         self.purchase_repo.delete(purchase_id)
         
-        # Log deletion to audit
+        # Log deletion to audit and undo/redo stack
+        group_id = str(uuid.uuid4())
         if self.audit_service:
-            self.audit_service.log_delete('purchases', purchase_id, old_data)
+            self.audit_service.log_delete('purchases', purchase_id, old_data, group_id=group_id)
+        
+        if self.undo_redo_service:
+            from datetime import datetime
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Delete purchase #{purchase_id}",
+                timestamp=datetime.now().isoformat()
+            )
     
     def get_purchase(self, purchase_id: int) -> Optional[Purchase]:
         """Get purchase by ID"""

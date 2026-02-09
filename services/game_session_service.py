@@ -4,6 +4,7 @@ Service layer for GameSession business logic - CORRECT P/L CALCULATION
 CRITICAL: This implements the correct tax calculation algorithm from business_logic.py.
 Do NOT simplify or change this formula without verifying against legacy app.
 """
+import uuid
 from dataclasses import asdict
 from typing import List, Optional, Tuple, TYPE_CHECKING
 from decimal import Decimal
@@ -15,6 +16,7 @@ from services.fifo_service import FIFOService
 
 if TYPE_CHECKING:
     from services.audit_service import AuditService
+    from services.undo_redo_service import UndoRedoService
 
 
 class GameSessionService:
@@ -35,6 +37,7 @@ class GameSessionService:
         self.tax_withholding_service = tax_withholding_service
         self.adjustment_service = adjustment_service
         self.audit_service: Optional['AuditService'] = None
+        self.undo_redo_service: Optional['UndoRedoService'] = None
     
     def create_session(
         self,
@@ -98,12 +101,21 @@ class GameSessionService:
         # Save to database (returns GameSession with ID set)
         session = self.session_repo.create(session)
         
-        # Log to audit if available
+        # Log to audit and undo/redo stack
+        group_id = str(uuid.uuid4())
         if self.audit_service:
             self.audit_service.log_create(
                 table_name="game_sessions",
                 record_id=session.id,
-                new_data=asdict(session)
+                new_data=asdict(session),
+                group_id=group_id
+            )
+        
+        if self.undo_redo_service:
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Create session for {session.session_date}",
+                timestamp=datetime.now().isoformat()
             )
         
         created = session
@@ -201,9 +213,17 @@ class GameSessionService:
 
         updated = self.session_repo.update(session)
         
-        # Log update to audit
+        # Log update to audit and undo/redo stack
+        group_id = str(uuid.uuid4())
         if self.audit_service:
-            self.audit_service.log_update('game_sessions', session.id, old_data, asdict(updated))
+            self.audit_service.log_update('game_sessions', session.id, old_data, asdict(updated), group_id=group_id)
+        
+        if self.undo_redo_service:
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Update session #{session.id}",
+                timestamp=datetime.now().isoformat()
+            )
 
         # Recalculate P/L if requested
         if recalculate_pl:
@@ -291,9 +311,17 @@ class GameSessionService:
             self._remove_session_from_game_rtp(session)
             self.session_repo.delete(session_id)
             
-            # Log deletion to audit
+            # Log deletion to audit and undo/redo stack
+            group_id = str(uuid.uuid4())
             if self.audit_service:
-                self.audit_service.log_delete('game_sessions', session_id, old_data)
+                self.audit_service.log_delete('game_sessions', session_id, old_data, group_id=group_id)
+            
+            if self.undo_redo_service:
+                self.undo_redo_service.push_operation(
+                    group_id=group_id,
+                    description=f"Delete session #{session_id}",
+                    timestamp=datetime.now().isoformat()
+                )
     
     def delete_sessions_bulk(self, session_ids: List[int]) -> None:
         """Delete multiple sessions efficiently in a single transaction"""
@@ -324,6 +352,14 @@ class GameSessionService:
             for session in sessions:
                 if session:
                     self.audit_service.log_delete('game_sessions', session.id, asdict(session), group_id=group_id)
+        
+        # Push bulk operation to undo/redo stack
+        if self.undo_redo_service:
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Delete {len(session_ids)} sessions",
+                timestamp=datetime.now().isoformat()
+            )
     
     def get_session(self, session_id: int) -> Optional[GameSession]:
         """Get session by ID"""

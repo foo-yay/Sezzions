@@ -198,10 +198,13 @@ class AppFacade:
         self.audit_service = AuditService(self.db)
         self.undo_redo_service = UndoRedoService(self.db, self.audit_service)
         
-        # Wire audit_service into existing services
+        # Wire audit_service and undo_redo_service into existing services
         self.purchase_service.audit_service = self.audit_service
+        self.purchase_service.undo_redo_service = self.undo_redo_service
         self.redemption_service.audit_service = self.audit_service
+        self.redemption_service.undo_redo_service = self.undo_redo_service
         self.game_session_service.audit_service = self.audit_service
+        self.game_session_service.undo_redo_service = self.undo_redo_service
 
     @staticmethod
     def _normalize_time(value: Optional[str]) -> str:
