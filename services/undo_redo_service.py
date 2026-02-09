@@ -25,9 +25,10 @@ class UndoOperation:
 class UndoRedoService:
     """Service for in-order undo/redo with persistent stacks"""
     
-    def __init__(self, db: DatabaseManager, audit_service: AuditService):
+    def __init__(self, db: DatabaseManager, audit_service: AuditService, post_operation_callback=None):
         self.db = db
         self.audit_service = audit_service
+        self.post_operation_callback = post_operation_callback  # Called after undo/redo to trigger recalculations
         self._undo_stack = []  # List of UndoOperation
         self._redo_stack = []  # List of UndoOperation
         self._load_stacks()
@@ -168,6 +169,14 @@ class UndoRedoService:
             self._redo_stack.append(operation)
             self._save_stacks()
             
+            # Trigger post-operation callback for recalculations (after transaction commits)
+            if self.post_operation_callback:
+                try:
+                    self.post_operation_callback(operation='undo', audit_entries=audit_entries)
+                except Exception as e:
+                    # Don't fail undo if recalculation fails; log and continue
+                    print(f"Warning: Post-undo recalculation failed: {e}")
+            
             return operation.description
         
         except Exception as e:
@@ -226,6 +235,14 @@ class UndoRedoService:
             # Move back to undo stack
             self._undo_stack.append(operation)
             self._save_stacks()
+            
+            # Trigger post-operation callback for recalculations (after transaction commits)
+            if self.post_operation_callback:
+                try:
+                    self.post_operation_callback(operation='redo', audit_entries=audit_entries)
+                except Exception as e:
+                    # Don't fail redo if recalculation fails; log and continue
+                    print(f"Warning: Post-redo recalculation failed: {e}")
             
             return operation.description
         

@@ -196,7 +196,11 @@ class AppFacade:
         
         # Audit and Undo/Redo services (Issue #92)
         self.audit_service = AuditService(self.db)
-        self.undo_redo_service = UndoRedoService(self.db, self.audit_service)
+        self.undo_redo_service = UndoRedoService(
+            self.db, 
+            self.audit_service,
+            post_operation_callback=self._handle_undo_redo_recalculation
+        )
         
         # Wire audit_service and undo_redo_service into existing services
         self.purchase_service.audit_service = self.audit_service
@@ -339,6 +343,100 @@ class AppFacade:
                 user_id,
                 boundary_date.isoformat(),
                 boundary_time
+            )
+    
+    def _handle_undo_redo_recalculation(self, operation: str, audit_entries: List[Dict]) -> None:
+        """
+        Callback for undo/redo operations to trigger recalculations (Issue #92).
+        
+        After undo/redo modifies purchases, redemptions, or game_sessions,
+        we need to trigger the same recalculation logic that normal CRUD operations use.
+        
+        Args:
+            operation: 'undo' or 'redo'
+            audit_entries: List of audit log entries that were reversed/replayed
+        """
+        import json
+        from datetime import datetime
+        
+        # Group affected records by (user_id, site_id)
+        affected_pairs = {}  # (user_id, site_id) -> earliest (date, time)
+        
+        for entry in audit_entries:
+            table_name = entry.get('table_name')
+            
+            # Only recalculate for tables that affect accounting
+            if table_name not in ('purchases', 'redemptions', 'game_sessions'):
+                continue
+            
+            # Parse the data to get user_id, site_id, date, time
+            # For UPDATE: use old_data (what it was before undo) or new_data (what it became after undo)
+            # For CREATE/DELETE: use whatever data is available
+            data_json = entry.get('old_data') or entry.get('new_data')
+            if not data_json:
+                continue
+            
+            try:
+                data = json.loads(data_json)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            
+            user_id = data.get('user_id')
+            site_id = data.get('site_id')
+            
+            if not user_id or not site_id:
+                continue
+            
+            # Get date/time based on table
+            if table_name == 'purchases':
+                date_str = data.get('purchase_date')
+                time_str = data.get('purchase_time', '00:00:00')
+            elif table_name == 'redemptions':
+                date_str = data.get('redemption_date')
+                time_str = data.get('redemption_time', '00:00:00')
+            elif table_name == 'game_sessions':
+                date_str = data.get('session_date')
+                time_str = data.get('session_time', '00:00:00')
+            else:
+                continue
+            
+            if not date_str:
+                continue
+            
+            # Parse date
+            try:
+                if isinstance(date_str, str):
+                    record_date = datetime.fromisoformat(date_str).date()
+                else:
+                    record_date = date_str
+            except (ValueError, AttributeError):
+                continue
+            
+            # Track earliest date/time per pair
+            pair = (user_id, site_id)
+            time_normalized = self._normalize_time(time_str)
+            
+            if pair not in affected_pairs:
+                affected_pairs[pair] = (record_date, time_normalized)
+            else:
+                current_date, current_time = affected_pairs[pair]
+                if (record_date, time_normalized) < (current_date, current_time):
+                    affected_pairs[pair] = (record_date, time_normalized)
+        
+        # Trigger recalculation for each affected pair
+        for (user_id, site_id), (boundary_date, boundary_time) in affected_pairs.items():
+            # Use containing boundary logic to find actual rebuild point
+            boundary_date, boundary_time = self._containing_boundary(
+                site_id, user_id, boundary_date, boundary_time
+            )
+            
+            # Trigger rebuild or mark stale
+            self._rebuild_or_mark_stale(
+                user_id=user_id,
+                site_id=site_id,
+                boundary_date=boundary_date,
+                boundary_time=boundary_time,
+                reason=f"{operation} operation"
             )
     
     # ==========================================================================
