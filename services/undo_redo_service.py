@@ -302,6 +302,14 @@ class UndoRedoService:
                 print(f"[UNDO/REDO DEBUG] Calling repo.restore({record_id}) for {table_name}")
                 repo.restore(record_id)
                 print(f"[UNDO/REDO DEBUG] repo.restore() completed")
+                
+                # Verify the restore worked
+                verify_query = f"SELECT deleted_at, status FROM {table_name} WHERE id = ?"
+                result = self.db.fetch_one(verify_query, (record_id,))
+                if result:
+                    print(f"[UNDO/REDO DEBUG] Verification: deleted_at={result.get('deleted_at')}, status={result.get('status')}")
+                else:
+                    print(f"[UNDO/REDO DEBUG] WARNING: Record {record_id} not found after restore!")
             else:
                 # Fallback to raw SQL if no repository available
                 print(f"[UNDO/REDO DEBUG] Using raw SQL to clear deleted_at for {table_name} id={record_id}")
