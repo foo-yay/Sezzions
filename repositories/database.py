@@ -479,10 +479,12 @@ class DatabaseManager:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_purchases_remaining ON purchases(remaining_amount)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_purchases_site_user ON purchases(site_id, user_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(purchase_date, purchase_time)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_purchases_deleted ON purchases(deleted_at)')
         
         # Redemptions indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_redemptions_site_user ON redemptions(site_id, user_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_redemptions_date ON redemptions(redemption_date, redemption_time)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_redemptions_deleted ON redemptions(deleted_at)')
         
         # Redemption allocations indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_allocations_redemption ON redemption_allocations(redemption_id)')
@@ -496,6 +498,7 @@ class DatabaseManager:
         # Game sessions indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_site_user ON game_sessions(site_id, user_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_date ON game_sessions(session_date, session_time)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_deleted ON game_sessions(deleted_at)')
 
         # Game session event links indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_gsel_session ON game_session_event_links(game_session_id)')
@@ -643,6 +646,7 @@ class DatabaseManager:
             ("basis_consumed", "TEXT"),
             ("net_taxable_pl", "TEXT"),
             ("status", "TEXT DEFAULT 'Active'"),
+            ("deleted_at", "TIMESTAMP NULL"),
         ]
         
         for column_name, column_def in migrations:
@@ -692,6 +696,7 @@ class DatabaseManager:
             ("receipt_date", "TEXT"),
             ("processed", "INTEGER DEFAULT 0"),
             ("more_remaining", "INTEGER DEFAULT 0"),
+            ("deleted_at", "TIMESTAMP NULL"),
         ]
 
         for column_name, column_def in migrations:
@@ -873,6 +878,7 @@ class DatabaseManager:
             ("starting_sc_balance", "TEXT DEFAULT '0.00'"),
             ("cashback_earned", "TEXT DEFAULT '0.00'"),
             ("cashback_is_manual", "INTEGER DEFAULT 0"),
+            ("deleted_at", "TIMESTAMP NULL"),
             ("status", "TEXT DEFAULT 'active'"),
         ]
 
