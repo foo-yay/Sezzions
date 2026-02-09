@@ -211,6 +211,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Update undo/redo states (Issue #92)
         self._update_undo_redo_states()
+        
+        # Debug: Show undo/redo state on startup
+        can_undo = self.facade.undo_redo_service.can_undo()
+        can_redo = self.facade.undo_redo_service.can_redo()
+        if can_undo or can_redo:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "Undo/Redo State",
+                f"Startup state:\nCan undo: {can_undo}\nCan redo: {can_redo}\n\n"
+                f"Undo enabled: {self.undo_action.isEnabled()}\n"
+                f"Redo enabled: {self.redo_action.isEnabled()}"
+            )
 
         # Position bell after initial layout pass
         QtCore.QTimer.singleShot(0, self._position_notification_bell)
