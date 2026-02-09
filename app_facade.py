@@ -54,6 +54,8 @@ from services.notification_rules_service import NotificationRulesService
 from services.adjustment_service import AdjustmentService
 from services.repair_mode_service import RepairModeService
 from services.timestamp_service import TimestampService
+from services.audit_service import AuditService
+from services.undo_redo_service import UndoRedoService
 from repositories.notification_repository import NotificationRepository
 
 from models.user import User
@@ -191,6 +193,10 @@ class AppFacade:
         
         # Timestamp uniqueness enforcement
         self.timestamp_service = TimestampService(self.db)
+        
+        # Audit and Undo/Redo services (Issue #92)
+        self.audit_service = AuditService(self.db)
+        self.undo_redo_service = UndoRedoService(self.db, self.audit_service)
 
     @staticmethod
     def _normalize_time(value: Optional[str]) -> str:
