@@ -408,8 +408,28 @@ class UndoRedoService:
             # Model's __post_init__ will validate and coerce types
             model = model_class(**model_data)
             
+            # Debug: Check if record exists before update
+            if table_name == 'game_sessions':
+                check_query = f"SELECT id, deleted_at FROM {table_name} WHERE id = ?"
+                before_update = self.db.fetch_one(check_query, (record_id,))
+                if before_update:
+                    print(f"[UNDO/REDO DEBUG] Before repo.update(): id={before_update.get('id')}, deleted_at={before_update.get('deleted_at')}")
+                else:
+                    print(f"[UNDO/REDO DEBUG] ERROR: Record {record_id} not found BEFORE repo.update()!")
+            
             # Use repository update (gets validation, type safety, consistency)
+            print(f"[UNDO/REDO DEBUG] Calling repo.update() for {table_name} id={record_id}")
             repo.update(model)
+            print(f"[UNDO/REDO DEBUG] repo.update() completed")
+            
+            # Debug: Check if record exists after update
+            if table_name == 'game_sessions':
+                check_query = f"SELECT id, deleted_at, status FROM {table_name} WHERE id = ?"
+                after_update = self.db.fetch_one(check_query, (record_id,))
+                if after_update:
+                    print(f"[UNDO/REDO DEBUG] After repo.update(): id={after_update.get('id')}, deleted_at={after_update.get('deleted_at')}, status={after_update.get('status')}")
+                else:
+                    print(f"[UNDO/REDO DEBUG] ERROR: Record {record_id} not found AFTER repo.update()!")
         else:
             # Fallback to raw SQL for tables without models (e.g., lookup tables)
             skip_fields = {'id', 'created_at', 'updated_at', 'deleted_at'}
