@@ -382,9 +382,10 @@ Excel-like undo/redo: strictly in-order (LIFO for undo, FIFO for redo). New oper
 
 **Reversal strategy:**
 - CREATE → soft-delete
-- UPDATE → restore old snapshot
+- UPDATE → restore old snapshot (calculated fields excluded for game_sessions)
 - DELETE → restore (clear deleted_at)
 - Operations go through same service layer to ensure downstream recalculation
+- Post-operation callback triggers P/L recalculation for affected user/site pairs (Issue #97)
 
 **Limitations:**
 - Cannot selectively undo past operations (no "undo item from last week")

@@ -12,6 +12,58 @@ Rules:
 ## 2026-02-10
 
 ```yaml
+id: 2026-02-10-03
+type: bugfix
+areas: [services]
+summary: "Fix undo/redo recalculation for game sessions (Issue #97)"
+files_changed:
+  - app_facade.py
+issue: 97
+```
+
+**Bugfix: Undo/Redo Calculated Fields Restoration**
+
+**Problem:**
+- After undo/redo on game sessions, calculated fields (delta_total, net_taxable_pl, etc.) would revert to zero
+- Session status changes worked correctly, but P/L calculations were not being triggered
+
+**Root Cause:**
+- `_handle_undo_redo_recalculation()` callback was attempting to parse `old_data`/`new_data` from audit entries using `json.loads()`
+- However, data retrieved from the database was already a dict, not a JSON string
+- This caused silent parsing failures, resulting in 0 affected (user_id, site_id) pairs being found
+- With no affected pairs, P/L recalculation was never triggered
+
+**Solution:**
+- Changed audit entry parsing to handle both JSON strings and dicts:
+  ```python
+  data = json.loads(data_json) if isinstance(data_json, str) else data_json
+  ```
+- Now recalculation callback properly identifies affected user/site pairs and triggers P/L recalculation
+- Calculated fields are correctly excluded from snapshot restoration (already implemented) AND properly recomputed after undo/redo
+
+**Testing:**
+- Manual verification: Start Session → End Session → Undo → Redo
+- Calculated fields now properly maintained through entire flow
+- All 825 tests passing
+
+---
+
+```yaml
+id: 2026-02-10-02
+type: cleanup
+areas: [ui]
+summary: "Remove debug print statements from purchase balance check"
+files_changed:
+  - ui/tabs/purchases_tab.py
+```
+
+**Cleanup: Remove Purchase Balance Debug Output**
+
+Removed debug print statements that were outputting purchase balance check details to console during ADD operations. These were leftover from earlier troubleshooting and are no longer needed.
+
+---
+
+```yaml
 id: 2026-02-10-01
 type: feature
 areas: [services, ui, database]
