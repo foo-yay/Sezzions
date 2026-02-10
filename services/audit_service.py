@@ -172,19 +172,27 @@ class AuditService:
             group_id: Optional UUID grouping related operations
             auto_commit: If False, caller must commit transaction
         """
-        summary = self.build_summary(table_name, "UPDATE", record_id, old_data, new_data)
-        self.db.log_audit(
-            action="UPDATE",
-            table_name=table_name,
-            record_id=record_id,
-            details=f"Updated {table_name} record",
-            user_name=user_name,
-            old_data=json.dumps(old_data, default=str),
-            new_data=json.dumps(new_data, default=str),
-            group_id=group_id,
-            summary_data=summary,
-            auto_commit=auto_commit
-        )
+        print(f"[DEBUG audit_service.log_update] Building summary for {table_name} record_id={record_id}")
+        try:
+            summary = self.build_summary(table_name, "UPDATE", record_id, old_data, new_data)
+            print(f"[DEBUG audit_service.log_update] Summary built successfully: {summary[:100] if summary else 'None'}...")
+            print(f"[DEBUG audit_service.log_update] Calling db.log_audit with group_id={group_id}")
+            self.db.log_audit(
+                action="UPDATE",
+                table_name=table_name,
+                record_id=record_id,
+                details=f"Updated {table_name} record",
+                user_name=user_name,
+                old_data=json.dumps(old_data, default=str),
+                new_data=json.dumps(new_data, default=str),
+                group_id=group_id,
+                summary_data=summary,
+                auto_commit=auto_commit
+            )
+            print(f"[DEBUG audit_service.log_update] db.log_audit returned successfully")
+        except Exception as e:
+            print(f"[DEBUG audit_service.log_update] EXCEPTION: {type(e).__name__}: {e}")
+            raise
     
     def log_delete(
         self,
