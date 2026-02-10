@@ -467,3 +467,64 @@ class AuditService:
             # Rollback on any error
             self.db._connection.rollback()
             raise e
+    
+    def export_audit_log_csv(
+        self,
+        output_path: str,
+        start_date: Optional[Any] = None,
+        end_date: Optional[Any] = None
+    ) -> int:
+        """
+        Export audit log to CSV file.
+        
+        Args:
+            output_path: File path for output CSV
+            start_date: Optional start date filter (inclusive)
+            end_date: Optional end date filter (inclusive)
+        
+        Returns:
+            Number of rows exported
+        """
+        import csv
+        from datetime import date
+        
+        # Build query with optional date filtering
+        query = """
+            SELECT id, action, table_name, record_id, details, user_name, 
+                   timestamp, old_data, new_data, group_id, summary_data
+            FROM audit_log
+            WHERE 1=1
+        """
+        params = []
+        
+        if start_date:
+            # Filter by timestamp (audit_log.timestamp is a TEXT field in ISO format)
+            if isinstance(start_date, date):
+                query += " AND DATE(timestamp) >= ?"
+                params.append(start_date.isoformat())
+        
+        if end_date:
+            if isinstance(end_date, date):
+                query += " AND DATE(timestamp) <= ?"
+                params.append(end_date.isoformat())
+        
+        query += " ORDER BY id ASC"
+        
+        # Fetch rows
+        rows = self.db.fetch_all(query, tuple(params))
+        
+        # Write CSV
+        with open(output_path, 'w', newline='', encoding='utf-8') as f:
+            fieldnames = [
+                'id', 'action', 'table_name', 'record_id', 'details', 'user_name',
+                'timestamp', 'old_data', 'new_data', 'group_id', 'summary_data'
+            ]
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            
+            for row in rows:
+                # Convert dict to plain dict (in case it's a sqlite3.Row)
+                row_dict = dict(row)
+                writer.writerow(row_dict)
+        
+        return len(rows)
