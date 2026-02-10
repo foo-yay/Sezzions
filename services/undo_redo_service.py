@@ -35,6 +35,9 @@ class UndoRedoService:
         'game_sessions': GameSession
     }
     
+    # Default maximum undo operations (Issue #95)
+    DEFAULT_MAX_UNDO_OPERATIONS = 100
+    
     def __init__(self, db: DatabaseManager, audit_service: AuditService, post_operation_callback=None, repositories=None):
         self.db = db
         self.audit_service = audit_service
@@ -42,7 +45,9 @@ class UndoRedoService:
         self.repositories = repositories or {}  # Map of table_name -> repository instance
         self._undo_stack = []  # List of UndoOperation
         self._redo_stack = []  # List of UndoOperation
+        self._max_undo_operations = self.DEFAULT_MAX_UNDO_OPERATIONS  # Issue #95
         self._load_stacks()
+        self._load_max_undo_setting()
     
     def _load_stacks(self) -> None:
         """Load undo/redo stacks from persistent settings"""
@@ -79,6 +84,17 @@ class UndoRedoService:
                 self._redo_stack = []
         else:
             print(f"[UNDO/REDO LOAD] No redo stack found in settings")
+    
+    def _load_max_undo_setting(self) -> None:
+        """Load max_undo_operations setting from database (Issue #95)"""
+        result = self.db.fetch_one("SELECT value FROM settings WHERE key = ?", ("max_undo_operations",))
+        if result and result['value']:
+            try:
+                self._max_undo_operations = int(result['value'])
+            except (ValueError, TypeError):
+                self._max_undo_operations = self.DEFAULT_MAX_UNDO_OPERATIONS
+        else:
+            self._max_undo_operations = self.DEFAULT_MAX_UNDO_OPERATIONS
     
     def _save_stacks(self) -> None:
         """Persist undo/redo stacks to settings table"""
@@ -137,7 +153,92 @@ class UndoRedoService:
         """
         self._undo_stack.append(UndoOperation(group_id, description, timestamp))
         self._redo_stack.clear()  # Invalidate redo after new operation
+        
+        # Auto-prune if exceeds max (Issue #95)
+        if self._max_undo_operations > 0 and len(self._undo_stack) > self._max_undo_operations:
+            self._prune_to_limit(self._max_undo_operations)
+        
         self._save_stacks()
+    
+    def get_max_undo_operations(self) -> int:
+        """Get the current max undo operations limit (Issue #95)"""
+        return self._max_undo_operations
+    
+    def set_max_undo_operations(self, max_operations: int) -> None:
+        """
+        Set the maximum number of undo operations to retain (Issue #95).
+        
+        This will prune older operations immediately if the new limit is lower.
+        Pruning removes JSON snapshots from audit_log but preserves metadata.
+        
+        Args:
+            max_operations: Maximum operations (0 = disable undo/redo)
+        """
+        if max_operations < 0:
+            raise ValueError("max_undo_operations must be >= 0")
+        
+        self._max_undo_operations = max_operations
+        
+        # Persist setting
+        self.db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            ("max_undo_operations", str(max_operations))
+        )
+        
+        # Prune immediately if needed
+        self._prune_to_limit(max_operations)
+    
+    def _prune_to_limit(self, max_operations: int) -> None:
+        """
+        Prune undo/redo stacks and audit snapshots to the specified limit (Issue #95).
+        
+        This operation is atomic (uses a transaction).
+        
+        Args:
+            max_operations: Maximum operations to retain
+        """
+        if max_operations == 0:
+            # Prune everything
+            pruned_group_ids = [op.group_id for op in self._undo_stack] + [op.group_id for op in self._redo_stack]
+            self._undo_stack.clear()
+            self._redo_stack.clear()
+        else:
+            # Prune old operations beyond the limit
+            pruned_group_ids = []
+            
+            # Prune undo stack
+            if len(self._undo_stack) > max_operations:
+                pruned = self._undo_stack[:-max_operations]
+                pruned_group_ids.extend([op.group_id for op in pruned])
+                self._undo_stack = self._undo_stack[-max_operations:]
+            
+            # Prune redo stack (keep only if total within limit)
+            total_operations = len(self._undo_stack) + len(self._redo_stack)
+            if total_operations > max_operations:
+                redo_allowed = max_operations - len(self._undo_stack)
+                if redo_allowed < len(self._redo_stack):
+                    pruned = self._redo_stack[redo_allowed:]
+                    pruned_group_ids.extend([op.group_id for op in pruned])
+                    self._redo_stack = self._redo_stack[:redo_allowed]
+        
+        # Prune audit snapshots in a transaction
+        if pruned_group_ids:
+            try:
+                with self.db.transaction():
+                    for group_id in pruned_group_ids:
+                        self.db.execute(
+                            "UPDATE audit_log SET old_data = NULL, new_data = NULL WHERE group_id = ?",
+                            (group_id,)
+                        )
+                    # Save updated stacks within transaction
+                    self._save_stacks()
+            except Exception as e:
+                # Transaction rolled back; reload stacks to restore consistency
+                self._load_stacks()
+                raise RuntimeError(f"Failed to prune undo history: {e}")
+        else:
+            # No pruning needed, just save stacks
+            self._save_stacks()
     
     def undo(self) -> Optional[str]:
         """
