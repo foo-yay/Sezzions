@@ -164,6 +164,11 @@ class ExpensesTab(QtWidgets.QWidget):
 
         self.refresh_data()
 
+    def focus_search(self):
+        """Focus the search bar (for Cmd+F/Ctrl+F shortcut - Issue #99)"""
+        self.search_edit.setFocus()
+        self.search_edit.selectAll()
+
     def refresh_data(self):
         start_date, end_date = self.date_filter.get_date_range()
         self.expenses = self.facade.get_expenses(start_date=start_date, end_date=end_date)

@@ -1255,6 +1255,11 @@ class RealizedTab(QtWidgets.QWidget):
         self._render_tree(data)
         self._update_action_buttons()
     
+    def focus_search(self):
+        """Focus the search bar (for Cmd+F/Ctrl+F shortcut - Issue #99)"""
+        self.search_edit.setFocus()
+        self.search_edit.selectAll()
+
     def refresh_data(self):
         """Standardized refresh method for global refresh system (Issue #9)."""
         self.refresh_view()

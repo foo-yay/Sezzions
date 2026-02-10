@@ -113,6 +113,11 @@ class UsersTab(QtWidgets.QWidget):
         # Load data
         self.refresh_data()
     
+    def focus_search(self):
+        """Focus the search bar (for Cmd+F/Ctrl+F shortcut - Issue #99)"""
+        self.search_edit.setFocus()
+        self.search_edit.selectAll()
+
     def refresh_data(self):
         """Reload users from database"""
         self.users = self.facade.get_all_users()

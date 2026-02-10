@@ -108,6 +108,11 @@ class GameTypesTab(QtWidgets.QWidget):
 
         self.refresh_data()
 
+    def focus_search(self):
+        """Focus the search bar (for Cmd+F/Ctrl+F shortcut - Issue #99)"""
+        self.search_edit.setFocus()
+        self.search_edit.selectAll()
+
     def refresh_data(self):
         self.game_types = self.facade.get_all_game_types()
         self._populate_table()

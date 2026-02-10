@@ -142,6 +142,11 @@ class PurchasesTab(QtWidgets.QWidget):
         # Load data
         self.refresh_data()
     
+    def focus_search(self):
+        """Focus the search bar (for Cmd+F/Ctrl+F shortcut - Issue #99)"""
+        self.search_edit.setFocus()
+        self.search_edit.selectAll()
+
     def refresh_data(self):
         """Reload purchases from database"""
         start_date, end_date = self.date_filter.get_date_range()
