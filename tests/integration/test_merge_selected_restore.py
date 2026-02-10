@@ -32,8 +32,8 @@ from services.tools.restore_service import RestoreService
 from services.tools.enums import RestoreMode
 
 
-class TestDB:
-    """Test database with full schema matching production."""
+class HelperDB:
+    """Helper database with full schema matching production (not a test class)."""
     
     def __init__(self, db_path=':memory:'):
         self.conn = sqlite3.connect(db_path)
@@ -313,7 +313,7 @@ def tmp_path():
 def test_db(tmp_path):
     """Create a test database."""
     db_path = tmp_path / "test.db"
-    db = TestDB(str(db_path))
+    db = HelperDB(str(db_path))
     yield db
     db.close()
 

@@ -25,6 +25,9 @@ def app_facade():
     """Create in-memory app facade"""
     facade = AppFacade(":memory:")
     yield facade
+    # Process events before closing to prevent "closed database" popup errors
+    from PySide6.QtWidgets import QApplication
+    QApplication.processEvents()
     facade.db.close()
 
 
@@ -34,6 +37,8 @@ def main_window(qapp, app_facade):
     window = MainWindow(app_facade)
     yield window
     window.close()
+    # Process events after window close to clean up pending operations
+    qapp.processEvents()
 
 
 def test_settings_dialog_has_data_section(main_window):
