@@ -37,11 +37,11 @@ class UnrealizedPositionRepository:
                 site_id,
                 user_id
             FROM (
-                SELECT site_id, user_id FROM purchases WHERE (status IS NULL OR status = 'active')
+                SELECT site_id, user_id FROM purchases WHERE deleted_at IS NULL AND (status IS NULL OR status = 'active')
                 UNION
-                SELECT site_id, user_id FROM game_sessions
+                SELECT site_id, user_id FROM game_sessions WHERE deleted_at IS NULL
                 UNION
-                SELECT site_id, user_id FROM redemptions
+                SELECT site_id, user_id FROM redemptions WHERE deleted_at IS NULL
             ) combined
         """
         
@@ -72,6 +72,7 @@ class UnrealizedPositionRepository:
                     COALESCE(SUM(remaining_amount), 0) as remaining_basis
                 FROM purchases
                 WHERE site_id = ? AND user_id = ?
+                  AND deleted_at IS NULL
                   AND (status IS NULL OR status = 'active')
                   AND remaining_amount > 0.001
             """
@@ -86,6 +87,7 @@ class UnrealizedPositionRepository:
                     SELECT MIN(purchase_date) as start_date
                     FROM purchases
                     WHERE site_id = ? AND user_id = ?
+                        AND deleted_at IS NULL
                       AND (status IS NULL OR status = 'active')
                 """
                 earliest = self.db.fetch_one(earliest_purchase_query, (site_id, user_id))
@@ -107,6 +109,7 @@ class UnrealizedPositionRepository:
                     SELECT COALESCE(SUM(sc_received), 0) as total_sc
                     FROM purchases
                     WHERE site_id = ? AND user_id = ?
+                        AND deleted_at IS NULL
                       AND (status IS NULL OR status = 'active')
                 """
                 purchase_data = self.db.fetch_one(purchase_sum_query, (site_id, user_id))
@@ -117,6 +120,7 @@ class UnrealizedPositionRepository:
                     SELECT purchase_date, COALESCE(purchase_time, '00:00:00') as purchase_time
                     FROM purchases
                     WHERE site_id = ? AND user_id = ?
+                                            AND deleted_at IS NULL
                       AND (status IS NULL OR status = 'active')
                     ORDER BY purchase_date DESC, COALESCE(purchase_time,'00:00:00') DESC, id DESC
                     LIMIT 1
@@ -140,6 +144,7 @@ class UnrealizedPositionRepository:
                         SELECT COALESCE(SUM(sc_received), 0) as total_sc
                         FROM purchases
                         WHERE site_id = ? AND user_id = ?
+                          AND deleted_at IS NULL
                           AND (status IS NULL OR status = 'active')
                           AND id != ?
                           AND (
@@ -156,6 +161,7 @@ class UnrealizedPositionRepository:
                         SELECT COALESCE(SUM(sc_received), 0) as total_sc
                         FROM purchases
                         WHERE site_id = ? AND user_id = ?
+                          AND deleted_at IS NULL
                           AND (status IS NULL OR status = 'active')
                           AND (
                               purchase_date > ? 
@@ -173,6 +179,7 @@ class UnrealizedPositionRepository:
                     SELECT COALESCE(SUM(amount), 0) as total_redeemed
                     FROM redemptions
                     WHERE site_id = ? AND user_id = ?
+                      AND deleted_at IS NULL
                       AND (
                           redemption_date > ?
                           OR (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') > ?)
@@ -189,6 +196,7 @@ class UnrealizedPositionRepository:
                     SELECT COALESCE(SUM(amount), 0) as redeemable_redeemed
                     FROM redemptions
                     WHERE site_id = ? AND user_id = ?
+                      AND deleted_at IS NULL
                       AND is_free_sc = 0
                       AND (
                           redemption_date > ?
@@ -219,6 +227,7 @@ class UnrealizedPositionRepository:
                         SELECT purchase_date, COALESCE(purchase_time, '00:00:00') as purchase_time
                         FROM purchases
                         WHERE site_id = ? AND user_id = ?
+                                                    AND deleted_at IS NULL
                           AND (status IS NULL OR status = 'active')
                         ORDER BY purchase_date DESC, COALESCE(purchase_time,'00:00:00') DESC, id DESC
                         LIMIT 1
@@ -232,6 +241,7 @@ class UnrealizedPositionRepository:
                         SELECT redemption_date, COALESCE(redemption_time, '00:00:00') as redemption_time
                         FROM redemptions
                         WHERE site_id = ? AND user_id = ?
+                          AND deleted_at IS NULL
                         ORDER BY redemption_date DESC, COALESCE(redemption_time,'00:00:00') DESC, id DESC
                         LIMIT 1
                     """
@@ -243,7 +253,6 @@ class UnrealizedPositionRepository:
                 last_activity_dt = max(last_activity_dts) if last_activity_dts else checkpoint_dt
                 last_activity = last_activity_dt.date() if last_activity_dt else checkpoint_date
 
-            close_balance_dt = self._get_close_balance_dt(site_id, user_id)
             close_balance_dt = self._get_close_balance_dt(site_id, user_id)
             if close_balance_dt and last_activity_dt and close_balance_dt >= last_activity_dt:
                 continue
@@ -338,6 +347,7 @@ class UnrealizedPositionRepository:
             SELECT redemption_date, COALESCE(redemption_time,'00:00:00') as redemption_time
             FROM redemptions
             WHERE site_id = ? AND user_id = ?
+                            AND deleted_at IS NULL
               AND CAST(amount AS REAL) = 0
               AND notes LIKE 'Balance Closed%'
             ORDER BY redemption_date DESC, COALESCE(redemption_time,'00:00:00') DESC, id DESC
@@ -350,6 +360,7 @@ class UnrealizedPositionRepository:
             SELECT redemption_date, COALESCE(redemption_time,'00:00:00') as redemption_time
             FROM redemptions
             WHERE site_id = ? AND user_id = ?
+                            AND deleted_at IS NULL
               AND more_remaining IS NOT NULL
               AND more_remaining = 0
             ORDER BY redemption_date DESC, COALESCE(redemption_time,'00:00:00') DESC, id DESC
@@ -396,6 +407,7 @@ class UnrealizedPositionRepository:
                 0.0 as redeemable_sc
             FROM purchases
             WHERE site_id = ? AND user_id = ?
+                            AND deleted_at IS NULL
               AND (status IS NULL OR status = 'active')
               AND starting_sc_balance > 0.001
             ORDER BY purchase_date DESC, COALESCE(purchase_time,'00:00:00') DESC, id DESC
@@ -421,6 +433,7 @@ class UnrealizedPositionRepository:
                 starting_redeemable
             FROM game_sessions
             WHERE site_id = ? AND user_id = ?
+              AND deleted_at IS NULL
             ORDER BY session_date DESC, COALESCE(session_time,'00:00:00') DESC, id DESC
             LIMIT 1
         """
@@ -444,6 +457,7 @@ class UnrealizedPositionRepository:
                 ending_redeemable
             FROM game_sessions
             WHERE site_id = ? AND user_id = ?
+                            AND deleted_at IS NULL
               AND ending_balance IS NOT NULL
               AND LOWER(COALESCE(status, '')) != 'active'
             ORDER BY COALESCE(end_date, session_date) DESC,

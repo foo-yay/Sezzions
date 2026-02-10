@@ -17,6 +17,7 @@ def db():
     # Insert test data
     db.execute("INSERT INTO users (id, name) VALUES (1, 'Alice')")
     db.execute("INSERT INTO sites (id, name, sc_rate) VALUES (1, 'CasinoA', 1.0)")
+    db.execute("INSERT INTO sites (id, name, sc_rate) VALUES (2, 'Funrize', 1.0)")
     db.execute("INSERT INTO game_types (id, name) VALUES (1, 'Slots')")
     db.execute("INSERT INTO games (id, name, game_type_id) VALUES (1, 'Buffalo Gold', 1)")
     
@@ -172,6 +173,39 @@ class TestUnrealizedBalancesAfterSession:
         assert pos.redeemable_sc == Decimal("80.00")  # 100 (checkpoint) - 20 (redemption)
         assert pos.purchase_basis == Decimal("135.00")  # 60 + 50 + 25
         assert pos.unrealized_pl == Decimal("40.00")  # 175 - 135
+
+
+class TestUnrealizedExcludesDeleted:
+    def test_deleted_activity_does_not_create_position(self, db, repo):
+        """Deleted purchases/sessions/redemptions should not appear on Unrealized."""
+        # Create activity for Funrize
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 2, '2024-01-01', '10:00:00', 100.00, 100.00, 100.00)
+        """)
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, ending_redeemable, status)
+            VALUES (1, 2, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    100.00, 80.00, 80.00, 'completed')
+        """)
+        db.execute("""
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, processed, more_remaining)
+            VALUES (1, 2, '2024-01-02', '10:00:00', 20.00, 1, 1)
+        """)
+        db.commit()
+
+        # Soft-delete all activity
+        db.execute("UPDATE purchases SET deleted_at = CURRENT_TIMESTAMP WHERE site_id = 2")
+        db.execute("UPDATE game_sessions SET deleted_at = CURRENT_TIMESTAMP WHERE site_id = 2")
+        db.execute("UPDATE redemptions SET deleted_at = CURRENT_TIMESTAMP WHERE site_id = 2")
+        db.commit()
+
+        positions = repo.get_all_positions()
+        assert positions == []
 
 
 class TestUnrealizedBalancesNoSession:

@@ -12,6 +12,23 @@ Rules:
 ## 2026-02-10
 
 ```yaml
+id: 2026-02-10-04
+type: bugfix
+areas: [repositories, ui]
+summary: "Unrealized tab excludes soft-deleted activity"
+files_changed:
+  - repositories/unrealized_position_repository.py
+  - tests/integration/test_issue_44_unrealized_live_balances.py
+```
+
+**Bugfix: Unrealized Tab Showing Deleted Data**
+
+- Unrealized candidate site/user pairs now ignore rows where `deleted_at` is set for purchases, redemptions, and game sessions.
+- Added a regression integration test that creates then soft-deletes Funrize activity and asserts no unrealized position is returned.
+
+---
+
+```yaml
 id: 2026-02-10-03
 type: bugfix
 areas: [services]
