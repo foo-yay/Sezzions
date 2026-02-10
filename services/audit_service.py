@@ -379,3 +379,91 @@ class AuditService:
             result.append(entry)
         
         return result
+    
+    def get_max_audit_log_rows(self) -> int:
+        """
+        Get the max audit log rows setting.
+        
+        Returns:
+            Maximum number of audit rows to retain (0 means unlimited)
+        """
+        result = self.db.fetch_one(
+            "SELECT value FROM settings WHERE key = ?",
+            ("max_audit_log_rows",)
+        )
+        if result and result.get("value"):
+            try:
+                return int(result["value"])
+            except (ValueError, TypeError):
+                return 10000  # Default fallback
+        return 10000  # Default
+    
+    def set_max_audit_log_rows(self, max_rows: int) -> None:
+        """
+        Set the max audit log rows setting.
+        
+        Args:
+            max_rows: Maximum number of audit rows to retain (0 means unlimited)
+        """
+        # Upsert the setting
+        existing = self.db.fetch_one(
+            "SELECT value FROM settings WHERE key = ?",
+            ("max_audit_log_rows",)
+        )
+        if existing:
+            self.db.execute(
+                "UPDATE settings SET value = ? WHERE key = ?",
+                (str(max_rows), "max_audit_log_rows")
+            )
+        else:
+            self.db.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)",
+                ("max_audit_log_rows", str(max_rows))
+            )
+    
+    def prune_audit_log(self) -> int:
+        """
+        Prune audit log to respect max_audit_log_rows setting.
+        
+        Deletes the oldest audit rows to stay within the configured limit.
+        Pruning is atomic: if any error occurs, all changes are rolled back.
+        
+        Returns:
+            Number of rows pruned
+        """
+        max_rows = self.get_max_audit_log_rows()
+        
+        # If max_rows is 0, retention is unlimited - don't prune
+        if max_rows <= 0:
+            return 0
+        
+        # Count current rows
+        result = self.db.fetch_one("SELECT COUNT(*) as count FROM audit_log")
+        current_count = result["count"] if result else 0
+        
+        if current_count <= max_rows:
+            # Nothing to prune
+            return 0
+        
+        # Calculate how many rows to delete
+        to_delete = current_count - max_rows
+        
+        # Delete oldest rows atomically
+        try:
+            # Use execute_no_commit for atomic transaction
+            cursor = self.db._connection.cursor()
+            cursor.execute(
+                """DELETE FROM audit_log 
+                   WHERE id IN (
+                       SELECT id FROM audit_log 
+                       ORDER BY id ASC 
+                       LIMIT ?
+                   )""",
+                (to_delete,)
+            )
+            self.db._connection.commit()
+            return to_delete
+        except Exception as e:
+            # Rollback on any error
+            self.db._connection.rollback()
+            raise e
