@@ -377,21 +377,27 @@ class AppFacade:
         
         for entry in audit_entries:
             table_name = entry.get('table_name')
+            print(f"[DEBUG _handle_undo_redo_recalculation] Processing entry: table={table_name}, action={entry.get('action')}")
             
             # Only recalculate for tables that affect accounting
             if table_name not in ('purchases', 'redemptions', 'game_sessions'):
+                print(f"[DEBUG _handle_undo_redo_recalculation] Skipping non-accounting table: {table_name}")
                 continue
             
             # Parse the data to get user_id, site_id, date, time
             # For UPDATE: use old_data (what it was before undo) or new_data (what it became after undo)
             # For CREATE/DELETE: use whatever data is available
             data_json = entry.get('old_data') or entry.get('new_data')
+            print(f"[DEBUG _handle_undo_redo_recalculation] data_json type: {type(data_json)}, has data: {data_json is not None}")
             if not data_json:
+                print(f"[DEBUG _handle_undo_redo_recalculation] No data_json, skipping")
                 continue
             
             try:
-                data = json.loads(data_json)
-            except (json.JSONDecodeError, TypeError):
+                data = json.loads(data_json) if isinstance(data_json, str) else data_json
+                print(f"[DEBUG _handle_undo_redo_recalculation] Parsed data, user_id={data.get('user_id')}, site_id={data.get('site_id')}")
+            except (json.JSONDecodeError, TypeError) as e:
+                print(f"[DEBUG _handle_undo_redo_recalculation] JSON parse error: {e}")
                 continue
             
             user_id = data.get('user_id')
