@@ -5,9 +5,11 @@ Provides structured audit trail with JSON snapshots and operation grouping.
 Supports atomic logging (within transactions) and undo/redo tracking.
 
 Reference: Issue #92 - Audit Log + Undo/Redo + Soft Delete
+Reference: Issue #97 - Two-tier audit retention + meaningful audit summaries
 """
 import json
 import uuid
+from datetime import datetime
 from typing import Optional, Dict, Any, List
 from repositories.database import DatabaseManager
 
@@ -17,6 +19,102 @@ class AuditService:
     
     def __init__(self, db: DatabaseManager):
         self.db = db
+    
+    @staticmethod
+    def build_summary(
+        table_name: str,
+        action: str,
+        record_id: int,
+        old_data: Optional[Dict[str, Any]],
+        new_data: Optional[Dict[str, Any]]
+    ) -> Optional[str]:
+        """
+        Build a compact summary JSON for long-term audit retention.
+        
+        Summaries capture essential business context (amounts, users, sites, timestamps)
+        without the full snapshot payload. This allows long-term audit retention
+        even when detailed old_data/new_data snapshots are pruned.
+        
+        Args:
+            table_name: Table name (purchases, redemptions, game_sessions, etc.)
+            action: CRUD action (CREATE, UPDATE, DELETE)
+            record_id: Record ID
+            old_data: Old record data (for UPDATE/DELETE)
+            new_data: New record data (for CREATE/UPDATE)
+        
+        Returns:
+            JSON string summary, or None if table is not supported/data is invalid
+        """
+        # Defensive: handle None/empty data gracefully
+        if new_data is None and old_data is None:
+            return None
+        
+        # Choose the data payload to extract from
+        data = new_data if new_data else old_data
+        if not data or not isinstance(data, dict):
+            return None
+        
+        try:
+            summary = {
+                "entity": None,
+                "entity_id": record_id,
+                "crud": action,
+                "timestamp": datetime.now().isoformat(),
+                "fields": {}
+            }
+            
+            # Entity-specific summary rules
+            if table_name == "purchases":
+                summary["entity"] = "purchase"
+                summary["fields"]["amount"] = data.get("amount")
+                summary["fields"]["user_id"] = data.get("user_id")
+                summary["fields"]["site_id"] = data.get("site_id")
+                # Starting SC is a useful derived field
+                if "starting_sc_balance" in data:
+                    summary["fields"]["starting_sc"] = data.get("starting_sc_balance")
+            
+            elif table_name == "redemptions":
+                summary["entity"] = "redemption"
+                summary["fields"]["amount"] = data.get("amount")
+                summary["fields"]["user_id"] = data.get("user_id")
+                summary["fields"]["site_id"] = data.get("site_id")
+            
+            elif table_name == "game_sessions":
+                summary["entity"] = "game_session"
+                # Determine if this is a start or end event
+                if action == "CREATE" or (action == "UPDATE" and new_data and old_data and old_data.get("status") == "Active"):
+                    # Session start summary
+                    if "session_date" in data and "session_time" in data:
+                        summary["fields"]["start_datetime"] = f"{data['session_date']} {data['session_time']}"
+                    summary["fields"]["start_sc"] = data.get("starting_balance")
+                    summary["fields"]["start_redeemable"] = data.get("starting_redeemable")
+                    summary["fields"]["user_id"] = data.get("user_id")
+                    summary["fields"]["site_id"] = data.get("site_id")
+                
+                # Check for session end (status changed to Ended, or end_date is present)
+                if action == "UPDATE" and new_data:
+                    if new_data.get("end_date") or new_data.get("status") == "Ended":
+                        # Session end summary
+                        if "end_date" in new_data and "end_time" in new_data:
+                            summary["fields"]["end_datetime"] = f"{new_data['end_date']} {new_data['end_time']}"
+                        summary["fields"]["end_sc"] = new_data.get("ending_balance")
+                        summary["fields"]["end_redeemable"] = new_data.get("ending_redeemable")
+                        summary["fields"]["user_id"] = new_data.get("user_id")
+                        summary["fields"]["site_id"] = new_data.get("site_id")
+            
+            else:
+                # Unsupported table - no summary generated
+                return None
+            
+            # Only return summary if we actually captured meaningful fields
+            if summary["entity"] and summary["fields"]:
+                return json.dumps(summary, default=str)
+            else:
+                return None
+        
+        except Exception:
+            # Never crash on summary generation - return None and let audit proceed
+            return None
     
     def log_create(
         self,
@@ -38,6 +136,7 @@ class AuditService:
             group_id: Optional UUID grouping related operations
             auto_commit: If False, caller must commit transaction
         """
+        summary = self.build_summary(table_name, "CREATE", record_id, None, new_data)
         self.db.log_audit(
             action="CREATE",
             table_name=table_name,
@@ -47,6 +146,7 @@ class AuditService:
             old_data=None,
             new_data=json.dumps(new_data, default=str),
             group_id=group_id,
+            summary_data=summary,
             auto_commit=auto_commit
         )
     
@@ -72,6 +172,7 @@ class AuditService:
             group_id: Optional UUID grouping related operations
             auto_commit: If False, caller must commit transaction
         """
+        summary = self.build_summary(table_name, "UPDATE", record_id, old_data, new_data)
         self.db.log_audit(
             action="UPDATE",
             table_name=table_name,
@@ -81,6 +182,7 @@ class AuditService:
             old_data=json.dumps(old_data, default=str),
             new_data=json.dumps(new_data, default=str),
             group_id=group_id,
+            summary_data=summary,
             auto_commit=auto_commit
         )
     
@@ -104,6 +206,7 @@ class AuditService:
             group_id: Optional UUID grouping related operations
             auto_commit: If False, caller must commit transaction
         """
+        summary = self.build_summary(table_name, "DELETE", record_id, old_data, None)
         self.db.log_audit(
             action="DELETE",
             table_name=table_name,
@@ -113,6 +216,7 @@ class AuditService:
             old_data=json.dumps(old_data, default=str),
             new_data=None,
             group_id=group_id,
+            summary_data=summary,
             auto_commit=auto_commit
         )
     
