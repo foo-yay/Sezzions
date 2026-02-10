@@ -479,12 +479,8 @@ class UndoRedoService:
                     'basis_consumed', 'net_taxable_pl', 'expected_start_total',
                     'expected_start_redeemable', 'discoverable_sc'
                 }
-                excluded_values = {}
                 for field in calculated_fields:
-                    if field in model_data:
-                        excluded_values[field] = model_data.pop(field)
-                if excluded_values:
-                    print(f"[DEBUG undo_redo._apply_update] Excluding calculated fields for session {record_id}: {excluded_values}")
+                    model_data.pop(field, None)
             
             # Model's __post_init__ will validate and coerce types
             model = model_class(**model_data)

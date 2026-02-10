@@ -117,7 +117,10 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
         
         self.details_text = QtWidgets.QTextEdit()
         self.details_text.setReadOnly(True)
-        self.details_text.setFont(QtGui.QFont("Courier", 10))
+        font = QtGui.QFont()
+        font.setFamily("Courier New, monospace")
+        font.setPointSize(10)
+        self.details_text.setFont(font)
         details_layout.addWidget(self.details_text)
         
         splitter.addWidget(details_group)

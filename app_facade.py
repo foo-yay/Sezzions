@@ -368,7 +368,6 @@ class AppFacade:
             operation: 'undo' or 'redo'
             audit_entries: List of audit log entries that were reversed/replayed
         """
-        print(f"[DEBUG app_facade._handle_undo_redo_recalculation] Called for operation={operation}, {len(audit_entries)} entries")
         import json
         from datetime import datetime
         
@@ -377,27 +376,21 @@ class AppFacade:
         
         for entry in audit_entries:
             table_name = entry.get('table_name')
-            print(f"[DEBUG _handle_undo_redo_recalculation] Processing entry: table={table_name}, action={entry.get('action')}")
             
             # Only recalculate for tables that affect accounting
             if table_name not in ('purchases', 'redemptions', 'game_sessions'):
-                print(f"[DEBUG _handle_undo_redo_recalculation] Skipping non-accounting table: {table_name}")
                 continue
             
             # Parse the data to get user_id, site_id, date, time
             # For UPDATE: use old_data (what it was before undo) or new_data (what it became after undo)
             # For CREATE/DELETE: use whatever data is available
             data_json = entry.get('old_data') or entry.get('new_data')
-            print(f"[DEBUG _handle_undo_redo_recalculation] data_json type: {type(data_json)}, has data: {data_json is not None}")
             if not data_json:
-                print(f"[DEBUG _handle_undo_redo_recalculation] No data_json, skipping")
                 continue
             
             try:
                 data = json.loads(data_json) if isinstance(data_json, str) else data_json
-                print(f"[DEBUG _handle_undo_redo_recalculation] Parsed data, user_id={data.get('user_id')}, site_id={data.get('site_id')}")
-            except (json.JSONDecodeError, TypeError) as e:
-                print(f"[DEBUG _handle_undo_redo_recalculation] JSON parse error: {e}")
+            except (json.JSONDecodeError, TypeError):
                 continue
             
             user_id = data.get('user_id')
@@ -443,14 +436,12 @@ class AppFacade:
                     affected_pairs[pair] = (record_date, time_normalized)
         
         # Trigger recalculation for each affected pair
-        print(f"[DEBUG app_facade._handle_undo_redo_recalculation] Found {len(affected_pairs)} affected (user_id, site_id) pairs")
         for (user_id, site_id), (boundary_date, boundary_time) in affected_pairs.items():
             # Use containing boundary logic to find actual rebuild point
             boundary_date, boundary_time = self._containing_boundary(
                 site_id, user_id, boundary_date, boundary_time
             )
             
-            print(f"[DEBUG app_facade._handle_undo_redo_recalculation] Triggering recalc for user={user_id}, site={site_id}, from={boundary_date} {boundary_time}")
             # Trigger rebuild or mark stale
             self._rebuild_or_mark_stale(
                 user_id=user_id,

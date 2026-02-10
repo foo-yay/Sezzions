@@ -1071,10 +1071,7 @@ class DatabaseManager:
             summary_data: Optional compact summary JSON for long-term retention (Issue #97)
             auto_commit: If True (default), commits immediately; if False, caller must commit
         """
-        print(f"[DEBUG database.log_audit] Called with action={action}, table={table_name}, record_id={record_id}, group_id={group_id}")
-        print(f"[DEBUG database.log_audit] Checking writes_blocked={self._writes_blocked}")
         self._assert_writes_allowed("INSERT")
-        print(f"[DEBUG database.log_audit] Writes allowed, executing INSERT")
         cursor = self._connection.cursor()
         cursor.execute(
             '''INSERT INTO audit_log 
@@ -1082,10 +1079,8 @@ class DatabaseManager:
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
             (action, table_name, record_id, details, user_name or 'system', old_data, new_data, group_id, summary_data)
         )
-        print(f"[DEBUG database.log_audit] INSERT executed, auto_commit={auto_commit}")
         if auto_commit:
             self._connection.commit()
-            print(f"[DEBUG database.log_audit] Committed successfully")
     
     def close(self):
         """Close database connection"""
