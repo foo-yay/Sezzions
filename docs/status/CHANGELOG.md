@@ -12,6 +12,52 @@ Rules:
 ## 2026-02-09
 
 ```yaml
+id: 2026-02-09-02
+type: feature
+areas: [services]
+summary: "Configurable undo/redo depth + audit snapshot retention (Issue #95)"
+files_changed:
+  - services/undo_redo_service.py
+  - tests/unit/test_undo_retention.py
+issue: 95
+```
+
+**Feature: Configurable Undo/Redo Depth with Audit Snapshot Pruning**
+
+**Implementation:**
+- Added `max_undo_operations` setting (default: 100) to limit undo history depth.
+- Pruning removes JSON snapshots (`old_data`, `new_data`) from `audit_log` for operations beyond the retention window, but preserves audit metadata (action, table, record_id, timestamp, user, group_id).
+- Setting to 0 disables undo/redo and prunes all snapshots.
+- Auto-pruning triggers when pushing new operations and exceeding the limit.
+- Manual pruning via `set_max_undo_operations(N)` takes effect immediately.
+- Pruning is transactional (atomic): if pruning fails, stacks and snapshots roll back to previous state.
+
+**Methods:**
+- `get_max_undo_operations()`: Returns current limit.
+- `set_max_undo_operations(N)`: Sets limit and prunes immediately if needed.
+- `_prune_to_limit(N)`: Internal pruning logic (removes old stack entries + nulls JSON snapshots).
+
+**Testing:**
+- 8 new unit tests covering:
+  - Stack depth limiting (max=3, perform 5 operations → only last 3 undoable)
+  - JSON snapshot pruning (nulls `old_data`/`new_data`, keeps metadata rows)
+  - Disabling undo (max=0 → no undo/redo, all snapshots pruned)
+  - Atomicity (transaction rollback on failure)
+  - Invariants (stacks never reference missing snapshots)
+  - Bulk operations pruned as a unit (same `group_id`)
+  - Default value (100)
+  - Increasing limit does not restore pruned snapshots (pruning is permanent)
+
+**Rationale:**
+- Prevents unbounded database growth from undo history.
+- Balances compliance (audit trail) with storage (undo capability).
+- User can trade undo depth for disk space.
+
+All tests pass: 795/795 (787 existing + 8 new).
+
+---
+
+```yaml
 id: 2026-02-09-01
 type: fix
 areas: [ui, services]

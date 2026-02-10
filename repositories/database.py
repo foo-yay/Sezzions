@@ -4,6 +4,11 @@ Database connection and management
 from contextlib import contextmanager
 import sqlite3
 from typing import Optional, List, Dict, Any, Iterator, Sequence
+from datetime import date
+
+# Register date adapter to suppress Python 3.12+ deprecation warning
+# Per Python 3.12 docs: applications should register their own adapters
+sqlite3.register_adapter(date, lambda d: d.isoformat())
 
 
 class DatabaseWritesBlockedError(RuntimeError):
