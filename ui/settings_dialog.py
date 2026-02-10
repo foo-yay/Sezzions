@@ -248,7 +248,7 @@ class SettingsDialog(QtWidgets.QDialog):
         return widget
     
     def _build_data_section(self):
-        """Build Data settings section (Issue #95 - undo/redo retention)."""
+        """Build Data settings section (Issue #95 & #97 - undo/redo + audit retention)."""
         widget = QtWidgets.QWidget()
         form_layout = QtWidgets.QFormLayout(widget)
         form_layout.setContentsMargins(20, 20, 20, 20)
@@ -287,6 +287,37 @@ class SettingsDialog(QtWidgets.QDialog):
         helper_text.setWordWrap(True)
         helper_text.setObjectName("HelperText")
         form_layout.addRow(helper_text)
+        
+        # Spacer
+        form_layout.addRow(QtWidgets.QLabel(""))
+        
+        # Audit Log retention section (Issue #97)
+        audit_section_label = QtWidgets.QLabel("<b>Audit Log Retention</b>")
+        form_layout.addRow(audit_section_label)
+        
+        # Max audit log rows
+        max_audit_label = QtWidgets.QLabel("Maximum audit log rows:")
+        max_audit_label.setToolTip(
+            "Maximum number of audit log entries to retain (0 = unlimited).\n"
+            "Oldest entries are deleted when the limit is exceeded.\n"
+            "Compact summaries are preserved for long-term compliance."
+        )
+        max_audit_label.setObjectName("FieldLabel")
+        max_audit_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.max_audit_spin = QtWidgets.QSpinBox()
+        self.max_audit_spin.setMinimum(0)
+        self.max_audit_spin.setMaximum(100000)
+        self.max_audit_spin.setSingleStep(1000)
+        self.max_audit_spin.setSpecialValueText("Unlimited")
+        form_layout.addRow(max_audit_label, self.max_audit_spin)
+        
+        # Audit helper text
+        audit_helper_text = QtWidgets.QLabel(
+            "<i>Audit retention controls long-term compliance storage. Default: 10,000 rows.</i>"
+        )
+        audit_helper_text.setWordWrap(True)
+        audit_helper_text.setObjectName("HelperText")
+        form_layout.addRow(audit_helper_text)
         
         return widget
     
@@ -350,9 +381,17 @@ class SettingsDialog(QtWidgets.QDialog):
             else:
                 self.max_undo_spin.setValue(100)
                 self._initial_max_undo = 100
+            
+            # Audit retention settings (Issue #97)
+            if hasattr(facade, 'audit_service'):
+                max_audit = facade.audit_service.get_max_audit_log_rows()
+                self.max_audit_spin.setValue(max_audit)
+            else:
+                self.max_audit_spin.setValue(10000)
         else:
             self.max_undo_spin.setValue(100)
             self._initial_max_undo = 100
+            self.max_audit_spin.setValue(10000)
     
     def _on_save(self):
         """Save settings and close dialog."""
@@ -419,6 +458,23 @@ class SettingsDialog(QtWidgets.QDialog):
                         self,
                         "Error Setting Undo Limit",
                         f"Failed to apply undo limit:\n\n{str(e)}"
+                    )
+                    return
+            
+            # Apply audit retention setting (Issue #97)
+            if hasattr(facade, 'audit_service'):
+                try:
+                    new_max_audit = self.max_audit_spin.value()
+                    facade.audit_service.set_max_audit_log_rows(new_max_audit)
+                    # Optionally prune immediately
+                    pruned = facade.audit_service.prune_audit_log()
+                    if pruned > 0:
+                        print(f"Pruned {pruned} old audit log entries")
+                except Exception as e:
+                    QtWidgets.QMessageBox.critical(
+                        self,
+                        "Error Setting Audit Retention",
+                        f"Failed to apply audit retention limit:\n\n{str(e)}"
                     )
                     return
         
