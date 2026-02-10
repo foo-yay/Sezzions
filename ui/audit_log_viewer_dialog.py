@@ -7,6 +7,7 @@ import json
 from datetime import datetime, date, timedelta
 import tempfile
 import os
+from ui.date_filter_widget import DateFilterWidget
 
 
 class AuditLogViewerDialog(QtWidgets.QDialog):
@@ -34,99 +35,52 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
         title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(title_label)
         
+        # Date Filter (matching Purchases tab style)
+        year_start = date(date.today().year, 1, 1)
+        self.date_filter = DateFilterWidget(
+            title="🎯 Date Filter",
+            default_start=year_start,
+            default_end=date.today(),
+        )
+        self.date_filter.filter_changed.connect(self._apply_filters)
+        layout.addWidget(self.date_filter)
+        
         # Filters section
         filter_group = QtWidgets.QGroupBox("Filters")
-        filter_layout = QtWidgets.QGridLayout(filter_group)
+        filter_layout = QtWidgets.QHBoxLayout(filter_group)
         filter_layout.setSpacing(8)
         
-        row = 0
-        
-        # Date range presets
-        filter_layout.addWidget(QtWidgets.QLabel("Date Range:"), row, 0)
-        self.date_preset_combo = QtWidgets.QComboBox()
-        self.date_preset_combo.addItem("All Time", None)
-        self.date_preset_combo.addItem("Today", "today")
-        self.date_preset_combo.addItem("Last 7 Days", "last_7")
-        self.date_preset_combo.addItem("Last 30 Days", "last_30")
-        self.date_preset_combo.addItem("This Month", "this_month")
-        self.date_preset_combo.addItem("This Year", "this_year")
-        self.date_preset_combo.addItem("Custom...", "custom")
-        self.date_preset_combo.currentIndexChanged.connect(self._on_date_preset_changed)
-        filter_layout.addWidget(self.date_preset_combo, row, 1)
-        
-        # Custom date range (initially hidden)
-        self.start_date_edit = QtWidgets.QDateEdit()
-        self.start_date_edit.setCalendarPopup(True)
-        self.start_date_edit.setDate(QtCore.QDate.currentDate().addMonths(-1))
-        self.start_date_edit.setDisplayFormat("yyyy-MM-dd")
-        self.start_date_edit.dateChanged.connect(self._apply_filters)
-        filter_layout.addWidget(QtWidgets.QLabel("From:"), row, 2)
-        filter_layout.addWidget(self.start_date_edit, row, 3)
-        
-        self.end_date_edit = QtWidgets.QDateEdit()
-        self.end_date_edit.setCalendarPopup(True)
-        self.end_date_edit.setDate(QtCore.QDate.currentDate())
-        self.end_date_edit.setDisplayFormat("yyyy-MM-dd")
-        self.end_date_edit.dateChanged.connect(self._apply_filters)
-        filter_layout.addWidget(QtWidgets.QLabel("To:"), row, 4)
-        filter_layout.addWidget(self.end_date_edit, row, 5)
-        
-        # Hide custom date inputs initially
-        self.start_date_edit.setVisible(False)
-        self.end_date_edit.setVisible(False)
-        filter_layout.itemAtPosition(row, 2).widget().setVisible(False)
-        filter_layout.itemAtPosition(row, 4).widget().setVisible(False)
-        
-        row += 1
-        
         # Table filter
-        filter_layout.addWidget(QtWidgets.QLabel("Table:"), row, 0)
+        filter_layout.addWidget(QtWidgets.QLabel("Table:"))
         self.table_combo = QtWidgets.QComboBox()
         self.table_combo.setMinimumWidth(150)
         self.table_combo.addItem("All Tables", None)
         for table in ["purchases", "redemptions", "game_sessions", "account_adjustments", "__system__"]:
             self.table_combo.addItem(table, table)
         self.table_combo.currentIndexChanged.connect(self._apply_filters)
-        filter_layout.addWidget(self.table_combo, row, 1)
+        filter_layout.addWidget(self.table_combo)
         
         # Action filter
-        filter_layout.addWidget(QtWidgets.QLabel("Action:"), row, 2)
+        filter_layout.addWidget(QtWidgets.QLabel("Action:"))
         self.action_combo = QtWidgets.QComboBox()
         self.action_combo.setMinimumWidth(120)
         self.action_combo.addItem("All Actions", None)
         for action in ["CREATE", "UPDATE", "DELETE", "RESTORE", "UNDO", "REDO", "BACKUP", "RESTORE_DB", "RESET"]:
             self.action_combo.addItem(action, action)
         self.action_combo.currentIndexChanged.connect(self._apply_filters)
-        filter_layout.addWidget(self.action_combo, row, 3)
+        filter_layout.addWidget(self.action_combo)
         
-        # Limit
-        filter_layout.addWidget(QtWidgets.QLabel("Limit:"), row, 4)
-        self.limit_spin = QtWidgets.QSpinBox()
-        self.limit_spin.setMinimum(10)
-        self.limit_spin.setMaximum(10000)
-        self.limit_spin.setValue(100)
-        self.limit_spin.setSingleStep(50)
-        self.limit_spin.valueChanged.connect(self._apply_filters)
-        filter_layout.addWidget(self.limit_spin, row, 5)
+        filter_layout.addStretch()
         
-        row += 1
+        # Export CSV button (right-aligned, matching Purchases tab)
+        self.export_btn = QtWidgets.QPushButton("📤 Export CSV")
+        self.export_btn.clicked.connect(self._export_to_csv)
+        filter_layout.addWidget(self.export_btn)
         
-        # Action buttons row
-        button_row = QtWidgets.QHBoxLayout()
-        
-        # Refresh button
+        # Refresh button (right-aligned, matching Purchases tab)
         refresh_btn = QtWidgets.QPushButton("🔄 Refresh")
         refresh_btn.clicked.connect(self._load_entries)
-        button_row.addWidget(refresh_btn)
-        
-        # Export CSV button
-        self.export_btn = QtWidgets.QPushButton("📊 Export to CSV")
-        self.export_btn.clicked.connect(self._export_to_csv)
-        button_row.addWidget(self.export_btn)
-        
-        button_row.addStretch()
-        
-        filter_layout.addLayout(button_row, row, 0, 1, 6)
+        filter_layout.addWidget(refresh_btn)
         
         layout.addWidget(filter_group)
         
@@ -188,12 +142,11 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
         try:
             table_name = self.table_combo.currentData()
             action = self.action_combo.currentData()
-            limit = self.limit_spin.value()
             
             self.current_entries = self.audit_service.get_audit_log(
                 table_name=table_name,
                 action=action,
-                limit=limit
+                limit=10000  # Use large default limit since we have date filtering
             )
             
             self._populate_table()
@@ -209,52 +162,9 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
         """Apply filters and reload entries"""
         self._load_entries()
     
-    def _on_date_preset_changed(self):
-        """Handle date preset selection"""
-        preset = self.date_preset_combo.currentData()
-        
-        # Show/hide custom date inputs
-        is_custom = preset == "custom"
-        self.start_date_edit.setVisible(is_custom)
-        self.end_date_edit.setVisible(is_custom)
-        # Also show/hide labels
-        filter_layout = self.date_preset_combo.parent().layout()
-        for i in range(filter_layout.count()):
-            item = filter_layout.itemAtPosition(0, i)
-            if item and item.widget() and item.widget().text() in ["From:", "To:"]:
-                item.widget().setVisible(is_custom)
-        
-        if not is_custom:
-            self._apply_filters()
-    
     def _get_date_range(self) -> tuple[Optional[date], Optional[date]]:
-        """Get date range based on current preset selection"""
-        preset = self.date_preset_combo.currentData()
-        
-        if preset is None:  # All Time
-            return None, None
-        elif preset == "custom":
-            return (
-                self.start_date_edit.date().toPython(),
-                self.end_date_edit.date().toPython()
-            )
-        elif preset == "today":
-            today = date.today()
-            return today, today
-        elif preset == "last_7":
-            today = date.today()
-            return today - timedelta(days=7), today
-        elif preset == "last_30":
-            today = date.today()
-            return today - timedelta(days=30), today
-        elif preset == "this_month":
-            today = date.today()
-            return date(today.year, today.month, 1), today
-        elif preset == "this_year":
-            today = date.today()
-            return date(today.year, 1, 1), today
-        
-        return None, None
+        """Get date range from date filter widget"""
+        return self.date_filter.get_date_range()
     
     def _export_to_csv(self):
         """Export current audit log to CSV"""
