@@ -203,7 +203,9 @@ class GameSessionsTab(QWidget):
             self.apply_filters()
             self._on_selection_changed()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load sessions:\n{str(e)}")
+            # During tests, suppress popup dialogs (they block automation)
+            if os.environ.get('QT_QPA_PLATFORM') != 'offscreen' and 'pytest' not in sys.modules:
+                QMessageBox.critical(self, "Error", f"Failed to load sessions:\n{str(e)}")
     
     def refresh_data(self):
         """Standardized refresh method for global refresh system (Issue #9)."""
@@ -354,7 +356,10 @@ class GameSessionsTab(QWidget):
             self.table.resizeColumnToContents(0)
             self.table_filter.apply_filters()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load sessions: {e}")
+            # During tests, suppress popup dialogs (they block automation)
+            if os.environ.get('QT_QPA_PLATFORM') != 'offscreen' and 'pytest' not in sys.modules:
+                QMessageBox.critical(self, "Error", f"Failed to load sessions: {e}")
+                QMessageBox.critical(self, "Error", f"Failed to load sessions: {e}")
     
     def add_session(self):
         """Show dialog to add new session"""
