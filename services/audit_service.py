@@ -322,6 +322,8 @@ class AuditService:
         action: Optional[str] = None,
         record_id: Optional[int] = None,
         group_id: Optional[str] = None,
+        start_date: Optional[Any] = None,
+        end_date: Optional[Any] = None,
         limit: int = 100
     ) -> List[Dict[str, Any]]:
         """
@@ -332,11 +334,15 @@ class AuditService:
             action: Filter by action type (CREATE, UPDATE, DELETE, UNDO, REDO, etc.)
             record_id: Filter by record ID
             group_id: Filter by group ID
+            start_date: Filter by start date (inclusive)
+            end_date: Filter by end date (inclusive)
             limit: Maximum number of records to return
         
         Returns:
             List of audit log entries as dictionaries
         """
+        from datetime import date
+        
         query = "SELECT * FROM audit_log WHERE 1=1"
         params = []
         
@@ -355,6 +361,16 @@ class AuditService:
         if group_id:
             query += " AND group_id = ?"
             params.append(group_id)
+        
+        if start_date:
+            if isinstance(start_date, date):
+                query += " AND DATE(timestamp) >= ?"
+                params.append(start_date.isoformat())
+        
+        if end_date:
+            if isinstance(end_date, date):
+                query += " AND DATE(timestamp) <= ?"
+                params.append(end_date.isoformat())
         
         query += " ORDER BY timestamp DESC LIMIT ?"
         params.append(limit)

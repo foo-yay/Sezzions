@@ -142,10 +142,13 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
         try:
             table_name = self.table_combo.currentData()
             action = self.action_combo.currentData()
+            start_date, end_date = self.date_filter.get_date_range()
             
             self.current_entries = self.audit_service.get_audit_log(
                 table_name=table_name,
                 action=action,
+                start_date=start_date,
+                end_date=end_date,
                 limit=10000  # Use large default limit since we have date filtering
             )
             
