@@ -129,6 +129,13 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
         
         # Button row
         button_layout = QtWidgets.QHBoxLayout()
+        
+        # Reset button (clear audit log)
+        reset_btn = QtWidgets.QPushButton("🗑️ Reset Audit Log")
+        reset_btn.setObjectName("DangerButton")
+        reset_btn.clicked.connect(self._on_clear_audit_log)
+        button_layout.addWidget(reset_btn)
+        
         button_layout.addStretch()
         
         close_btn = QtWidgets.QPushButton("Close")
@@ -309,3 +316,32 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
                 details.append(str(entry['new_data']))
         
         self.details_text.setPlainText("\n".join(details))
+    
+    def _on_clear_audit_log(self):
+        """Handle clearing the audit log"""
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Clear Audit Log",
+            "⚠️ WARNING: This will permanently delete ALL audit log entries.\n\n"
+            "This operation is IRREVERSIBLE. All audit history will be lost.\n\n"
+            "It is strongly recommended to backup your database before proceeding.\n\n"
+            "Are you sure you want to clear the audit log?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+        
+        if reply == QtWidgets.QMessageBox.Yes:
+            try:
+                count = self.audit_service.clear_audit_log()
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Audit Log Cleared",
+                    f"Successfully cleared {count} audit log entries."
+                )
+                self._load_entries()  # Refresh to show empty table
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error Clearing Audit Log",
+                    f"Failed to clear audit log:\n\n{str(e)}"
+                )

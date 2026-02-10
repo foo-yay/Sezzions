@@ -630,6 +630,13 @@ class ToolsTab(QWidget):
         
         action_layout.addStretch()
         
+        # Reset button (clear audit log)
+        reset_audit_btn = QPushButton("🗑️ Reset")
+        reset_audit_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        reset_audit_btn.setObjectName("DangerButton")
+        reset_audit_btn.clicked.connect(self._on_clear_audit_log)
+        action_layout.addWidget(reset_audit_btn)
+        
         layout.addLayout(action_layout)
         
         container_layout.addWidget(section)
@@ -1496,6 +1503,34 @@ class ToolsTab(QWidget):
             "Audit Log",
             "Audit Log viewer coming soon (Task 7)"
         )
+    
+    def _on_clear_audit_log(self):
+        """Handle clearing the audit log"""
+        reply = QMessageBox.question(
+            self,
+            "Clear Audit Log",
+            "⚠️ WARNING: This will permanently delete ALL audit log entries.\n\n"
+            "This operation is IRREVERSIBLE. All audit history will be lost.\n\n"
+            "It is strongly recommended to backup your database before proceeding.\n\n"
+            "Are you sure you want to clear the audit log?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                count = self.facade.audit_service.clear_audit_log()
+                QMessageBox.information(
+                    self,
+                    "Audit Log Cleared",
+                    f"Successfully cleared {count} audit log entries."
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error Clearing Audit Log",
+                    f"Failed to clear audit log:\n\n{str(e)}"
+                )
     
     # ========================================================================
     # Database Tools Handlers

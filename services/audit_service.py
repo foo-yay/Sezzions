@@ -544,3 +544,23 @@ class AuditService:
                 writer.writerow(row_dict)
         
         return len(rows)
+    
+    def clear_audit_log(self) -> int:
+        """
+        Clear all audit log entries.
+        
+        WARNING: This operation is irreversible. All audit history will be lost.
+        It is recommended to backup the database before clearing the audit log.
+        
+        Returns:
+            Number of rows deleted
+        """
+        # Count current rows
+        result = self.db.fetch_one("SELECT COUNT(*) as count FROM audit_log")
+        count = result['count'] if result else 0
+        
+        # Delete all rows
+        self.db.execute("DELETE FROM audit_log")
+        self.db._connection.commit()
+        
+        return count
