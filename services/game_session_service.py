@@ -216,7 +216,10 @@ class GameSessionService:
         # Log update to audit and undo/redo stack
         group_id = str(uuid.uuid4())
         if self.audit_service:
+            print(f"[DEBUG] Logging session update to audit log: session_id={session.id}, group_id={group_id}")
             self.audit_service.log_update('game_sessions', session.id, old_data, asdict(updated), group_id=group_id)
+        else:
+            print(f"[DEBUG] WARNING: audit_service is None! Cannot log session update.")
         
         if self.undo_redo_service:
             self.undo_redo_service.push_operation(
