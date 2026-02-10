@@ -20,6 +20,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.setWindowTitle("Settings")
         self.setMinimumSize(700, 500)
         self.setModal(True)
+        self._initial_max_undo = None  # Track initial value for warning (Issue #95)
         
         self._setup_ui()
         self._load_settings()
@@ -29,7 +30,7 @@ class SettingsDialog(QtWidgets.QDialog):
         # Left navigation list
         self.nav_list = QtWidgets.QListWidget()
         self.nav_list.setMaximumWidth(180)
-        self.nav_list.addItems(["Notifications", "Display", "Taxes"])
+        self.nav_list.addItems(["Notifications", "Display", "Taxes", "Data"])
         self.nav_list.setCurrentRow(0)
         self.nav_list.currentRowChanged.connect(self._on_section_changed)
         
@@ -38,6 +39,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.content_stack.addWidget(self._build_notifications_section())
         self.content_stack.addWidget(self._build_display_section())
         self.content_stack.addWidget(self._build_taxes_section())
+        self.content_stack.addWidget(self._build_data_section())
         
         # Horizontal split: nav + content
         content_layout = QtWidgets.QHBoxLayout()
@@ -245,6 +247,49 @@ class SettingsDialog(QtWidgets.QDialog):
         
         return widget
     
+    def _build_data_section(self):
+        """Build Data settings section (Issue #95 - undo/redo retention)."""
+        widget = QtWidgets.QWidget()
+        form_layout = QtWidgets.QFormLayout(widget)
+        form_layout.setContentsMargins(20, 20, 20, 20)
+        form_layout.setSpacing(12)
+        form_layout.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        
+        # Title
+        title = QtWidgets.QLabel("💾 Data Settings")
+        title.setObjectName("PageTitle")
+        form_layout.addRow(title)
+        
+        # Undo/Redo retention section
+        section_label = QtWidgets.QLabel("<b>Undo/Redo History</b>")
+        form_layout.addRow(section_label)
+        
+        # Max undo operations
+        max_undo_label = QtWidgets.QLabel("Maximum undo operations:")
+        max_undo_label.setToolTip(
+            "Maximum number of operations that can be undone (0 = disabled).\n"
+            "Older operations remain in audit log for compliance, but lose undo capability.\n"
+            "Lowering this value will permanently prune undo history."
+        )
+        max_undo_label.setObjectName("FieldLabel")
+        max_undo_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.max_undo_spin = QtWidgets.QSpinBox()
+        self.max_undo_spin.setMinimum(0)
+        self.max_undo_spin.setMaximum(5000)
+        self.max_undo_spin.setSingleStep(10)
+        self.max_undo_spin.setSpecialValueText("Disabled")
+        form_layout.addRow(max_undo_label, self.max_undo_spin)
+        
+        # Helper text
+        helper_text = QtWidgets.QLabel(
+            "<i>Limiting undo history helps control database size. Audit trail is always preserved.</i>"
+        )
+        helper_text.setWordWrap(True)
+        helper_text.setObjectName("HelperText")
+        form_layout.addRow(helper_text)
+        
+        return widget
+    
     def _on_withholding_enabled_changed(self, checked):
         """Enable/disable withholding rate and recalc when toggle changes."""
         self.tax_withholding_rate_spin.setEnabled(checked)
@@ -294,6 +339,20 @@ class SettingsDialog(QtWidgets.QDialog):
         self.tax_withholding_rate_spin.setValue(float(tax_rate))
         # Trigger enable/disable state
         self._on_withholding_enabled_changed(tax_enabled)
+        
+        # Undo/redo retention settings (Issue #95)
+        if self.parent() and hasattr(self.parent(), 'facade'):
+            facade = self.parent().facade
+            if hasattr(facade, 'undo_redo_service'):
+                max_undo = facade.undo_redo_service.get_max_undo_operations()
+                self.max_undo_spin.setValue(max_undo)
+                self._initial_max_undo = max_undo
+            else:
+                self.max_undo_spin.setValue(100)
+                self._initial_max_undo = 100
+        else:
+            self.max_undo_spin.setValue(100)
+            self._initial_max_undo = 100
     
     def _on_save(self):
         """Save settings and close dialog."""
@@ -314,6 +373,54 @@ class SettingsDialog(QtWidgets.QDialog):
         # Write tax withholding settings
         self.settings.settings["tax_withholding_enabled"] = self.tax_withholding_enabled_checkbox.isChecked()
         self.settings.settings["tax_withholding_default_rate_pct"] = self.tax_withholding_rate_spin.value()
+        
+        # Handle undo/redo retention (Issue #95)
+        new_max_undo = self.max_undo_spin.value()
+        if self._initial_max_undo is not None and new_max_undo < self._initial_max_undo:
+            # Warn user about permanent pruning
+            current_stack_size = 0
+            if self.parent() and hasattr(self.parent(), 'facade'):
+                facade = self.parent().facade
+                if hasattr(facade, 'undo_redo_service'):
+                    current_stack_size = len(facade.undo_redo_service._undo_stack)
+            
+            operations_to_lose = max(0, current_stack_size - new_max_undo)
+            
+            msg = f"Lowering the limit to {new_max_undo} will permanently remove undo capability for "
+            if operations_to_lose > 0:
+                msg += f"{operations_to_lose} operation(s).\n\n"
+            else:
+                msg += "older operations (none currently affected).\n\n"
+            msg += "Audit history will be preserved, but you won't be able to undo those operations.\n\n"
+            msg += "This action cannot be undone. Continue?"
+            
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Confirm Undo Limit Reduction",
+                msg,
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                QtWidgets.QMessageBox.StandardButton.No
+            )
+            
+            if reply != QtWidgets.QMessageBox.StandardButton.Yes:
+                return  # Cancel save
+        
+        # Apply max undo operations setting
+        if self.parent() and hasattr(self.parent(), 'facade'):
+            facade = self.parent().facade
+            if hasattr(facade, 'undo_redo_service'):
+                try:
+                    facade.undo_redo_service.set_max_undo_operations(new_max_undo)
+                    # Update main window undo/redo states after pruning
+                    if hasattr(self.parent(), '_update_undo_redo_states'):
+                        self.parent()._update_undo_redo_states()
+                except Exception as e:
+                    QtWidgets.QMessageBox.critical(
+                        self,
+                        "Error Setting Undo Limit",
+                        f"Failed to apply undo limit:\n\n{str(e)}"
+                    )
+                    return
         
         # Persist to settings.json
         self.settings.save()
