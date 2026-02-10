@@ -4,7 +4,10 @@ Audit Log Viewer Dialog - Browse and filter audit trail (Issue #92)
 from PySide6 import QtWidgets, QtCore, QtGui
 from typing import Optional, List, Dict, Any
 import json
-from datetime import datetime
+from datetime import datetime, date, timedelta
+import tempfile
+import os
+from ui.date_filter_widget import DateFilterWidget
 
 
 class AuditLogViewerDialog(QtWidgets.QDialog):
@@ -32,6 +35,16 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
         title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(title_label)
         
+        # Date Filter (matching Purchases tab style)
+        year_start = date(date.today().year, 1, 1)
+        self.date_filter = DateFilterWidget(
+            title="🎯 Date Filter",
+            default_start=year_start,
+            default_end=date.today(),
+        )
+        self.date_filter.filter_changed.connect(self._apply_filters)
+        layout.addWidget(self.date_filter)
+        
         # Filters section
         filter_group = QtWidgets.QGroupBox("Filters")
         filter_layout = QtWidgets.QHBoxLayout(filter_group)
@@ -57,22 +70,17 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
         self.action_combo.currentIndexChanged.connect(self._apply_filters)
         filter_layout.addWidget(self.action_combo)
         
-        # Limit
-        filter_layout.addWidget(QtWidgets.QLabel("Limit:"))
-        self.limit_spin = QtWidgets.QSpinBox()
-        self.limit_spin.setMinimum(10)
-        self.limit_spin.setMaximum(10000)
-        self.limit_spin.setValue(100)
-        self.limit_spin.setSingleStep(50)
-        self.limit_spin.valueChanged.connect(self._apply_filters)
-        filter_layout.addWidget(self.limit_spin)
+        filter_layout.addStretch()
         
-        # Refresh button
+        # Export CSV button (right-aligned, matching Purchases tab)
+        self.export_btn = QtWidgets.QPushButton("📤 Export CSV")
+        self.export_btn.clicked.connect(self._export_to_csv)
+        filter_layout.addWidget(self.export_btn)
+        
+        # Refresh button (right-aligned, matching Purchases tab)
         refresh_btn = QtWidgets.QPushButton("🔄 Refresh")
         refresh_btn.clicked.connect(self._load_entries)
         filter_layout.addWidget(refresh_btn)
-        
-        filter_layout.addStretch()
         
         layout.addWidget(filter_group)
         
@@ -89,6 +97,7 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
         self.table_widget.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.table_widget.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.table_widget.setAlternatingRowColors(True)
+        self.table_widget.setSortingEnabled(True)  # Enable column sorting
         self.table_widget.horizontalHeader().setStretchLastSection(False)
         self.table_widget.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
         self.table_widget.setColumnWidth(0, 60)   # ID
@@ -108,7 +117,10 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
         
         self.details_text = QtWidgets.QTextEdit()
         self.details_text.setReadOnly(True)
-        self.details_text.setFont(QtGui.QFont("Courier", 10))
+        font = QtGui.QFont()
+        font.setFamily("Courier New, monospace")
+        font.setPointSize(10)
+        self.details_text.setFont(font)
         details_layout.addWidget(self.details_text)
         
         splitter.addWidget(details_group)
@@ -120,6 +132,13 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
         
         # Button row
         button_layout = QtWidgets.QHBoxLayout()
+        
+        # Reset button (clear audit log)
+        reset_btn = QtWidgets.QPushButton("🗑️ Reset Audit Log")
+        reset_btn.setObjectName("DangerButton")
+        reset_btn.clicked.connect(self._on_clear_audit_log)
+        button_layout.addWidget(reset_btn)
+        
         button_layout.addStretch()
         
         close_btn = QtWidgets.QPushButton("Close")
@@ -133,12 +152,14 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
         try:
             table_name = self.table_combo.currentData()
             action = self.action_combo.currentData()
-            limit = self.limit_spin.value()
+            start_date, end_date = self.date_filter.get_date_range()
             
             self.current_entries = self.audit_service.get_audit_log(
                 table_name=table_name,
                 action=action,
-                limit=limit
+                start_date=start_date,
+                end_date=end_date,
+                limit=10000  # Use large default limit since we have date filtering
             )
             
             self._populate_table()
@@ -153,6 +174,51 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
     def _apply_filters(self):
         """Apply filters and reload entries"""
         self._load_entries()
+    
+    def _get_date_range(self) -> tuple[Optional[date], Optional[date]]:
+        """Get date range from date filter widget"""
+        return self.date_filter.get_date_range()
+    
+    def _export_to_csv(self):
+        """Export current audit log to CSV"""
+        try:
+            # Get date range for filtering
+            start_date, end_date = self._get_date_range()
+            
+            # Prompt for file location
+            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self,
+                "Export Audit Log to CSV",
+                f"audit_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                "CSV Files (*.csv);;All Files (*)"
+            )
+            
+            if not file_path:
+                return  # User cancelled
+            
+            # Ensure .csv extension
+            if not file_path.lower().endswith('.csv'):
+                file_path += '.csv'
+            
+            # Export using audit service
+            row_count = self.audit_service.export_audit_log_csv(
+                file_path,
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            QtWidgets.QMessageBox.information(
+                self,
+                "Export Complete",
+                f"Successfully exported {row_count} audit log entries to:\n{file_path}"
+            )
+            
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Export Failed",
+                f"Failed to export audit log:\n\n{str(e)}"
+            )
     
     def _populate_table(self):
         """Populate table with current entries"""
@@ -253,3 +319,32 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
                 details.append(str(entry['new_data']))
         
         self.details_text.setPlainText("\n".join(details))
+    
+    def _on_clear_audit_log(self):
+        """Handle clearing the audit log"""
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Clear Audit Log",
+            "⚠️ WARNING: This will permanently delete ALL audit log entries.\n\n"
+            "This operation is IRREVERSIBLE. All audit history will be lost.\n\n"
+            "It is strongly recommended to backup your database before proceeding.\n\n"
+            "Are you sure you want to clear the audit log?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+        
+        if reply == QtWidgets.QMessageBox.Yes:
+            try:
+                count = self.audit_service.clear_audit_log()
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Audit Log Cleared",
+                    f"Successfully cleared {count} audit log entries."
+                )
+                self._load_entries()  # Refresh to show empty table
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error Clearing Audit Log",
+                    f"Failed to clear audit log:\n\n{str(e)}"
+                )

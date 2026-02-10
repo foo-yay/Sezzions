@@ -389,7 +389,7 @@ class AppFacade:
                 continue
             
             try:
-                data = json.loads(data_json)
+                data = json.loads(data_json) if isinstance(data_json, str) else data_json
             except (json.JSONDecodeError, TypeError):
                 continue
             

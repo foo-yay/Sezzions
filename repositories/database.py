@@ -916,7 +916,7 @@ class DatabaseManager:
                     pass
 
     def _migrate_audit_log_table(self):
-        """Add JSON snapshots and group_id columns to audit_log for Issue #92"""
+        """Add JSON snapshots and group_id columns to audit_log for Issue #92, and summary_data for Issue #97"""
         cursor = self._connection.cursor()
         cursor.execute("PRAGMA table_info(audit_log)")
         existing_columns = {row[1] for row in cursor.fetchall()}
@@ -924,6 +924,7 @@ class DatabaseManager:
             ("old_data", "TEXT NULL"),  # JSON snapshot before change
             ("new_data", "TEXT NULL"),  # JSON snapshot after change
             ("group_id", "TEXT NULL"),  # UUID grouping related operations (e.g., undo sets)
+            ("summary_data", "TEXT NULL"),  # Compact summary for long-term audit (Issue #97)
         ]
         for column_name, column_def in migrations:
             if column_name not in existing_columns:
@@ -1053,7 +1054,8 @@ class DatabaseManager:
     def log_audit(self, action: str, table_name: str, record_id: Optional[int] = None, 
                   details: Optional[str] = None, user_name: Optional[str] = None,
                   old_data: Optional[str] = None, new_data: Optional[str] = None,
-                  group_id: Optional[str] = None, auto_commit: bool = True):
+                  group_id: Optional[str] = None, summary_data: Optional[str] = None,
+                  auto_commit: bool = True):
         """
         Log an audit trail entry.
         
@@ -1066,15 +1068,16 @@ class DatabaseManager:
             old_data: Optional JSON snapshot of data before change (Issue #92)
             new_data: Optional JSON snapshot of data after change (Issue #92)
             group_id: Optional UUID grouping related operations (e.g., undo sets) (Issue #92)
+            summary_data: Optional compact summary JSON for long-term retention (Issue #97)
             auto_commit: If True (default), commits immediately; if False, caller must commit
         """
         self._assert_writes_allowed("INSERT")
         cursor = self._connection.cursor()
         cursor.execute(
             '''INSERT INTO audit_log 
-               (action, table_name, record_id, details, user_name, old_data, new_data, group_id) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-            (action, table_name, record_id, details, user_name or 'system', old_data, new_data, group_id)
+               (action, table_name, record_id, details, user_name, old_data, new_data, group_id, summary_data) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            (action, table_name, record_id, details, user_name or 'system', old_data, new_data, group_id, summary_data)
         )
         if auto_commit:
             self._connection.commit()
