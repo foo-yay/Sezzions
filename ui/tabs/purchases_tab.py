@@ -415,12 +415,6 @@ class PurchasesTab(QtWidgets.QWidget):
                 # Compute total_extra for this purchase
                 total_extra = (pre_purchase_balance - Decimal(str(expected_total))).quantize(Decimal("0.01"))
                 
-                print(f"\n=== Purchase Balance Check (ADD) ===")
-                print(f"Pre-purchase: {pre_purchase_balance}, Expected: {expected_total}, Total extra: {total_extra}")
-                print(f"Period purchases found: {len(period_purchases)}")
-                for i, p in enumerate(period_purchases):
-                    print(f"  Purchase {i+1}: ID={p.id}, Date={p.purchase_date}, Time={p.purchase_time}, Post-SC={p.starting_sc_balance}")
-                
                 # Compute delta_extra vs most recent purchase in period
                 delta_extra = total_extra
                 prev_total_extra = Decimal("0.00")
@@ -441,7 +435,6 @@ class PurchasesTab(QtWidgets.QWidget):
                     )
                     prev_total_extra = (prev_actual_pre - prev_expected_total).quantize(Decimal("0.01"))
                     delta_extra = total_extra - prev_total_extra
-                    print(f"Prev total_extra: {prev_total_extra}, Delta: {delta_extra}")
                 
                 # Warn on any non-zero total_extra (no tolerance)
                 should_warn = (total_extra != 0)
@@ -452,9 +445,6 @@ class PurchasesTab(QtWidgets.QWidget):
                     warn_reason = "positive"
                 else:
                     warn_reason = None
-                
-                print(f"Total extra: {total_extra}, Delta: {delta_extra}, Warn: {should_warn}")
-                print("=" * 50)
                 
                 if should_warn:
                     if warn_reason == "negative":
