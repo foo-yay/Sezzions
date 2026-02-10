@@ -368,6 +368,7 @@ class AppFacade:
             operation: 'undo' or 'redo'
             audit_entries: List of audit log entries that were reversed/replayed
         """
+        print(f"[DEBUG app_facade._handle_undo_redo_recalculation] Called for operation={operation}, {len(audit_entries)} entries")
         import json
         from datetime import datetime
         
@@ -436,12 +437,14 @@ class AppFacade:
                     affected_pairs[pair] = (record_date, time_normalized)
         
         # Trigger recalculation for each affected pair
+        print(f"[DEBUG app_facade._handle_undo_redo_recalculation] Found {len(affected_pairs)} affected (user_id, site_id) pairs")
         for (user_id, site_id), (boundary_date, boundary_time) in affected_pairs.items():
             # Use containing boundary logic to find actual rebuild point
             boundary_date, boundary_time = self._containing_boundary(
                 site_id, user_id, boundary_date, boundary_time
             )
             
+            print(f"[DEBUG app_facade._handle_undo_redo_recalculation] Triggering recalc for user={user_id}, site={site_id}, from={boundary_date} {boundary_time}")
             # Trigger rebuild or mark stale
             self._rebuild_or_mark_stale(
                 user_id=user_id,
