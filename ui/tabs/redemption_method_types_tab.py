@@ -107,6 +107,11 @@ class RedemptionMethodTypesTab(QtWidgets.QWidget):
 
         self.refresh_data()
 
+    def focus_search(self):
+        """Focus the search bar (for Cmd+F/Ctrl+F shortcut - Issue #99)"""
+        self.search_edit.setFocus()
+        self.search_edit.selectAll()
+
     def refresh_data(self):
         self.types = self.facade.get_all_redemption_method_types(active_only=False)
         self._populate_table()

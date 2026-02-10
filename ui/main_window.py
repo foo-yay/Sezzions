@@ -504,6 +504,10 @@ class MainWindow(QtWidgets.QMainWindow):
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
 
+        # Global search shortcut (Issue #99): Cmd+F/Ctrl+F focuses search bar
+        find_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Find, self)
+        find_shortcut.activated.connect(self._on_find_shortcut)
+
     def open_tools_tab(self):
         """Navigate to Setup → Tools."""
         self.tab_bar.setCurrentIndex(self._tab_index.get("setup", 0))
@@ -511,6 +515,33 @@ class MainWindow(QtWidgets.QMainWindow):
             self.setup_tab.sub_tabs.setCurrentWidget(self.setup_tab.tools_tab)
         except Exception:
             pass
+
+    def _on_find_shortcut(self):
+        """Handle Cmd+F/Ctrl+F shortcut: focus the search bar of the current tab."""
+        current_idx = self.tab_bar.currentIndex()
+        current_widget = self.stack.currentWidget()
+        
+        # Main tabs: purchases, redemptions, game_sessions, daily_sessions, unrealized, realized, expenses
+        if current_widget in [self.purchases_tab, self.redemptions_tab, self.game_sessions_tab, 
+                               self.daily_sessions_tab, self.unrealized_tab, self.realized_tab, self.expenses_tab]:
+            if hasattr(current_widget, 'focus_search'):
+                current_widget.focus_search()
+            elif hasattr(current_widget, 'search_edit'):
+                current_widget.search_edit.setFocus()
+                current_widget.search_edit.selectAll()
+        
+        # Setup tab: route to the active sub-tab
+        elif current_widget == self.setup_tab:
+            active_sub_tab = self.setup_tab.sub_tabs.currentWidget()
+            # For tools_tab, it's wrapped in QScrollArea, unwrap it
+            if isinstance(active_sub_tab, QtWidgets.QScrollArea):
+                active_sub_tab = active_sub_tab.widget()
+            
+            if hasattr(active_sub_tab, 'focus_search'):
+                active_sub_tab.focus_search()
+            elif hasattr(active_sub_tab, 'search_edit'):
+                active_sub_tab.search_edit.setFocus()
+                active_sub_tab.search_edit.selectAll()
 
     def _update_tools_busy_indicator(self):
         """Show/hide passive busy indicator when tools operations are active."""

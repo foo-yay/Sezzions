@@ -207,6 +207,11 @@ class GameSessionsTab(QWidget):
             if os.environ.get('QT_QPA_PLATFORM') != 'offscreen' and 'pytest' not in sys.modules:
                 QMessageBox.critical(self, "Error", f"Failed to load sessions:\n{str(e)}")
     
+    def focus_search(self):
+        """Focus the search bar (for Cmd+F/Ctrl+F shortcut - Issue #99)"""
+        self.search_edit.setFocus()
+        self.search_edit.selectAll()
+
     def refresh_data(self):
         """Standardized refresh method for global refresh system (Issue #9)."""
         self.load_data()

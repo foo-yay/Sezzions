@@ -12,6 +12,42 @@ Rules:
 ## 2026-02-10
 
 ```yaml
+id: 2026-02-10-05
+type: feature
+areas: [ui]
+summary: "Cmd+F/Ctrl+F shortcut focuses search bars across all tabs (Issue #99)"
+files_changed:
+  - ui/main_window.py
+  - ui/tabs/purchases_tab.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/game_sessions_tab.py
+  - ui/tabs/daily_sessions_tab.py
+  - ui/tabs/unrealized_tab.py
+  - ui/tabs/realized_tab.py
+  - ui/tabs/expenses_tab.py
+  - ui/tabs/users_tab.py
+  - ui/tabs/sites_tab.py
+  - ui/tabs/cards_tab.py
+  - ui/tabs/redemption_method_types_tab.py
+  - ui/tabs/redemption_methods_tab.py
+  - ui/tabs/game_types_tab.py
+  - ui/tabs/games_tab.py
+  - tests/ui/test_issue_99_search_shortcut.py
+```
+
+**Feature: Global Search Shortcut (Issue #99)**
+
+- Added Cmd+F (macOS) / Ctrl+F (Windows/Linux) keyboard shortcut to focus the search bar on the current tab.
+- Works on all main tabs (Purchases, Redemptions, Game Sessions, Daily Sessions, Unrealized, Realized, Expenses).
+- Works on all Setup sub-tabs (Users, Sites, Cards, Method Types, Redemption Methods, Game Types, Games).
+- Added `QShortcut` with `QKeySequence.Find` in `MainWindow` that routes to the active tab's `focus_search()` method.
+- Each tab now implements `focus_search()` which sets focus and selects all text in `search_edit`.
+- Setup sub-tabs are correctly unwrapped from their scroll area container before routing.
+- Added 7 headless UI tests verifying shortcut registration, method presence, and handler routing.
+
+---
+
+```yaml
 id: 2026-02-10-04
 type: bugfix
 areas: [repositories, ui]
