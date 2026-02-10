@@ -471,6 +471,17 @@ class UndoRedoService:
             # (deleted_at is in DB but not in model classes)
             model_data.pop('deleted_at', None)
             
+            # For game sessions, exclude calculated/derived fields that will be recomputed
+            # by the post-operation recalculation callback (Issue #97 undo/redo fix)
+            if table_name == 'game_sessions':
+                calculated_fields = {
+                    'delta_total', 'delta_redeem', 'session_basis',
+                    'basis_consumed', 'net_taxable_pl', 'expected_start_total',
+                    'expected_start_redeemable', 'discoverable_sc'
+                }
+                for field in calculated_fields:
+                    model_data.pop(field, None)
+            
             # Model's __post_init__ will validate and coerce types
             model = model_class(**model_data)
             
