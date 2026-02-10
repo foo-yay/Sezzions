@@ -53,7 +53,6 @@ class UndoRedoService:
         """Load undo/redo stacks from persistent settings"""
         # Fetch undo stack from settings
         undo_json = self.db.fetch_one("SELECT value FROM settings WHERE key = ?", ("undo_stack",))
-        print(f"[UNDO/REDO LOAD] undo_json result: {undo_json}")
         if undo_json and undo_json['value']:
             try:
                 undo_data = json.loads(undo_json['value'])
@@ -61,16 +60,11 @@ class UndoRedoService:
                     UndoOperation(op['group_id'], op['description'], op['timestamp'])
                     for op in undo_data
                 ]
-                print(f"[UNDO/REDO LOAD] Loaded {len(self._undo_stack)} undo operations")
             except (json.JSONDecodeError, KeyError) as e:
-                print(f"[UNDO/REDO LOAD] Error parsing undo stack: {e}")
                 self._undo_stack = []
-        else:
-            print(f"[UNDO/REDO LOAD] No undo stack found in settings")
         
         # Fetch redo stack from settings
         redo_json = self.db.fetch_one("SELECT value FROM settings WHERE key = ?", ("redo_stack",))
-        print(f"[UNDO/REDO LOAD] redo_json result: {redo_json}")
         if redo_json and redo_json['value']:
             try:
                 redo_data = json.loads(redo_json['value'])
@@ -78,12 +72,8 @@ class UndoRedoService:
                     UndoOperation(op['group_id'], op['description'], op['timestamp'])
                     for op in redo_data
                 ]
-                print(f"[UNDO/REDO LOAD] Loaded {len(self._redo_stack)} redo operations")
             except (json.JSONDecodeError, KeyError) as e:
-                print(f"[UNDO/REDO LOAD] Error parsing redo stack: {e}")
                 self._redo_stack = []
-        else:
-            print(f"[UNDO/REDO LOAD] No redo stack found in settings")
     
     def _load_max_undo_setting(self) -> None:
         """Load max_undo_operations setting from database (Issue #95)"""
