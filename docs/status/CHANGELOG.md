@@ -9,6 +9,73 @@ Rules:
 
 ---
 
+## 2026-02-10
+
+```yaml
+id: 2026-02-10-01
+type: feature
+areas: [services, ui, database]
+summary: "Two-tier audit retention with summaries, CSV export, and viewer improvements (Issue #97)"
+files_changed:
+  - repositories/database.py
+  - services/audit_service.py
+  - ui/settings_dialog.py
+  - ui/audit_log_viewer_dialog.py
+  - tests/unit/test_audit_summary.py
+  - tests/unit/test_audit_retention.py
+  - tests/unit/test_audit_csv_export.py
+issue: 97
+```
+
+**Feature: Two-Tier Audit Retention + CSV Export + Viewer Enhancements**
+
+**Problem:**
+- Full audit snapshots (`old_data`/`new_data`) grow unbounded, consuming storage indefinitely
+- Needed balance between long-term audit trail and pragmatic storage limits
+- Lacked CSV export for audit compliance workflows
+- Audit viewer needed better filtering/sorting for large datasets
+
+**Solution:**
+- **Summary Data**: Added `audit_log.summary_data` column (TEXT NULL) to capture compact JSON summaries of critical fields:
+  - Purchases: `{amount, user_id, site_id, starting_sc}`
+  - Redemptions: `{amount, user_id, site_id}`
+  - Game sessions: `{start_datetime, end_datetime, starting_sc, ending_sc, user_id, site_id}`
+  - Summaries retained permanently even when full snapshots are pruned
+- **Configurable Retention**: `max_audit_log_rows` setting (default: 10,000, 0 = unlimited)
+  - Prunes oldest rows atomically when limit exceeded
+  - Exposed in Settings → Data → "Audit Log Retention" spinbox
+  - Auto-prunes on save when limit changes
+- **CSV Export**: `AuditService.export_audit_log_csv(output_path, start_date=None, end_date=None)`
+  - Exports all columns including `summary_data`
+  - Optional date range filtering (inclusive)
+  - Accessible via "📊 Export to CSV" button in Audit Log Viewer
+- **Viewer Improvements**:
+  - Date range presets: Today, Last 7 Days, Last 30 Days, This Month, This Year, Custom
+  - Sortable table columns (click headers to sort by ID, Timestamp, Action, etc.)
+  - CSV export button with date filtering
+
+**Implementation:**
+- `AuditService.build_summary(table_name, data)`: Static method generating compact summaries (never crashes)
+- `AuditService.get/set_max_audit_log_rows()`: Settings persistence
+- `AuditService.prune_audit_log()`: Atomic pruning with rollback on failure
+- `AuditService.export_audit_log_csv()`: CSV export with csv.DictWriter pattern
+- All audit log methods (`log_create`, `log_update`, `log_delete`) now call `build_summary()` and pass result to database
+- Settings dialog matches existing undo retention UX pattern
+
+**Testing:**
+- 10 tests for summary generation (all tables + edge cases)
+- 9 tests for retention settings and pruning (atomicity, unlimited mode, pruning logic)
+- 5 tests for CSV export (date filtering, empty results, summary_data inclusion)
+- All 825 tests passing (no regressions)
+
+**Rationale:**
+- Summaries preserve essential audit trail for long-term compliance
+- Pruning prevents unbounded growth while keeping recent full details
+- Date presets + CSV export match typical compliance/audit workflows
+- Sortable columns improve usability for large datasets
+
+---
+
 ## 2026-02-09
 
 ```yaml

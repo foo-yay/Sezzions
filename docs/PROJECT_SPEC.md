@@ -346,6 +346,24 @@ def update_entity(self, entity_id, **kwargs):
 - Audit logging uses `auto_commit` parameter to participate in parent transactions
 - If operation fails, both data change and audit log roll back together
 
+**Audit Retention (Issue #97):**
+- Two-tier retention system: meaningful summaries retained long-term, full old_data/new_data pruned after limit
+- `audit_log.summary_data` column: compact JSON summaries for critical fields
+  - Purchases: `{amount, user_id, site_id, starting_sc}`
+  - Redemptions: `{amount, user_id, site_id}`
+  - Game sessions: `{start_datetime, end_datetime, starting_sc, ending_sc, user_id, site_id}`
+- Configurable row limit: default 10,000 rows, 0 = unlimited
+- Pruning: atomic deletion of oldest rows when limit exceeded (preserves summaries)
+- Settings UI: "Audit Log Retention" spinbox in Settings → Data section
+- Auto-prune triggered when limit changes in Settings dialog
+
+**CSV Export (Issue #97):**
+- `AuditService.export_audit_log_csv(output_path, start_date=None, end_date=None)`
+- Exports all columns including `summary_data`
+- Optional date range filtering (inclusive)
+- Returns count of rows exported
+- Accessible via "Export to CSV" button in Audit Log Viewer dialog
+
 #### 4.7.3 In-Order Undo/Redo
 
 **Behavior:**
@@ -386,10 +404,11 @@ Excel-like undo/redo: strictly in-order (LIFO for undo, FIFO for redo). New oper
 - **Open Audit Log…** button: Opens viewer dialog
 
 **Audit Log Viewer Dialog:**
-- Filters: Date range, table name, action type, search text
-- Table columns: Timestamp, User, Action, Entity, Record ID, Summary
-- Details panel: Expandable JSON view of old_data/new_data
-- Future: Export to CSV (currently out of scope)
+- Date range presets: All Time, Today, Last 7 Days, Last 30 Days, This Month, This Year, Custom
+- Filters: Date range (via presets or custom dates), table name, action type, limit
+- Table: Sortable columns (ID, Timestamp, Action, Table, Record ID, User, Group ID)
+- Details panel: Expandable JSON view of old_data/new_data/summary_data
+- Export to CSV: Exports current filter results with optional date range filtering (Issue #97)
 
 **Undo/Redo Confirmation:**
 - Simple confirmation dialog: "Undo last change? This will recalculate derived totals."
