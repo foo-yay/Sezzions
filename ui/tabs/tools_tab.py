@@ -628,14 +628,14 @@ class ToolsTab(QWidget):
         open_audit_btn.clicked.connect(self._on_open_audit_log)
         action_layout.addWidget(open_audit_btn)
         
-        action_layout.addStretch()
-        
         # Reset button (clear audit log)
         reset_audit_btn = QPushButton("🗑️ Reset")
         reset_audit_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
         reset_audit_btn.setObjectName("DangerButton")
         reset_audit_btn.clicked.connect(self._on_clear_audit_log)
         action_layout.addWidget(reset_audit_btn)
+        
+        action_layout.addStretch()
         
         layout.addLayout(action_layout)
         
