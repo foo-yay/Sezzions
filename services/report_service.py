@@ -41,11 +41,321 @@ class FIFOAllocationReport:
     purchase_allocations: List[Tuple[int, date, Decimal]]  # (purchase_id, date, amount_used)
 
 
+@dataclass
+class ReportFilter:
+    """Shared report filter for Phase 1 reports."""
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    user_ids: Optional[List[int]] = None
+    site_ids: Optional[List[int]] = None
+    include_deleted: bool = False
+
+
+@dataclass
+class SnapshotDTO:
+    """Phase 1 KPI snapshot output."""
+    session_net_pl: Decimal
+    total_cashback: Decimal
+    session_pl_plus_cashback: Decimal
+    total_purchases: Decimal
+    total_redemptions: Decimal
+    total_fees: Decimal
+    outstanding_balance: Decimal
+
+
+@dataclass
+class UserBreakdownRow:
+    """Phase 1 breakdown row by user."""
+    user_id: int
+    user_name: str
+    session_net_pl: Decimal
+    cashback: Decimal
+    purchases: Decimal
+    redemptions: Decimal
+    fees: Decimal
+    session_count: int
+    outstanding_balance: Decimal
+
+
+@dataclass
+class SiteBreakdownRow:
+    """Phase 1 breakdown row by site."""
+    site_id: int
+    site_name: str
+    session_net_pl: Decimal
+    cashback: Decimal
+    purchases: Decimal
+    redemptions: Decimal
+    fees: Decimal
+    session_count: int
+    outstanding_balance: Decimal
+
+
 class ReportService:
     """Service for generating reports and analytics"""
     
     def __init__(self, db_manager):
         self.db = db_manager
+
+    def _normalize_filter(self, report_filter: Optional[object]) -> ReportFilter:
+        if isinstance(report_filter, ReportFilter):
+            return report_filter
+        if isinstance(report_filter, dict):
+            return ReportFilter(
+                start_date=report_filter.get("start_date"),
+                end_date=report_filter.get("end_date"),
+                user_ids=report_filter.get("user_ids"),
+                site_ids=report_filter.get("site_ids"),
+                include_deleted=bool(report_filter.get("include_deleted", False)),
+            )
+        return ReportFilter()
+
+    def _build_where(self, alias: str, date_field: str, report_filter: ReportFilter) -> Tuple[str, List[object]]:
+        parts: List[str] = []
+        params: List[object] = []
+
+        if report_filter.user_ids:
+            placeholders = ",".join(["?"] * len(report_filter.user_ids))
+            parts.append(f"{alias}.user_id IN ({placeholders})")
+            params.extend(report_filter.user_ids)
+
+        if report_filter.site_ids:
+            placeholders = ",".join(["?"] * len(report_filter.site_ids))
+            parts.append(f"{alias}.site_id IN ({placeholders})")
+            params.extend(report_filter.site_ids)
+
+        if report_filter.start_date:
+            parts.append(f"{alias}.{date_field} >= ?")
+            params.append(report_filter.start_date.isoformat())
+
+        if report_filter.end_date:
+            parts.append(f"{alias}.{date_field} <= ?")
+            params.append(report_filter.end_date.isoformat())
+
+        if not report_filter.include_deleted:
+            parts.append(f"{alias}.deleted_at IS NULL")
+
+        return (" AND ".join(parts) if parts else "1=1"), params
+
+    def get_kpi_snapshot(self, report_filter: Optional[object] = None) -> SnapshotDTO:
+        """Phase 1 KPI snapshot for the Reports tab."""
+        filters = self._normalize_filter(report_filter)
+
+        purchase_where, purchase_params = self._build_where("p", "purchase_date", filters)
+        redemption_where, redemption_params = self._build_where("r", "redemption_date", filters)
+        session_where, session_params = self._build_where("gs", "session_date", filters)
+
+        purchase_row = self.db.fetch_one(
+            f"""
+            SELECT
+                COALESCE(SUM(CAST(p.amount AS REAL)), 0) as total_purchases,
+                COALESCE(SUM(CAST(p.cashback_earned AS REAL)), 0) as total_cashback,
+                COALESCE(SUM(CAST(p.remaining_amount AS REAL)), 0) as outstanding_balance
+            FROM purchases p
+            WHERE {purchase_where}
+            """,
+            tuple(purchase_params)
+        )
+
+        redemption_row = self.db.fetch_one(
+            f"""
+            SELECT
+                COALESCE(SUM(CAST(r.amount AS REAL)), 0) as total_redemptions,
+                COALESCE(SUM(CAST(r.fees AS REAL)), 0) as total_fees
+            FROM redemptions r
+            WHERE {redemption_where}
+            """,
+            tuple(redemption_params)
+        )
+
+        session_row = self.db.fetch_one(
+            f"""
+            SELECT
+                COALESCE(SUM(CAST(gs.net_taxable_pl AS REAL)), 0) as total_pl
+            FROM game_sessions gs
+            WHERE {session_where} AND gs.net_taxable_pl IS NOT NULL
+            """,
+            tuple(session_params)
+        )
+
+        session_net_pl = Decimal(str(session_row["total_pl"]))
+        total_cashback = Decimal(str(purchase_row["total_cashback"]))
+
+        return SnapshotDTO(
+            session_net_pl=session_net_pl,
+            total_cashback=total_cashback,
+            session_pl_plus_cashback=session_net_pl + total_cashback,
+            total_purchases=Decimal(str(purchase_row["total_purchases"])),
+            total_redemptions=Decimal(str(redemption_row["total_redemptions"])),
+            total_fees=Decimal(str(redemption_row["total_fees"])),
+            outstanding_balance=Decimal(str(purchase_row["outstanding_balance"])),
+        )
+
+    def get_user_breakdown(self, report_filter: Optional[object] = None) -> List[UserBreakdownRow]:
+        """Phase 1 breakdown by user."""
+        filters = self._normalize_filter(report_filter)
+
+        purchase_where, purchase_params = self._build_where("p", "purchase_date", filters)
+        redemption_where, redemption_params = self._build_where("r", "redemption_date", filters)
+        session_where, session_params = self._build_where("gs", "session_date", filters)
+
+        user_filter_clause = ""
+        user_filter_params: List[object] = []
+        if filters.user_ids:
+            placeholders = ",".join(["?"] * len(filters.user_ids))
+            user_filter_clause = f"AND u.id IN ({placeholders})"
+            user_filter_params.extend(filters.user_ids)
+
+        query = f"""
+            WITH purchase_totals AS (
+                SELECT p.user_id,
+                       COALESCE(SUM(CAST(p.amount AS REAL)), 0) as purchases,
+                       COALESCE(SUM(CAST(p.cashback_earned AS REAL)), 0) as cashback,
+                       COALESCE(SUM(CAST(p.remaining_amount AS REAL)), 0) as outstanding_balance
+                FROM purchases p
+                WHERE {purchase_where}
+                GROUP BY p.user_id
+            ),
+            redemption_totals AS (
+                SELECT r.user_id,
+                       COALESCE(SUM(CAST(r.amount AS REAL)), 0) as redemptions,
+                       COALESCE(SUM(CAST(r.fees AS REAL)), 0) as fees
+                FROM redemptions r
+                WHERE {redemption_where}
+                GROUP BY r.user_id
+            ),
+            session_totals AS (
+                SELECT gs.user_id,
+                       COALESCE(SUM(CAST(gs.net_taxable_pl AS REAL)), 0) as session_net_pl,
+                       COUNT(*) as session_count
+                FROM game_sessions gs
+                WHERE {session_where} AND gs.net_taxable_pl IS NOT NULL
+                GROUP BY gs.user_id
+            )
+            SELECT u.id as user_id,
+                   u.name as user_name,
+                   COALESCE(s.session_net_pl, 0) as session_net_pl,
+                   COALESCE(p.cashback, 0) as cashback,
+                   COALESCE(p.purchases, 0) as purchases,
+                   COALESCE(r.redemptions, 0) as redemptions,
+                   COALESCE(r.fees, 0) as fees,
+                   COALESCE(s.session_count, 0) as session_count,
+                   COALESCE(p.outstanding_balance, 0) as outstanding_balance
+            FROM users u
+            LEFT JOIN purchase_totals p ON p.user_id = u.id
+            LEFT JOIN redemption_totals r ON r.user_id = u.id
+            LEFT JOIN session_totals s ON s.user_id = u.id
+            WHERE (
+                COALESCE(p.purchases, 0) != 0
+                OR COALESCE(r.redemptions, 0) != 0
+                OR COALESCE(s.session_net_pl, 0) != 0
+                OR COALESCE(p.cashback, 0) != 0
+                OR COALESCE(p.outstanding_balance, 0) != 0
+            )
+            {user_filter_clause}
+            ORDER BY u.name
+        """
+
+        params = purchase_params + redemption_params + session_params + user_filter_params
+        rows = self.db.fetch_all(query, tuple(params))
+
+        return [
+            UserBreakdownRow(
+                user_id=row["user_id"],
+                user_name=row["user_name"],
+                session_net_pl=Decimal(str(row["session_net_pl"])),
+                cashback=Decimal(str(row["cashback"])),
+                purchases=Decimal(str(row["purchases"])),
+                redemptions=Decimal(str(row["redemptions"])),
+                fees=Decimal(str(row["fees"])),
+                session_count=row["session_count"],
+                outstanding_balance=Decimal(str(row["outstanding_balance"])),
+            )
+            for row in rows
+        ]
+
+    def get_site_breakdown(self, report_filter: Optional[object] = None) -> List[SiteBreakdownRow]:
+        """Phase 1 breakdown by site."""
+        filters = self._normalize_filter(report_filter)
+
+        purchase_where, purchase_params = self._build_where("p", "purchase_date", filters)
+        redemption_where, redemption_params = self._build_where("r", "redemption_date", filters)
+        session_where, session_params = self._build_where("gs", "session_date", filters)
+
+        site_filter_clause = ""
+        site_filter_params: List[object] = []
+        if filters.site_ids:
+            placeholders = ",".join(["?"] * len(filters.site_ids))
+            site_filter_clause = f"AND s.id IN ({placeholders})"
+            site_filter_params.extend(filters.site_ids)
+
+        query = f"""
+            WITH purchase_totals AS (
+                SELECT p.site_id,
+                       COALESCE(SUM(CAST(p.amount AS REAL)), 0) as purchases,
+                       COALESCE(SUM(CAST(p.cashback_earned AS REAL)), 0) as cashback,
+                       COALESCE(SUM(CAST(p.remaining_amount AS REAL)), 0) as outstanding_balance
+                FROM purchases p
+                WHERE {purchase_where}
+                GROUP BY p.site_id
+            ),
+            redemption_totals AS (
+                SELECT r.site_id,
+                       COALESCE(SUM(CAST(r.amount AS REAL)), 0) as redemptions,
+                       COALESCE(SUM(CAST(r.fees AS REAL)), 0) as fees
+                FROM redemptions r
+                WHERE {redemption_where}
+                GROUP BY r.site_id
+            ),
+            session_totals AS (
+                SELECT gs.site_id,
+                       COALESCE(SUM(CAST(gs.net_taxable_pl AS REAL)), 0) as session_net_pl,
+                       COUNT(*) as session_count
+                FROM game_sessions gs
+                WHERE {session_where} AND gs.net_taxable_pl IS NOT NULL
+                GROUP BY gs.site_id
+            )
+            SELECT s.id as site_id,
+                   s.name as site_name,
+                   COALESCE(t.session_net_pl, 0) as session_net_pl,
+                   COALESCE(p.cashback, 0) as cashback,
+                   COALESCE(p.purchases, 0) as purchases,
+                   COALESCE(r.redemptions, 0) as redemptions,
+                   COALESCE(r.fees, 0) as fees,
+                   COALESCE(t.session_count, 0) as session_count,
+                   COALESCE(p.outstanding_balance, 0) as outstanding_balance
+            FROM sites s
+            LEFT JOIN purchase_totals p ON p.site_id = s.id
+            LEFT JOIN redemption_totals r ON r.site_id = s.id
+            LEFT JOIN session_totals t ON t.site_id = s.id
+            WHERE (
+                COALESCE(p.purchases, 0) != 0
+                OR COALESCE(r.redemptions, 0) != 0
+                OR COALESCE(t.session_net_pl, 0) != 0
+                OR COALESCE(p.cashback, 0) != 0
+                OR COALESCE(p.outstanding_balance, 0) != 0
+            )
+            {site_filter_clause}
+            ORDER BY s.name
+        """
+
+        params = purchase_params + redemption_params + session_params + site_filter_params
+        rows = self.db.fetch_all(query, tuple(params))
+
+        return [
+            SiteBreakdownRow(
+                site_id=row["site_id"],
+                site_name=row["site_name"],
+                session_net_pl=Decimal(str(row["session_net_pl"])),
+                cashback=Decimal(str(row["cashback"])),
+                purchases=Decimal(str(row["purchases"])),
+                redemptions=Decimal(str(row["redemptions"])),
+                fees=Decimal(str(row["fees"])),
+                session_count=row["session_count"],
+                outstanding_balance=Decimal(str(row["outstanding_balance"])),
+            )
+            for row in rows
+        ]
     
     def get_user_summary(self, user_id: int, site_id: Optional[int] = None) -> UserSummary:
         """

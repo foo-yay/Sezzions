@@ -10,6 +10,7 @@ from ui.tabs.game_sessions_tab import GameSessionsTab
 from ui.tabs.unrealized_tab import UnrealizedTab
 from ui.tabs.realized_tab import RealizedTab
 from ui.tabs.daily_sessions_tab import DailySessionsTab
+from ui.tabs.reports_tab import ReportsTab
 from ui.tabs.setup_tab import SetupTab
 from ui.themes import get_theme, get_theme_names
 from ui.settings import Settings
@@ -333,6 +334,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.unrealized_tab = UnrealizedTab(self.facade, main_window=self)
         self.realized_tab = RealizedTab(self.facade, main_window=self)
         self.daily_sessions_tab = DailySessionsTab(self.facade, main_window=self)
+        self.reports_tab = ReportsTab(self.facade)
         
         self.tab_bar.addTab("💰 Purchases")
         self.stack.addWidget(self.purchases_tab)
@@ -352,6 +354,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tab_bar.addTab("✅ Realized")
         self.stack.addWidget(self.realized_tab)
         self._tab_index["realized"] = self.tab_bar.count() - 1
+
+        self.tab_bar.addTab("📈 Reports")
+        self.stack.addWidget(self.reports_tab)
+        self._tab_index["reports"] = self.tab_bar.count() - 1
 
         self.tab_bar.addTab("💸 Expenses")
         self.stack.addWidget(self.expenses_tab)
@@ -648,6 +654,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.daily_sessions_tab,
             self.unrealized_tab,
             self.realized_tab,
+            self.reports_tab,
             self.setup_tab,
             self.tools_tab,
         ):

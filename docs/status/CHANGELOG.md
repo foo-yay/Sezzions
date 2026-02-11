@@ -12,6 +12,28 @@ Rules:
 ## 2026-02-10
 
 ```yaml
+id: 2026-02-10-06
+type: feature
+areas: [ui, services, tests]
+summary: "Add Reports tab (Phase 1) with KPI snapshot and user/site breakdowns"
+files_changed:
+  - ui/main_window.py
+  - ui/tabs/reports_tab.py
+  - services/report_service.py
+  - tests/unit/test_report_service_phase1.py
+  - tests/ui/test_issue_102_reports_tab.py
+```
+
+**Feature: Reports Tab (Phase 1)**
+
+- Added a new Reports tab with a KPI snapshot strip and breakdown tables by user and site.
+- Implemented Phase 1 report metrics in `ReportService` with shared filters and soft-delete handling.
+- Added unit tests covering KPI snapshot, filters, empty ranges, and soft-delete exclusion.
+- Added headless UI tests including error handling for report refresh.
+
+---
+
+```yaml
 id: 2026-02-10-05
 type: feature
 areas: [ui]

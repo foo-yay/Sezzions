@@ -11,6 +11,7 @@ Sezzions is a desktop application for tracking casino sweepstakes activity with 
 - Purchases (adds basis / SC)
 - Redemptions (consumes basis via FIFO, yields cashflow P/L)
 - Game sessions (taxable P/L derived from gameplay / balance movements)
+- Reports (KPI snapshot and breakdowns by user/site)
 - Recalculation tools to keep derived data consistent
 - Import/export and database safety tooling
 
