@@ -386,9 +386,10 @@ class UnrealizedTab(QtWidgets.QWidget):
             purchase_basis=pos.purchase_basis,
         )
 
-        purchases = self.facade.get_unrealized_open_purchases(
+        purchases = self.facade.get_unrealized_related_purchases(
             pos.site_id,
             pos.user_id,
+            purchase_basis=pos.purchase_basis,
             start_date=related_anchor_date,
         )
         sessions = self.facade.get_unrealized_sessions(
@@ -721,7 +722,7 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
-        purchases_group = QtWidgets.QGroupBox("Open Purchases")
+        purchases_group = QtWidgets.QGroupBox("Related Purchases")
         purchases_layout = QtWidgets.QVBoxLayout(purchases_group)
         purchases_layout.setContentsMargins(8, 10, 8, 8)
         purchases_table = self._build_purchases_table()

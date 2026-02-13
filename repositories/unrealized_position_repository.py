@@ -13,6 +13,47 @@ class UnrealizedPositionRepository:
     
     def __init__(self, db):
         self.db = db
+
+    def _get_profit_only_position_start_date(self, site_id: int, user_id: int) -> Optional[str]:
+        """Best-effort start date for profit-only positions (remaining basis == 0).
+
+        When FIFO has consumed all basis, the "oldest purchase with remaining basis" is undefined.
+        In practice, users want to see the purchase(s) that most recently contributed basis to the
+        current on-site balance.
+
+        We approximate this by finding the most recent non-free-SC redemption with FIFO allocations
+        and returning the latest purchase_date among its allocated purchases.
+        """
+        query = """
+            SELECT MAX(p.purchase_date) as start_date
+            FROM redemptions r
+            JOIN redemption_allocations ra ON ra.redemption_id = r.id
+            JOIN purchases p ON p.id = ra.purchase_id
+            WHERE r.site_id = ? AND r.user_id = ?
+              AND r.deleted_at IS NULL
+              AND r.is_free_sc = 0
+              AND CAST(ra.allocated_amount AS REAL) > 0
+              AND p.deleted_at IS NULL
+              AND (p.status IS NULL OR p.status = 'active')
+              AND r.id = (
+                  SELECT r2.id
+                  FROM redemptions r2
+                  WHERE r2.site_id = ? AND r2.user_id = ?
+                    AND r2.deleted_at IS NULL
+                    AND r2.is_free_sc = 0
+                    AND EXISTS (
+                        SELECT 1 FROM redemption_allocations ra2
+                        WHERE ra2.redemption_id = r2.id
+                          AND CAST(ra2.allocated_amount AS REAL) > 0
+                    )
+                  ORDER BY r2.redemption_date DESC,
+                           COALESCE(r2.redemption_time, '00:00:00') DESC,
+                           r2.id DESC
+                  LIMIT 1
+              )
+        """
+        row = self.db.fetch_one(query, (site_id, user_id, site_id, user_id))
+        return row["start_date"] if row and row.get("start_date") else None
     
     def get_all_positions(self, start_date: Optional[date] = None, end_date: Optional[date] = None) -> List[UnrealizedPosition]:
         """
@@ -82,6 +123,12 @@ class UnrealizedPositionRepository:
             position_start_date = basis_data['start_date'] if basis_data and basis_data['start_date'] else None
             
             # If no purchases with remaining basis, use earliest purchase date
+            if not position_start_date:
+                if remaining_basis <= Decimal("0.001"):
+                    profit_only_start = self._get_profit_only_position_start_date(site_id, user_id)
+                    if profit_only_start:
+                        position_start_date = profit_only_start
+
             if not position_start_date:
                 earliest_purchase_query = """
                     SELECT MIN(purchase_date) as start_date

@@ -128,7 +128,7 @@ When editing a purchase or creating/editing a game session, the system computes 
   - Columns: "Total SC (Est.)", "Redeemable SC (Position)", "Est. Unrealized P/L"
 - **Issue #58 (2026-02-04):** Unrealized positions remain visible when `Total SC (Est.) > 0` even if `Remaining Basis = $0.00`.
   - This allows partial redemptions that consumed all basis (via FIFO) to still show in Unrealized if profit-only SC remains on the site.
-- **Related tab scoping (2026-02-13):** The Unrealized “View Position” dialog’s Related tab anchors to the position’s basis window when basis remains; for profit-only positions (basis = $0), Related anchors to the latest non-adjustment checkpoint to avoid showing lifetime history.
+- **Related tab scoping (2026-02-13):** The Unrealized “View Position” dialog’s Related tab anchors to the position’s basis window when basis remains; for profit-only positions (basis = $0), Related anchors to the latest non-adjustment checkpoint to avoid showing lifetime history. The “Related Purchases” list prefers FIFO-attributed purchases from `redemption_allocations` so contributing purchases still appear even when remaining basis is $0.
 - **Position closure (2026-02-05):** Positions are removed from Unrealized when a closure event datetime >= last activity datetime. Closure events:
   - Explicit "Balance Closed" marker (`amount=0, notes LIKE 'Balance Closed%'`)
   - FULL redemption (`more_remaining IS NOT NULL AND more_remaining = 0`)

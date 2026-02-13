@@ -72,7 +72,12 @@ def test_unrealized_related_queries_are_scoped_to_start_date(facade):
 
     start_date = date(2026, 2, 10)
 
-    purchases = facade.get_unrealized_open_purchases(1, 1, start_date=start_date)
+    purchases = facade.get_unrealized_related_purchases(
+        1,
+        1,
+        purchase_basis=Decimal("2500.00"),
+        start_date=start_date,
+    )
     sessions = facade.get_unrealized_sessions(1, 1, start_date=start_date)
 
     assert len(purchases) == 1
@@ -80,6 +85,51 @@ def test_unrealized_related_queries_are_scoped_to_start_date(facade):
 
     assert len(sessions) == 1
     assert sessions[0]["session_date"] == "2026-02-10"
+
+
+def test_unrealized_related_purchases_profit_only_uses_fifo_allocations(facade):
+    facade.db.execute("INSERT INTO users (name) VALUES ('mrs. fooyay')")
+    facade.db.execute("INSERT INTO sites (name) VALUES ('Stake')")
+
+    # Historical purchase fully consumed (remaining basis is $0)
+    facade.db.execute(
+        """
+        INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+        VALUES
+            (1, 1, '2025-12-31', '19:23:00', 4500.00, 4511.25, 0.00)
+        """
+    )
+
+    # A later redemption consumes basis via FIFO (creates allocations)
+    facade.db.execute(
+        """
+        INSERT INTO redemptions
+            (user_id, site_id, amount, redemption_date, redemption_time, processed, more_remaining, is_free_sc)
+        VALUES
+            (1, 1, 0.00, '2026-02-12', '10:00:00', 1, 0, 0)
+        """
+    )
+    facade.db.execute(
+        """
+        INSERT INTO redemption_allocations (redemption_id, purchase_id, allocated_amount)
+        VALUES (1, 1, 100.00)
+        """
+    )
+
+    facade.db.commit()
+
+    # Related window starts after the purchase, but the allocation is within the window.
+    anchor = date(2026, 2, 11)
+    purchases = facade.get_unrealized_related_purchases(
+        1,
+        1,
+        purchase_basis=Decimal("0.00"),
+        start_date=anchor,
+    )
+
+    assert len(purchases) == 1
+    assert purchases[0]["purchase_date"] == "2025-12-31"
 
 
 def test_unrealized_related_anchor_uses_checkpoint_for_profit_only_positions(facade):

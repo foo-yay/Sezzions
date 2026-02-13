@@ -84,6 +84,27 @@ files_changed:
 - The “View Position” Related tab now anchors to the latest non-adjustment checkpoint (purchase/session) for profit-only positions.
 - Session filtering now uses `end_date` when present so sessions spanning midnight still appear when anchored to a checkpoint date.
 
+---
+
+```yaml
+id: 2026-02-13-05
+type: bugfix
+areas: [ui, repositories, accounting]
+summary: "Unrealized Related Purchases shows contributing purchases for profit-only positions"
+files_changed:
+  - repositories/unrealized_position_repository.py
+  - app_facade.py
+  - ui/tabs/unrealized_tab.py
+  - tests/unit/test_unrealized_position_dialog_related_data.py
+  - docs/PROJECT_SPEC.md
+```
+
+**Bugfix: Unrealized Related Purchases for Profit-Only Positions**
+
+- Renamed the dialog section from “Open Purchases” to “Related Purchases”.
+- For profit-only positions (basis = $0), Related Purchases now prefers FIFO-attributed purchases from `redemption_allocations` so the dialog can still explain *which purchases contributed* even when `remaining_amount` is $0.
+- Profit-only position `start_date` now prefers a FIFO-allocation-derived start (instead of the earliest-ever purchase) when available.
+
 ## 2026-02-10
 
 ```yaml

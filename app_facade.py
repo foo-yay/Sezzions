@@ -1936,6 +1936,83 @@ class AppFacade:
         """
         return self.db.fetch_all(query, (site_id, user_id, start_date, start_date))
 
+    def get_unrealized_related_purchases(
+        self,
+        site_id: int,
+        user_id: int,
+        purchase_basis: Decimal,
+        start_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        """Purchases to show in the Unrealized "View Position" dialog -> Related tab.
+
+        - For normal positions (purchase basis > 0): show purchases within the related window.
+        - For profit-only positions (purchase basis == 0): show purchases that contributed via FIFO
+          allocations (even if their remaining_amount is now $0).
+        """
+        if purchase_basis > Decimal("0.001"):
+            return self.get_unrealized_open_purchases(site_id, user_id, start_date=start_date)
+
+        # Profit-only: prefer FIFO-attributed purchases linked to redemptions in the related window.
+        allocations_since_query = """
+            SELECT DISTINCT
+                p.id, p.purchase_date, p.purchase_time, p.amount, p.sc_received, p.remaining_amount
+            FROM redemptions r
+            JOIN redemption_allocations ra ON ra.redemption_id = r.id
+            JOIN purchases p ON p.id = ra.purchase_id
+            WHERE r.site_id = ? AND r.user_id = ?
+              AND r.deleted_at IS NULL
+              AND r.is_free_sc = 0
+              AND CAST(ra.allocated_amount AS REAL) > 0
+              AND p.deleted_at IS NULL
+              AND (p.status IS NULL OR p.status = 'active')
+              AND (? IS NULL OR r.redemption_date >= ?)
+            ORDER BY p.purchase_date ASC, COALESCE(p.purchase_time,'00:00:00') ASC, p.id ASC
+        """
+        purchases = self.db.fetch_all(
+            allocations_since_query, (site_id, user_id, start_date, start_date)
+        )
+        if purchases:
+            return purchases
+
+        # Fallback: the most recent redemption with allocations (useful when the related window
+        # starts after the basis was consumed).
+        latest_redemption_query = """
+            SELECT r.id
+            FROM redemptions r
+            WHERE r.site_id = ? AND r.user_id = ?
+              AND r.deleted_at IS NULL
+              AND r.is_free_sc = 0
+              AND EXISTS (
+                SELECT 1 FROM redemption_allocations ra
+                WHERE ra.redemption_id = r.id
+                  AND CAST(ra.allocated_amount AS REAL) > 0
+              )
+            ORDER BY r.redemption_date DESC,
+                     COALESCE(r.redemption_time, '00:00:00') DESC,
+                     r.id DESC
+            LIMIT 1
+        """
+        row = self.db.fetch_one(latest_redemption_query, (site_id, user_id))
+        if row and row.get("id"):
+            redemption_id = row["id"]
+            latest_allocations_query = """
+                SELECT DISTINCT
+                    p.id, p.purchase_date, p.purchase_time, p.amount, p.sc_received, p.remaining_amount
+                FROM redemption_allocations ra
+                JOIN purchases p ON p.id = ra.purchase_id
+                WHERE ra.redemption_id = ?
+                  AND CAST(ra.allocated_amount AS REAL) > 0
+                  AND p.deleted_at IS NULL
+                  AND (p.status IS NULL OR p.status = 'active')
+                ORDER BY p.purchase_date ASC, COALESCE(p.purchase_time,'00:00:00') ASC, p.id ASC
+            """
+            purchases = self.db.fetch_all(latest_allocations_query, (redemption_id,))
+            if purchases:
+                return purchases
+
+        # Last resort: just show purchases in the related window.
+        return self.get_unrealized_open_purchases(site_id, user_id, start_date=start_date)
+
     def get_unrealized_related_anchor_date(
         self,
         site_id: int,
