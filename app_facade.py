@@ -1913,16 +1913,51 @@ class AppFacade:
     def update_unrealized_notes(self, site_id: int, user_id: int, notes: str) -> None:
         self.unrealized_position_repo.update_notes(site_id, user_id, notes)
 
-    def get_unrealized_open_purchases(self, site_id: int, user_id: int) -> List[Dict[str, Any]]:
+    def get_unrealized_open_purchases(
+        self,
+        site_id: int,
+        user_id: int,
+        start_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        """Purchases to show in the Unrealized "View Position" dialog.
+
+        Historically this returned only purchases with remaining basis. In practice, users
+        expect to see the purchase(s) that led to the current position, even if remaining
+        basis is now $0. We therefore scope to the position timeframe when available.
+        """
         query = """
             SELECT id, purchase_date, purchase_time, amount, sc_received, remaining_amount
             FROM purchases
-            WHERE site_id = ? AND user_id = ? AND remaining_amount > 0.001
+            WHERE site_id = ? AND user_id = ?
+              AND deleted_at IS NULL
+              AND (status IS NULL OR status = 'active')
+              AND (? IS NULL OR purchase_date >= ?)
             ORDER BY purchase_date ASC, COALESCE(purchase_time,'00:00:00') ASC, id ASC
         """
-        return self.db.fetch_all(query, (site_id, user_id))
+        return self.db.fetch_all(query, (site_id, user_id, start_date, start_date))
 
-    def get_unrealized_sessions(self, site_id: int, user_id: int) -> List[Dict[str, Any]]:
+    def get_unrealized_related_anchor_date(
+        self,
+        site_id: int,
+        user_id: int,
+        position_start_date: date,
+        purchase_basis: Decimal,
+    ) -> date:
+        """Compute the anchor date for Unrealized "View Position" -> Related tab."""
+        return self.unrealized_position_repo.get_related_anchor_date(
+            site_id=site_id,
+            user_id=user_id,
+            position_start_date=position_start_date,
+            purchase_basis=purchase_basis,
+        )
+
+    def get_unrealized_sessions(
+        self,
+        site_id: int,
+        user_id: int,
+        start_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        """Sessions to show in the Unrealized "View Position" dialog."""
         query = """
             SELECT gs.id, gs.session_date, gs.session_time, gs.end_date, gs.end_time,
                    gs.ending_balance, gs.ending_redeemable, gs.status,
@@ -1930,9 +1965,13 @@ class AppFacade:
             FROM game_sessions gs
             LEFT JOIN games g ON gs.game_id = g.id
             WHERE gs.site_id = ? AND gs.user_id = ?
-            ORDER BY gs.session_date DESC, gs.session_time DESC, gs.id DESC
+              AND gs.deleted_at IS NULL
+                            AND (? IS NULL OR COALESCE(gs.end_date, gs.session_date) >= ?)
+                        ORDER BY COALESCE(gs.end_date, gs.session_date) DESC,
+                                         COALESCE(gs.end_time, gs.session_time, '00:00:00') DESC,
+                                         gs.id DESC
         """
-        return self.db.fetch_all(query, (site_id, user_id))
+        return self.db.fetch_all(query, (site_id, user_id, start_date, start_date))
 
     def close_unrealized_position(
         self,

@@ -9,6 +9,81 @@ Rules:
 
 ---
 
+## 2026-02-13
+
+```yaml
+id: 2026-02-13-01
+type: bugfix
+areas: [repositories, accounting]
+summary: "Unrealized uses balance checkpoints (account_adjustments) as checkpoint anchors"
+files_changed:
+  - repositories/unrealized_position_repository.py
+  - tests/integration/test_issue_44_unrealized_live_balances.py
+  - docs/PROJECT_SPEC.md
+```
+
+**Bugfix: Unrealized Ignored Balance Checkpoints**
+
+- Unrealized checkpoint selection now considers `account_adjustments` rows of type `BALANCE_CHECKPOINT_CORRECTION`.
+- This allows Setup → Tools → “New Balance Checkpoint” to immediately update Unrealized “Total SC (Est.)” / “Redeemable SC (Position)”.
+- Added an integration regression test covering the checkpoint override behavior.
+
+---
+
+```yaml
+id: 2026-02-13-02
+type: bugfix
+areas: [ui]
+summary: "Fix Unrealized 'View Position' dialog crash"
+files_changed:
+  - ui/tabs/unrealized_tab.py
+  - tests/ui/test_unrealized_position_dialog_smoke.py
+```
+
+**Bugfix: Unrealized "View Position" Crash**
+
+- Fixed an `AttributeError` when opening the Unrealized Position details dialog.
+- Added a headless UI regression test that instantiates the dialog.
+
+---
+
+```yaml
+id: 2026-02-13-03
+type: bugfix
+areas: [ui]
+summary: "Unrealized 'View Position' related tab is scoped to the current position"
+files_changed:
+  - app_facade.py
+  - ui/tabs/unrealized_tab.py
+  - tests/unit/test_unrealized_position_dialog_related_data.py
+```
+
+**Bugfix: Unrealized Related Tab Filtering**
+
+- Related Purchases/Sessions in the "View Position" dialog now filter to the position's `start_date`.
+- Excludes soft-deleted sessions and inactive/deleted purchases.
+
+---
+
+```yaml
+id: 2026-02-13-04
+type: bugfix
+areas: [ui, repositories]
+summary: "Unrealized Related tab anchors profit-only positions to latest checkpoint"
+files_changed:
+  - repositories/unrealized_position_repository.py
+  - app_facade.py
+  - ui/tabs/unrealized_tab.py
+  - tests/unit/test_unrealized_position_dialog_related_data.py
+  - docs/PROJECT_SPEC.md
+```
+
+**Bugfix: Unrealized Related Tab for Profit-Only Positions**
+
+- When `Remaining Basis = $0.00`, Unrealized positions can still exist (profit-only SC). In this case, using the earliest-ever purchase date as a Related filter is too broad.
+- The “View Position” Related tab now anchors to the latest non-adjustment checkpoint (purchase/session) for profit-only positions.
+- Session filtering now uses `end_date` when present so sessions spanning midnight still appear when anchored to a checkpoint date.
+
 ## 2026-02-10
 
 ```yaml

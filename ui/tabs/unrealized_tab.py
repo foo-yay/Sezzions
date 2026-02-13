@@ -379,8 +379,23 @@ class UnrealizedTab(QtWidgets.QWidget):
         if not pos:
             return
 
-        purchases = self.facade.get_unrealized_open_purchases(pos.site_id, pos.user_id)
-        sessions = self.facade.get_unrealized_sessions(pos.site_id, pos.user_id)
+        related_anchor_date = self.facade.get_unrealized_related_anchor_date(
+            pos.site_id,
+            pos.user_id,
+            position_start_date=pos.start_date,
+            purchase_basis=pos.purchase_basis,
+        )
+
+        purchases = self.facade.get_unrealized_open_purchases(
+            pos.site_id,
+            pos.user_id,
+            start_date=related_anchor_date,
+        )
+        sessions = self.facade.get_unrealized_sessions(
+            pos.site_id,
+            pos.user_id,
+            start_date=related_anchor_date,
+        )
 
         dialog = UnrealizedPositionDialog(
             pos,
@@ -661,7 +676,7 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         current_sc_label = QtWidgets.QLabel("Current SC:")
         current_sc_label.setObjectName("MutedLabel")
         values_grid.addWidget(current_sc_label, 0, 0)
-        values_grid.addWidget(make_selectable_label(f"{float(self.position.current_sc):.2f}", align_right=True), 0, 1)
+        values_grid.addWidget(make_selectable_label(f"{float(self.position.total_sc):.2f}", align_right=True), 0, 1)
         
         current_value_label = QtWidgets.QLabel("Current Value:")
         current_value_label.setObjectName("MutedLabel")
