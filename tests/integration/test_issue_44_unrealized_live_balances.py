@@ -336,6 +336,41 @@ class TestIssue61UnrealizedCheckpoints:
         assert pos.total_sc == Decimal("80.00"), "Session end is newest checkpoint"
         assert pos.redeemable_sc == Decimal("80.00")
         assert pos.purchase_basis == Decimal("50.00")
+
+    def test_balance_checkpoint_adjustment_overrides_session_checkpoint(self, db, repo):
+        """Balance checkpoints in account_adjustments should be usable as Unrealized checkpoints."""
+        # Baseline activity: a closed session ended with 2505
+        db.execute("""
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
+            VALUES (1, 1, '2024-01-01', '10:00:00', 2500.00, 2500.00, 2500.00, 2500.00)
+        """)
+        db.execute("""
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, starting_redeemable, ending_redeemable, status)
+            VALUES (1, 1, 1, '2024-01-01', '11:00:00', '2024-01-01', '12:00:00',
+                    2500.00, 2505.00, 2500.00, 2505.00, 'Closed')
+        """)
+
+        # Next-day external bonus: establish a balance checkpoint to 2510
+        db.execute("""
+            INSERT INTO account_adjustments
+            (user_id, site_id, effective_date, effective_time, type,
+             delta_basis_usd, checkpoint_total_sc, checkpoint_redeemable_sc,
+             reason, notes, related_table, related_id)
+            VALUES (1, 1, '2024-01-02', '09:00:00', 'BALANCE_CHECKPOINT_CORRECTION',
+                    0.00, 2510.00, 2510.00,
+                    'Stake free SC posted after session', NULL, NULL, NULL)
+        """)
+        db.commit()
+
+        positions = repo.get_all_positions()
+        assert len(positions) == 1
+        pos = positions[0]
+
+        assert pos.total_sc == Decimal("2510.00"), "Unrealized should use balance checkpoint as baseline"
+        assert pos.redeemable_sc == Decimal("2510.00"), "Redeemable should reflect checkpoint redeemable"
     
     def test_purchases_after_session_start_checkpoint(self, db, repo):
         """Purchase after session-start checkpoint adds to Total SC (Est.)."""

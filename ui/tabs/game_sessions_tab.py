@@ -1,15 +1,18 @@
 """
 Game Sessions Tab - Track gameplay sessions with P/L calculations
 """
+import os
+import sys
 import re
 from datetime import datetime, date
+from bisect import bisect_left, bisect_right
 from decimal import Decimal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget,
     QTableWidgetItem, QMessageBox, QDialog, QLineEdit, QComboBox,
     QLabel, QHeaderView, QCalendarWidget, QFileDialog, QGroupBox,
     QPlainTextEdit, QTabWidget, QListView, QCompleter, QSizePolicy,
-    QGridLayout, QApplication, QCheckBox, QSpacerItem, QMenu
+    QGridLayout, QApplication, QCheckBox, QSpacerItem, QMenu, QStyle
 )
 from PySide6.QtCore import Qt, QTime, QDate, QTimer
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
@@ -20,6 +23,7 @@ from ui.table_header_filters import TableHeaderFilter
 from ui.spreadsheet_ux import SpreadsheetUXController
 from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 from ui.input_parsers import parse_date_input, parse_time_input
+from ui.adjustment_dialogs import ViewAdjustmentsDialog
 
 
 TIME_24H_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d(?:\:[0-5]\d)?$")
@@ -286,6 +290,31 @@ class GameSessionsTab(QWidget):
             sites = {s.id: s.name for s in self.facade.get_all_sites()}
             games = {g.id: g for g in self.facade.list_all_games()}
 
+            # Precompute per (user_id, site_id) adjustment/checkpoint timelines for "Adjusted" badges.
+            adjusted_icon = self.style().standardIcon(QStyle.SP_MessageBoxInformation)
+            adjustment_timeline: dict[tuple[int, int], tuple[list[datetime], list[datetime], list[datetime]]] = {}
+            try:
+                pairs = {(int(s.user_id), int(s.site_id)) for s in rows if getattr(s, "user_id", None) and getattr(s, "site_id", None)}
+                for (user_id, site_id) in pairs:
+                    adjs = self.facade.adjustment_service.get_by_user_and_site(user_id=user_id, site_id=site_id, include_deleted=False)
+                    checkpoints: list[datetime] = []
+                    events: list[datetime] = []
+                    for adj in adjs:
+                        eff_time = getattr(adj, "effective_time", None) or "00:00:00"
+                        try:
+                            eff_dt = datetime.combine(adj.effective_date, datetime.strptime(eff_time, "%H:%M:%S").time())
+                        except Exception:
+                            eff_dt = datetime.combine(adj.effective_date, datetime.strptime("00:00:00", "%H:%M:%S").time())
+                        events.append(eff_dt)
+                        if getattr(adj, "type", None) is not None and getattr(adj.type, "value", "") == "BALANCE_CHECKPOINT_CORRECTION":
+                            checkpoints.append(eff_dt)
+                    checkpoints.sort()
+                    events.sort()
+                    full_redemptions = self.facade.get_full_redemption_datetimes_for_user_site(user_id=user_id, site_id=site_id)
+                    adjustment_timeline[(user_id, site_id)] = (checkpoints, events, full_redemptions)
+            except Exception:
+                adjustment_timeline = {}
+
             sorting_was_enabled = self.table.isSortingEnabled()
             self.table.setSortingEnabled(False)
             self.table.setUpdatesEnabled(False)
@@ -337,6 +366,44 @@ class GameSessionsTab(QWidget):
                         if col == 0:
                             item.setData(Qt.UserRole, session.id)
                         self.table.setItem(row, col, item)
+
+                    # Add Adjusted badge to the Site column when applicable.
+                    try:
+                        key = (int(session.user_id), int(session.site_id))
+                        checkpoints, events, full_redemptions = adjustment_timeline.get(key, ([], [], []))
+                        s_time = session.session_time or "00:00:00"
+                        s_dt = datetime.combine(session.session_date, datetime.strptime(s_time, "%H:%M:%S").time())
+
+                        cp_i = bisect_right(checkpoints, s_dt) - 1
+                        prev_cp = checkpoints[cp_i] if cp_i >= 0 else None
+                        next_cp = checkpoints[cp_i + 1] if (cp_i + 1) < len(checkpoints) else None
+
+                        red_i = bisect_left(full_redemptions, s_dt)
+                        prev_full = full_redemptions[red_i - 1] if red_i - 1 >= 0 else None
+                        next_full = full_redemptions[red_i] if red_i < len(full_redemptions) else None
+
+                        start_bound = prev_cp
+                        if prev_full is not None and (start_bound is None or prev_full > start_bound):
+                            start_bound = prev_full
+
+                        end_bound = next_cp
+                        if next_full is not None and (end_bound is None or next_full < end_bound):
+                            end_bound = next_full
+                        if end_bound is None:
+                            end_bound = s_dt
+
+                        left = bisect_left(events, start_bound) if start_bound else 0
+                        right = bisect_right(events, end_bound) if end_bound else len(events)
+                        has_applicable_adjustments = left < right
+                        if has_applicable_adjustments:
+                            site_item = self.table.item(row, 1)
+                            if site_item is not None:
+                                site_item.setIcon(adjusted_icon)
+                                site_item.setToolTip(
+                                    "Adjusted: this session has adjustments/checkpoints in its basis period (Tools)."
+                                )
+                    except Exception:
+                        pass
 
                     if session.status != "Active":
                         net_pl = session.net_taxable_pl if session.net_taxable_pl is not None else Decimal("0.00")
@@ -3259,6 +3326,92 @@ class ViewSessionDialog(QDialog):
         self.setWindowTitle("View Game Session")
         self.resize(750, 600)
 
+        self.adjustments = []
+        self.period_adjustments = []
+        self.period_boundary_checkpoints = []
+        self.period_window_start = None
+        self.period_window_end = None
+        if getattr(self.session, "id", None):
+            try:
+                self.adjustments = self.facade.adjustment_service.get_by_related(
+                    "game_sessions", int(self.session.id), include_deleted=False
+                )
+            except Exception:
+                self.adjustments = []
+
+        try:
+            anchor_time = getattr(self.session, "session_time", None) or "00:00:00"
+            self.period_window_start, self.period_window_end = self.facade.adjustment_service.get_checkpoint_window_for_timestamp(
+                user_id=int(self.session.user_id),
+                site_id=int(self.session.site_id),
+                anchor_date=self.session.session_date,
+                anchor_time=anchor_time,
+            )
+
+            prev_full, next_full = self.facade.get_full_redemption_window_for_timestamp(
+                user_id=int(self.session.user_id),
+                site_id=int(self.session.site_id),
+                anchor_date=self.session.session_date,
+                anchor_time=anchor_time,
+            )
+
+            start_bound_dt = None
+            if self.period_window_start is not None:
+                start_cp_time = getattr(self.period_window_start, "effective_time", None) or "00:00:00"
+                start_bound_dt = self.facade._to_dt(self.period_window_start.effective_date, start_cp_time)
+            if prev_full is not None:
+                prev_full_dt = self.facade._to_dt(prev_full[0], prev_full[1])
+                if start_bound_dt is None or prev_full_dt > start_bound_dt:
+                    start_bound_dt = prev_full_dt
+
+            end_bound_dt = None
+            end_cp_dt = None
+            if self.period_window_end is not None:
+                end_cp_time = getattr(self.period_window_end, "effective_time", None) or "00:00:00"
+                end_cp_dt = self.facade._to_dt(self.period_window_end.effective_date, end_cp_time)
+                end_bound_dt = end_cp_dt
+            if next_full is not None:
+                next_full_dt = self.facade._to_dt(next_full[0], next_full[1])
+                if end_bound_dt is None or next_full_dt < end_bound_dt:
+                    end_bound_dt = next_full_dt
+
+            anchor_dt = self.facade._to_dt(self.session.session_date, anchor_time)
+            if end_bound_dt is None:
+                end_bound_dt = anchor_dt
+
+            start_date = start_bound_dt.date() if start_bound_dt else None
+            start_time = start_bound_dt.strftime("%H:%M:%S") if start_bound_dt else "00:00:00"
+            end_date = end_bound_dt.date() if end_bound_dt else None
+            end_time = end_bound_dt.strftime("%H:%M:%S") if end_bound_dt else "23:59:59"
+
+            raw_period = self.facade.adjustment_service.get_active_adjustments_in_window(
+                user_id=int(self.session.user_id),
+                site_id=int(self.session.site_id),
+                start_date=start_date,
+                start_time=start_time,
+                end_date=end_date,
+                end_time=end_time,
+            )
+
+            self.period_boundary_checkpoints = []
+            if self.period_window_start is not None and start_bound_dt is not None:
+                start_cp_time = getattr(self.period_window_start, "effective_time", None) or "00:00:00"
+                start_cp_dt = self.facade._to_dt(self.period_window_start.effective_date, start_cp_time)
+                if start_cp_dt >= start_bound_dt and start_cp_dt <= end_bound_dt:
+                    self.period_boundary_checkpoints.append(self.period_window_start)
+
+            if self.period_window_end is not None and end_cp_dt is not None and end_bound_dt == end_cp_dt:
+                if not self.period_boundary_checkpoints or getattr(self.period_boundary_checkpoints[0], "id", None) != getattr(self.period_window_end, "id", None):
+                    self.period_boundary_checkpoints.append(self.period_window_end)
+
+            anchor_ids = {int(a.id) for a in self.period_boundary_checkpoints if getattr(a, "id", None)}
+            self.period_adjustments = [a for a in raw_period if getattr(a, "id", None) not in anchor_ids]
+        except Exception:
+            self.period_adjustments = []
+            self.period_boundary_checkpoints = []
+            self.period_window_start = None
+            self.period_window_end = None
+
         self.linked_purchases = self._get_linked_purchases()
         self.linked_redemptions = self._get_linked_redemptions()
 
@@ -3266,11 +3419,13 @@ class ViewSessionDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
 
-        tabs = QTabWidget()
-        tabs.setObjectName("SetupSubTabs")
-        tabs.addTab(self._create_details_tab(), "Details")
-        tabs.addTab(self._create_related_tab(), "Related")
-        layout.addWidget(tabs, 1)
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("SetupSubTabs")
+        self.tabs.addTab(self._create_details_tab(), "Details")
+        self.tabs.addTab(self._create_related_tab(), "Related")
+        if self.adjustments or self.period_adjustments or self.period_boundary_checkpoints:
+            self.tabs.addTab(self._create_adjustments_tab(), "Adjustments")
+        layout.addWidget(self.tabs, 1)
 
         btn_row = QHBoxLayout()
 
@@ -3710,8 +3865,149 @@ class ViewSessionDialog(QDialog):
 
         layout.addWidget(notes_section)
 
+        if self.adjustments or self.period_adjustments or self.period_boundary_checkpoints:
+            adj_section = QWidget()
+            adj_section.setObjectName("SectionBackground")
+            adj_layout = QVBoxLayout(adj_section)
+            adj_layout.setContentsMargins(10, 8, 10, 8)
+            adj_layout.setSpacing(6)
+
+            adj_label = QLabel("🧩 Adjustments & Checkpoints")
+            adj_label.setObjectName("SectionHeader")
+            adj_layout.addWidget(adj_label)
+
+            total = len(self.period_adjustments) + len(self.period_boundary_checkpoints) + len(self.adjustments)
+            summary = QLabel(
+                f"This session has {total} adjustment(s)/checkpoint(s) available for review."
+            )
+            summary.setObjectName("HelperText")
+            summary.setWordWrap(True)
+            adj_layout.addWidget(summary)
+
+            btn_row = QHBoxLayout()
+            btn_row.addStretch(1)
+            open_btn = QPushButton("👁️ View Adjustments")
+            open_btn.clicked.connect(self._open_adjustments_tab)
+            btn_row.addWidget(open_btn)
+            adj_layout.addLayout(btn_row)
+
+            layout.addWidget(adj_section)
+
         layout.addStretch(1)
         return widget
+
+    def _create_adjustments_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        def _make_table() -> QTableWidget:
+            table = QTableWidget(0, 5)
+            table.setHorizontalHeaderLabels(["Effective", "Type", "Delta/Total SC", "Redeemable SC", "View"])
+            table.setEditTriggers(QTableWidget.NoEditTriggers)
+            table.setSelectionBehavior(QTableWidget.SelectRows)
+            table.setSelectionMode(QTableWidget.SingleSelection)
+            table.setAlternatingRowColors(True)
+            table.verticalHeader().setVisible(False)
+            table.verticalHeader().setDefaultSectionSize(44)
+
+            header = table.horizontalHeader()
+            header.setStretchLastSection(False)
+            header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(3, QHeaderView.Stretch)
+            header.setSectionResizeMode(4, QHeaderView.Fixed)
+            table.setColumnWidth(4, 170)
+            return table
+
+        def _populate_table(table: QTableWidget, adjustments_list: list) -> None:
+            adjustments_sorted = sorted(
+                adjustments_list,
+                key=lambda a: (str(a.effective_date), str(a.effective_time or "00:00:00"), int(a.id or 0)),
+                reverse=True,
+            )
+            table.setRowCount(len(adjustments_sorted))
+            for row_idx, adj in enumerate(adjustments_sorted):
+                effective = f"{adj.effective_date} {adj.effective_time or '00:00:00'}"
+                type_str = "Basis" if adj.type.value == "BASIS_USD_CORRECTION" else "Checkpoint"
+                if adj.type.value == "BASIS_USD_CORRECTION":
+                    delta_total_str = f"${adj.delta_basis_usd:,.2f}"
+                    redeemable_str = ""
+                else:
+                    delta_total_str = f"{adj.checkpoint_total_sc:,.2f}"
+                    redeemable_str = f"{adj.checkpoint_redeemable_sc:,.2f}"
+
+                table.setItem(row_idx, 0, QTableWidgetItem(effective))
+                table.setItem(row_idx, 1, QTableWidgetItem(type_str))
+                delta_item = QTableWidgetItem(delta_total_str)
+                delta_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                table.setItem(row_idx, 2, delta_item)
+                redeem_item = QTableWidgetItem(redeemable_str)
+                redeem_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                table.setItem(row_idx, 3, redeem_item)
+
+                view_btn = QPushButton("👁️ View Adjustment")
+                view_btn.setObjectName("MiniButton")
+                view_btn.setFixedHeight(24)
+                view_btn.setFixedWidth(150)
+                adj_id = adj.id
+                view_btn.clicked.connect(lambda _checked=False, aid=adj_id: self._open_adjustment_dialog(aid))
+                view_container = QWidget()
+                view_layout = QGridLayout(view_container)
+                view_layout.setContentsMargins(6, 4, 6, 4)
+                view_layout.addWidget(view_btn, 0, 0, Qt.AlignCenter)
+                table.setCellWidget(row_idx, 4, view_container)
+                table.setRowHeight(
+                    row_idx,
+                    max(table.rowHeight(row_idx), view_btn.sizeHint().height() + 16),
+                )
+
+        period_group = QGroupBox("Basis Period (Checkpoint Window)")
+        period_layout = QVBoxLayout(period_group)
+        period_layout.setContentsMargins(8, 10, 8, 8)
+        window_rows = (self.period_boundary_checkpoints or []) + (self.period_adjustments or [])
+        if window_rows:
+            period_table = _make_table()
+            _populate_table(period_table, window_rows)
+            period_layout.addWidget(period_table)
+        else:
+            empty = QLabel("No active adjustments/checkpoints found in this checkpoint window.")
+            empty.setObjectName("MutedLabel")
+            period_layout.addWidget(empty)
+        layout.addWidget(period_group)
+
+        if self.adjustments:
+            linked_group = QGroupBox("Explicitly Linked to This Session")
+            linked_layout = QVBoxLayout(linked_group)
+            linked_layout.setContentsMargins(8, 10, 8, 8)
+            linked_table = _make_table()
+            _populate_table(linked_table, self.adjustments)
+            linked_layout.addWidget(linked_table)
+            layout.addWidget(linked_group)
+        layout.addStretch(1)
+        return widget
+
+    def _open_adjustments_tab(self):
+        if not hasattr(self, "tabs") or self.tabs is None:
+            return
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "Adjustments":
+                self.tabs.setCurrentIndex(i)
+                return
+
+    def _open_adjustment_dialog(self, adjustment_id):
+        if not adjustment_id:
+            return
+        dialog = ViewAdjustmentsDialog(
+            self.facade,
+            parent=self,
+            initial_user_id=self.session.user_id,
+            initial_site_id=self.session.site_id,
+            preselect_adjustment_id=int(adjustment_id),
+        )
+        dialog.exec()
 
     def _create_section_header(self, text: str) -> QLabel:
         """Create a section header"""

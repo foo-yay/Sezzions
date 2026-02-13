@@ -9,6 +9,207 @@ Rules:
 
 ---
 
+## 2026-02-13
+
+```yaml
+id: 2026-02-13-01
+type: bugfix
+areas: [repositories, accounting]
+summary: "Unrealized uses balance checkpoints (account_adjustments) as checkpoint anchors"
+files_changed:
+  - repositories/unrealized_position_repository.py
+  - tests/integration/test_issue_44_unrealized_live_balances.py
+  - docs/PROJECT_SPEC.md
+```
+
+**Bugfix: Unrealized Ignored Balance Checkpoints**
+
+- Unrealized checkpoint selection now considers `account_adjustments` rows of type `BALANCE_CHECKPOINT_CORRECTION`.
+- This allows Setup → Tools → “New Balance Checkpoint” to immediately update Unrealized “Total SC (Est.)” / “Redeemable SC (Position)”.
+- Added an integration regression test covering the checkpoint override behavior.
+
+---
+
+```yaml
+id: 2026-02-13-02
+type: bugfix
+areas: [ui]
+summary: "Fix Unrealized 'View Position' dialog crash"
+files_changed:
+  - ui/tabs/unrealized_tab.py
+  - tests/ui/test_unrealized_position_dialog_smoke.py
+```
+
+**Bugfix: Unrealized "View Position" Crash**
+
+- Fixed an `AttributeError` when opening the Unrealized Position details dialog.
+- Added a headless UI regression test that instantiates the dialog.
+
+---
+
+```yaml
+id: 2026-02-13-03
+type: bugfix
+areas: [ui]
+summary: "Unrealized 'View Position' related tab is scoped to the current position"
+files_changed:
+  - app_facade.py
+  - ui/tabs/unrealized_tab.py
+  - tests/unit/test_unrealized_position_dialog_related_data.py
+```
+
+**Bugfix: Unrealized Related Tab Filtering**
+
+- Related Purchases/Sessions in the "View Position" dialog now filter to the position's `start_date`.
+- Excludes soft-deleted sessions and inactive/deleted purchases.
+
+---
+
+```yaml
+id: 2026-02-13-04
+type: bugfix
+areas: [ui, repositories]
+summary: "Unrealized Related tab anchors profit-only positions to latest checkpoint"
+files_changed:
+  - repositories/unrealized_position_repository.py
+  - app_facade.py
+  - ui/tabs/unrealized_tab.py
+  - tests/unit/test_unrealized_position_dialog_related_data.py
+  - docs/PROJECT_SPEC.md
+```
+
+**Bugfix: Unrealized Related Tab for Profit-Only Positions**
+
+- When `Remaining Basis = $0.00`, Unrealized positions can still exist (profit-only SC). In this case, using the earliest-ever purchase date as a Related filter is too broad.
+- The “View Position” Related tab now anchors to the latest non-adjustment checkpoint (purchase/session) for profit-only positions.
+- Session filtering now uses `end_date` when present so sessions spanning midnight still appear when anchored to a checkpoint date.
+
+---
+
+```yaml
+id: 2026-02-13-05
+type: bugfix
+areas: [ui, repositories, accounting]
+summary: "Unrealized Related Purchases shows contributing purchases for profit-only positions"
+files_changed:
+  - repositories/unrealized_position_repository.py
+  - app_facade.py
+  - ui/tabs/unrealized_tab.py
+  - tests/unit/test_unrealized_position_dialog_related_data.py
+  - docs/PROJECT_SPEC.md
+```
+
+**Bugfix: Unrealized Related Purchases for Profit-Only Positions**
+
+- Renamed the dialog section from “Open Purchases” to “Related Purchases”.
+- For profit-only positions (basis = $0), Related Purchases now prefers FIFO-attributed purchases from `redemption_allocations` so the dialog can still explain *which purchases contributed* even when `remaining_amount` is $0.
+- Profit-only position `start_date` now prefers a FIFO-allocation-derived start (instead of the earliest-ever purchase) when available.
+
+---
+
+```yaml
+id: 2026-02-13-06
+type: feature
+areas: [ui]
+summary: "Unrealized positions surface adjustment/checkpoint presence and deep-link to View Adjustments"
+files_changed:
+  - app_facade.py
+  - repositories/adjustment_repository.py
+  - services/adjustment_service.py
+  - ui/adjustment_dialogs.py
+  - ui/tabs/unrealized_tab.py
+```
+
+**Feature: Adjustment/Checkpoint Visibility for Unrealized**
+
+- Unrealized rows now show a small “Adjusted” indicator when that site/user has any active adjustments/checkpoints.
+- “View Position” includes a brief “Adjustments & Checkpoints” section in Details and a conditional “Adjustments” tab listing applicable adjustments.
+- Each listed adjustment can open Tools → “View Adjustments” pre-filtered and pre-selected to the matching record.
+
+---
+
+```yaml
+id: 2026-02-13-07
+type: feature
+areas: [ui, services, repositories]
+summary: "Warn before soft-deleting adjustments with downstream activity; add Adjustments tabs to view dialogs"
+files_changed:
+  - repositories/adjustment_repository.py
+  - services/adjustment_service.py
+  - ui/adjustment_dialogs.py
+  - ui/tabs/purchases_tab_modern.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/game_sessions_tab.py
+  - ui/tabs/realized_tab.py
+  - tests/unit/test_adjustment_service.py
+  - tests/ui/test_adjustments_rollout_dialogs_smoke.py
+```
+
+**Feature: Safer Adjustment/Checkpoint Deletion + Rollout of Reconciliation UI**
+
+- “View Adjustments” soft-delete now warns when there is later site/user activity (purchases, sessions, redemptions, or later adjustments).
+- Purchase / Redemption / Game Session / Realized position view dialogs now show a brief “Adjustments & Checkpoints” section and an “Adjustments” tab when linked adjustments exist.
+- Added unit coverage for the downstream warning summary and a headless dialog smoke test for the rollout.
+
+---
+
+```yaml
+id: 2026-02-13-08
+type: feature
+areas: [ui, services, repositories]
+summary: "Purchase/Redemption/Session view dialogs show checkpoint-window adjustments/checkpoints"
+files_changed:
+  - repositories/adjustment_repository.py
+  - services/adjustment_service.py
+  - ui/tabs/purchases_tab_modern.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/game_sessions_tab.py
+  - tests/unit/test_adjustment_repository.py
+  - tests/unit/test_adjustment_service.py
+```
+
+**Feature: Checkpoint-Window Adjustments/Checkpoints in View Dialogs**
+
+- Purchase / Redemption / Game Session view dialogs can show adjustments/checkpoints that fall in the record’s checkpoint window (basis period), not only those explicitly linked.
+
+---
+
+```yaml
+id: 2026-02-13-09
+type: bugfix
+areas: [ui, accounting]
+summary: "Fix Purchase basis-period scoping; reduce noisy adjustment sections; add Adjusted badges"
+files_changed:
+  - app_facade.py
+  - ui/tabs/purchases_tab.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/game_sessions_tab.py
+```
+
+**Bugfix: Basis-Period Scoping + Adjusted Badges**
+
+- Purchase “Basis Period” related list is now bounded by the next checkpoint (no longer open-ended).
+- View dialogs no longer show the Adjustments/Checkpoints section just because a boundary checkpoint exists.
+- Purchases / Redemptions / Game Sessions tables now show an “Adjusted” info icon when adjustments/checkpoints exist inside the row’s checkpoint window.
+
+---
+
+```yaml
+id: 2026-02-13-10
+type: bugfix
+areas: [ui]
+summary: "Adjustment/checkpoint dialogs resolve typed User/Site selections"
+files_changed:
+  - ui/adjustment_dialogs.py
+  - tests/ui/test_checkpoint_dialog_autocomplete.py
+```
+
+**Bugfix: Adjustment/Checkpoint Dialog Autocomplete**
+
+- The “New Balance Checkpoint” and “New Basis Adjustment” dialogs now resolve typed User/Site values to their underlying IDs and validate correctly.
+- Autocomplete behavior now mirrors the Add Purchase dialog for editable combo boxes.
+- Time inputs now accept HH:MM or HH:MM:SS and store as HH:MM:SS (defaulting seconds to :00).
+
 ## 2026-02-10
 
 ```yaml

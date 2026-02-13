@@ -6,6 +6,7 @@ from decimal import Decimal
 from datetime import date, datetime
 
 from app_facade import AppFacade
+from ui.adjustment_dialogs import ViewAdjustmentsDialog
 from ui.date_filter_widget import DateFilterWidget
 from ui.spreadsheet_ux import SpreadsheetUXController
 from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
@@ -72,6 +73,7 @@ class RealizedPositionDialog(QtWidgets.QDialog):
         on_open_redemption=None,
         on_open_daily_sessions=None,
         on_open_session=None,
+        facade: AppFacade | None = None,
     ):
         super().__init__(parent)
         self.position = position
@@ -81,6 +83,21 @@ class RealizedPositionDialog(QtWidgets.QDialog):
         self.on_open_redemption = on_open_redemption
         self.on_open_daily_sessions = on_open_daily_sessions
         self.on_open_session = on_open_session
+        self.facade = facade
+
+        self.adjustments = []
+        redemption_id = None
+        try:
+            redemption_id = int(self.position.get("redemption_id")) if self.position.get("redemption_id") else None
+        except Exception:
+            redemption_id = None
+        if self.facade and redemption_id:
+            try:
+                self.adjustments = self.facade.adjustment_service.get_by_related(
+                    "redemptions", redemption_id, include_deleted=False
+                )
+            except Exception:
+                self.adjustments = []
         
         self.setWindowTitle("View Position")
         self.setMinimumWidth(700)
@@ -90,11 +107,13 @@ class RealizedPositionDialog(QtWidgets.QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
 
-        tabs = QtWidgets.QTabWidget()
-        tabs.setObjectName("SetupSubTabs")
-        tabs.addTab(self._create_details_tab(), "Details")
-        tabs.addTab(self._create_related_tab(), "Related")
-        layout.addWidget(tabs, 1)
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.setObjectName("SetupSubTabs")
+        self.tabs.addTab(self._create_details_tab(), "Details")
+        self.tabs.addTab(self._create_related_tab(), "Related")
+        if self.adjustments:
+            self.tabs.addTab(self._create_adjustments_tab(), "Adjustments")
+        layout.addWidget(self.tabs, 1)
 
         btn_row = QtWidgets.QHBoxLayout()
         btn_row.addStretch(1)
@@ -312,8 +331,118 @@ class RealizedPositionDialog(QtWidgets.QDialog):
             notes_layout.addWidget(notes_empty)
         
         layout.addWidget(notes_section)
+
+        if self.adjustments:
+            adj_section, adj_layout = create_section("🧩 Adjustments & Checkpoints")
+            summary = QtWidgets.QLabel(
+                f"This realized position has {len(self.adjustments)} adjustment(s)/checkpoint(s) explicitly linked to its redemption."
+            )
+            summary.setWordWrap(True)
+            summary.setObjectName("HelperText")
+            adj_layout.addWidget(summary)
+            btn_row = QtWidgets.QHBoxLayout()
+            btn_row.addStretch(1)
+            open_btn = QtWidgets.QPushButton("👁️ View Adjustments")
+            open_btn.clicked.connect(self._open_adjustments_tab)
+            btn_row.addWidget(open_btn)
+            adj_layout.addLayout(btn_row)
+            layout.addWidget(adj_section)
+
         layout.addStretch(1)
         return widget
+
+    def _create_adjustments_tab(self):
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        group = QtWidgets.QGroupBox("Adjustments & Checkpoints")
+        group_layout = QtWidgets.QVBoxLayout(group)
+        group_layout.setContentsMargins(8, 10, 8, 8)
+
+        table = QtWidgets.QTableWidget(0, 5)
+        table.setHorizontalHeaderLabels(["Effective", "Type", "Delta/Total SC", "Redeemable SC", "View"])
+        table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        table.setAlternatingRowColors(True)
+        table.verticalHeader().setVisible(False)
+        table.verticalHeader().setDefaultSectionSize(44)
+
+        header = table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Fixed)
+        table.setColumnWidth(4, 170)
+
+        adjustments = sorted(
+            self.adjustments,
+            key=lambda a: (str(a.effective_date), str(a.effective_time or "00:00:00"), int(a.id or 0)),
+            reverse=True,
+        )
+        table.setRowCount(len(adjustments))
+        for row_idx, adj in enumerate(adjustments):
+            effective = f"{adj.effective_date} {adj.effective_time or '00:00:00'}"
+            type_str = "Basis" if adj.type.value == "BASIS_USD_CORRECTION" else "Checkpoint"
+            if adj.type.value == "BASIS_USD_CORRECTION":
+                delta_total_str = f"${adj.delta_basis_usd:,.2f}"
+                redeemable_str = ""
+            else:
+                delta_total_str = f"{adj.checkpoint_total_sc:,.2f}"
+                redeemable_str = f"{adj.checkpoint_redeemable_sc:,.2f}"
+
+            table.setItem(row_idx, 0, QtWidgets.QTableWidgetItem(effective))
+            table.setItem(row_idx, 1, QtWidgets.QTableWidgetItem(type_str))
+            delta_item = QtWidgets.QTableWidgetItem(delta_total_str)
+            delta_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            table.setItem(row_idx, 2, delta_item)
+            redeem_item = QtWidgets.QTableWidgetItem(redeemable_str)
+            redeem_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            table.setItem(row_idx, 3, redeem_item)
+
+            view_btn = QtWidgets.QPushButton("👁️ View Adjustment")
+            view_btn.setObjectName("MiniButton")
+            view_btn.setFixedHeight(24)
+            view_btn.setFixedWidth(150)
+            adj_id = adj.id
+            view_btn.clicked.connect(lambda _checked=False, aid=adj_id: self._open_adjustment_dialog(aid))
+            view_container = QtWidgets.QWidget()
+            view_layout = QtWidgets.QGridLayout(view_container)
+            view_layout.setContentsMargins(6, 4, 6, 4)
+            view_layout.addWidget(view_btn, 0, 0, QtCore.Qt.AlignCenter)
+            table.setCellWidget(row_idx, 4, view_container)
+            table.setRowHeight(
+                row_idx,
+                max(table.rowHeight(row_idx), view_btn.sizeHint().height() + 16),
+            )
+
+        group_layout.addWidget(table)
+        layout.addWidget(group)
+        layout.addStretch(1)
+        return widget
+
+    def _open_adjustments_tab(self) -> None:
+        if not hasattr(self, "tabs") or self.tabs is None:
+            return
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "Adjustments":
+                self.tabs.setCurrentIndex(i)
+                return
+
+    def _open_adjustment_dialog(self, adjustment_id: int | None) -> None:
+        if not adjustment_id or not self.facade:
+            return
+        # Use the redemption's site/user, if present.
+        dialog = ViewAdjustmentsDialog(
+            self.facade,
+            parent=self,
+            preselect_adjustment_id=int(adjustment_id),
+        )
+        dialog.exec()
 
     def _create_related_tab(self):
         widget = QtWidgets.QWidget()
@@ -1326,6 +1455,7 @@ class RealizedTab(QtWidgets.QWidget):
             on_open_redemption=self._open_redemption,
             on_open_daily_sessions=self._open_daily_sessions,
             on_open_session=self._open_session,
+            facade=self.facade,
         )
         dialog.exec()
 

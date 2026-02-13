@@ -156,6 +156,19 @@ class AdjustmentService:
         return self.adjustment_repo.get_by_user_and_site(
             user_id, site_id, include_deleted
         )
+
+    def get_by_related(
+        self,
+        related_table: str,
+        related_id: int,
+        include_deleted: bool = False,
+    ) -> List[Adjustment]:
+        """Get adjustments explicitly linked to a record via related_table/related_id."""
+        return self.adjustment_repo.get_by_related(
+            related_table=related_table,
+            related_id=related_id,
+            include_deleted=include_deleted,
+        )
     
     def get_active_checkpoints_before(
         self,
@@ -187,6 +200,115 @@ class AdjustmentService:
             user_id, site_id, cutoff_date, cutoff_time
         )
         return checkpoints[0] if checkpoints else None
+
+    def get_active_checkpoints_after(
+        self,
+        user_id: int,
+        site_id: int,
+        cutoff_date: date,
+        cutoff_time: str = "00:00:00",
+    ) -> List[Adjustment]:
+        """Get active balance checkpoint adjustments strictly after a cutoff datetime.
+
+        Returns checkpoints ordered ASC by effective datetime (earliest first).
+        """
+        return self.adjustment_repo.get_active_checkpoints_after(
+            user_id, site_id, cutoff_date, cutoff_time
+        )
+
+    def get_next_checkpoint_after(
+        self,
+        user_id: int,
+        site_id: int,
+        cutoff_date: date,
+        cutoff_time: str = "00:00:00",
+    ) -> Optional[Adjustment]:
+        """Get the earliest active checkpoint strictly after a cutoff datetime."""
+        checkpoints = self.get_active_checkpoints_after(
+            user_id, site_id, cutoff_date, cutoff_time
+        )
+        return checkpoints[0] if checkpoints else None
+
+    def get_checkpoint_window_for_timestamp(
+        self,
+        user_id: int,
+        site_id: int,
+        anchor_date: date,
+        anchor_time: str = "23:59:59",
+    ) -> tuple[Optional[Adjustment], Optional[Adjustment]]:
+        """Return (start_checkpoint, end_checkpoint) for a basis-period window.
+
+        Window is defined as:
+        - start_checkpoint: latest checkpoint at-or-before the anchor timestamp
+        - end_checkpoint: next checkpoint strictly after the anchor timestamp
+
+        Either side may be None if no checkpoint exists.
+        """
+        start_checkpoint = self.get_latest_checkpoint_before(
+            user_id=user_id,
+            site_id=site_id,
+            cutoff_date=anchor_date,
+            cutoff_time=anchor_time or "23:59:59",
+        )
+        end_checkpoint = self.get_next_checkpoint_after(
+            user_id=user_id,
+            site_id=site_id,
+            cutoff_date=anchor_date,
+            cutoff_time=anchor_time or "23:59:59",
+        )
+        return start_checkpoint, end_checkpoint
+
+    def get_active_adjustments_in_checkpoint_window(
+        self,
+        user_id: int,
+        site_id: int,
+        anchor_date: date,
+        anchor_time: str = "23:59:59",
+    ) -> List[Adjustment]:
+        """Get active adjustments/checkpoints in the anchor's checkpoint window.
+
+        The window bounds are inclusive, so the end checkpoint itself is included
+        when present.
+        """
+        start_checkpoint, end_checkpoint = self.get_checkpoint_window_for_timestamp(
+            user_id=user_id,
+            site_id=site_id,
+            anchor_date=anchor_date,
+            anchor_time=anchor_time,
+        )
+
+        start_date = start_checkpoint.effective_date if start_checkpoint else None
+        start_time = start_checkpoint.effective_time if start_checkpoint else "00:00:00"
+        end_date = end_checkpoint.effective_date if end_checkpoint else None
+        end_time = end_checkpoint.effective_time if end_checkpoint else "23:59:59"
+
+        return self.adjustment_repo.get_active_adjustments_in_window(
+            user_id=user_id,
+            site_id=site_id,
+            start_date=start_date,
+            start_time=start_time,
+            end_date=end_date,
+            end_time=end_time,
+        )
+
+    def get_active_adjustments_in_window(
+        self,
+        user_id: int,
+        site_id: int,
+        start_date: Optional[date] = None,
+        start_time: str = "00:00:00",
+        end_date: Optional[date] = None,
+        end_time: str = "23:59:59",
+    ) -> List[Adjustment]:
+        """Get active adjustments/checkpoints in an inclusive datetime window."""
+        return self.adjustment_repo.get_active_adjustments_in_window(
+            user_id=user_id,
+            site_id=site_id,
+            start_date=start_date,
+            start_time=start_time,
+            end_date=end_date,
+            end_time=end_time,
+        )
     
     def get_active_basis_adjustments(
         self,
@@ -238,6 +360,32 @@ class AdjustmentService:
             raise ValueError("Adjustment is already deleted")
         
         return self.adjustment_repo.soft_delete(adjustment_id, reason)
+
+    def get_soft_delete_warning_summary(self, adjustment_id: int) -> dict:
+        """Return a downstream-activity summary used to warn before soft-delete.
+
+        The caller can treat any non-zero count as a signal that deleting this
+        adjustment/checkpoint may alter derived balances/continuity for later activity.
+        """
+        adjustment = self.adjustment_repo.get_by_id(adjustment_id)
+        if not adjustment:
+            raise ValueError(f"Adjustment {adjustment_id} not found")
+
+        summary = self.adjustment_repo.get_downstream_activity_summary(
+            user_id=adjustment.user_id,
+            site_id=adjustment.site_id,
+            effective_date=adjustment.effective_date,
+            effective_time=adjustment.effective_time or "00:00:00",
+            exclude_adjustment_id=adjustment.id,
+        )
+        total = 0
+        for v in summary.values():
+            try:
+                total += int(v)
+            except Exception:
+                continue
+        summary["has_downstream_activity"] = total > 0
+        return summary
     
     def restore(self, adjustment_id: int) -> bool:
         """Restore a soft-deleted adjustment.

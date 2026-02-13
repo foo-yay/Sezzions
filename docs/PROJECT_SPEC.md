@@ -119,6 +119,7 @@ When editing a purchase or creating/editing a game session, the system computes 
   1. **Purchase snapshots** (`starting_sc_balance` when recorded) — captures site SC including dailies/bonuses at purchase time
   2. **Session starts** (`starting_balance` + `starting_redeemable`) — both Active and Closed sessions
   3. **Session ends** (`ending_balance` + `ending_redeemable`) — Closed sessions only
+  4. **Balance checkpoints** (`account_adjustments` of type `BALANCE_CHECKPOINT_CORRECTION`) — explicit known balances captured in Setup → Tools
   - Formula: `estimated_total_sc = checkpoint_total_sc + purchases_since_checkpoint - redemptions_since_checkpoint`
   - When checkpoint is a purchase snapshot, that purchase's `sc_received` is **not** double-counted in the deltas.
   - Redeemable SC formula: `estimated_redeemable_sc = checkpoint_redeemable_sc - redeemable_redemptions_since_checkpoint` (if checkpoint is within current position start_date). Informational only; free SC redemptions (`is_free_sc=1`) are excluded from this calculation as they don't affect redeemable balance.
@@ -127,6 +128,7 @@ When editing a purchase or creating/editing a game session, the system computes 
   - Columns: "Total SC (Est.)", "Redeemable SC (Position)", "Est. Unrealized P/L"
 - **Issue #58 (2026-02-04):** Unrealized positions remain visible when `Total SC (Est.) > 0` even if `Remaining Basis = $0.00`.
   - This allows partial redemptions that consumed all basis (via FIFO) to still show in Unrealized if profit-only SC remains on the site.
+- **Related tab scoping (2026-02-13):** The Unrealized “View Position” dialog’s Related tab anchors to the position’s basis window when basis remains; for profit-only positions (basis = $0), Related anchors to the latest non-adjustment checkpoint to avoid showing lifetime history. The “Related Purchases” list prefers FIFO-attributed purchases from `redemption_allocations` so contributing purchases still appear even when remaining basis is $0.
 - **Position closure (2026-02-05):** Positions are removed from Unrealized when a closure event datetime >= last activity datetime. Closure events:
   - Explicit "Balance Closed" marker (`amount=0, notes LIKE 'Balance Closed%'`)
   - FULL redemption (`more_remaining IS NOT NULL AND more_remaining = 0`)
@@ -274,6 +276,13 @@ The Tools tab provides:
 - **New Basis Adjustment** dialog: user/site selectors, date/time, delta amount, reason
 - **New Balance Checkpoint** dialog: user/site selectors, date/time, total SC, redeemable SC, reason
 - **View Adjustments** dialog: table view with filters, soft delete, restore functionality
+
+#### 4.6.5 UI Visibility + Basis-Period Scoping
+
+- **View dialogs**: Purchase / Redemption / Game Session / Realized / Unrealized dialogs show a brief “Adjustments & Checkpoints” section and a conditional “Adjustments” tab when relevant adjustments/checkpoints exist.
+- **Adjusted badges**: Purchase / Redemption / Game Session list tables display an “Adjusted” info icon when adjustments/checkpoints exist inside the record’s basis window.
+- **Basis window**: Basis-period windows are anchored by checkpoints **and** full-redemption boundaries to avoid cross-period leakage when a redemption fully resets remaining balance.
+- **Autocomplete + time normalization**: Adjustment and Checkpoint dialogs use editable combo boxes with autocomplete (matching Add Purchase behavior) and accept HH:MM or HH:MM:SS, storing times as HH:MM:SS (defaulting seconds to :00).
 
 ### 4.7 Audit Logging, Soft Delete, and Undo/Redo (Issue #92)
 

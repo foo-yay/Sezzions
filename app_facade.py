@@ -243,6 +243,75 @@ class AppFacade:
             return second_date, cls._normalize_time(second_time)
         return first_date, cls._normalize_time(first_time)
 
+    def get_full_redemption_window_for_timestamp(
+        self,
+        user_id: int,
+        site_id: int,
+        anchor_date: date,
+        anchor_time: str = "23:59:59",
+    ) -> tuple[Optional[tuple[date, str]], Optional[tuple[date, str]]]:
+        """Return (prev_full_redemption, next_full_redemption) around a timestamp.
+
+        A "full redemption" is defined as a redemption with more_remaining == False.
+        Either side may be None if no full redemption exists in that direction.
+
+        Notes:
+        - Uses strict comparisons: prev < anchor, next > anchor.
+        - Times are normalized to HH:MM:SS.
+        """
+        try:
+            anchor_dt = self._to_dt(anchor_date, anchor_time or "23:59:59")
+            redemptions = self.redemption_repo.get_by_user_and_site(int(user_id), int(site_id))
+        except Exception:
+            return None, None
+
+        prev_item: Optional[tuple[datetime, date, str]] = None
+        next_item: Optional[tuple[datetime, date, str]] = None
+
+        for r in redemptions:
+            try:
+                if bool(getattr(r, "more_remaining", False)):
+                    continue
+                r_time = self._normalize_time(getattr(r, "redemption_time", None))
+                r_dt = self._to_dt(r.redemption_date, r_time)
+            except Exception:
+                continue
+
+            if r_dt < anchor_dt:
+                if prev_item is None or r_dt > prev_item[0]:
+                    prev_item = (r_dt, r.redemption_date, r_time)
+            elif r_dt > anchor_dt:
+                if next_item is None or r_dt < next_item[0]:
+                    next_item = (r_dt, r.redemption_date, r_time)
+
+        prev_out = (prev_item[1], prev_item[2]) if prev_item else None
+        next_out = (next_item[1], next_item[2]) if next_item else None
+        return prev_out, next_out
+
+    def get_full_redemption_datetimes_for_user_site(
+        self,
+        user_id: int,
+        site_id: int,
+    ) -> list[datetime]:
+        """Return sorted datetimes for full redemptions for a user/site."""
+        try:
+            redemptions = self.redemption_repo.get_by_user_and_site(int(user_id), int(site_id))
+        except Exception:
+            return []
+
+        out: list[datetime] = []
+        for r in redemptions:
+            try:
+                if bool(getattr(r, "more_remaining", False)):
+                    continue
+                r_time = self._normalize_time(getattr(r, "redemption_time", None))
+                out.append(self._to_dt(r.redemption_date, r_time))
+            except Exception:
+                continue
+
+        out.sort()
+        return out
+
     def _find_containing_session_start(
         self,
         site_id: int,
@@ -914,48 +983,49 @@ class AppFacade:
         purchase_date: date,
         purchase_time: Optional[str] = None
     ) -> Optional[tuple[date, str]]:
-        """Get the start datetime of the basis period for a purchase.
-        
-        A basis period is bounded by FULL redemptions (more_remaining=0).
-        Returns (date, time) of the most recent FULL redemption before the purchase,
-        or None if no such redemption exists (meaning this purchase is in the first period).
-        
-        Args:
-            user_id: User ID
-            site_id: Site ID
-            purchase_date: Date of the purchase
-            purchase_time: Time of the purchase (optional, defaults to '00:00:00')
-            
-        Returns:
-            (date, time) tuple of the most recent FULL redemption, or None
+        """Get the start datetime of the purchase's basis period.
+
+        Basis periods are bounded by the nearest "anchor" events before the purchase.
+        Anchors include:
+        - balance checkpoints (account_adjustments)
+        - full redemptions (redemptions with more_remaining == False)
+
+        Returns the later of (latest checkpoint <= purchase) and (latest full redemption < purchase).
         """
-        redemptions = self.redemption_repo.get_by_user_and_site(user_id, site_id)
-        
-        # Normalize purchase time for comparison
-        p_time = purchase_time or "00:00:00"
-        
-        # Find the most recent FULL redemption (more_remaining=0) before this purchase
-        latest_full = None
-        latest_datetime = None
-        
-        for r in redemptions:
-            # Skip if not a full redemption
-            if r.more_remaining != 0:
-                continue
-                
-            r_time = r.redemption_time or "00:00:00"
-            
-            # Check if this redemption is before the purchase
-            if r.redemption_date < purchase_date or \
-               (r.redemption_date == purchase_date and r_time < p_time):
-                # Compare with current latest
-                if latest_datetime is None or \
-                   r.redemption_date > latest_datetime[0] or \
-                   (r.redemption_date == latest_datetime[0] and r_time > latest_datetime[1]):
-                    latest_full = r
-                    latest_datetime = (r.redemption_date, r_time)
-        
-        return latest_datetime
+        try:
+            anchor_time = purchase_time or "23:59:59"
+            start_cp, _end_cp = self.adjustment_service.get_checkpoint_window_for_timestamp(
+                user_id=int(user_id),
+                site_id=int(site_id),
+                anchor_date=purchase_date,
+                anchor_time=anchor_time,
+            )
+
+            prev_full, _next_full = self.get_full_redemption_window_for_timestamp(
+                user_id=int(user_id),
+                site_id=int(site_id),
+                anchor_date=purchase_date,
+                anchor_time=anchor_time,
+            )
+
+            best: Optional[tuple[datetime, date, str]] = None
+
+            if start_cp:
+                cp_time = self._normalize_time(getattr(start_cp, "effective_time", None))
+                cp_dt = self._to_dt(start_cp.effective_date, cp_time)
+                best = (cp_dt, start_cp.effective_date, cp_time)
+
+            if prev_full:
+                red_date, red_time = prev_full
+                red_dt = self._to_dt(red_date, red_time)
+                if best is None or red_dt > best[0]:
+                    best = (red_dt, red_date, red_time)
+
+            if best is None:
+                return None
+            return (best[1], best[2])
+        except Exception:
+            return None
     
     def get_basis_period_purchases(
         self,
@@ -965,55 +1035,111 @@ class AppFacade:
         purchase_time: Optional[str] = None,
         exclude_purchase_id: Optional[int] = None
     ) -> List[Purchase]:
-        """Get all purchases in the same basis period as the given purchase.
-        
-        Returns ALL purchases (past, current, and future) ordered by (date, time, id)
-        that fall within the basis period defined by FULL redemptions (more_remaining=0).
-        Partial redemptions do NOT start a new basis period.
-        
-        Args:
-            user_id: User ID
-            site_id: Site ID
-            purchase_date: Date of the reference purchase
-            purchase_time: Time of the reference purchase (optional)
-            exclude_purchase_id: Purchase ID to exclude (useful when editing)
-            
-        Returns:
-            List of purchases in the basis period, ordered by (date, time, id)
+        """Get purchases in the same basis period as a purchase.
+
+        Basis periods are bounded by the nearest anchors around the reference timestamp.
+        Anchors include:
+        - balance checkpoints (account_adjustments)
+        - full redemptions (redemptions with more_remaining == False)
+
+        Bounds:
+        - start boundary: later of (latest checkpoint <= anchor) and (latest full redemption < anchor)
+        - end boundary:   earlier of (next checkpoint > anchor) and (next full redemption > anchor)
+
+        When no end boundary exists, the list is capped at the anchor timestamp.
         """
-        # Get the basis period start
-        period_start = self.get_basis_period_start_for_purchase(
-            user_id, site_id, purchase_date, purchase_time
+        anchor_time = purchase_time or "23:59:59"
+
+        prev_full, next_full = self.get_full_redemption_window_for_timestamp(
+            user_id=int(user_id),
+            site_id=int(site_id),
+            anchor_date=purchase_date,
+            anchor_time=anchor_time,
         )
-        
-        # Get all purchases for this user+site
+
+        # Determine checkpoint window bounds.
+        start_cp = None
+        end_cp = None
+        try:
+            start_cp, end_cp = self.adjustment_service.get_checkpoint_window_for_timestamp(
+                user_id=int(user_id),
+                site_id=int(site_id),
+                anchor_date=purchase_date,
+                anchor_time=anchor_time,
+            )
+        except Exception:
+            start_cp = None
+            end_cp = None
+
+        # Build start boundary (inclusive) from the later of checkpoint/redemption.
+        start_dt: Optional[datetime] = None
+        if start_cp is not None:
+            try:
+                cp_time = self._normalize_time(getattr(start_cp, "effective_time", None))
+                start_dt = self._to_dt(start_cp.effective_date, cp_time)
+            except Exception:
+                start_dt = None
+        if prev_full is not None:
+            try:
+                red_dt = self._to_dt(prev_full[0], prev_full[1])
+                if start_dt is None or red_dt > start_dt:
+                    start_dt = red_dt
+            except Exception:
+                pass
+
+        # Build end boundary (exclusive) from the earlier of checkpoint/redemption.
+        end_dt: Optional[datetime] = None
+        if end_cp is not None:
+            try:
+                cp_time = self._normalize_time(getattr(end_cp, "effective_time", None))
+                end_dt = self._to_dt(end_cp.effective_date, cp_time)
+            except Exception:
+                end_dt = None
+        if next_full is not None:
+            try:
+                red_dt = self._to_dt(next_full[0], next_full[1])
+                if end_dt is None or red_dt < end_dt:
+                    end_dt = red_dt
+            except Exception:
+                pass
+
+        # When there is no next anchor, cap at the reference purchase timestamp
+        # so the "Related" view doesn’t include all future purchases.
+        anchor_dt = self._to_dt(purchase_date, anchor_time)
+        end_is_anchor = end_dt is None
+        if end_dt is None:
+            end_dt = anchor_dt
+
+        # Get all purchases for this user+site.
         all_purchases = self.purchase_repo.get_by_user_and_site(user_id, site_id)
-        
-        # Filter to purchases in the basis period
-        p_time = purchase_time or "00:00:00"
-        result = []
-        
+        result: list[Purchase] = []
         for p in all_purchases:
-            # Skip excluded purchase
             if exclude_purchase_id and p.id == exclude_purchase_id:
                 continue
-                
-            p_purchase_time = p.purchase_time or "00:00:00"
-            
-            # Check if purchase is after period start (or no start = first period)
-            if period_start:
-                start_date, start_time = period_start
-                if p.purchase_date < start_date or \
-                   (p.purchase_date == start_date and p_purchase_time <= start_time):
+
+            p_time = p.purchase_time or "00:00:00"
+            try:
+                p_dt = self._to_dt(p.purchase_date, p_time)
+            except Exception:
+                continue
+
+            # Apply start bound: p >= start
+            if start_dt is not None and p_dt < start_dt:
+                continue
+
+            # Apply end bound.
+            # - With an end anchor: p < end (exclusive)
+            # - With no end anchor: p <= anchor (inclusive)
+            if end_is_anchor:
+                if p_dt > end_dt:
                     continue
-            
-            # Include ALL purchases in the basis period (past, current, and future)
-            # This gives a complete view of the entire basis period when viewing any purchase in it
+            else:
+                if p_dt >= end_dt:
+                    continue
+
             result.append(p)
-        
-        # Sort by (date, time, id)
+
         result.sort(key=lambda x: (x.purchase_date, x.purchase_time or "00:00:00", x.id))
-        
         return result
     
     def compute_purchase_total_extra(
@@ -1905,6 +2031,22 @@ class AppFacade:
         Shows current SC balances and unrealized P/L (NOT taxable until closed).
         """
         return self.unrealized_position_repo.get_all_positions(start_date, end_date)
+
+    def get_adjusted_site_user_pairs(self, include_deleted: bool = False) -> set[tuple[int, int]]:
+        """Return (site_id, user_id) pairs that have adjustments/checkpoints.
+
+        Used for quick-glance UI indicators ("Adjusted" badges) without running
+        per-row queries.
+        """
+        query = """
+            SELECT DISTINCT site_id, user_id
+            FROM account_adjustments
+        """
+        params: tuple = ()
+        if not include_deleted:
+            query += " WHERE deleted_at IS NULL"
+        rows = self.db.fetch_all(query, params)
+        return {(int(r["site_id"]), int(r["user_id"])) for r in rows}
     
     def get_unrealized_position(self, site_id: int, user_id: int) -> Optional[UnrealizedPosition]:
         """Get specific unrealized position for a site/user pair."""
@@ -1913,16 +2055,128 @@ class AppFacade:
     def update_unrealized_notes(self, site_id: int, user_id: int, notes: str) -> None:
         self.unrealized_position_repo.update_notes(site_id, user_id, notes)
 
-    def get_unrealized_open_purchases(self, site_id: int, user_id: int) -> List[Dict[str, Any]]:
+    def get_unrealized_open_purchases(
+        self,
+        site_id: int,
+        user_id: int,
+        start_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        """Purchases to show in the Unrealized "View Position" dialog.
+
+        Historically this returned only purchases with remaining basis. In practice, users
+        expect to see the purchase(s) that led to the current position, even if remaining
+        basis is now $0. We therefore scope to the position timeframe when available.
+        """
         query = """
             SELECT id, purchase_date, purchase_time, amount, sc_received, remaining_amount
             FROM purchases
-            WHERE site_id = ? AND user_id = ? AND remaining_amount > 0.001
+            WHERE site_id = ? AND user_id = ?
+              AND deleted_at IS NULL
+              AND (status IS NULL OR status = 'active')
+              AND (? IS NULL OR purchase_date >= ?)
             ORDER BY purchase_date ASC, COALESCE(purchase_time,'00:00:00') ASC, id ASC
         """
-        return self.db.fetch_all(query, (site_id, user_id))
+        return self.db.fetch_all(query, (site_id, user_id, start_date, start_date))
 
-    def get_unrealized_sessions(self, site_id: int, user_id: int) -> List[Dict[str, Any]]:
+    def get_unrealized_related_purchases(
+        self,
+        site_id: int,
+        user_id: int,
+        purchase_basis: Decimal,
+        start_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        """Purchases to show in the Unrealized "View Position" dialog -> Related tab.
+
+        - For normal positions (purchase basis > 0): show purchases within the related window.
+        - For profit-only positions (purchase basis == 0): show purchases that contributed via FIFO
+          allocations (even if their remaining_amount is now $0).
+        """
+        if purchase_basis > Decimal("0.001"):
+            return self.get_unrealized_open_purchases(site_id, user_id, start_date=start_date)
+
+        # Profit-only: prefer FIFO-attributed purchases linked to redemptions in the related window.
+        allocations_since_query = """
+            SELECT DISTINCT
+                p.id, p.purchase_date, p.purchase_time, p.amount, p.sc_received, p.remaining_amount
+            FROM redemptions r
+            JOIN redemption_allocations ra ON ra.redemption_id = r.id
+            JOIN purchases p ON p.id = ra.purchase_id
+            WHERE r.site_id = ? AND r.user_id = ?
+              AND r.deleted_at IS NULL
+              AND r.is_free_sc = 0
+              AND CAST(ra.allocated_amount AS REAL) > 0
+              AND p.deleted_at IS NULL
+              AND (p.status IS NULL OR p.status = 'active')
+              AND (? IS NULL OR r.redemption_date >= ?)
+            ORDER BY p.purchase_date ASC, COALESCE(p.purchase_time,'00:00:00') ASC, p.id ASC
+        """
+        purchases = self.db.fetch_all(
+            allocations_since_query, (site_id, user_id, start_date, start_date)
+        )
+        if purchases:
+            return purchases
+
+        # Fallback: the most recent redemption with allocations (useful when the related window
+        # starts after the basis was consumed).
+        latest_redemption_query = """
+            SELECT r.id
+            FROM redemptions r
+            WHERE r.site_id = ? AND r.user_id = ?
+              AND r.deleted_at IS NULL
+              AND r.is_free_sc = 0
+              AND EXISTS (
+                SELECT 1 FROM redemption_allocations ra
+                WHERE ra.redemption_id = r.id
+                  AND CAST(ra.allocated_amount AS REAL) > 0
+              )
+            ORDER BY r.redemption_date DESC,
+                     COALESCE(r.redemption_time, '00:00:00') DESC,
+                     r.id DESC
+            LIMIT 1
+        """
+        row = self.db.fetch_one(latest_redemption_query, (site_id, user_id))
+        if row and row.get("id"):
+            redemption_id = row["id"]
+            latest_allocations_query = """
+                SELECT DISTINCT
+                    p.id, p.purchase_date, p.purchase_time, p.amount, p.sc_received, p.remaining_amount
+                FROM redemption_allocations ra
+                JOIN purchases p ON p.id = ra.purchase_id
+                WHERE ra.redemption_id = ?
+                  AND CAST(ra.allocated_amount AS REAL) > 0
+                  AND p.deleted_at IS NULL
+                  AND (p.status IS NULL OR p.status = 'active')
+                ORDER BY p.purchase_date ASC, COALESCE(p.purchase_time,'00:00:00') ASC, p.id ASC
+            """
+            purchases = self.db.fetch_all(latest_allocations_query, (redemption_id,))
+            if purchases:
+                return purchases
+
+        # Last resort: just show purchases in the related window.
+        return self.get_unrealized_open_purchases(site_id, user_id, start_date=start_date)
+
+    def get_unrealized_related_anchor_date(
+        self,
+        site_id: int,
+        user_id: int,
+        position_start_date: date,
+        purchase_basis: Decimal,
+    ) -> date:
+        """Compute the anchor date for Unrealized "View Position" -> Related tab."""
+        return self.unrealized_position_repo.get_related_anchor_date(
+            site_id=site_id,
+            user_id=user_id,
+            position_start_date=position_start_date,
+            purchase_basis=purchase_basis,
+        )
+
+    def get_unrealized_sessions(
+        self,
+        site_id: int,
+        user_id: int,
+        start_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        """Sessions to show in the Unrealized "View Position" dialog."""
         query = """
             SELECT gs.id, gs.session_date, gs.session_time, gs.end_date, gs.end_time,
                    gs.ending_balance, gs.ending_redeemable, gs.status,
@@ -1930,9 +2184,13 @@ class AppFacade:
             FROM game_sessions gs
             LEFT JOIN games g ON gs.game_id = g.id
             WHERE gs.site_id = ? AND gs.user_id = ?
-            ORDER BY gs.session_date DESC, gs.session_time DESC, gs.id DESC
+              AND gs.deleted_at IS NULL
+                            AND (? IS NULL OR COALESCE(gs.end_date, gs.session_date) >= ?)
+                        ORDER BY COALESCE(gs.end_date, gs.session_date) DESC,
+                                         COALESCE(gs.end_time, gs.session_time, '00:00:00') DESC,
+                                         gs.id DESC
         """
-        return self.db.fetch_all(query, (site_id, user_id))
+        return self.db.fetch_all(query, (site_id, user_id, start_date, start_date))
 
     def close_unrealized_position(
         self,

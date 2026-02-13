@@ -31,8 +31,8 @@ class BasisAdjustmentDialog(QDialog):
         self._update_completers()
         
         # Connect validation
-        self.user_combo.currentIndexChanged.connect(self._validate_inline)
-        self.site_combo.currentIndexChanged.connect(self._validate_inline)
+        self.user_combo.currentTextChanged.connect(self._validate_inline)
+        self.site_combo.currentTextChanged.connect(self._validate_inline)
         self.date_edit.textChanged.connect(self._validate_inline)
         self.time_edit.textChanged.connect(self._validate_inline)
         self.delta_input.textChanged.connect(self._validate_inline)
@@ -208,6 +208,7 @@ class BasisAdjustmentDialog(QDialog):
     
     def _load_users(self):
         users = self.facade.user_service.list_active_users()
+        self._user_lookup = {u.name.lower(): u.id for u in users}
         self.user_combo.addItem("")  # Empty first item
         for user in users:
             self.user_combo.addItem(user.name, user.id)
@@ -215,6 +216,7 @@ class BasisAdjustmentDialog(QDialog):
     
     def _load_sites(self):
         sites = self.facade.site_service.list_active_sites()
+        self._site_lookup = {s.name.lower(): s.id for s in sites}
         self.site_combo.addItem("")  # Empty first item
         for site in sites:
             self.site_combo.addItem(site.name, site.id)
@@ -223,9 +225,12 @@ class BasisAdjustmentDialog(QDialog):
     def _update_completers(self):
         """Add auto-complete to combo boxes"""
         for combo in (self.user_combo, self.site_combo):
+            if not combo.isEditable():
+                combo.setCompleter(None)
+                continue
             completer = QCompleter(combo.model())
             completer.setCaseSensitivity(Qt.CaseInsensitive)
-            completer.setFilterMode(Qt.MatchContains)
+            completer.setFilterMode(Qt.MatchStartsWith)
             completer.setCompletionMode(QCompleter.InlineCompletion)
             popup = QListView()
             popup.setStyleSheet(
@@ -236,6 +241,24 @@ class BasisAdjustmentDialog(QDialog):
             combo.setCompleter(completer)
             if combo.lineEdit():
                 combo.lineEdit().setCompleter(completer)
+                app = QApplication.instance()
+                if app is not None and hasattr(app, "_completer_filter"):
+                    combo.lineEdit().installEventFilter(app._completer_filter)
+
+    def _resolve_combo_id(self, combo: QComboBox, lookup: dict[str, int]) -> int | None:
+        current_data = combo.currentData()
+        if current_data:
+            return int(current_data)
+        text = combo.currentText().strip()
+        if not text:
+            return None
+        match_id = lookup.get(text.lower())
+        if match_id is None:
+            return None
+        idx = combo.findData(match_id)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+        return int(match_id)
     
     def _set_today(self):
         """Set date to today"""
@@ -303,14 +326,16 @@ class BasisAdjustmentDialog(QDialog):
         valid = True
         
         # User
-        if self.user_combo.currentIndex() < 0 or not self.user_combo.currentData():
+        user_id = self._resolve_combo_id(self.user_combo, getattr(self, "_user_lookup", {}))
+        if not user_id:
             self._set_invalid(self.user_combo, "User is required")
             valid = False
         else:
             self._set_valid(self.user_combo)
         
         # Site
-        if self.site_combo.currentIndex() < 0 or not self.site_combo.currentData():
+        site_id = self._resolve_combo_id(self.site_combo, getattr(self, "_site_lookup", {}))
+        if not site_id:
             self._set_invalid(self.site_combo, "Site is required")
             valid = False
         else:
@@ -336,10 +361,10 @@ class BasisAdjustmentDialog(QDialog):
             valid = False
         else:
             try:
-                datetime.strptime(time_text, "%H:%M")
+                parse_time_input(time_text)
                 self._set_valid(self.time_edit)
             except:
-                self._set_invalid(self.time_edit, "Invalid time format (HH:MM)")
+                self._set_invalid(self.time_edit, "Invalid time format (HH:MM or HH:MM:SS)")
                 valid = False
         
         # Delta
@@ -382,15 +407,17 @@ class BasisAdjustmentDialog(QDialog):
         
         # Create adjustment
         try:
-            user_id = self.user_combo.currentData()
-            site_id = self.site_combo.currentData()
+            user_id = self._resolve_combo_id(self.user_combo, getattr(self, "_user_lookup", {}))
+            site_id = self._resolve_combo_id(self.site_combo, getattr(self, "_site_lookup", {}))
+            if not user_id or not site_id:
+                raise ValueError("User and Site are required.")
             
             # Parse date and time
             date_obj = datetime.strptime(self.date_edit.text().strip(), "%m/%d/%y")
-            time_obj = datetime.strptime(self.time_edit.text().strip(), "%H:%M")
+            time_obj = parse_time_input(self.time_edit.text().strip())
             
             effective_date = date_obj.strftime("%Y-%m-%d")
-            effective_time = time_obj.strftime("%H:%M:00")
+            effective_time = time_to_db_string(time_obj)
             
             delta = Decimal(self.delta_input.text().strip())
             reason = self.reason_input.text().strip()
@@ -427,8 +454,8 @@ class CheckpointDialog(QDialog):
         self._update_completers()
         
         # Connect validation
-        self.user_combo.currentIndexChanged.connect(self._validate_inline)
-        self.site_combo.currentIndexChanged.connect(self._validate_inline)
+        self.user_combo.currentTextChanged.connect(self._validate_inline)
+        self.site_combo.currentTextChanged.connect(self._validate_inline)
         self.date_edit.textChanged.connect(self._validate_inline)
         self.time_edit.textChanged.connect(self._validate_inline)
         self.total_sc_input.textChanged.connect(self._validate_inline)
@@ -616,6 +643,7 @@ class CheckpointDialog(QDialog):
     
     def _load_users(self):
         users = self.facade.user_service.list_active_users()
+        self._user_lookup = {u.name.lower(): u.id for u in users}
         self.user_combo.addItem("")  # Empty first item
         for user in users:
             self.user_combo.addItem(user.name, user.id)
@@ -623,6 +651,7 @@ class CheckpointDialog(QDialog):
     
     def _load_sites(self):
         sites = self.facade.site_service.list_active_sites()
+        self._site_lookup = {s.name.lower(): s.id for s in sites}
         self.site_combo.addItem("")  # Empty first item
         for site in sites:
             self.site_combo.addItem(site.name, site.id)
@@ -631,9 +660,12 @@ class CheckpointDialog(QDialog):
     def _update_completers(self):
         """Add auto-complete to combo boxes"""
         for combo in (self.user_combo, self.site_combo):
+            if not combo.isEditable():
+                combo.setCompleter(None)
+                continue
             completer = QCompleter(combo.model())
             completer.setCaseSensitivity(Qt.CaseInsensitive)
-            completer.setFilterMode(Qt.MatchContains)
+            completer.setFilterMode(Qt.MatchStartsWith)
             completer.setCompletionMode(QCompleter.InlineCompletion)
             popup = QListView()
             popup.setStyleSheet(
@@ -644,6 +676,24 @@ class CheckpointDialog(QDialog):
             combo.setCompleter(completer)
             if combo.lineEdit():
                 combo.lineEdit().setCompleter(completer)
+                app = QApplication.instance()
+                if app is not None and hasattr(app, "_completer_filter"):
+                    combo.lineEdit().installEventFilter(app._completer_filter)
+
+    def _resolve_combo_id(self, combo: QComboBox, lookup: dict[str, int]) -> int | None:
+        current_data = combo.currentData()
+        if current_data:
+            return int(current_data)
+        text = combo.currentText().strip()
+        if not text:
+            return None
+        match_id = lookup.get(text.lower())
+        if match_id is None:
+            return None
+        idx = combo.findData(match_id)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+        return int(match_id)
     
     def _set_today(self):
         """Set date to today"""
@@ -711,14 +761,16 @@ class CheckpointDialog(QDialog):
         valid = True
         
         # User
-        if self.user_combo.currentIndex() < 0 or not self.user_combo.currentData():
+        user_id = self._resolve_combo_id(self.user_combo, getattr(self, "_user_lookup", {}))
+        if not user_id:
             self._set_invalid(self.user_combo, "User is required")
             valid = False
         else:
             self._set_valid(self.user_combo)
         
         # Site
-        if self.site_combo.currentIndex() < 0 or not self.site_combo.currentData():
+        site_id = self._resolve_combo_id(self.site_combo, getattr(self, "_site_lookup", {}))
+        if not site_id:
             self._set_invalid(self.site_combo, "Site is required")
             valid = False
         else:
@@ -744,10 +796,10 @@ class CheckpointDialog(QDialog):
             valid = False
         else:
             try:
-                datetime.strptime(time_text, "%H:%M")
+                parse_time_input(time_text)
                 self._set_valid(self.time_edit)
             except:
-                self._set_invalid(self.time_edit, "Invalid time format (HH:MM)")
+                self._set_invalid(self.time_edit, "Invalid time format (HH:MM or HH:MM:SS)")
                 valid = False
         
         # At least one SC balance
@@ -809,15 +861,17 @@ class CheckpointDialog(QDialog):
         
         # Create checkpoint
         try:
-            user_id = self.user_combo.currentData()
-            site_id = self.site_combo.currentData()
+            user_id = self._resolve_combo_id(self.user_combo, getattr(self, "_user_lookup", {}))
+            site_id = self._resolve_combo_id(self.site_combo, getattr(self, "_site_lookup", {}))
+            if not user_id or not site_id:
+                raise ValueError("User and Site are required.")
             
             # Parse date and time
             date_obj = datetime.strptime(self.date_edit.text().strip(), "%m/%d/%y")
-            time_obj = datetime.strptime(self.time_edit.text().strip(), "%H:%M")
+            time_obj = parse_time_input(self.time_edit.text().strip())
             
             effective_date = date_obj.strftime("%Y-%m-%d")
-            effective_time = time_obj.strftime("%H:%M:00")
+            effective_time = time_to_db_string(time_obj)
             
             total_sc = Decimal(self.total_sc_input.text().strip() or "0")
             redeemable_sc = Decimal(self.redeemable_sc_input.text().strip() or "0")
@@ -846,13 +900,36 @@ class CheckpointDialog(QDialog):
 class ViewAdjustmentsDialog(QDialog):
     """Dialog for viewing and managing adjustments."""
     
-    def __init__(self, facade, parent=None):
+    def __init__(
+        self,
+        facade,
+        parent=None,
+        initial_user_id: int | None = None,
+        initial_site_id: int | None = None,
+        initial_type: str | None = None,
+        preselect_adjustment_id: int | None = None,
+    ):
         super().__init__(parent)
         self.facade = facade
         self._modified = False
+        self._preselect_adjustment_id = preselect_adjustment_id
         self.setWindowTitle("View Adjustments")
         self.setMinimumSize(1000, 650)
         self._setup_ui()
+
+        if initial_user_id is not None:
+            idx = self.user_filter.findData(initial_user_id)
+            if idx >= 0:
+                self.user_filter.setCurrentIndex(idx)
+        if initial_site_id is not None:
+            idx = self.site_filter.findData(initial_site_id)
+            if idx >= 0:
+                self.site_filter.setCurrentIndex(idx)
+        if initial_type is not None:
+            idx = self.type_filter.findData(initial_type)
+            if idx >= 0:
+                self.type_filter.setCurrentIndex(idx)
+
         self._load_adjustments()
     
     def _setup_ui(self):
@@ -998,6 +1075,25 @@ class ViewAdjustmentsDialog(QDialog):
             else:
                 status_item = QTableWidgetItem("Active")
             self.table.setItem(row, 9, status_item)
+
+        if self._preselect_adjustment_id is not None:
+            self._select_adjustment_id(self._preselect_adjustment_id)
+
+    def _select_adjustment_id(self, adjustment_id: int) -> None:
+        """Select and scroll to a specific adjustment row if present."""
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if not item:
+                continue
+            try:
+                row_id = int(item.text())
+            except Exception:
+                continue
+            if row_id == adjustment_id:
+                self.table.setCurrentCell(row, 0)
+                self.table.selectRow(row)
+                self.table.scrollToItem(item, QAbstractItemView.PositionAtCenter)
+                break
     
     def _on_selection_changed(self):
         selected = self.table.selectedItems()
@@ -1025,14 +1121,42 @@ class ViewAdjustmentsDialog(QDialog):
             return
         
         adj_id = int(self.table.item(row, 0).text())
+
+        summary = None
+        try:
+            summary = self.facade.adjustment_service.get_soft_delete_warning_summary(adj_id)
+        except Exception:
+            summary = None
+
+        warning_lines: list[str] = []
+        if summary and summary.get("has_downstream_activity"):
+            if summary.get("purchases"):
+                warning_lines.append(f"• {summary['purchases']} purchase(s) after this timestamp")
+            if summary.get("sessions"):
+                warning_lines.append(f"• {summary['sessions']} session(s) after this timestamp")
+            if summary.get("redemptions"):
+                warning_lines.append(f"• {summary['redemptions']} redemption(s) after this timestamp")
+            if summary.get("adjustments"):
+                warning_lines.append(f"• {summary['adjustments']} later adjustment(s)/checkpoint(s)")
+
+        message = (
+            "Are you sure you want to soft-delete this adjustment?\n\n"
+            "This will remove it from active calculations. You can restore it later."
+        )
+
+        if warning_lines:
+            message += (
+                "\n\n⚠️ Warning: There is later activity for this Site/User:\n"
+                + "\n".join(warning_lines)
+                + "\n\nDeleting this record may change derived balances and continuity checks for those later items."
+            )
         
         reply = QMessageBox.question(
             self,
-            "Confirm Soft Delete",
-            "Are you sure you want to soft-delete this adjustment?\n\n"
-            "This will remove it from active calculations. You can restore it later.",
+            "Confirm Soft Delete" if not warning_lines else "Confirm Soft Delete (Downstream Impact)",
+            message,
             QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            QMessageBox.No,
         )
         
         if reply == QMessageBox.Yes:

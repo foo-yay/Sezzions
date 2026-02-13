@@ -13,8 +13,8 @@ Rules:
 
 ## Now
 
-
 - [ ] Add “🎮 End & Start New” flow (auto-carry balances; pick game; start new session)
+- [ ] Unrealized Related tab: use checkpoint anchor for profit-only positions
 - [ ] Define 3–6 “golden scenario” accounting tests (basis + cashflow P/L + taxable P/L)
 - [ ] Reconcile Game Session taxable P/L algorithm vs current implementation
 - [ ] Confirm whether UI still fetches via repos (enforce UI→services only)

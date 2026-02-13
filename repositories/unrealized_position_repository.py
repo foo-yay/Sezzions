@@ -13,6 +13,47 @@ class UnrealizedPositionRepository:
     
     def __init__(self, db):
         self.db = db
+
+    def _get_profit_only_position_start_date(self, site_id: int, user_id: int) -> Optional[str]:
+        """Best-effort start date for profit-only positions (remaining basis == 0).
+
+        When FIFO has consumed all basis, the "oldest purchase with remaining basis" is undefined.
+        In practice, users want to see the purchase(s) that most recently contributed basis to the
+        current on-site balance.
+
+        We approximate this by finding the most recent non-free-SC redemption with FIFO allocations
+        and returning the latest purchase_date among its allocated purchases.
+        """
+        query = """
+            SELECT MAX(p.purchase_date) as start_date
+            FROM redemptions r
+            JOIN redemption_allocations ra ON ra.redemption_id = r.id
+            JOIN purchases p ON p.id = ra.purchase_id
+            WHERE r.site_id = ? AND r.user_id = ?
+              AND r.deleted_at IS NULL
+              AND r.is_free_sc = 0
+              AND CAST(ra.allocated_amount AS REAL) > 0
+              AND p.deleted_at IS NULL
+              AND (p.status IS NULL OR p.status = 'active')
+              AND r.id = (
+                  SELECT r2.id
+                  FROM redemptions r2
+                  WHERE r2.site_id = ? AND r2.user_id = ?
+                    AND r2.deleted_at IS NULL
+                    AND r2.is_free_sc = 0
+                    AND EXISTS (
+                        SELECT 1 FROM redemption_allocations ra2
+                        WHERE ra2.redemption_id = r2.id
+                          AND CAST(ra2.allocated_amount AS REAL) > 0
+                    )
+                  ORDER BY r2.redemption_date DESC,
+                           COALESCE(r2.redemption_time, '00:00:00') DESC,
+                           r2.id DESC
+                  LIMIT 1
+              )
+        """
+        row = self.db.fetch_one(query, (site_id, user_id, site_id, user_id))
+        return row["start_date"] if row and row.get("start_date") else None
     
     def get_all_positions(self, start_date: Optional[date] = None, end_date: Optional[date] = None) -> List[UnrealizedPosition]:
         """
@@ -82,6 +123,12 @@ class UnrealizedPositionRepository:
             position_start_date = basis_data['start_date'] if basis_data and basis_data['start_date'] else None
             
             # If no purchases with remaining basis, use earliest purchase date
+            if not position_start_date:
+                if remaining_basis <= Decimal("0.001"):
+                    profit_only_start = self._get_profit_only_position_start_date(site_id, user_id)
+                    if profit_only_start:
+                        position_start_date = profit_only_start
+
             if not position_start_date:
                 earliest_purchase_query = """
                     SELECT MIN(purchase_date) as start_date
@@ -384,10 +431,60 @@ class UnrealizedPositionRepository:
             if pos.site_id == site_id and pos.user_id == user_id:
                 return pos
         return None
+
+    def get_related_anchor_date(
+        self,
+        site_id: int,
+        user_id: int,
+        position_start_date: date,
+        purchase_basis: Decimal,
+    ) -> date:
+        """Anchor date for Unrealized "View Position" -> Related tab.
+
+        When a position still has remaining purchase basis, the position start date is meaningful
+        and keeps Related scoped to the active basis period.
+
+        When a position has *zero* remaining purchase basis (profit-only / bonus-only SC),
+        the position start date falls back to earliest-ever purchase and becomes too broad.
+        In that case we anchor Related to the latest *non-adjustment* checkpoint (purchase/session),
+        falling back to the latest checkpoint (including balance corrections) if needed.
+        """
+        try:
+            basis = Decimal(str(purchase_basis or 0))
+        except Exception:
+            basis = Decimal("0")
+
+        if basis > Decimal("0.001"):
+            return position_start_date
+
+        non_adjustment_checkpoint = self._get_latest_checkpoint(
+            site_id,
+            user_id,
+            include_balance_checkpoints=False,
+        )
+        if non_adjustment_checkpoint and non_adjustment_checkpoint.get("checkpoint_dt"):
+            return non_adjustment_checkpoint["checkpoint_dt"].date()
+
+        any_checkpoint = self._get_latest_checkpoint(
+            site_id,
+            user_id,
+            include_balance_checkpoints=True,
+        )
+        if any_checkpoint and any_checkpoint.get("checkpoint_dt"):
+            return any_checkpoint["checkpoint_dt"].date()
+
+        return position_start_date
     
-    def _get_latest_checkpoint(self, site_id: int, user_id: int):
+    def _get_latest_checkpoint(
+        self,
+        site_id: int,
+        user_id: int,
+        *,
+        include_balance_checkpoints: bool = True,
+    ):
         """
         Find the most recent checkpoint among:
+        0) Balance checkpoints (account_adjustments: BALANCE_CHECKPOINT_CORRECTION)
         1) Purchase snapshots (starting_sc_balance > 0)
         2) Session starts (starting_balance, both Active and Closed)
         3) Session ends (ending_balance, Closed only)
@@ -396,6 +493,33 @@ class UnrealizedPositionRepository:
         or None if no checkpoints exist.
         """
         checkpoints = []
+
+        if include_balance_checkpoints:
+            # 0) Explicit balance checkpoints (highest trust; can occur outside sessions)
+            checkpoint_adjustment_query = """
+                SELECT
+                    effective_date,
+                    COALESCE(effective_time, '00:00:00') as effective_time,
+                    checkpoint_total_sc,
+                    checkpoint_redeemable_sc
+                FROM account_adjustments
+                WHERE site_id = ? AND user_id = ?
+                  AND deleted_at IS NULL
+                  AND type = 'BALANCE_CHECKPOINT_CORRECTION'
+                ORDER BY effective_date DESC, COALESCE(effective_time,'00:00:00') DESC, id DESC
+                LIMIT 1
+            """
+            balance_checkpoint = self.db.fetch_one(checkpoint_adjustment_query, (site_id, user_id))
+            if balance_checkpoint:
+                dt = self._to_dt(balance_checkpoint['effective_date'], balance_checkpoint['effective_time'])
+                if dt:
+                    checkpoints.append({
+                        'checkpoint_dt': dt,
+                        'total_sc': Decimal(str(balance_checkpoint['checkpoint_total_sc'] or 0)),
+                        'redeemable_sc': Decimal(str(balance_checkpoint['checkpoint_redeemable_sc'] or 0)),
+                        'checkpoint_purchase_id': None,
+                        'priority': 3,
+                    })
         
         # 1) Purchase snapshots
         purchase_snapshot_query = """
@@ -421,7 +545,8 @@ class UnrealizedPositionRepository:
                     'checkpoint_dt': dt,
                     'total_sc': Decimal(str(purchase_snap['starting_sc_balance'])),
                     'redeemable_sc': Decimal("0.00"),  # Purchase snapshots don't track redeemable split
-                    'checkpoint_purchase_id': purchase_snap['purchase_id']
+                    'checkpoint_purchase_id': purchase_snap['purchase_id'],
+                    'priority': 0,
                 })
         
         # 2) Session starts (Active or Closed)
@@ -445,7 +570,8 @@ class UnrealizedPositionRepository:
                     'checkpoint_dt': dt,
                     'total_sc': Decimal(str(session_start['starting_balance'] or 0)),
                     'redeemable_sc': Decimal(str(session_start['starting_redeemable'] or 0)),
-                    'checkpoint_purchase_id': None
+                    'checkpoint_purchase_id': None,
+                    'priority': 1,
                 })
         
         # 3) Session ends (Closed only)
@@ -473,10 +599,12 @@ class UnrealizedPositionRepository:
                     'checkpoint_dt': dt,
                     'total_sc': Decimal(str(session_end['ending_balance'] or 0)),
                     'redeemable_sc': Decimal(str(session_end['ending_redeemable'] or 0)),
-                    'checkpoint_purchase_id': None
+                    'checkpoint_purchase_id': None,
+                    'priority': 2,
                 })
         
         # Return the newest checkpoint
         if not checkpoints:
             return None
-        return max(checkpoints, key=lambda c: c['checkpoint_dt'])
+        # Prefer the most recent datetime; if equal, prefer higher priority.
+        return max(checkpoints, key=lambda c: (c['checkpoint_dt'], c.get('priority', 0)))

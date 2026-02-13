@@ -3,6 +3,7 @@ Purchases tab - Manage purchases with FIFO tracking
 """
 from PySide6 import QtWidgets, QtCore, QtGui
 from decimal import Decimal
+from bisect import bisect_left, bisect_right
 from datetime import date, datetime, timedelta
 from typing import Optional
 from app_facade import AppFacade
@@ -11,6 +12,7 @@ from ui.date_filter_widget import DateFilterWidget
 from ui.table_header_filters import TableHeaderFilter
 from ui.spreadsheet_ux import SpreadsheetUXController
 from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from ui.adjustment_dialogs import ViewAdjustmentsDialog
 from tools.time_utils import (
     parse_time_input,
     current_time_with_seconds,
@@ -181,6 +183,31 @@ class PurchasesTab(QtWidgets.QWidget):
         
         # Sort by date/time descending
         filtered.sort(key=lambda p: p.datetime_str, reverse=True)
+
+        # Precompute per (user_id, site_id) adjustment/checkpoint timelines for "Adjusted" badges.
+        adjusted_icon = self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxInformation)
+        adjustment_timeline: dict[tuple[int, int], tuple[list[datetime], list[datetime], list[datetime]]] = {}
+        try:
+            pairs = {(int(p.user_id), int(p.site_id)) for p in filtered if getattr(p, "user_id", None) and getattr(p, "site_id", None)}
+            for (user_id, site_id) in pairs:
+                adjs = self.facade.adjustment_service.get_by_user_and_site(user_id=user_id, site_id=site_id, include_deleted=False)
+                checkpoints: list[datetime] = []
+                events: list[datetime] = []
+                for adj in adjs:
+                    eff_time = getattr(adj, "effective_time", None) or "00:00:00"
+                    try:
+                        eff_dt = datetime.combine(adj.effective_date, datetime.strptime(eff_time, "%H:%M:%S").time())
+                    except Exception:
+                        eff_dt = datetime.combine(adj.effective_date, datetime.strptime("00:00:00", "%H:%M:%S").time())
+                    events.append(eff_dt)
+                    if getattr(adj, "type", None) is not None and getattr(adj.type, "value", "") == "BALANCE_CHECKPOINT_CORRECTION":
+                        checkpoints.append(eff_dt)
+                checkpoints.sort()
+                events.sort()
+                full_redemptions = self.facade.get_full_redemption_datetimes_for_user_site(user_id=user_id, site_id=site_id)
+                adjustment_timeline[(user_id, site_id)] = (checkpoints, events, full_redemptions)
+        except Exception:
+            adjustment_timeline = {}
         
         sorting_was_enabled = self.table.isSortingEnabled()
         self.table.setSortingEnabled(False)
@@ -205,7 +232,42 @@ class PurchasesTab(QtWidgets.QWidget):
 
                 # Site
                 site = getattr(purchase, 'site_name', None) or "—"
-                self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(site))
+                site_item = QtWidgets.QTableWidgetItem(site)
+                try:
+                    key = (int(purchase.user_id), int(purchase.site_id))
+                    checkpoints, events, full_redemptions = adjustment_timeline.get(key, ([], [], []))
+                    p_time = purchase.purchase_time or "00:00:00"
+                    p_dt = datetime.combine(purchase.purchase_date, datetime.strptime(p_time, "%H:%M:%S").time())
+
+                    cp_i = bisect_right(checkpoints, p_dt) - 1
+                    prev_cp = checkpoints[cp_i] if cp_i >= 0 else None
+                    next_cp = checkpoints[cp_i + 1] if (cp_i + 1) < len(checkpoints) else None
+
+                    red_i = bisect_left(full_redemptions, p_dt)
+                    prev_full = full_redemptions[red_i - 1] if red_i - 1 >= 0 else None
+                    next_full = full_redemptions[red_i] if red_i < len(full_redemptions) else None
+
+                    start_bound = prev_cp
+                    if prev_full is not None and (start_bound is None or prev_full > start_bound):
+                        start_bound = prev_full
+
+                    end_bound = next_cp
+                    if next_full is not None and (end_bound is None or next_full < end_bound):
+                        end_bound = next_full
+                    if end_bound is None:
+                        end_bound = p_dt
+
+                    left = bisect_left(events, start_bound) if start_bound else 0
+                    right = bisect_right(events, end_bound) if end_bound else len(events)
+                    has_applicable_adjustments = left < right
+                    if has_applicable_adjustments:
+                        site_item.setIcon(adjusted_icon)
+                        site_item.setToolTip(
+                            "Adjusted: this purchase has adjustments/checkpoints in its basis period (Tools)."
+                        )
+                except Exception:
+                    pass
+                self.table.setItem(row, 2, site_item)
 
                 # Amount
                 amount_str = f"${float(purchase.amount):.2f}"
@@ -1823,8 +1885,19 @@ class PurchaseDialog(QtWidgets.QDialog):
         
         # Compute delta_extra vs most recent purchase in period
         delta_extra = total_extra
+        prev_purchase = None
         if period_purchases:
-            prev_purchase = period_purchases[-1]
+            # Use the most recent purchase strictly BEFORE this purchase timestamp.
+            prev_candidates = []
+            for p in period_purchases:
+                p_time_str = p.purchase_time or "00:00:00"
+                if p.purchase_date < validation_date or (
+                    p.purchase_date == validation_date and p_time_str < validation_time_str
+                ):
+                    prev_candidates.append(p)
+
+            prev_purchase = prev_candidates[-1] if prev_candidates else None
+        if prev_purchase is not None:
             prev_actual_pre = prev_purchase.starting_sc_balance - prev_purchase.sc_received
             prev_expected_total, _ = self.facade.compute_expected_balances(
                 user_id=prev_purchase.user_id,
@@ -2227,11 +2300,102 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         self._game_types = {t.id: t.name for t in self.facade.get_all_game_types()}
         self._games = {g.id: g for g in self.facade.list_all_games()}
 
-        tabs = QtWidgets.QTabWidget()
-        tabs.setObjectName("SetupSubTabs")
-        tabs.addTab(self._create_details_tab(user_name, site_name, card_name), "Details")
-        tabs.addTab(self._create_related_tab(), "Related")
-        layout.addWidget(tabs, 1)
+        self.adjustments = []
+        self.period_adjustments = []
+        self.period_boundary_checkpoints = []
+        self.period_window_start = None
+        self.period_window_end = None
+        if getattr(self.purchase, "id", None):
+            try:
+                self.adjustments = self.facade.adjustment_service.get_by_related(
+                    "purchases", int(self.purchase.id), include_deleted=False
+                )
+            except Exception:
+                self.adjustments = []
+
+        try:
+            anchor_time = getattr(self.purchase, "purchase_time", None) or "23:59:59"
+            self.period_window_start, self.period_window_end = self.facade.adjustment_service.get_checkpoint_window_for_timestamp(
+                user_id=int(self.purchase.user_id),
+                site_id=int(self.purchase.site_id),
+                anchor_date=self.purchase.purchase_date,
+                anchor_time=anchor_time,
+            )
+
+            # Bound the checkpoint window by full-redemption anchors to avoid
+            # pulling a future checkpoint into a fully-redeemed prior period.
+            prev_full, next_full = self.facade.get_full_redemption_window_for_timestamp(
+                user_id=int(self.purchase.user_id),
+                site_id=int(self.purchase.site_id),
+                anchor_date=self.purchase.purchase_date,
+                anchor_time=anchor_time,
+            )
+
+            start_bound_dt = None
+            if self.period_window_start is not None:
+                start_cp_time = getattr(self.period_window_start, "effective_time", None) or "00:00:00"
+                start_bound_dt = self.facade._to_dt(self.period_window_start.effective_date, start_cp_time)
+            if prev_full is not None:
+                prev_full_dt = self.facade._to_dt(prev_full[0], prev_full[1])
+                if start_bound_dt is None or prev_full_dt > start_bound_dt:
+                    start_bound_dt = prev_full_dt
+
+            end_bound_dt = None
+            end_cp_dt = None
+            if self.period_window_end is not None:
+                end_cp_time = getattr(self.period_window_end, "effective_time", None) or "00:00:00"
+                end_cp_dt = self.facade._to_dt(self.period_window_end.effective_date, end_cp_time)
+                end_bound_dt = end_cp_dt
+            if next_full is not None:
+                next_full_dt = self.facade._to_dt(next_full[0], next_full[1])
+                if end_bound_dt is None or next_full_dt < end_bound_dt:
+                    end_bound_dt = next_full_dt
+
+            anchor_dt = self.facade._to_dt(self.purchase.purchase_date, anchor_time)
+            if end_bound_dt is None:
+                end_bound_dt = anchor_dt
+
+            start_date = start_bound_dt.date() if start_bound_dt else None
+            start_time = start_bound_dt.strftime("%H:%M:%S") if start_bound_dt else "00:00:00"
+            end_date = end_bound_dt.date() if end_bound_dt else None
+            end_time = end_bound_dt.strftime("%H:%M:%S") if end_bound_dt else "23:59:59"
+
+            raw_period = self.facade.adjustment_service.get_active_adjustments_in_window(
+                user_id=int(self.purchase.user_id),
+                site_id=int(self.purchase.site_id),
+                start_date=start_date,
+                start_time=start_time,
+                end_date=end_date,
+                end_time=end_time,
+            )
+
+            # Keep only boundary checkpoints that are within the bounded window.
+            self.period_boundary_checkpoints = []
+            if self.period_window_start is not None and start_bound_dt is not None:
+                start_cp_time = getattr(self.period_window_start, "effective_time", None) or "00:00:00"
+                start_cp_dt = self.facade._to_dt(self.period_window_start.effective_date, start_cp_time)
+                if start_cp_dt >= start_bound_dt and start_cp_dt <= end_bound_dt:
+                    self.period_boundary_checkpoints.append(self.period_window_start)
+
+            if self.period_window_end is not None and end_cp_dt is not None and end_bound_dt == end_cp_dt:
+                if not self.period_boundary_checkpoints or getattr(self.period_boundary_checkpoints[0], "id", None) != getattr(self.period_window_end, "id", None):
+                    self.period_boundary_checkpoints.append(self.period_window_end)
+
+            anchor_ids = {int(a.id) for a in self.period_boundary_checkpoints if getattr(a, "id", None)}
+            self.period_adjustments = [a for a in raw_period if getattr(a, "id", None) not in anchor_ids]
+        except Exception:
+            self.period_adjustments = []
+            self.period_boundary_checkpoints = []
+            self.period_window_start = None
+            self.period_window_end = None
+
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.setObjectName("SetupSubTabs")
+        self.tabs.addTab(self._create_details_tab(user_name, site_name, card_name), "Details")
+        self.tabs.addTab(self._create_related_tab(), "Related")
+        if self.adjustments or self.period_adjustments or self.period_boundary_checkpoints:
+            self.tabs.addTab(self._create_adjustments_tab(), "Adjustments")
+        layout.addWidget(self.tabs, 1)
 
         btn_row = QtWidgets.QHBoxLayout()
         if self._on_delete:
@@ -2258,6 +2422,26 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         if self.parent() and hasattr(self.parent(), 'open_purchase_by_id'):
             self.close()  # Close current dialog first
             self.parent().open_purchase_by_id(purchase_id)
+
+    def _open_adjustments_tab(self) -> None:
+        if not hasattr(self, "tabs") or self.tabs is None:
+            return
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "Adjustments":
+                self.tabs.setCurrentIndex(i)
+                return
+
+    def _open_adjustment_dialog(self, adjustment_id: Optional[int]) -> None:
+        if not adjustment_id:
+            return
+        dialog = ViewAdjustmentsDialog(
+            self.facade,
+            parent=self,
+            initial_user_id=self.purchase.user_id,
+            initial_site_id=self.purchase.site_id,
+            preselect_adjustment_id=int(adjustment_id),
+        )
+        dialog.exec()
     
     def _create_details_tab(self, user_name: str, site_name: str, card_name: str) -> QtWidgets.QWidget:
         widget = QtWidgets.QWidget()
@@ -2439,6 +2623,24 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             notes_layout.addWidget(notes_empty)
         
         layout.addWidget(notes_section)
+
+        if self.adjustments or self.period_adjustments or self.period_boundary_checkpoints:
+            adj_section, adj_layout = create_section("🧩 Adjustments & Checkpoints")
+            total = len(self.period_adjustments) + len(self.period_boundary_checkpoints) + len(self.adjustments)
+            summary = QtWidgets.QLabel(
+                f"This purchase has {total} adjustment(s)/checkpoint(s) available for review."
+            )
+            summary.setWordWrap(True)
+            summary.setObjectName("HelperText")
+            adj_layout.addWidget(summary)
+            btn_row = QtWidgets.QHBoxLayout()
+            btn_row.addStretch(1)
+            open_btn = QtWidgets.QPushButton("👁️ View Adjustments")
+            open_btn.clicked.connect(self._open_adjustments_tab)
+            btn_row.addWidget(open_btn)
+            adj_layout.addLayout(btn_row)
+            layout.addWidget(adj_section)
+
         layout.addStretch(1)
         return widget
 
@@ -2462,22 +2664,28 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             purchase_time=self.purchase.purchase_time,
             exclude_purchase_id=None  # Include all purchases in period, including current
         )
-        
-        # Find the basis period start
-        period_start = self.facade.get_basis_period_start_for_purchase(
-            user_id=self.purchase.user_id,
-            site_id=self.purchase.site_id,
-            purchase_date=self.purchase.purchase_date,
-            purchase_time=self.purchase.purchase_time
-        )
+
+        window_start, window_end = (None, None)
+        try:
+            anchor_time = getattr(self.purchase, "purchase_time", None) or "23:59:59"
+            window_start, window_end = self.facade.adjustment_service.get_checkpoint_window_for_timestamp(
+                user_id=int(self.purchase.user_id),
+                site_id=int(self.purchase.site_id),
+                anchor_date=self.purchase.purchase_date,
+                anchor_time=anchor_time,
+            )
+        except Exception:
+            window_start, window_end = (None, None)
         
         if basis_purchases:
             # Add header with period info
-            if period_start:
-                start_date, start_time = period_start
-                period_label = f"Full Basis Period — All Purchases (since {start_date} {start_time})"
-            else:
-                period_label = "Full Basis Period — All Purchases (first period)"
+            start_str = "(no prior checkpoint)"
+            if window_start:
+                start_str = f"{window_start.effective_date} {window_start.effective_time or '00:00:00'}"
+            end_str = "(no next checkpoint)"
+            if window_end:
+                end_str = f"{window_end.effective_date} {window_end.effective_time or '00:00:00'}"
+            period_label = f"Basis Period (Checkpoint Window) — Purchases ({start_str} → {end_str})"
             
             basis_group = QtWidgets.QGroupBox(period_label)
             basis_layout = QtWidgets.QVBoxLayout(basis_group)
@@ -2708,6 +2916,108 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             layout.addWidget(sessions_group)
 
         layout.addStretch()
+        return widget
+
+    def _create_adjustments_tab(self) -> QtWidgets.QWidget:
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        def _make_table() -> QtWidgets.QTableWidget:
+            table = QtWidgets.QTableWidget(0, 5)
+            table.setHorizontalHeaderLabels(["Effective", "Type", "Delta/Total SC", "Redeemable SC", "View"])
+            table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+            table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+            table.setAlternatingRowColors(True)
+            table.verticalHeader().setVisible(False)
+            table.verticalHeader().setDefaultSectionSize(44)
+
+            header = table.horizontalHeader()
+            header.setStretchLastSection(False)
+            header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
+            header.setSectionResizeMode(4, QtWidgets.QHeaderView.Fixed)
+            table.setColumnWidth(4, 170)
+            return table
+
+        def _populate_table(table: QtWidgets.QTableWidget, adjustments_list: list) -> None:
+            adjustments_sorted = sorted(
+                adjustments_list,
+                key=lambda a: (str(a.effective_date), str(a.effective_time or "00:00:00"), int(a.id or 0)),
+                reverse=True,
+            )
+            table.setRowCount(len(adjustments_sorted))
+            for row_idx, adj in enumerate(adjustments_sorted):
+                effective = f"{adj.effective_date} {adj.effective_time or '00:00:00'}"
+                type_str = "Basis" if adj.type.value == "BASIS_USD_CORRECTION" else "Checkpoint"
+                if adj.type.value == "BASIS_USD_CORRECTION":
+                    delta_total_str = f"${adj.delta_basis_usd:,.2f}"
+                    redeemable_str = ""
+                else:
+                    delta_total_str = f"{adj.checkpoint_total_sc:,.2f}"
+                    redeemable_str = f"{adj.checkpoint_redeemable_sc:,.2f}"
+
+                table.setItem(row_idx, 0, QtWidgets.QTableWidgetItem(effective))
+                table.setItem(row_idx, 1, QtWidgets.QTableWidgetItem(type_str))
+                delta_total_item = QtWidgets.QTableWidgetItem(delta_total_str)
+                delta_total_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                table.setItem(row_idx, 2, delta_total_item)
+
+                redeemable_item = QtWidgets.QTableWidgetItem(redeemable_str)
+                redeemable_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                table.setItem(row_idx, 3, redeemable_item)
+
+                view_btn = QtWidgets.QPushButton("👁️ View Adjustment")
+                view_btn.setObjectName("MiniButton")
+                view_btn.setFixedHeight(24)
+                view_btn.setFixedWidth(150)
+                adj_id = adj.id
+                view_btn.clicked.connect(lambda _checked=False, aid=adj_id: self._open_adjustment_dialog(aid))
+                view_container = QtWidgets.QWidget()
+                view_layout = QtWidgets.QGridLayout(view_container)
+                view_layout.setContentsMargins(6, 4, 6, 4)
+                view_layout.addWidget(view_btn, 0, 0, QtCore.Qt.AlignCenter)
+                table.setCellWidget(row_idx, 4, view_container)
+                table.setRowHeight(
+                    row_idx,
+                    max(table.rowHeight(row_idx), view_btn.sizeHint().height() + 16),
+                )
+
+        start_str = "(no prior checkpoint)"
+        if self.period_window_start:
+            start_str = f"{self.period_window_start.effective_date} {self.period_window_start.effective_time or '00:00:00'}"
+        end_str = "(no next checkpoint)"
+        if self.period_window_end:
+            end_str = f"{self.period_window_end.effective_date} {self.period_window_end.effective_time or '00:00:00'}"
+
+        period_group = QtWidgets.QGroupBox(f"Basis Period (Checkpoint Window) — {start_str} → {end_str}")
+        period_layout = QtWidgets.QVBoxLayout(period_group)
+        period_layout.setContentsMargins(8, 10, 8, 8)
+        window_rows = (self.period_boundary_checkpoints or []) + (self.period_adjustments or [])
+        if window_rows:
+            period_table = _make_table()
+            _populate_table(period_table, window_rows)
+            period_layout.addWidget(period_table)
+        else:
+            empty = QtWidgets.QLabel("No active adjustments/checkpoints found in this checkpoint window.")
+            empty.setObjectName("MutedLabel")
+            period_layout.addWidget(empty)
+        layout.addWidget(period_group)
+
+        if self.adjustments:
+            linked_group = QtWidgets.QGroupBox("Explicitly Linked to This Purchase")
+            linked_layout = QtWidgets.QVBoxLayout(linked_group)
+            linked_layout.setContentsMargins(8, 10, 8, 8)
+            linked_table = _make_table()
+            _populate_table(linked_table, self.adjustments)
+            linked_layout.addWidget(linked_table)
+            layout.addWidget(linked_group)
+
+        layout.addStretch(1)
         return widget
 
     def _fetch_allocated_redemptions(self):

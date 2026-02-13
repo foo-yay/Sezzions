@@ -6,6 +6,7 @@ from decimal import Decimal
 from datetime import date, datetime
 from app_facade import AppFacade
 from models.unrealized_position import UnrealizedPosition
+from ui.adjustment_dialogs import ViewAdjustmentsDialog
 from ui.date_filter_widget import DateFilterWidget
 from ui.table_header_filters import TableHeaderFilter
 from ui.spreadsheet_ux import SpreadsheetUXController
@@ -154,6 +155,33 @@ class UnrealizedTab(QtWidgets.QWidget):
     
     def _populate_table(self, positions):
         """Populate table with position data"""
+        anchors: dict[tuple[int, int], date] = {}
+        for pos in positions:
+            key = (pos.site_id, pos.user_id)
+            if key not in anchors:
+                anchors[key] = self.facade.get_unrealized_related_anchor_date(
+                    pos.site_id,
+                    pos.user_id,
+                    position_start_date=pos.start_date,
+                    purchase_basis=pos.purchase_basis,
+                )
+
+        min_anchor = min(anchors.values()) if anchors else None
+        adjustments = (
+            self.facade.adjustment_service.get_all(
+                start_date=min_anchor,
+                end_date=date.today(),
+                include_deleted=False,
+            )
+            if min_anchor
+            else []
+        )
+        adjustments_by_pair: dict[tuple[int, int], list[date]] = {}
+        for adj in adjustments:
+            key = (adj.site_id, adj.user_id)
+            adjustments_by_pair.setdefault(key, []).append(adj.effective_date)
+        adjusted_icon = self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxInformation)
+
         sorting_was_enabled = self.table.isSortingEnabled()
         self.table.setSortingEnabled(False)
         self.table.setUpdatesEnabled(False)
@@ -166,6 +194,16 @@ class UnrealizedTab(QtWidgets.QWidget):
                 # Store position data
                 site_item = QtWidgets.QTableWidgetItem(pos.site_name)
                 site_item.setData(QtCore.Qt.UserRole, (pos.site_id, pos.user_id))
+                anchor = anchors.get((pos.site_id, pos.user_id))
+                effective_dates = adjustments_by_pair.get((pos.site_id, pos.user_id), [])
+                has_applicable_adjustments = bool(
+                    anchor and any(d >= anchor for d in effective_dates)
+                )
+                if has_applicable_adjustments:
+                    site_item.setIcon(adjusted_icon)
+                    site_item.setToolTip(
+                        "Adjusted: this position has adjustments/checkpoints in its active window (Tools)."
+                    )
                 self.table.setItem(row, 0, site_item)
                 self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(pos.user_name))
                 self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(str(pos.start_date)))
@@ -379,13 +417,39 @@ class UnrealizedTab(QtWidgets.QWidget):
         if not pos:
             return
 
-        purchases = self.facade.get_unrealized_open_purchases(pos.site_id, pos.user_id)
-        sessions = self.facade.get_unrealized_sessions(pos.site_id, pos.user_id)
+        related_anchor_date = self.facade.get_unrealized_related_anchor_date(
+            pos.site_id,
+            pos.user_id,
+            position_start_date=pos.start_date,
+            purchase_basis=pos.purchase_basis,
+        )
+
+        purchases = self.facade.get_unrealized_related_purchases(
+            pos.site_id,
+            pos.user_id,
+            purchase_basis=pos.purchase_basis,
+            start_date=related_anchor_date,
+        )
+        sessions = self.facade.get_unrealized_sessions(
+            pos.site_id,
+            pos.user_id,
+            start_date=related_anchor_date,
+        )
+
+        adjustments = self.facade.adjustment_service.get_all(
+            user_id=pos.user_id,
+            site_id=pos.site_id,
+            start_date=related_anchor_date,
+            end_date=date.today(),
+            include_deleted=False,
+        )
 
         dialog = UnrealizedPositionDialog(
             pos,
             purchases,
             sessions,
+            facade=self.facade,
+            adjustments=adjustments,
             parent=self,
             on_open_purchase=self._open_purchase,
             on_open_session=self._open_session,
@@ -504,11 +568,15 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         on_open_purchase=None,
         on_open_session=None,
         on_close_position=None,
+        facade: AppFacade | None = None,
+        adjustments=None,
     ):
         super().__init__(parent)
+        self.facade = facade
         self.position = position
         self.purchases = purchases or []
         self.sessions = sessions or []
+        self.adjustments = adjustments or []
         self.on_open_purchase = on_open_purchase
         self.on_open_session = on_open_session
         self.on_close_position = on_close_position
@@ -520,11 +588,13 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
 
-        tabs = QtWidgets.QTabWidget()
-        tabs.setObjectName("SetupSubTabs")
-        tabs.addTab(self._create_details_tab(), "Details")
-        tabs.addTab(self._create_related_tab(), "Related")
-        layout.addWidget(tabs, 1)
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.setObjectName("SetupSubTabs")
+        self.tabs.addTab(self._create_details_tab(), "Details")
+        self.tabs.addTab(self._create_related_tab(), "Related")
+        if self.adjustments:
+            self.tabs.addTab(self._create_adjustments_tab(), "Adjustments")
+        layout.addWidget(self.tabs, 1)
 
         btn_row = QtWidgets.QHBoxLayout()
         if self.on_close_position:
@@ -661,7 +731,7 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         current_sc_label = QtWidgets.QLabel("Current SC:")
         current_sc_label.setObjectName("MutedLabel")
         values_grid.addWidget(current_sc_label, 0, 0)
-        values_grid.addWidget(make_selectable_label(f"{float(self.position.current_sc):.2f}", align_right=True), 0, 1)
+        values_grid.addWidget(make_selectable_label(f"{float(self.position.total_sc):.2f}", align_right=True), 0, 1)
         
         current_value_label = QtWidgets.QLabel("Current Value:")
         current_value_label.setObjectName("MutedLabel")
@@ -697,8 +767,125 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
             notes_layout.addWidget(notes_empty)
         
         layout.addWidget(notes_section)
+
+        if self.adjustments:
+            adj_section, adj_layout = create_section("🧩 Adjustments & Checkpoints")
+            summary = QtWidgets.QLabel(
+                f"This position has {len(self.adjustments)} adjustment(s)/checkpoint(s) that may affect computed balances."
+            )
+            summary.setWordWrap(True)
+            summary.setObjectName("HelperText")
+            adj_layout.addWidget(summary)
+            btn_row = QtWidgets.QHBoxLayout()
+            btn_row.addStretch(1)
+            open_btn = QtWidgets.QPushButton("👁️ View Adjustments")
+            open_btn.clicked.connect(self._open_adjustments_tab)
+            btn_row.addWidget(open_btn)
+            adj_layout.addLayout(btn_row)
+            layout.addWidget(adj_section)
+
         layout.addStretch(1)
         return widget
+
+    def _create_adjustments_tab(self):
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        group = QtWidgets.QGroupBox("Adjustments & Checkpoints")
+        group_layout = QtWidgets.QVBoxLayout(group)
+        group_layout.setContentsMargins(8, 10, 8, 8)
+
+        table = QtWidgets.QTableWidget(0, 5)
+        table.setHorizontalHeaderLabels(
+            ["Effective", "Type", "Delta/Total SC", "Redeemable SC", "View"]
+        )
+        table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        table.setAlternatingRowColors(True)
+        table.verticalHeader().setVisible(False)
+        table.verticalHeader().setDefaultSectionSize(44)
+
+        header = table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        # Stretch one column so the table fills available width cleanly.
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Fixed)
+        table.setColumnWidth(4, 170)
+
+        # Sort newest first
+        adjustments = sorted(
+            self.adjustments,
+            key=lambda a: (str(a.effective_date), str(a.effective_time or "00:00:00"), int(a.id or 0)),
+            reverse=True,
+        )
+        table.setRowCount(len(adjustments))
+        for row_idx, adj in enumerate(adjustments):
+            effective = f"{adj.effective_date} {adj.effective_time or '00:00:00'}"
+            type_str = "Basis" if adj.type.value == "BASIS_USD_CORRECTION" else "Checkpoint"
+            if adj.type.value == "BASIS_USD_CORRECTION":
+                delta_total_str = f"${adj.delta_basis_usd:,.2f}"
+                redeemable_str = ""
+            else:
+                delta_total_str = f"{adj.checkpoint_total_sc:,.2f}"
+                redeemable_str = f"{adj.checkpoint_redeemable_sc:,.2f}"
+
+            table.setItem(row_idx, 0, QtWidgets.QTableWidgetItem(effective))
+            table.setItem(row_idx, 1, QtWidgets.QTableWidgetItem(type_str))
+            delta_total_item = QtWidgets.QTableWidgetItem(delta_total_str)
+            delta_total_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            table.setItem(row_idx, 2, delta_total_item)
+
+            redeemable_item = QtWidgets.QTableWidgetItem(redeemable_str)
+            redeemable_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            table.setItem(row_idx, 3, redeemable_item)
+
+            view_btn = QtWidgets.QPushButton("👁️ View Adjustment")
+            view_btn.setObjectName("MiniButton")
+            view_btn.setFixedHeight(24)
+            view_btn.setFixedWidth(150)
+            adj_id = adj.id
+            view_btn.clicked.connect(
+                lambda _checked=False, aid=adj_id: self._open_adjustment_dialog(aid)
+            )
+            view_container = QtWidgets.QWidget()
+            view_layout = QtWidgets.QGridLayout(view_container)
+            view_layout.setContentsMargins(6, 4, 6, 4)
+            view_layout.addWidget(view_btn, 0, 0, QtCore.Qt.AlignCenter)
+            table.setCellWidget(row_idx, 4, view_container)
+            table.setRowHeight(
+                row_idx,
+                max(table.rowHeight(row_idx), view_btn.sizeHint().height() + 16),
+            )
+
+        group_layout.addWidget(table)
+        layout.addWidget(group)
+        layout.addStretch(1)
+        return widget
+
+    def _open_adjustments_tab(self):
+        if hasattr(self, "tabs") and self.tabs is not None:
+            for i in range(self.tabs.count()):
+                if self.tabs.tabText(i) == "Adjustments":
+                    self.tabs.setCurrentIndex(i)
+                    return
+
+    def _open_adjustment_dialog(self, adjustment_id: int | None):
+        if not adjustment_id or not self.facade:
+            return
+        dialog = ViewAdjustmentsDialog(
+            self.facade,
+            parent=self,
+            initial_user_id=self.position.user_id,
+            initial_site_id=self.position.site_id,
+            preselect_adjustment_id=adjustment_id,
+        )
+        dialog.exec()
 
     def _create_related_tab(self):
         widget = QtWidgets.QWidget()
@@ -706,7 +893,7 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(10)
 
-        purchases_group = QtWidgets.QGroupBox("Open Purchases")
+        purchases_group = QtWidgets.QGroupBox("Related Purchases")
         purchases_layout = QtWidgets.QVBoxLayout(purchases_group)
         purchases_layout.setContentsMargins(8, 10, 8, 8)
         purchases_table = self._build_purchases_table()

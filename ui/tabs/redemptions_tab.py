@@ -3,6 +3,7 @@ Redemptions tab - Manage redemptions
 """
 from PySide6 import QtWidgets, QtCore, QtGui
 from decimal import Decimal
+from bisect import bisect_left, bisect_right
 from datetime import date, datetime
 from typing import Optional
 from app_facade import AppFacade
@@ -18,6 +19,7 @@ from tools.time_utils import (
     format_time_display,
     time_to_db_string,
 )
+from ui.adjustment_dialogs import ViewAdjustmentsDialog
 
 
 class RedemptionsTab(QtWidgets.QWidget):
@@ -156,6 +158,31 @@ class RedemptionsTab(QtWidgets.QWidget):
         """Populate table with redemptions"""
         filtered = self._get_filtered_redemptions()
 
+        # Precompute per (user_id, site_id) adjustment/checkpoint timelines for "Adjusted" badges.
+        adjusted_icon = self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxInformation)
+        adjustment_timeline: dict[tuple[int, int], tuple[list[datetime], list[datetime], list[datetime]]] = {}
+        try:
+            pairs = {(int(r.user_id), int(r.site_id)) for r in filtered if getattr(r, "user_id", None) and getattr(r, "site_id", None)}
+            for (user_id, site_id) in pairs:
+                adjs = self.facade.adjustment_service.get_by_user_and_site(user_id=user_id, site_id=site_id, include_deleted=False)
+                checkpoints: list[datetime] = []
+                events: list[datetime] = []
+                for adj in adjs:
+                    eff_time = getattr(adj, "effective_time", None) or "00:00:00"
+                    try:
+                        eff_dt = datetime.combine(adj.effective_date, datetime.strptime(eff_time, "%H:%M:%S").time())
+                    except Exception:
+                        eff_dt = datetime.combine(adj.effective_date, datetime.strptime("00:00:00", "%H:%M:%S").time())
+                    events.append(eff_dt)
+                    if getattr(adj, "type", None) is not None and getattr(adj.type, "value", "") == "BALANCE_CHECKPOINT_CORRECTION":
+                        checkpoints.append(eff_dt)
+                checkpoints.sort()
+                events.sort()
+                full_redemptions = self.facade.get_full_redemption_datetimes_for_user_site(user_id=user_id, site_id=site_id)
+                adjustment_timeline[(user_id, site_id)] = (checkpoints, events, full_redemptions)
+        except Exception:
+            adjustment_timeline = {}
+
         # Important: QTableWidget will actively reorder rows while we call setItem()
         # if sorting is enabled. That can lead to “mixed” rows (wrong amounts/sites)
         # and apparent duplicates depending on sort/filter/search.
@@ -198,7 +225,36 @@ class RedemptionsTab(QtWidgets.QWidget):
 
                 # Site
                 site = getattr(redemption, 'site_name', None) or "—"
-                self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(site))
+                site_item = QtWidgets.QTableWidgetItem(site)
+                try:
+                    key = (int(redemption.user_id), int(redemption.site_id))
+                    checkpoints, events, full_redemptions = adjustment_timeline.get(key, ([], [], []))
+                    r_time = redemption.redemption_time or "00:00:00"
+                    r_dt = datetime.combine(redemption.redemption_date, datetime.strptime(r_time, "%H:%M:%S").time())
+
+                    cp_i = bisect_right(checkpoints, r_dt) - 1
+                    prev_cp = checkpoints[cp_i] if cp_i >= 0 else None
+
+                    red_i = bisect_left(full_redemptions, r_dt)
+                    prev_full = full_redemptions[red_i - 1] if red_i - 1 >= 0 else None
+
+                    start_bound = prev_cp
+                    if prev_full is not None and (start_bound is None or prev_full > start_bound):
+                        start_bound = prev_full
+
+                    end_bound = r_dt
+
+                    left = bisect_left(events, start_bound) if start_bound else 0
+                    right = bisect_right(events, end_bound)
+                    has_applicable_adjustments = left < right
+                    if has_applicable_adjustments:
+                        site_item.setIcon(adjusted_icon)
+                        site_item.setToolTip(
+                            "Adjusted: this redemption has adjustments/checkpoints at-or-before this redemption (Tools)."
+                        )
+                except Exception:
+                    pass
+                self.table.setItem(row, 2, site_item)
 
                 # Cost Basis / Unbased
                 amount_value = Decimal(str(redemption.amount))
@@ -2105,6 +2161,75 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         self._on_edit = on_edit
         self._on_delete = on_delete
 
+        self.adjustments = []
+        self.period_adjustments = []
+        self.period_boundary_checkpoints = []
+        self.period_window_start = None
+        self.period_window_end = None
+        if getattr(self.redemption, "id", None):
+            try:
+                self.adjustments = self.facade.adjustment_service.get_by_related(
+                    "redemptions", int(self.redemption.id), include_deleted=False
+                )
+            except Exception:
+                self.adjustments = []
+
+        try:
+            anchor_time = getattr(self.redemption, "redemption_time", None) or "23:59:59"
+            self.period_window_start, self.period_window_end = self.facade.adjustment_service.get_checkpoint_window_for_timestamp(
+                user_id=int(self.redemption.user_id),
+                site_id=int(self.redemption.site_id),
+                anchor_date=self.redemption.redemption_date,
+                anchor_time=anchor_time,
+            )
+
+            prev_full, _next_full = self.facade.get_full_redemption_window_for_timestamp(
+                user_id=int(self.redemption.user_id),
+                site_id=int(self.redemption.site_id),
+                anchor_date=self.redemption.redemption_date,
+                anchor_time=anchor_time,
+            )
+
+            start_bound_dt = None
+            if self.period_window_start is not None:
+                start_cp_time = getattr(self.period_window_start, "effective_time", None) or "00:00:00"
+                start_bound_dt = self.facade._to_dt(self.period_window_start.effective_date, start_cp_time)
+            if prev_full is not None:
+                prev_full_dt = self.facade._to_dt(prev_full[0], prev_full[1])
+                if start_bound_dt is None or prev_full_dt > start_bound_dt:
+                    start_bound_dt = prev_full_dt
+
+            end_bound_dt = self.facade._to_dt(self.redemption.redemption_date, anchor_time)
+
+            start_date = start_bound_dt.date() if start_bound_dt else None
+            start_time = start_bound_dt.strftime("%H:%M:%S") if start_bound_dt else "00:00:00"
+            end_date = end_bound_dt.date()
+            end_time = end_bound_dt.strftime("%H:%M:%S")
+
+            raw_period = self.facade.adjustment_service.get_active_adjustments_in_window(
+                user_id=int(self.redemption.user_id),
+                site_id=int(self.redemption.site_id),
+                start_date=start_date,
+                start_time=start_time,
+                end_date=end_date,
+                end_time=end_time,
+            )
+
+            self.period_boundary_checkpoints = []
+            if self.period_window_start is not None and start_bound_dt is not None:
+                start_cp_time = getattr(self.period_window_start, "effective_time", None) or "00:00:00"
+                start_cp_dt = self.facade._to_dt(self.period_window_start.effective_date, start_cp_time)
+                if start_cp_dt >= start_bound_dt and start_cp_dt <= end_bound_dt:
+                    self.period_boundary_checkpoints.append(self.period_window_start)
+
+            anchor_ids = {int(a.id) for a in self.period_boundary_checkpoints if getattr(a, "id", None)}
+            self.period_adjustments = [a for a in raw_period if getattr(a, "id", None) not in anchor_ids]
+        except Exception:
+            self.period_adjustments = []
+            self.period_boundary_checkpoints = []
+            self.period_window_start = None
+            self.period_window_end = None
+
         self.setWindowTitle("View Redemption")
         self.setMinimumWidth(700)
         self.setMinimumHeight(550)
@@ -2136,11 +2261,13 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         self._game_types = {t.id: t.name for t in self.facade.get_all_game_types()}
         self._games = {g.id: g for g in self.facade.list_all_games()}
 
-        tabs = QtWidgets.QTabWidget()
-        tabs.setObjectName("SetupSubTabs")
-        tabs.addTab(self._create_details_tab(user_name, site_name, method_name, method_type), "Details")
-        tabs.addTab(self._create_related_tab(), "Related")
-        layout.addWidget(tabs, 1)
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.setObjectName("SetupSubTabs")
+        self.tabs.addTab(self._create_details_tab(user_name, site_name, method_name, method_type), "Details")
+        self.tabs.addTab(self._create_related_tab(), "Related")
+        if self.adjustments or self.period_adjustments or self.period_boundary_checkpoints:
+            self.tabs.addTab(self._create_adjustments_tab(), "Adjustments")
+        layout.addWidget(self.tabs, 1)
 
         btn_row = QtWidgets.QHBoxLayout()
         if self._on_delete:
@@ -2350,8 +2477,139 @@ class RedemptionViewDialog(QtWidgets.QDialog):
             notes_layout.addWidget(notes_empty)
         
         layout.addWidget(notes_section)
+
+        if self.adjustments or self.period_adjustments or self.period_boundary_checkpoints:
+            adj_section, adj_layout = create_section("🧩 Adjustments & Checkpoints")
+            total = len(self.period_adjustments) + len(self.period_boundary_checkpoints) + len(self.adjustments)
+            summary = QtWidgets.QLabel(
+                f"This redemption has {total} adjustment(s)/checkpoint(s) available for review."
+            )
+            summary.setWordWrap(True)
+            summary.setObjectName("HelperText")
+            adj_layout.addWidget(summary)
+            btn_row = QtWidgets.QHBoxLayout()
+            btn_row.addStretch(1)
+            open_btn = QtWidgets.QPushButton("👁️ View Adjustments")
+            open_btn.clicked.connect(self._open_adjustments_tab)
+            btn_row.addWidget(open_btn)
+            adj_layout.addLayout(btn_row)
+            layout.addWidget(adj_section)
+
         layout.addStretch(1)
         return widget
+
+    def _create_adjustments_tab(self) -> QtWidgets.QWidget:
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        def _make_table() -> QtWidgets.QTableWidget:
+            table = QtWidgets.QTableWidget(0, 5)
+            table.setHorizontalHeaderLabels(["Effective", "Type", "Delta/Total SC", "Redeemable SC", "View"])
+            table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+            table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+            table.setAlternatingRowColors(True)
+            table.verticalHeader().setVisible(False)
+            table.verticalHeader().setDefaultSectionSize(44)
+
+            header = table.horizontalHeader()
+            header.setStretchLastSection(False)
+            header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
+            header.setSectionResizeMode(4, QtWidgets.QHeaderView.Fixed)
+            table.setColumnWidth(4, 170)
+            return table
+
+        def _populate_table(table: QtWidgets.QTableWidget, adjustments_list: list) -> None:
+            adjustments_sorted = sorted(
+                adjustments_list,
+                key=lambda a: (str(a.effective_date), str(a.effective_time or "00:00:00"), int(a.id or 0)),
+                reverse=True,
+            )
+            table.setRowCount(len(adjustments_sorted))
+            for row_idx, adj in enumerate(adjustments_sorted):
+                effective = f"{adj.effective_date} {adj.effective_time or '00:00:00'}"
+                type_str = "Basis" if adj.type.value == "BASIS_USD_CORRECTION" else "Checkpoint"
+                if adj.type.value == "BASIS_USD_CORRECTION":
+                    delta_total_str = f"${adj.delta_basis_usd:,.2f}"
+                    redeemable_str = ""
+                else:
+                    delta_total_str = f"{adj.checkpoint_total_sc:,.2f}"
+                    redeemable_str = f"{adj.checkpoint_redeemable_sc:,.2f}"
+
+                table.setItem(row_idx, 0, QtWidgets.QTableWidgetItem(effective))
+                table.setItem(row_idx, 1, QtWidgets.QTableWidgetItem(type_str))
+                delta_item = QtWidgets.QTableWidgetItem(delta_total_str)
+                delta_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                table.setItem(row_idx, 2, delta_item)
+                redeem_item = QtWidgets.QTableWidgetItem(redeemable_str)
+                redeem_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                table.setItem(row_idx, 3, redeem_item)
+
+                view_btn = QtWidgets.QPushButton("👁️ View Adjustment")
+                view_btn.setObjectName("MiniButton")
+                view_btn.setFixedHeight(24)
+                view_btn.setFixedWidth(150)
+                adj_id = adj.id
+                view_btn.clicked.connect(lambda _checked=False, aid=adj_id: self._open_adjustment_dialog(aid))
+                view_container = QtWidgets.QWidget()
+                view_layout = QtWidgets.QGridLayout(view_container)
+                view_layout.setContentsMargins(6, 4, 6, 4)
+                view_layout.addWidget(view_btn, 0, 0, QtCore.Qt.AlignCenter)
+                table.setCellWidget(row_idx, 4, view_container)
+                table.setRowHeight(
+                    row_idx,
+                    max(table.rowHeight(row_idx), view_btn.sizeHint().height() + 16),
+                )
+
+        period_group = QtWidgets.QGroupBox("Basis Period (Checkpoint Window)")
+        period_layout = QtWidgets.QVBoxLayout(period_group)
+        period_layout.setContentsMargins(8, 10, 8, 8)
+        window_rows = (self.period_boundary_checkpoints or []) + (self.period_adjustments or [])
+        if window_rows:
+            period_table = _make_table()
+            _populate_table(period_table, window_rows)
+            period_layout.addWidget(period_table)
+        else:
+            empty = QtWidgets.QLabel("No active adjustments/checkpoints found in this checkpoint window.")
+            empty.setObjectName("MutedLabel")
+            period_layout.addWidget(empty)
+        layout.addWidget(period_group)
+
+        if self.adjustments:
+            linked_group = QtWidgets.QGroupBox("Explicitly Linked to This Redemption")
+            linked_layout = QtWidgets.QVBoxLayout(linked_group)
+            linked_layout.setContentsMargins(8, 10, 8, 8)
+            linked_table = _make_table()
+            _populate_table(linked_table, self.adjustments)
+            linked_layout.addWidget(linked_table)
+            layout.addWidget(linked_group)
+        layout.addStretch(1)
+        return widget
+
+    def _open_adjustments_tab(self) -> None:
+        if not hasattr(self, "tabs") or self.tabs is None:
+            return
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "Adjustments":
+                self.tabs.setCurrentIndex(i)
+                return
+
+    def _open_adjustment_dialog(self, adjustment_id: Optional[int]) -> None:
+        if not adjustment_id:
+            return
+        dialog = ViewAdjustmentsDialog(
+            self.facade,
+            parent=self,
+            initial_user_id=self.redemption.user_id,
+            initial_site_id=self.redemption.site_id,
+            preselect_adjustment_id=int(adjustment_id),
+        )
+        dialog.exec()
         form.setColumnStretch(5, 1)
 
         layout.addLayout(form)
