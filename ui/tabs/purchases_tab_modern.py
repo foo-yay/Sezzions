@@ -888,19 +888,54 @@ class ModernPurchaseViewDialog(QtWidgets.QDialog):
 
         try:
             anchor_time = getattr(self.purchase, "purchase_time", None) or "23:59:59"
-            self.period_window_start, self.period_window_end = (
-                self.facade.adjustment_service.get_checkpoint_window_for_timestamp(
-                    user_id=int(self.purchase.user_id),
-                    site_id=int(self.purchase.site_id),
-                    anchor_date=self.purchase.purchase_date,
-                    anchor_time=anchor_time,
-                )
-            )
-            self.period_adjustments = self.facade.adjustment_service.get_active_adjustments_in_checkpoint_window(
+            self.period_window_start, self.period_window_end = self.facade.adjustment_service.get_checkpoint_window_for_timestamp(
                 user_id=int(self.purchase.user_id),
                 site_id=int(self.purchase.site_id),
                 anchor_date=self.purchase.purchase_date,
                 anchor_time=anchor_time,
+            )
+
+            prev_full, next_full = self.facade.get_full_redemption_window_for_timestamp(
+                user_id=int(self.purchase.user_id),
+                site_id=int(self.purchase.site_id),
+                anchor_date=self.purchase.purchase_date,
+                anchor_time=anchor_time,
+            )
+
+            start_bound_dt = None
+            if self.period_window_start is not None:
+                start_cp_time = getattr(self.period_window_start, "effective_time", None) or "00:00:00"
+                start_bound_dt = self.facade._to_dt(self.period_window_start.effective_date, start_cp_time)
+            if prev_full is not None:
+                prev_full_dt = self.facade._to_dt(prev_full[0], prev_full[1])
+                if start_bound_dt is None or prev_full_dt > start_bound_dt:
+                    start_bound_dt = prev_full_dt
+
+            end_bound_dt = None
+            if self.period_window_end is not None:
+                end_cp_time = getattr(self.period_window_end, "effective_time", None) or "00:00:00"
+                end_bound_dt = self.facade._to_dt(self.period_window_end.effective_date, end_cp_time)
+            if next_full is not None:
+                next_full_dt = self.facade._to_dt(next_full[0], next_full[1])
+                if end_bound_dt is None or next_full_dt < end_bound_dt:
+                    end_bound_dt = next_full_dt
+
+            anchor_dt = self.facade._to_dt(self.purchase.purchase_date, anchor_time)
+            if end_bound_dt is None:
+                end_bound_dt = anchor_dt
+
+            start_date = start_bound_dt.date() if start_bound_dt else None
+            start_time = start_bound_dt.strftime("%H:%M:%S") if start_bound_dt else "00:00:00"
+            end_date = end_bound_dt.date() if end_bound_dt else None
+            end_time = end_bound_dt.strftime("%H:%M:%S") if end_bound_dt else "23:59:59"
+
+            self.period_adjustments = self.facade.adjustment_service.get_active_adjustments_in_window(
+                user_id=int(self.purchase.user_id),
+                site_id=int(self.purchase.site_id),
+                start_date=start_date,
+                start_time=start_time,
+                end_date=end_date,
+                end_time=end_time,
             )
         except Exception:
             self.period_adjustments = []

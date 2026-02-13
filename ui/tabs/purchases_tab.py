@@ -186,7 +186,7 @@ class PurchasesTab(QtWidgets.QWidget):
 
         # Precompute per (user_id, site_id) adjustment/checkpoint timelines for "Adjusted" badges.
         adjusted_icon = self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxInformation)
-        adjustment_timeline: dict[tuple[int, int], tuple[list[datetime], list[datetime]]] = {}
+        adjustment_timeline: dict[tuple[int, int], tuple[list[datetime], list[datetime], list[datetime]]] = {}
         try:
             pairs = {(int(p.user_id), int(p.site_id)) for p in filtered if getattr(p, "user_id", None) and getattr(p, "site_id", None)}
             for (user_id, site_id) in pairs:
@@ -204,7 +204,8 @@ class PurchasesTab(QtWidgets.QWidget):
                         checkpoints.append(eff_dt)
                 checkpoints.sort()
                 events.sort()
-                adjustment_timeline[(user_id, site_id)] = (checkpoints, events)
+                full_redemptions = self.facade.get_full_redemption_datetimes_for_user_site(user_id=user_id, site_id=site_id)
+                adjustment_timeline[(user_id, site_id)] = (checkpoints, events, full_redemptions)
         except Exception:
             adjustment_timeline = {}
         
@@ -234,20 +235,35 @@ class PurchasesTab(QtWidgets.QWidget):
                 site_item = QtWidgets.QTableWidgetItem(site)
                 try:
                     key = (int(purchase.user_id), int(purchase.site_id))
-                    checkpoints, events = adjustment_timeline.get(key, ([], []))
+                    checkpoints, events, full_redemptions = adjustment_timeline.get(key, ([], [], []))
                     p_time = purchase.purchase_time or "00:00:00"
                     p_dt = datetime.combine(purchase.purchase_date, datetime.strptime(p_time, "%H:%M:%S").time())
-                    idx = bisect_right(checkpoints, p_dt) - 1
-                    start_dt = checkpoints[idx] if idx >= 0 else None
-                    end_dt = checkpoints[idx + 1] if (idx + 1) < len(checkpoints) else None
 
-                    left = bisect_right(events, start_dt) if start_dt else 0
-                    right = bisect_left(events, end_dt) if end_dt else len(events)
+                    cp_i = bisect_right(checkpoints, p_dt) - 1
+                    prev_cp = checkpoints[cp_i] if cp_i >= 0 else None
+                    next_cp = checkpoints[cp_i + 1] if (cp_i + 1) < len(checkpoints) else None
+
+                    red_i = bisect_left(full_redemptions, p_dt)
+                    prev_full = full_redemptions[red_i - 1] if red_i - 1 >= 0 else None
+                    next_full = full_redemptions[red_i] if red_i < len(full_redemptions) else None
+
+                    start_bound = prev_cp
+                    if prev_full is not None and (start_bound is None or prev_full > start_bound):
+                        start_bound = prev_full
+
+                    end_bound = next_cp
+                    if next_full is not None and (end_bound is None or next_full < end_bound):
+                        end_bound = next_full
+                    if end_bound is None:
+                        end_bound = p_dt
+
+                    left = bisect_left(events, start_bound) if start_bound else 0
+                    right = bisect_right(events, end_bound) if end_bound else len(events)
                     has_applicable_adjustments = left < right
                     if has_applicable_adjustments:
                         site_item.setIcon(adjusted_icon)
                         site_item.setToolTip(
-                            "Adjusted: this purchase has adjustments/checkpoints in its checkpoint window (Tools)."
+                            "Adjusted: this purchase has adjustments/checkpoints in its basis period (Tools)."
                         )
                 except Exception:
                     pass
@@ -2299,36 +2315,73 @@ class PurchaseViewDialog(QtWidgets.QDialog):
 
         try:
             anchor_time = getattr(self.purchase, "purchase_time", None) or "23:59:59"
-            self.period_window_start, self.period_window_end = (
-                self.facade.adjustment_service.get_checkpoint_window_for_timestamp(
-                    user_id=int(self.purchase.user_id),
-                    site_id=int(self.purchase.site_id),
-                    anchor_date=self.purchase.purchase_date,
-                    anchor_time=anchor_time,
-                )
-            )
-            raw_period = self.facade.adjustment_service.get_active_adjustments_in_checkpoint_window(
+            self.period_window_start, self.period_window_end = self.facade.adjustment_service.get_checkpoint_window_for_timestamp(
                 user_id=int(self.purchase.user_id),
                 site_id=int(self.purchase.site_id),
                 anchor_date=self.purchase.purchase_date,
                 anchor_time=anchor_time,
             )
-            anchor_ids = set()
-            if getattr(self.period_window_start, "id", None):
-                anchor_ids.add(int(self.period_window_start.id))
-            if getattr(self.period_window_end, "id", None):
-                anchor_ids.add(int(self.period_window_end.id))
 
-            # Keep the boundary checkpoints available for review.
-            self.period_boundary_checkpoints = []
+            # Bound the checkpoint window by full-redemption anchors to avoid
+            # pulling a future checkpoint into a fully-redeemed prior period.
+            prev_full, next_full = self.facade.get_full_redemption_window_for_timestamp(
+                user_id=int(self.purchase.user_id),
+                site_id=int(self.purchase.site_id),
+                anchor_date=self.purchase.purchase_date,
+                anchor_time=anchor_time,
+            )
+
+            start_bound_dt = None
             if self.period_window_start is not None:
-                self.period_boundary_checkpoints.append(self.period_window_start)
-            if self.period_window_end is not None and (
-                getattr(self.period_window_end, "id", None) != getattr(self.period_window_start, "id", None)
-            ):
-                self.period_boundary_checkpoints.append(self.period_window_end)
+                start_cp_time = getattr(self.period_window_start, "effective_time", None) or "00:00:00"
+                start_bound_dt = self.facade._to_dt(self.period_window_start.effective_date, start_cp_time)
+            if prev_full is not None:
+                prev_full_dt = self.facade._to_dt(prev_full[0], prev_full[1])
+                if start_bound_dt is None or prev_full_dt > start_bound_dt:
+                    start_bound_dt = prev_full_dt
 
-            # Non-boundary adjustments/checkpoints strictly inside the window.
+            end_bound_dt = None
+            end_cp_dt = None
+            if self.period_window_end is not None:
+                end_cp_time = getattr(self.period_window_end, "effective_time", None) or "00:00:00"
+                end_cp_dt = self.facade._to_dt(self.period_window_end.effective_date, end_cp_time)
+                end_bound_dt = end_cp_dt
+            if next_full is not None:
+                next_full_dt = self.facade._to_dt(next_full[0], next_full[1])
+                if end_bound_dt is None or next_full_dt < end_bound_dt:
+                    end_bound_dt = next_full_dt
+
+            anchor_dt = self.facade._to_dt(self.purchase.purchase_date, anchor_time)
+            if end_bound_dt is None:
+                end_bound_dt = anchor_dt
+
+            start_date = start_bound_dt.date() if start_bound_dt else None
+            start_time = start_bound_dt.strftime("%H:%M:%S") if start_bound_dt else "00:00:00"
+            end_date = end_bound_dt.date() if end_bound_dt else None
+            end_time = end_bound_dt.strftime("%H:%M:%S") if end_bound_dt else "23:59:59"
+
+            raw_period = self.facade.adjustment_service.get_active_adjustments_in_window(
+                user_id=int(self.purchase.user_id),
+                site_id=int(self.purchase.site_id),
+                start_date=start_date,
+                start_time=start_time,
+                end_date=end_date,
+                end_time=end_time,
+            )
+
+            # Keep only boundary checkpoints that are within the bounded window.
+            self.period_boundary_checkpoints = []
+            if self.period_window_start is not None and start_bound_dt is not None:
+                start_cp_time = getattr(self.period_window_start, "effective_time", None) or "00:00:00"
+                start_cp_dt = self.facade._to_dt(self.period_window_start.effective_date, start_cp_time)
+                if start_cp_dt >= start_bound_dt and start_cp_dt <= end_bound_dt:
+                    self.period_boundary_checkpoints.append(self.period_window_start)
+
+            if self.period_window_end is not None and end_cp_dt is not None and end_bound_dt == end_cp_dt:
+                if not self.period_boundary_checkpoints or getattr(self.period_boundary_checkpoints[0], "id", None) != getattr(self.period_window_end, "id", None):
+                    self.period_boundary_checkpoints.append(self.period_window_end)
+
+            anchor_ids = {int(a.id) for a in self.period_boundary_checkpoints if getattr(a, "id", None)}
             self.period_adjustments = [a for a in raw_period if getattr(a, "id", None) not in anchor_ids]
         except Exception:
             self.period_adjustments = []

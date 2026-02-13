@@ -160,7 +160,7 @@ class RedemptionsTab(QtWidgets.QWidget):
 
         # Precompute per (user_id, site_id) adjustment/checkpoint timelines for "Adjusted" badges.
         adjusted_icon = self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxInformation)
-        adjustment_timeline: dict[tuple[int, int], tuple[list[datetime], list[datetime]]] = {}
+        adjustment_timeline: dict[tuple[int, int], tuple[list[datetime], list[datetime], list[datetime]]] = {}
         try:
             pairs = {(int(r.user_id), int(r.site_id)) for r in filtered if getattr(r, "user_id", None) and getattr(r, "site_id", None)}
             for (user_id, site_id) in pairs:
@@ -178,7 +178,8 @@ class RedemptionsTab(QtWidgets.QWidget):
                         checkpoints.append(eff_dt)
                 checkpoints.sort()
                 events.sort()
-                adjustment_timeline[(user_id, site_id)] = (checkpoints, events)
+                full_redemptions = self.facade.get_full_redemption_datetimes_for_user_site(user_id=user_id, site_id=site_id)
+                adjustment_timeline[(user_id, site_id)] = (checkpoints, events, full_redemptions)
         except Exception:
             adjustment_timeline = {}
 
@@ -227,20 +228,29 @@ class RedemptionsTab(QtWidgets.QWidget):
                 site_item = QtWidgets.QTableWidgetItem(site)
                 try:
                     key = (int(redemption.user_id), int(redemption.site_id))
-                    checkpoints, events = adjustment_timeline.get(key, ([], []))
+                    checkpoints, events, full_redemptions = adjustment_timeline.get(key, ([], [], []))
                     r_time = redemption.redemption_time or "00:00:00"
                     r_dt = datetime.combine(redemption.redemption_date, datetime.strptime(r_time, "%H:%M:%S").time())
-                    idx = bisect_right(checkpoints, r_dt) - 1
-                    start_dt = checkpoints[idx] if idx >= 0 else None
-                    end_dt = checkpoints[idx + 1] if (idx + 1) < len(checkpoints) else None
 
-                    left = bisect_right(events, start_dt) if start_dt else 0
-                    right = bisect_left(events, end_dt) if end_dt else len(events)
+                    cp_i = bisect_right(checkpoints, r_dt) - 1
+                    prev_cp = checkpoints[cp_i] if cp_i >= 0 else None
+
+                    red_i = bisect_left(full_redemptions, r_dt)
+                    prev_full = full_redemptions[red_i - 1] if red_i - 1 >= 0 else None
+
+                    start_bound = prev_cp
+                    if prev_full is not None and (start_bound is None or prev_full > start_bound):
+                        start_bound = prev_full
+
+                    end_bound = r_dt
+
+                    left = bisect_left(events, start_bound) if start_bound else 0
+                    right = bisect_right(events, end_bound)
                     has_applicable_adjustments = left < right
                     if has_applicable_adjustments:
                         site_item.setIcon(adjusted_icon)
                         site_item.setToolTip(
-                            "Adjusted: this redemption has adjustments/checkpoints in its checkpoint window (Tools)."
+                            "Adjusted: this redemption has adjustments/checkpoints at-or-before this redemption (Tools)."
                         )
                 except Exception:
                     pass
@@ -2166,34 +2176,53 @@ class RedemptionViewDialog(QtWidgets.QDialog):
 
         try:
             anchor_time = getattr(self.redemption, "redemption_time", None) or "23:59:59"
-            self.period_window_start, self.period_window_end = (
-                self.facade.adjustment_service.get_checkpoint_window_for_timestamp(
-                    user_id=int(self.redemption.user_id),
-                    site_id=int(self.redemption.site_id),
-                    anchor_date=self.redemption.redemption_date,
-                    anchor_time=anchor_time,
-                )
-            )
-            raw_period = self.facade.adjustment_service.get_active_adjustments_in_checkpoint_window(
+            self.period_window_start, self.period_window_end = self.facade.adjustment_service.get_checkpoint_window_for_timestamp(
                 user_id=int(self.redemption.user_id),
                 site_id=int(self.redemption.site_id),
                 anchor_date=self.redemption.redemption_date,
                 anchor_time=anchor_time,
             )
-            anchor_ids = set()
-            if getattr(self.period_window_start, "id", None):
-                anchor_ids.add(int(self.period_window_start.id))
-            if getattr(self.period_window_end, "id", None):
-                anchor_ids.add(int(self.period_window_end.id))
+
+            prev_full, _next_full = self.facade.get_full_redemption_window_for_timestamp(
+                user_id=int(self.redemption.user_id),
+                site_id=int(self.redemption.site_id),
+                anchor_date=self.redemption.redemption_date,
+                anchor_time=anchor_time,
+            )
+
+            start_bound_dt = None
+            if self.period_window_start is not None:
+                start_cp_time = getattr(self.period_window_start, "effective_time", None) or "00:00:00"
+                start_bound_dt = self.facade._to_dt(self.period_window_start.effective_date, start_cp_time)
+            if prev_full is not None:
+                prev_full_dt = self.facade._to_dt(prev_full[0], prev_full[1])
+                if start_bound_dt is None or prev_full_dt > start_bound_dt:
+                    start_bound_dt = prev_full_dt
+
+            end_bound_dt = self.facade._to_dt(self.redemption.redemption_date, anchor_time)
+
+            start_date = start_bound_dt.date() if start_bound_dt else None
+            start_time = start_bound_dt.strftime("%H:%M:%S") if start_bound_dt else "00:00:00"
+            end_date = end_bound_dt.date()
+            end_time = end_bound_dt.strftime("%H:%M:%S")
+
+            raw_period = self.facade.adjustment_service.get_active_adjustments_in_window(
+                user_id=int(self.redemption.user_id),
+                site_id=int(self.redemption.site_id),
+                start_date=start_date,
+                start_time=start_time,
+                end_date=end_date,
+                end_time=end_time,
+            )
 
             self.period_boundary_checkpoints = []
-            if self.period_window_start is not None:
-                self.period_boundary_checkpoints.append(self.period_window_start)
-            if self.period_window_end is not None and (
-                getattr(self.period_window_end, "id", None) != getattr(self.period_window_start, "id", None)
-            ):
-                self.period_boundary_checkpoints.append(self.period_window_end)
+            if self.period_window_start is not None and start_bound_dt is not None:
+                start_cp_time = getattr(self.period_window_start, "effective_time", None) or "00:00:00"
+                start_cp_dt = self.facade._to_dt(self.period_window_start.effective_date, start_cp_time)
+                if start_cp_dt >= start_bound_dt and start_cp_dt <= end_bound_dt:
+                    self.period_boundary_checkpoints.append(self.period_window_start)
 
+            anchor_ids = {int(a.id) for a in self.period_boundary_checkpoints if getattr(a, "id", None)}
             self.period_adjustments = [a for a in raw_period if getattr(a, "id", None) not in anchor_ids]
         except Exception:
             self.period_adjustments = []

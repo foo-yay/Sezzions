@@ -290,6 +290,25 @@ class AdjustmentService:
             end_date=end_date,
             end_time=end_time,
         )
+
+    def get_active_adjustments_in_window(
+        self,
+        user_id: int,
+        site_id: int,
+        start_date: Optional[date] = None,
+        start_time: str = "00:00:00",
+        end_date: Optional[date] = None,
+        end_time: str = "23:59:59",
+    ) -> List[Adjustment]:
+        """Get active adjustments/checkpoints in an inclusive datetime window."""
+        return self.adjustment_repo.get_active_adjustments_in_window(
+            user_id=user_id,
+            site_id=site_id,
+            start_date=start_date,
+            start_time=start_time,
+            end_date=end_date,
+            end_time=end_time,
+        )
     
     def get_active_basis_adjustments(
         self,
