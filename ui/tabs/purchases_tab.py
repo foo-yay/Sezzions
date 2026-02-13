@@ -2286,6 +2286,7 @@ class PurchaseViewDialog(QtWidgets.QDialog):
 
         self.adjustments = []
         self.period_adjustments = []
+        self.period_boundary_checkpoints = []
         self.period_window_start = None
         self.period_window_end = None
         if getattr(self.purchase, "id", None):
@@ -2317,9 +2318,21 @@ class PurchaseViewDialog(QtWidgets.QDialog):
                 anchor_ids.add(int(self.period_window_start.id))
             if getattr(self.period_window_end, "id", None):
                 anchor_ids.add(int(self.period_window_end.id))
+
+            # Keep the boundary checkpoints available for review.
+            self.period_boundary_checkpoints = []
+            if self.period_window_start is not None:
+                self.period_boundary_checkpoints.append(self.period_window_start)
+            if self.period_window_end is not None and (
+                getattr(self.period_window_end, "id", None) != getattr(self.period_window_start, "id", None)
+            ):
+                self.period_boundary_checkpoints.append(self.period_window_end)
+
+            # Non-boundary adjustments/checkpoints strictly inside the window.
             self.period_adjustments = [a for a in raw_period if getattr(a, "id", None) not in anchor_ids]
         except Exception:
             self.period_adjustments = []
+            self.period_boundary_checkpoints = []
             self.period_window_start = None
             self.period_window_end = None
 
@@ -2327,7 +2340,7 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         self.tabs.setObjectName("SetupSubTabs")
         self.tabs.addTab(self._create_details_tab(user_name, site_name, card_name), "Details")
         self.tabs.addTab(self._create_related_tab(), "Related")
-        if self.adjustments or self.period_adjustments:
+        if self.adjustments or self.period_adjustments or self.period_boundary_checkpoints:
             self.tabs.addTab(self._create_adjustments_tab(), "Adjustments")
         layout.addWidget(self.tabs, 1)
 
@@ -2558,9 +2571,9 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         
         layout.addWidget(notes_section)
 
-        if self.adjustments or self.period_adjustments:
+        if self.adjustments or self.period_adjustments or self.period_boundary_checkpoints:
             adj_section, adj_layout = create_section("🧩 Adjustments & Checkpoints")
-            total = len(self.period_adjustments) + len(self.adjustments)
+            total = len(self.period_adjustments) + len(self.period_boundary_checkpoints) + len(self.adjustments)
             summary = QtWidgets.QLabel(
                 f"This purchase has {total} adjustment(s)/checkpoint(s) available for review."
             )
@@ -2931,9 +2944,10 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         period_group = QtWidgets.QGroupBox(f"Basis Period (Checkpoint Window) — {start_str} → {end_str}")
         period_layout = QtWidgets.QVBoxLayout(period_group)
         period_layout.setContentsMargins(8, 10, 8, 8)
-        if self.period_adjustments:
+        window_rows = (self.period_boundary_checkpoints or []) + (self.period_adjustments or [])
+        if window_rows:
             period_table = _make_table()
-            _populate_table(period_table, self.period_adjustments)
+            _populate_table(period_table, window_rows)
             period_layout.addWidget(period_table)
         else:
             empty = QtWidgets.QLabel("No active adjustments/checkpoints found in this checkpoint window.")

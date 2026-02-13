@@ -970,8 +970,11 @@ class AppFacade:
 
         start_date = start_cp.effective_date if start_cp else None
         start_time = (start_cp.effective_time or "00:00:00") if start_cp else "00:00:00"
-        end_date = end_cp.effective_date if end_cp else None
-        end_time = (end_cp.effective_time or "00:00:00") if end_cp else "00:00:00"
+        # When there is no next checkpoint, cap the list at the reference purchase
+        # timestamp so the "Related" view doesn’t include all future purchases.
+        end_is_anchor = end_cp is None
+        end_date = end_cp.effective_date if end_cp else purchase_date
+        end_time = (end_cp.effective_time or "00:00:00") if end_cp else anchor_time
 
         # Get all purchases for this user+site.
         all_purchases = self.purchase_repo.get_by_user_and_site(user_id, site_id)
@@ -989,12 +992,19 @@ class AppFacade:
                 if p.purchase_date == start_date and p_time < start_time:
                     continue
 
-            # Apply end bound: p < end
+            # Apply end bound.
+            # - With an end checkpoint: p < end (exclusive)
+            # - With no end checkpoint: p <= anchor (inclusive)
             if end_date is not None:
                 if p.purchase_date > end_date:
                     continue
-                if p.purchase_date == end_date and p_time >= end_time:
-                    continue
+                if p.purchase_date == end_date:
+                    if end_is_anchor:
+                        if p_time > end_time:
+                            continue
+                    else:
+                        if p_time >= end_time:
+                            continue
 
             result.append(p)
 
