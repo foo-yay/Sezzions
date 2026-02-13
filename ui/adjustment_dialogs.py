@@ -846,13 +846,36 @@ class CheckpointDialog(QDialog):
 class ViewAdjustmentsDialog(QDialog):
     """Dialog for viewing and managing adjustments."""
     
-    def __init__(self, facade, parent=None):
+    def __init__(
+        self,
+        facade,
+        parent=None,
+        initial_user_id: int | None = None,
+        initial_site_id: int | None = None,
+        initial_type: str | None = None,
+        preselect_adjustment_id: int | None = None,
+    ):
         super().__init__(parent)
         self.facade = facade
         self._modified = False
+        self._preselect_adjustment_id = preselect_adjustment_id
         self.setWindowTitle("View Adjustments")
         self.setMinimumSize(1000, 650)
         self._setup_ui()
+
+        if initial_user_id is not None:
+            idx = self.user_filter.findData(initial_user_id)
+            if idx >= 0:
+                self.user_filter.setCurrentIndex(idx)
+        if initial_site_id is not None:
+            idx = self.site_filter.findData(initial_site_id)
+            if idx >= 0:
+                self.site_filter.setCurrentIndex(idx)
+        if initial_type is not None:
+            idx = self.type_filter.findData(initial_type)
+            if idx >= 0:
+                self.type_filter.setCurrentIndex(idx)
+
         self._load_adjustments()
     
     def _setup_ui(self):
@@ -998,6 +1021,25 @@ class ViewAdjustmentsDialog(QDialog):
             else:
                 status_item = QTableWidgetItem("Active")
             self.table.setItem(row, 9, status_item)
+
+        if self._preselect_adjustment_id is not None:
+            self._select_adjustment_id(self._preselect_adjustment_id)
+
+    def _select_adjustment_id(self, adjustment_id: int) -> None:
+        """Select and scroll to a specific adjustment row if present."""
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if not item:
+                continue
+            try:
+                row_id = int(item.text())
+            except Exception:
+                continue
+            if row_id == adjustment_id:
+                self.table.setCurrentCell(row, 0)
+                self.table.selectRow(row)
+                self.table.scrollToItem(item, QAbstractItemView.PositionAtCenter)
+                break
     
     def _on_selection_changed(self):
         selected = self.table.selectedItems()
@@ -1025,14 +1067,42 @@ class ViewAdjustmentsDialog(QDialog):
             return
         
         adj_id = int(self.table.item(row, 0).text())
+
+        summary = None
+        try:
+            summary = self.facade.adjustment_service.get_soft_delete_warning_summary(adj_id)
+        except Exception:
+            summary = None
+
+        warning_lines: list[str] = []
+        if summary and summary.get("has_downstream_activity"):
+            if summary.get("purchases"):
+                warning_lines.append(f"• {summary['purchases']} purchase(s) after this timestamp")
+            if summary.get("sessions"):
+                warning_lines.append(f"• {summary['sessions']} session(s) after this timestamp")
+            if summary.get("redemptions"):
+                warning_lines.append(f"• {summary['redemptions']} redemption(s) after this timestamp")
+            if summary.get("adjustments"):
+                warning_lines.append(f"• {summary['adjustments']} later adjustment(s)/checkpoint(s)")
+
+        message = (
+            "Are you sure you want to soft-delete this adjustment?\n\n"
+            "This will remove it from active calculations. You can restore it later."
+        )
+
+        if warning_lines:
+            message += (
+                "\n\n⚠️ Warning: There is later activity for this Site/User:\n"
+                + "\n".join(warning_lines)
+                + "\n\nDeleting this record may change derived balances and continuity checks for those later items."
+            )
         
         reply = QMessageBox.question(
             self,
-            "Confirm Soft Delete",
-            "Are you sure you want to soft-delete this adjustment?\n\n"
-            "This will remove it from active calculations. You can restore it later.",
+            "Confirm Soft Delete" if not warning_lines else "Confirm Soft Delete (Downstream Impact)",
+            message,
             QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            QMessageBox.No,
         )
         
         if reply == QMessageBox.Yes:

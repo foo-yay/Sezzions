@@ -8,6 +8,7 @@ from datetime import date, datetime
 from typing import Optional
 from app_facade import AppFacade
 from models.purchase import Purchase
+from ui.adjustment_dialogs import ViewAdjustmentsDialog
 
 
 class ModernPurchaseDialog(QtWidgets.QDialog):
@@ -872,6 +873,39 @@ class ModernPurchaseViewDialog(QtWidgets.QDialog):
         self.purchase = purchase
         self._on_edit = on_edit
         self._on_delete = on_delete
+
+        self.adjustments = []
+        self.period_adjustments = []
+        self.period_window_start = None
+        self.period_window_end = None
+        if getattr(self.purchase, "id", None):
+            try:
+                self.adjustments = self.facade.adjustment_service.get_by_related(
+                    "purchases", int(self.purchase.id), include_deleted=False
+                )
+            except Exception:
+                self.adjustments = []
+
+        try:
+            anchor_time = getattr(self.purchase, "purchase_time", None) or "23:59:59"
+            self.period_window_start, self.period_window_end = (
+                self.facade.adjustment_service.get_checkpoint_window_for_timestamp(
+                    user_id=int(self.purchase.user_id),
+                    site_id=int(self.purchase.site_id),
+                    anchor_date=self.purchase.purchase_date,
+                    anchor_time=anchor_time,
+                )
+            )
+            self.period_adjustments = self.facade.adjustment_service.get_active_adjustments_in_checkpoint_window(
+                user_id=int(self.purchase.user_id),
+                site_id=int(self.purchase.site_id),
+                anchor_date=self.purchase.purchase_date,
+                anchor_time=anchor_time,
+            )
+        except Exception:
+            self.period_adjustments = []
+            self.period_window_start = None
+            self.period_window_end = None
         
         self.setWindowTitle(f"Purchase Details (ID: {purchase.id})")
         self.setMinimumWidth(700)
@@ -886,11 +920,13 @@ class ModernPurchaseViewDialog(QtWidgets.QDialog):
         self._game_types = {t.id: t.name for t in self.facade.get_all_game_types()}
         self._games = {g.id: g for g in self.facade.list_all_games()}
 
-        tabs = QtWidgets.QTabWidget()
-        tabs.setObjectName("SetupSubTabs")
-        tabs.addTab(self._create_details_tab(user_name, site_name, card_name), "Details")
-        tabs.addTab(self._create_related_tab(), "Related")
-        layout.addWidget(tabs, 1)
+        self.tabs = QtWidgets.QTabWidget()
+        self.tabs.setObjectName("SetupSubTabs")
+        self.tabs.addTab(self._create_details_tab(user_name, site_name, card_name), "Details")
+        self.tabs.addTab(self._create_related_tab(), "Related")
+        if self.adjustments or self.period_adjustments:
+            self.tabs.addTab(self._create_adjustments_tab(), "Adjustments")
+        layout.addWidget(self.tabs, 1)
 
         btn_row = QtWidgets.QHBoxLayout()
         if self._on_delete:
@@ -1109,6 +1145,43 @@ class ModernPurchaseViewDialog(QtWidgets.QDialog):
         
         form.addWidget(notes_section, 7, 0, 1, 7)
 
+        if self.adjustments or self.period_adjustments:
+            section5_header = self._create_section_header("🧩  Adjustments & Checkpoints")
+            form.addWidget(section5_header, 8, 0, 1, 7)
+
+            adj_section = QtWidgets.QWidget()
+            adj_section.setObjectName("SectionBackground")
+            adj_layout = QtWidgets.QVBoxLayout(adj_section)
+            adj_layout.setContentsMargins(12, 12, 12, 12)
+            adj_layout.setSpacing(6)
+
+            start_str = "(no prior checkpoint)"
+            if self.period_window_start:
+                start_str = f"{self.period_window_start.effective_date} {self.period_window_start.effective_time or '00:00:00'}"
+            end_str = "(no next checkpoint)"
+            if self.period_window_end:
+                end_str = f"{self.period_window_end.effective_date} {self.period_window_end.effective_time or '00:00:00'}"
+
+            summary = QtWidgets.QLabel(
+                "Checkpoint window for this purchase:\n"
+                f"• Start: {start_str}\n"
+                f"• End:   {end_str}\n\n"
+                f"Basis-period adjustments/checkpoints in this window: {len(self.period_adjustments)}\n"
+                f"Explicitly linked to this purchase: {len(self.adjustments)}"
+            )
+            summary.setObjectName("HelperText")
+            summary.setWordWrap(True)
+            adj_layout.addWidget(summary)
+
+            btn_row = QtWidgets.QHBoxLayout()
+            btn_row.addStretch(1)
+            open_btn = QtWidgets.QPushButton("👁️ View Adjustments")
+            open_btn.clicked.connect(self._open_adjustments_tab)
+            btn_row.addWidget(open_btn)
+            adj_layout.addLayout(btn_row)
+
+            form.addWidget(adj_section, 9, 0, 1, 7)
+
         # Set column stretches
         form.setColumnStretch(0, 1)
         form.setColumnStretch(1, 1)
@@ -1118,6 +1191,119 @@ class ModernPurchaseViewDialog(QtWidgets.QDialog):
         layout.addLayout(form)
         layout.addStretch(1)
         return widget
+
+    def _create_adjustments_tab(self) -> QtWidgets.QWidget:
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        def _make_table() -> QtWidgets.QTableWidget:
+            table = QtWidgets.QTableWidget(0, 5)
+            table.setHorizontalHeaderLabels(["Effective", "Type", "Delta/Total SC", "Redeemable SC", "View"])
+            table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+            table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+            table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+            table.setAlternatingRowColors(True)
+            table.verticalHeader().setVisible(False)
+            table.verticalHeader().setDefaultSectionSize(44)
+
+            header = table.horizontalHeader()
+            header.setStretchLastSection(False)
+            header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(3, QtWidgets.QHeaderView.Stretch)
+            header.setSectionResizeMode(4, QtWidgets.QHeaderView.Fixed)
+            table.setColumnWidth(4, 170)
+            return table
+
+        def _populate_table(table: QtWidgets.QTableWidget, adjustments_list: list) -> None:
+            adjustments_sorted = sorted(
+                adjustments_list,
+                key=lambda a: (str(a.effective_date), str(a.effective_time or "00:00:00"), int(a.id or 0)),
+                reverse=True,
+            )
+            table.setRowCount(len(adjustments_sorted))
+            for row_idx, adj in enumerate(adjustments_sorted):
+                effective = f"{adj.effective_date} {adj.effective_time or '00:00:00'}"
+                type_str = "Basis" if adj.type.value == "BASIS_USD_CORRECTION" else "Checkpoint"
+                if adj.type.value == "BASIS_USD_CORRECTION":
+                    delta_total_str = f"${adj.delta_basis_usd:,.2f}"
+                    redeemable_str = ""
+                else:
+                    delta_total_str = f"{adj.checkpoint_total_sc:,.2f}"
+                    redeemable_str = f"{adj.checkpoint_redeemable_sc:,.2f}"
+
+                table.setItem(row_idx, 0, QtWidgets.QTableWidgetItem(effective))
+                table.setItem(row_idx, 1, QtWidgets.QTableWidgetItem(type_str))
+                delta_item = QtWidgets.QTableWidgetItem(delta_total_str)
+                delta_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                table.setItem(row_idx, 2, delta_item)
+                redeem_item = QtWidgets.QTableWidgetItem(redeemable_str)
+                redeem_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                table.setItem(row_idx, 3, redeem_item)
+
+                view_btn = QtWidgets.QPushButton("👁️ View Adjustment")
+                view_btn.setObjectName("MiniButton")
+                view_btn.setFixedHeight(24)
+                view_btn.setFixedWidth(150)
+                adj_id = adj.id
+                view_btn.clicked.connect(lambda _checked=False, aid=adj_id: self._open_adjustment_dialog(aid))
+                view_container = QtWidgets.QWidget()
+                view_layout = QtWidgets.QGridLayout(view_container)
+                view_layout.setContentsMargins(6, 4, 6, 4)
+                view_layout.addWidget(view_btn, 0, 0, QtCore.Qt.AlignCenter)
+                table.setCellWidget(row_idx, 4, view_container)
+                table.setRowHeight(
+                    row_idx,
+                    max(table.rowHeight(row_idx), view_btn.sizeHint().height() + 16),
+                )
+
+        period_group = QtWidgets.QGroupBox("Basis Period (Checkpoint Window)")
+        period_layout = QtWidgets.QVBoxLayout(period_group)
+        period_layout.setContentsMargins(8, 10, 8, 8)
+        if self.period_adjustments:
+            period_table = _make_table()
+            _populate_table(period_table, self.period_adjustments)
+            period_layout.addWidget(period_table)
+        else:
+            empty = QtWidgets.QLabel("No active adjustments/checkpoints found in this checkpoint window.")
+            empty.setObjectName("MutedLabel")
+            period_layout.addWidget(empty)
+        layout.addWidget(period_group)
+
+        if self.adjustments:
+            linked_group = QtWidgets.QGroupBox("Explicitly Linked to This Purchase")
+            linked_layout = QtWidgets.QVBoxLayout(linked_group)
+            linked_layout.setContentsMargins(8, 10, 8, 8)
+            linked_table = _make_table()
+            _populate_table(linked_table, self.adjustments)
+            linked_layout.addWidget(linked_table)
+            layout.addWidget(linked_group)
+
+        layout.addStretch(1)
+        return widget
+
+    def _open_adjustments_tab(self) -> None:
+        if not hasattr(self, "tabs") or self.tabs is None:
+            return
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "Adjustments":
+                self.tabs.setCurrentIndex(i)
+                return
+
+    def _open_adjustment_dialog(self, adjustment_id: Optional[int]) -> None:
+        if not adjustment_id:
+            return
+        dialog = ViewAdjustmentsDialog(
+            self.facade,
+            parent=self,
+            initial_user_id=self.purchase.user_id,
+            initial_site_id=self.purchase.site_id,
+            preselect_adjustment_id=int(adjustment_id),
+        )
+        dialog.exec()
 
     def _create_section_header(self, text: str) -> QtWidgets.QLabel:
         """Create a section header"""

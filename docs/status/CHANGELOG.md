@@ -105,6 +105,93 @@ files_changed:
 - For profit-only positions (basis = $0), Related Purchases now prefers FIFO-attributed purchases from `redemption_allocations` so the dialog can still explain *which purchases contributed* even when `remaining_amount` is $0.
 - Profit-only position `start_date` now prefers a FIFO-allocation-derived start (instead of the earliest-ever purchase) when available.
 
+---
+
+```yaml
+id: 2026-02-13-06
+type: feature
+areas: [ui]
+summary: "Unrealized positions surface adjustment/checkpoint presence and deep-link to View Adjustments"
+files_changed:
+  - app_facade.py
+  - repositories/adjustment_repository.py
+  - services/adjustment_service.py
+  - ui/adjustment_dialogs.py
+  - ui/tabs/unrealized_tab.py
+```
+
+**Feature: Adjustment/Checkpoint Visibility for Unrealized**
+
+- Unrealized rows now show a small “Adjusted” indicator when that site/user has any active adjustments/checkpoints.
+- “View Position” includes a brief “Adjustments & Checkpoints” section in Details and a conditional “Adjustments” tab listing applicable adjustments.
+- Each listed adjustment can open Tools → “View Adjustments” pre-filtered and pre-selected to the matching record.
+
+---
+
+```yaml
+id: 2026-02-13-07
+type: feature
+areas: [ui, services, repositories]
+summary: "Warn before soft-deleting adjustments with downstream activity; add Adjustments tabs to view dialogs"
+files_changed:
+  - repositories/adjustment_repository.py
+  - services/adjustment_service.py
+  - ui/adjustment_dialogs.py
+  - ui/tabs/purchases_tab_modern.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/game_sessions_tab.py
+  - ui/tabs/realized_tab.py
+  - tests/unit/test_adjustment_service.py
+  - tests/ui/test_adjustments_rollout_dialogs_smoke.py
+```
+
+**Feature: Safer Adjustment/Checkpoint Deletion + Rollout of Reconciliation UI**
+
+- “View Adjustments” soft-delete now warns when there is later site/user activity (purchases, sessions, redemptions, or later adjustments).
+- Purchase / Redemption / Game Session / Realized position view dialogs now show a brief “Adjustments & Checkpoints” section and an “Adjustments” tab when linked adjustments exist.
+- Added unit coverage for the downstream warning summary and a headless dialog smoke test for the rollout.
+
+---
+
+```yaml
+id: 2026-02-13-08
+type: feature
+areas: [ui, services, repositories]
+summary: "Purchase/Redemption/Session view dialogs show checkpoint-window adjustments/checkpoints"
+files_changed:
+  - repositories/adjustment_repository.py
+  - services/adjustment_service.py
+  - ui/tabs/purchases_tab_modern.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/game_sessions_tab.py
+  - tests/unit/test_adjustment_repository.py
+  - tests/unit/test_adjustment_service.py
+```
+
+**Feature: Checkpoint-Window Adjustments/Checkpoints in View Dialogs**
+
+- Purchase / Redemption / Game Session view dialogs can show adjustments/checkpoints that fall in the record’s checkpoint window (basis period), not only those explicitly linked.
+
+---
+
+```yaml
+id: 2026-02-13-09
+type: bugfix
+areas: [ui, accounting]
+summary: "Fix Purchase basis-period scoping; reduce noisy adjustment sections; add Adjusted badges"
+files_changed:
+  - app_facade.py
+  - ui/tabs/purchases_tab.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/game_sessions_tab.py
+```
+
+**Bugfix: Basis-Period Scoping + Adjusted Badges**
+
+- Purchase “Basis Period” related list is now bounded by the next checkpoint (no longer open-ended).
+- View dialogs no longer show the Adjustments/Checkpoints section just because a boundary checkpoint exists.
+- Purchases / Redemptions / Game Sessions tables now show an “Adjusted” info icon when adjustments/checkpoints exist inside the row’s checkpoint window.
+
 ## 2026-02-10
 
 ```yaml

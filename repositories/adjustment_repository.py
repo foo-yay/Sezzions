@@ -86,6 +86,26 @@ class AdjustmentRepository:
         
         rows = self.db.fetch_all(query, (user_id, site_id))
         return [self._row_to_model(row) for row in rows]
+
+    def get_by_related(
+        self,
+        related_table: str,
+        related_id: int,
+        include_deleted: bool = False,
+    ) -> List[Adjustment]:
+        """Get adjustments explicitly linked to a record via related_table/related_id."""
+        query = """
+            SELECT *
+            FROM account_adjustments
+            WHERE related_table = ?
+              AND related_id = ?
+        """
+        params: list = [related_table, related_id]
+        if not include_deleted:
+            query += " AND deleted_at IS NULL"
+        query += " ORDER BY effective_date DESC, effective_time DESC"
+        rows = self.db.fetch_all(query, tuple(params))
+        return [self._row_to_model(row) for row in rows]
     
     def get_active_checkpoints_before(
         self,
@@ -118,6 +138,83 @@ class AdjustmentRepository:
                 cutoff_time
             )
         )
+        return [self._row_to_model(row) for row in rows]
+
+    def get_active_checkpoints_after(
+        self,
+        user_id: int,
+        site_id: int,
+        cutoff_date: date,
+        cutoff_time: str = "00:00:00",
+    ) -> List[Adjustment]:
+        """Get active balance checkpoint adjustments strictly after a cutoff datetime.
+
+        Returns checkpoints ordered ASC by effective datetime (earliest first).
+        """
+        query = """
+            SELECT * FROM account_adjustments
+            WHERE user_id = ?
+              AND site_id = ?
+              AND type = ?
+              AND deleted_at IS NULL
+              AND (
+                effective_date > ?
+                OR (effective_date = ? AND effective_time > ?)
+              )
+            ORDER BY effective_date ASC, effective_time ASC
+        """
+        cutoff_date_str = cutoff_date.isoformat() if hasattr(cutoff_date, "isoformat") else cutoff_date
+        rows = self.db.fetch_all(
+            query,
+            (
+                user_id,
+                site_id,
+                AdjustmentType.BALANCE_CHECKPOINT_CORRECTION.value,
+                cutoff_date_str,
+                cutoff_date_str,
+                cutoff_time,
+            ),
+        )
+        return [self._row_to_model(row) for row in rows]
+
+    def get_active_adjustments_in_window(
+        self,
+        user_id: int,
+        site_id: int,
+        start_date: Optional[date] = None,
+        start_time: str = "00:00:00",
+        end_date: Optional[date] = None,
+        end_time: str = "23:59:59",
+    ) -> List[Adjustment]:
+        """Get active adjustments/checkpoints in an inclusive datetime window.
+
+        Notes:
+        - Filters to non-deleted rows.
+        - Applies inclusive bounds when provided.
+        - Orders ASC by effective datetime for stable window inspection.
+        """
+        query = """
+            SELECT *
+            FROM account_adjustments
+            WHERE user_id = ?
+              AND site_id = ?
+              AND deleted_at IS NULL
+        """
+        params: list = [user_id, site_id]
+
+        if start_date is not None:
+            start_date_str = start_date.isoformat() if hasattr(start_date, "isoformat") else start_date
+            query += " AND (effective_date > ? OR (effective_date = ? AND effective_time >= ?))"
+            params.extend([start_date_str, start_date_str, start_time or "00:00:00"])
+
+        if end_date is not None:
+            end_date_str = end_date.isoformat() if hasattr(end_date, "isoformat") else end_date
+            query += " AND (effective_date < ? OR (effective_date = ? AND effective_time <= ?))"
+            params.extend([end_date_str, end_date_str, end_time or "23:59:59"])
+
+        query += " ORDER BY effective_date ASC, effective_time ASC"
+
+        rows = self.db.fetch_all(query, tuple(params))
         return [self._row_to_model(row) for row in rows]
     
     def get_active_basis_adjustments(
@@ -197,6 +294,112 @@ class AdjustmentRepository:
         """
         self.db.execute(query, (reason, adjustment_id))
         return True
+
+    def get_downstream_activity_summary(
+        self,
+        *,
+        user_id: int,
+        site_id: int,
+        effective_date: date,
+        effective_time: str,
+        exclude_adjustment_id: Optional[int] = None,
+    ) -> dict:
+        """Return counts of later activity after a given effective timestamp.
+
+        Used for UI warnings when soft-deleting an adjustment/checkpoint.
+
+        Notes:
+        - Only counts non-deleted rows.
+        - Uses each table's primary timestamp fields.
+        """
+
+        date_str = effective_date.isoformat() if hasattr(effective_date, "isoformat") else str(effective_date)
+        time_str = effective_time or "00:00:00"
+
+        def _count(query: str, params: tuple) -> int:
+            row = self.db.fetch_one(query, params)
+            if not row:
+                return 0
+            try:
+                return int(row["cnt"])
+            except Exception:
+                try:
+                    return int(list(row.values())[0])
+                except Exception:
+                    return 0
+
+        purchases = _count(
+            """
+            SELECT COUNT(1) AS cnt
+            FROM purchases
+            WHERE deleted_at IS NULL
+              AND user_id = ? AND site_id = ?
+              AND (
+                    purchase_date > ? OR
+                    (purchase_date = ? AND COALESCE(purchase_time, '00:00:00') > ?)
+                  )
+            """,
+            (user_id, site_id, date_str, date_str, time_str),
+        )
+
+        redemptions = _count(
+            """
+            SELECT COUNT(1) AS cnt
+            FROM redemptions
+            WHERE deleted_at IS NULL
+              AND user_id = ? AND site_id = ?
+              AND (
+                    redemption_date > ? OR
+                    (redemption_date = ? AND COALESCE(redemption_time, '00:00:00') > ?)
+                  )
+            """,
+            (user_id, site_id, date_str, date_str, time_str),
+        )
+
+        sessions = _count(
+            """
+            SELECT COUNT(1) AS cnt
+            FROM game_sessions
+            WHERE deleted_at IS NULL
+              AND user_id = ? AND site_id = ?
+              AND (
+                    COALESCE(end_date, session_date) > ? OR
+                    (
+                      COALESCE(end_date, session_date) = ?
+                      AND COALESCE(end_time, session_time, '00:00:00') > ?
+                    )
+                  )
+            """,
+            (user_id, site_id, date_str, date_str, time_str),
+        )
+
+        params = [user_id, site_id, date_str, date_str, time_str]
+        extra = ""
+        if exclude_adjustment_id is not None:
+            extra = " AND id != ?"
+            params.append(exclude_adjustment_id)
+
+        later_adjustments = _count(
+            f"""
+            SELECT COUNT(1) AS cnt
+            FROM account_adjustments
+            WHERE deleted_at IS NULL
+              AND user_id = ? AND site_id = ?
+              AND (
+                    effective_date > ? OR
+                    (effective_date = ? AND COALESCE(effective_time, '00:00:00') > ?)
+                  )
+              {extra}
+            """,
+            tuple(params),
+        )
+
+        return {
+            "purchases": purchases,
+            "redemptions": redemptions,
+            "sessions": sessions,
+            "adjustments": later_adjustments,
+        }
     
     def restore(self, adjustment_id: int) -> bool:
         """Restore a soft-deleted adjustment"""

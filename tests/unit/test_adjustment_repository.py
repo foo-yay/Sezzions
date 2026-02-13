@@ -180,6 +180,85 @@ class TestAdjustmentRepository:
         assert len(results) == 1
         assert results[0].user_id == test_user.id
         assert results[0].site_id == test_site.id
+
+    def test_get_active_checkpoints_after(self, adjustment_repo, test_user, test_site):
+        """Test get_active_checkpoints_after returns strictly after cutoff and ASC order."""
+        adj1 = Adjustment(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 1, 10),
+            effective_time="10:00:00",
+            type=AdjustmentType.BALANCE_CHECKPOINT_CORRECTION,
+            checkpoint_total_sc=Decimal("1000.00"),
+            reason="Early",
+        )
+        adj2 = Adjustment(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 1, 15),
+            effective_time="15:00:00",
+            type=AdjustmentType.BALANCE_CHECKPOINT_CORRECTION,
+            checkpoint_total_sc=Decimal("1500.00"),
+            reason="Later",
+        )
+        adjustment_repo.create(adj1)
+        adjustment_repo.create(adj2)
+
+        results = adjustment_repo.get_active_checkpoints_after(
+            test_user.id,
+            test_site.id,
+            date(2026, 1, 10),
+            "10:00:00",
+        )
+
+        assert len(results) == 1
+        assert results[0].checkpoint_total_sc == Decimal("1500.00")
+
+    def test_get_active_adjustments_in_window_inclusive(self, adjustment_repo, test_user, test_site):
+        """Test inclusive window bounds include both start and end checkpoints."""
+        cp_start = Adjustment(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 1, 1),
+            effective_time="00:00:00",
+            type=AdjustmentType.BALANCE_CHECKPOINT_CORRECTION,
+            checkpoint_total_sc=Decimal("1000.00"),
+            reason="Start",
+        )
+        basis = Adjustment(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 1, 15),
+            effective_time="12:00:00",
+            type=AdjustmentType.BASIS_USD_CORRECTION,
+            delta_basis_usd=Decimal("25.00"),
+            reason="Mid",
+        )
+        cp_end = Adjustment(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 2, 1),
+            effective_time="00:00:00",
+            type=AdjustmentType.BALANCE_CHECKPOINT_CORRECTION,
+            checkpoint_total_sc=Decimal("2000.00"),
+            reason="End",
+        )
+        adjustment_repo.create(cp_start)
+        adjustment_repo.create(basis)
+        adjustment_repo.create(cp_end)
+
+        results = adjustment_repo.get_active_adjustments_in_window(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            start_date=date(2026, 1, 1),
+            start_time="00:00:00",
+            end_date=date(2026, 2, 1),
+            end_time="00:00:00",
+        )
+
+        assert len(results) == 3
+        assert results[0].type == AdjustmentType.BALANCE_CHECKPOINT_CORRECTION
+        assert results[-1].type == AdjustmentType.BALANCE_CHECKPOINT_CORRECTION
     
     def test_get_active_checkpoints_before(self, adjustment_repo, test_user, test_site):
         """Test get_active_checkpoints_before"""

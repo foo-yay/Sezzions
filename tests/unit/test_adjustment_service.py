@@ -8,10 +8,12 @@ from repositories.database import DatabaseManager
 from repositories.adjustment_repository import AdjustmentRepository
 from repositories.user_repository import UserRepository
 from repositories.site_repository import SiteRepository
+from repositories.purchase_repository import PurchaseRepository
 from services.adjustment_service import AdjustmentService
 from models.adjustment import AdjustmentType
 from models.user import User
 from models.site import Site
+from models.purchase import Purchase
 
 
 @pytest.fixture
@@ -191,6 +193,78 @@ class TestAdjustmentService:
         )
         
         assert latest is None
+
+    def test_get_next_checkpoint_after(self, adjustment_service, test_user, test_site):
+        """Test getting the earliest checkpoint strictly after a cutoff."""
+        adj1 = adjustment_service.create_balance_checkpoint(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 1, 10),
+            effective_time="10:00:00",
+            checkpoint_total_sc=Decimal("1000.00"),
+            checkpoint_redeemable_sc=Decimal("900.00"),
+            reason="Early"
+        )
+        adj2 = adjustment_service.create_balance_checkpoint(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 1, 15),
+            effective_time="15:00:00",
+            checkpoint_total_sc=Decimal("1500.00"),
+            checkpoint_redeemable_sc=Decimal("1400.00"),
+            reason="Later"
+        )
+
+        next_cp = adjustment_service.get_next_checkpoint_after(
+            test_user.id,
+            test_site.id,
+            date(2026, 1, 10),
+            "10:00:00",
+        )
+
+        assert next_cp is not None
+        assert next_cp.id == adj2.id
+        assert next_cp.id != adj1.id
+
+    def test_get_active_adjustments_in_checkpoint_window(self, adjustment_service, test_user, test_site):
+        """Test that checkpoint window includes start+end checkpoints and mid adjustments."""
+        adjustment_service.create_balance_checkpoint(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 1, 1),
+            effective_time="00:00:00",
+            checkpoint_total_sc=Decimal("1000.00"),
+            checkpoint_redeemable_sc=Decimal("1000.00"),
+            reason="Start",
+        )
+        adjustment_service.create_basis_adjustment(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 1, 15),
+            effective_time="12:00:00",
+            delta_basis_usd=Decimal("25.00"),
+            reason="Mid",
+        )
+        adjustment_service.create_balance_checkpoint(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 2, 1),
+            effective_time="00:00:00",
+            checkpoint_total_sc=Decimal("2000.00"),
+            checkpoint_redeemable_sc=Decimal("2000.00"),
+            reason="End",
+        )
+
+        results = adjustment_service.get_active_adjustments_in_checkpoint_window(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            anchor_date=date(2026, 1, 26),
+            anchor_time="23:59:59",
+        )
+
+        assert len(results) == 3
+        assert results[0].type.value == "BALANCE_CHECKPOINT_CORRECTION"
+        assert results[-1].type.value == "BALANCE_CHECKPOINT_CORRECTION"
     
     def test_get_active_basis_adjustments(self, adjustment_service, test_user, test_site):
         """Test getting all active basis adjustments"""
@@ -250,6 +324,54 @@ class TestAdjustmentService:
         
         with pytest.raises(ValueError, match="Cannot update a deleted adjustment"):
             adjustment_service.update_notes(adj.id, "New notes")
+
+    def test_soft_delete_warning_summary_no_downstream_activity(
+        self, adjustment_service, test_user, test_site
+    ):
+        adj = adjustment_service.create_balance_checkpoint(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 1, 10),
+            checkpoint_total_sc=Decimal("100.00"),
+            checkpoint_redeemable_sc=Decimal("90.00"),
+            reason="Checkpoint",
+            effective_time="12:00:00",
+        )
+
+        summary = adjustment_service.get_soft_delete_warning_summary(adj.id)
+        assert summary["has_downstream_activity"] is False
+        assert summary["purchases"] == 0
+        assert summary["sessions"] == 0
+        assert summary["redemptions"] == 0
+        assert summary["adjustments"] == 0
+
+    def test_soft_delete_warning_summary_detects_downstream_purchase(
+        self, db, adjustment_service, test_user, test_site
+    ):
+        adj = adjustment_service.create_balance_checkpoint(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 1, 10),
+            checkpoint_total_sc=Decimal("100.00"),
+            checkpoint_redeemable_sc=Decimal("90.00"),
+            reason="Checkpoint",
+            effective_time="12:00:00",
+        )
+
+        purchase_repo = PurchaseRepository(db)
+        purchase_repo.create(
+            Purchase(
+                user_id=test_user.id,
+                site_id=test_site.id,
+                amount=Decimal("10.00"),
+                purchase_date=date(2026, 1, 11),
+                purchase_time="00:00:01",
+            )
+        )
+
+        summary = adjustment_service.get_soft_delete_warning_summary(adj.id)
+        assert summary["has_downstream_activity"] is True
+        assert summary["purchases"] == 1
     
     def test_soft_delete(self, adjustment_service, test_user, test_site):
         """Test soft deleting an adjustment"""

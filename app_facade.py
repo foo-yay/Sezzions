@@ -914,48 +914,28 @@ class AppFacade:
         purchase_date: date,
         purchase_time: Optional[str] = None
     ) -> Optional[tuple[date, str]]:
-        """Get the start datetime of the basis period for a purchase.
-        
-        A basis period is bounded by FULL redemptions (more_remaining=0).
-        Returns (date, time) of the most recent FULL redemption before the purchase,
-        or None if no such redemption exists (meaning this purchase is in the first period).
-        
-        Args:
-            user_id: User ID
-            site_id: Site ID
-            purchase_date: Date of the purchase
-            purchase_time: Time of the purchase (optional, defaults to '00:00:00')
-            
-        Returns:
-            (date, time) tuple of the most recent FULL redemption, or None
+        """Get the start datetime of the purchase's basis period.
+
+        Basis periods are modeled as checkpoint windows:
+        - start: latest balance checkpoint at-or-before the purchase timestamp
+        - end:   next balance checkpoint strictly after the purchase timestamp
+
+        This helper returns the start checkpoint's (date, time), or None when there
+        is no prior checkpoint.
         """
-        redemptions = self.redemption_repo.get_by_user_and_site(user_id, site_id)
-        
-        # Normalize purchase time for comparison
-        p_time = purchase_time or "00:00:00"
-        
-        # Find the most recent FULL redemption (more_remaining=0) before this purchase
-        latest_full = None
-        latest_datetime = None
-        
-        for r in redemptions:
-            # Skip if not a full redemption
-            if r.more_remaining != 0:
-                continue
-                
-            r_time = r.redemption_time or "00:00:00"
-            
-            # Check if this redemption is before the purchase
-            if r.redemption_date < purchase_date or \
-               (r.redemption_date == purchase_date and r_time < p_time):
-                # Compare with current latest
-                if latest_datetime is None or \
-                   r.redemption_date > latest_datetime[0] or \
-                   (r.redemption_date == latest_datetime[0] and r_time > latest_datetime[1]):
-                    latest_full = r
-                    latest_datetime = (r.redemption_date, r_time)
-        
-        return latest_datetime
+        try:
+            anchor_time = purchase_time or "23:59:59"
+            start_cp, _end_cp = self.adjustment_service.get_checkpoint_window_for_timestamp(
+                user_id=int(user_id),
+                site_id=int(site_id),
+                anchor_date=purchase_date,
+                anchor_time=anchor_time,
+            )
+            if not start_cp:
+                return None
+            return (start_cp.effective_date, start_cp.effective_time or "00:00:00")
+        except Exception:
+            return None
     
     def get_basis_period_purchases(
         self,
@@ -965,55 +945,60 @@ class AppFacade:
         purchase_time: Optional[str] = None,
         exclude_purchase_id: Optional[int] = None
     ) -> List[Purchase]:
-        """Get all purchases in the same basis period as the given purchase.
-        
-        Returns ALL purchases (past, current, and future) ordered by (date, time, id)
-        that fall within the basis period defined by FULL redemptions (more_remaining=0).
-        Partial redemptions do NOT start a new basis period.
-        
-        Args:
-            user_id: User ID
-            site_id: Site ID
-            purchase_date: Date of the reference purchase
-            purchase_time: Time of the reference purchase (optional)
-            exclude_purchase_id: Purchase ID to exclude (useful when editing)
-            
-        Returns:
-            List of purchases in the basis period, ordered by (date, time, id)
+        """Get purchases in the same checkpoint-window basis period as a purchase.
+
+        The basis period is bounded by the nearest balance checkpoints around the
+        reference timestamp:
+        - start boundary: latest checkpoint at-or-before (inclusive)
+        - end boundary:   next checkpoint strictly after (exclusive)
         """
-        # Get the basis period start
-        period_start = self.get_basis_period_start_for_purchase(
-            user_id, site_id, purchase_date, purchase_time
-        )
-        
-        # Get all purchases for this user+site
+        anchor_time = purchase_time or "23:59:59"
+
+        # Determine checkpoint window bounds.
+        start_cp = None
+        end_cp = None
+        try:
+            start_cp, end_cp = self.adjustment_service.get_checkpoint_window_for_timestamp(
+                user_id=int(user_id),
+                site_id=int(site_id),
+                anchor_date=purchase_date,
+                anchor_time=anchor_time,
+            )
+        except Exception:
+            start_cp = None
+            end_cp = None
+
+        start_date = start_cp.effective_date if start_cp else None
+        start_time = (start_cp.effective_time or "00:00:00") if start_cp else "00:00:00"
+        end_date = end_cp.effective_date if end_cp else None
+        end_time = (end_cp.effective_time or "00:00:00") if end_cp else "00:00:00"
+
+        # Get all purchases for this user+site.
         all_purchases = self.purchase_repo.get_by_user_and_site(user_id, site_id)
-        
-        # Filter to purchases in the basis period
-        p_time = purchase_time or "00:00:00"
-        result = []
-        
+        result: list[Purchase] = []
         for p in all_purchases:
-            # Skip excluded purchase
             if exclude_purchase_id and p.id == exclude_purchase_id:
                 continue
-                
-            p_purchase_time = p.purchase_time or "00:00:00"
-            
-            # Check if purchase is after period start (or no start = first period)
-            if period_start:
-                start_date, start_time = period_start
-                if p.purchase_date < start_date or \
-                   (p.purchase_date == start_date and p_purchase_time <= start_time):
+
+            p_time = p.purchase_time or "00:00:00"
+
+            # Apply start bound: p >= start
+            if start_date is not None:
+                if p.purchase_date < start_date:
                     continue
-            
-            # Include ALL purchases in the basis period (past, current, and future)
-            # This gives a complete view of the entire basis period when viewing any purchase in it
+                if p.purchase_date == start_date and p_time < start_time:
+                    continue
+
+            # Apply end bound: p < end
+            if end_date is not None:
+                if p.purchase_date > end_date:
+                    continue
+                if p.purchase_date == end_date and p_time >= end_time:
+                    continue
+
             result.append(p)
-        
-        # Sort by (date, time, id)
+
         result.sort(key=lambda x: (x.purchase_date, x.purchase_time or "00:00:00", x.id))
-        
         return result
     
     def compute_purchase_total_extra(
@@ -1905,6 +1890,22 @@ class AppFacade:
         Shows current SC balances and unrealized P/L (NOT taxable until closed).
         """
         return self.unrealized_position_repo.get_all_positions(start_date, end_date)
+
+    def get_adjusted_site_user_pairs(self, include_deleted: bool = False) -> set[tuple[int, int]]:
+        """Return (site_id, user_id) pairs that have adjustments/checkpoints.
+
+        Used for quick-glance UI indicators ("Adjusted" badges) without running
+        per-row queries.
+        """
+        query = """
+            SELECT DISTINCT site_id, user_id
+            FROM account_adjustments
+        """
+        params: tuple = ()
+        if not include_deleted:
+            query += " WHERE deleted_at IS NULL"
+        rows = self.db.fetch_all(query, params)
+        return {(int(r["site_id"]), int(r["user_id"])) for r in rows}
     
     def get_unrealized_position(self, site_id: int, user_id: int) -> Optional[UnrealizedPosition]:
         """Get specific unrealized position for a site/user pair."""
