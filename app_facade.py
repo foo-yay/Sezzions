@@ -243,6 +243,75 @@ class AppFacade:
             return second_date, cls._normalize_time(second_time)
         return first_date, cls._normalize_time(first_time)
 
+    def get_full_redemption_window_for_timestamp(
+        self,
+        user_id: int,
+        site_id: int,
+        anchor_date: date,
+        anchor_time: str = "23:59:59",
+    ) -> tuple[Optional[tuple[date, str]], Optional[tuple[date, str]]]:
+        """Return (prev_full_redemption, next_full_redemption) around a timestamp.
+
+        A "full redemption" is defined as a redemption with more_remaining == False.
+        Either side may be None if no full redemption exists in that direction.
+
+        Notes:
+        - Uses strict comparisons: prev < anchor, next > anchor.
+        - Times are normalized to HH:MM:SS.
+        """
+        try:
+            anchor_dt = self._to_dt(anchor_date, anchor_time or "23:59:59")
+            redemptions = self.redemption_repo.get_by_user_and_site(int(user_id), int(site_id))
+        except Exception:
+            return None, None
+
+        prev_item: Optional[tuple[datetime, date, str]] = None
+        next_item: Optional[tuple[datetime, date, str]] = None
+
+        for r in redemptions:
+            try:
+                if bool(getattr(r, "more_remaining", False)):
+                    continue
+                r_time = self._normalize_time(getattr(r, "redemption_time", None))
+                r_dt = self._to_dt(r.redemption_date, r_time)
+            except Exception:
+                continue
+
+            if r_dt < anchor_dt:
+                if prev_item is None or r_dt > prev_item[0]:
+                    prev_item = (r_dt, r.redemption_date, r_time)
+            elif r_dt > anchor_dt:
+                if next_item is None or r_dt < next_item[0]:
+                    next_item = (r_dt, r.redemption_date, r_time)
+
+        prev_out = (prev_item[1], prev_item[2]) if prev_item else None
+        next_out = (next_item[1], next_item[2]) if next_item else None
+        return prev_out, next_out
+
+    def get_full_redemption_datetimes_for_user_site(
+        self,
+        user_id: int,
+        site_id: int,
+    ) -> list[datetime]:
+        """Return sorted datetimes for full redemptions for a user/site."""
+        try:
+            redemptions = self.redemption_repo.get_by_user_and_site(int(user_id), int(site_id))
+        except Exception:
+            return []
+
+        out: list[datetime] = []
+        for r in redemptions:
+            try:
+                if bool(getattr(r, "more_remaining", False)):
+                    continue
+                r_time = self._normalize_time(getattr(r, "redemption_time", None))
+                out.append(self._to_dt(r.redemption_date, r_time))
+            except Exception:
+                continue
+
+        out.sort()
+        return out
+
     def _find_containing_session_start(
         self,
         site_id: int,
@@ -916,12 +985,12 @@ class AppFacade:
     ) -> Optional[tuple[date, str]]:
         """Get the start datetime of the purchase's basis period.
 
-        Basis periods are modeled as checkpoint windows:
-        - start: latest balance checkpoint at-or-before the purchase timestamp
-        - end:   next balance checkpoint strictly after the purchase timestamp
+        Basis periods are bounded by the nearest "anchor" events before the purchase.
+        Anchors include:
+        - balance checkpoints (account_adjustments)
+        - full redemptions (redemptions with more_remaining == False)
 
-        This helper returns the start checkpoint's (date, time), or None when there
-        is no prior checkpoint.
+        Returns the later of (latest checkpoint <= purchase) and (latest full redemption < purchase).
         """
         try:
             anchor_time = purchase_time or "23:59:59"
@@ -931,9 +1000,30 @@ class AppFacade:
                 anchor_date=purchase_date,
                 anchor_time=anchor_time,
             )
-            if not start_cp:
+
+            prev_full, _next_full = self.get_full_redemption_window_for_timestamp(
+                user_id=int(user_id),
+                site_id=int(site_id),
+                anchor_date=purchase_date,
+                anchor_time=anchor_time,
+            )
+
+            best: Optional[tuple[datetime, date, str]] = None
+
+            if start_cp:
+                cp_time = self._normalize_time(getattr(start_cp, "effective_time", None))
+                cp_dt = self._to_dt(start_cp.effective_date, cp_time)
+                best = (cp_dt, start_cp.effective_date, cp_time)
+
+            if prev_full:
+                red_date, red_time = prev_full
+                red_dt = self._to_dt(red_date, red_time)
+                if best is None or red_dt > best[0]:
+                    best = (red_dt, red_date, red_time)
+
+            if best is None:
                 return None
-            return (start_cp.effective_date, start_cp.effective_time or "00:00:00")
+            return (best[1], best[2])
         except Exception:
             return None
     
@@ -945,14 +1035,27 @@ class AppFacade:
         purchase_time: Optional[str] = None,
         exclude_purchase_id: Optional[int] = None
     ) -> List[Purchase]:
-        """Get purchases in the same checkpoint-window basis period as a purchase.
+        """Get purchases in the same basis period as a purchase.
 
-        The basis period is bounded by the nearest balance checkpoints around the
-        reference timestamp:
-        - start boundary: latest checkpoint at-or-before (inclusive)
-        - end boundary:   next checkpoint strictly after (exclusive)
+        Basis periods are bounded by the nearest anchors around the reference timestamp.
+        Anchors include:
+        - balance checkpoints (account_adjustments)
+        - full redemptions (redemptions with more_remaining == False)
+
+        Bounds:
+        - start boundary: later of (latest checkpoint <= anchor) and (latest full redemption < anchor)
+        - end boundary:   earlier of (next checkpoint > anchor) and (next full redemption > anchor)
+
+        When no end boundary exists, the list is capped at the anchor timestamp.
         """
         anchor_time = purchase_time or "23:59:59"
+
+        prev_full, next_full = self.get_full_redemption_window_for_timestamp(
+            user_id=int(user_id),
+            site_id=int(site_id),
+            anchor_date=purchase_date,
+            anchor_time=anchor_time,
+        )
 
         # Determine checkpoint window bounds.
         start_cp = None
@@ -968,13 +1071,44 @@ class AppFacade:
             start_cp = None
             end_cp = None
 
-        start_date = start_cp.effective_date if start_cp else None
-        start_time = (start_cp.effective_time or "00:00:00") if start_cp else "00:00:00"
-        # When there is no next checkpoint, cap the list at the reference purchase
-        # timestamp so the "Related" view doesn’t include all future purchases.
-        end_is_anchor = end_cp is None
-        end_date = end_cp.effective_date if end_cp else purchase_date
-        end_time = (end_cp.effective_time or "00:00:00") if end_cp else anchor_time
+        # Build start boundary (inclusive) from the later of checkpoint/redemption.
+        start_dt: Optional[datetime] = None
+        if start_cp is not None:
+            try:
+                cp_time = self._normalize_time(getattr(start_cp, "effective_time", None))
+                start_dt = self._to_dt(start_cp.effective_date, cp_time)
+            except Exception:
+                start_dt = None
+        if prev_full is not None:
+            try:
+                red_dt = self._to_dt(prev_full[0], prev_full[1])
+                if start_dt is None or red_dt > start_dt:
+                    start_dt = red_dt
+            except Exception:
+                pass
+
+        # Build end boundary (exclusive) from the earlier of checkpoint/redemption.
+        end_dt: Optional[datetime] = None
+        if end_cp is not None:
+            try:
+                cp_time = self._normalize_time(getattr(end_cp, "effective_time", None))
+                end_dt = self._to_dt(end_cp.effective_date, cp_time)
+            except Exception:
+                end_dt = None
+        if next_full is not None:
+            try:
+                red_dt = self._to_dt(next_full[0], next_full[1])
+                if end_dt is None or red_dt < end_dt:
+                    end_dt = red_dt
+            except Exception:
+                pass
+
+        # When there is no next anchor, cap at the reference purchase timestamp
+        # so the "Related" view doesn’t include all future purchases.
+        anchor_dt = self._to_dt(purchase_date, anchor_time)
+        end_is_anchor = end_dt is None
+        if end_dt is None:
+            end_dt = anchor_dt
 
         # Get all purchases for this user+site.
         all_purchases = self.purchase_repo.get_by_user_and_site(user_id, site_id)
@@ -984,27 +1118,24 @@ class AppFacade:
                 continue
 
             p_time = p.purchase_time or "00:00:00"
+            try:
+                p_dt = self._to_dt(p.purchase_date, p_time)
+            except Exception:
+                continue
 
             # Apply start bound: p >= start
-            if start_date is not None:
-                if p.purchase_date < start_date:
-                    continue
-                if p.purchase_date == start_date and p_time < start_time:
-                    continue
+            if start_dt is not None and p_dt < start_dt:
+                continue
 
             # Apply end bound.
-            # - With an end checkpoint: p < end (exclusive)
-            # - With no end checkpoint: p <= anchor (inclusive)
-            if end_date is not None:
-                if p.purchase_date > end_date:
+            # - With an end anchor: p < end (exclusive)
+            # - With no end anchor: p <= anchor (inclusive)
+            if end_is_anchor:
+                if p_dt > end_dt:
                     continue
-                if p.purchase_date == end_date:
-                    if end_is_anchor:
-                        if p_time > end_time:
-                            continue
-                    else:
-                        if p_time >= end_time:
-                            continue
+            else:
+                if p_dt >= end_dt:
+                    continue
 
             result.append(p)
 

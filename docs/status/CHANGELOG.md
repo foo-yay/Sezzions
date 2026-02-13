@@ -192,6 +192,24 @@ files_changed:
 - View dialogs no longer show the Adjustments/Checkpoints section just because a boundary checkpoint exists.
 - Purchases / Redemptions / Game Sessions tables now show an “Adjusted” info icon when adjustments/checkpoints exist inside the row’s checkpoint window.
 
+---
+
+```yaml
+id: 2026-02-13-10
+type: bugfix
+areas: [ui]
+summary: "Adjustment/checkpoint dialogs resolve typed User/Site selections"
+files_changed:
+  - ui/adjustment_dialogs.py
+  - tests/ui/test_checkpoint_dialog_autocomplete.py
+```
+
+**Bugfix: Adjustment/Checkpoint Dialog Autocomplete**
+
+- The “New Balance Checkpoint” and “New Basis Adjustment” dialogs now resolve typed User/Site values to their underlying IDs and validate correctly.
+- Autocomplete behavior now mirrors the Add Purchase dialog for editable combo boxes.
+- Time inputs now accept HH:MM or HH:MM:SS and store as HH:MM:SS (defaulting seconds to :00).
+
 ## 2026-02-10
 
 ```yaml
