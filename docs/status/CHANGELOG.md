@@ -12,6 +12,26 @@ Rules:
 ## 2026-02-10
 
 ```yaml
+id: 2026-02-10-07
+type: feature
+areas: [ui, tests]
+summary: "Redesign Reports tab to dashboard-first layout (placeholder-only)"
+files_changed:
+  - ui/tabs/reports_tab.py
+  - resources/theme.qss
+  - tests/ui/test_issue_102_reports_tab.py
+```
+
+**Feature: Reports Tab Dashboard Layout (Wireframe)**
+
+- Replaced the Reports tab with a dashboard-first, placeholder-only wireframe layout.
+- Added sidebar navigation, KPI cards/chips, filter toolbar, and a collapsible “More Filters” drawer.
+- Added minimal theme styling for cards, chips, panels, and sidebar.
+- Updated headless UI test to validate drawer toggling in hidden state.
+
+---
+
+```yaml
 id: 2026-02-10-06
 type: feature
 areas: [ui, services, tests]

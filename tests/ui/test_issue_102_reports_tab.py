@@ -2,7 +2,7 @@
 Headless UI smoke tests for Issue #102 (Reports tab Phase 1)
 """
 import pytest
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication
 from app_facade import AppFacade
 from ui.main_window import MainWindow
 
@@ -44,14 +44,13 @@ def test_reports_tab_widget_registered(main_window):
     assert main_window.stack.indexOf(main_window.reports_tab) != -1
 
 
-def test_reports_tab_handles_refresh_error(main_window, monkeypatch):
-    """Reports tab refresh should handle service errors without crashing."""
+def test_reports_tab_more_filters_toggle(main_window):
+    """More Filters drawer should toggle via the tool button."""
     reports_tab = main_window.reports_tab
+    assert reports_tab.more_filters_drawer.isHidden()
 
-    def _raise_error(*_args, **_kwargs):
-        raise RuntimeError("Boom")
+    reports_tab.more_filters_btn.setChecked(True)
+    assert not reports_tab.more_filters_drawer.isHidden()
 
-    monkeypatch.setattr(reports_tab.report_service, "get_kpi_snapshot", _raise_error)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args, **kwargs: None)
-
-    reports_tab.refresh_data()
+    reports_tab.more_filters_btn.setChecked(False)
+    assert reports_tab.more_filters_drawer.isHidden()

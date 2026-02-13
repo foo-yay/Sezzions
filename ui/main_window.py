@@ -334,7 +334,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.unrealized_tab = UnrealizedTab(self.facade, main_window=self)
         self.realized_tab = RealizedTab(self.facade, main_window=self)
         self.daily_sessions_tab = DailySessionsTab(self.facade, main_window=self)
-        self.reports_tab = ReportsTab(self.facade)
+        self.reports_tab = ReportsTab()
         
         self.tab_bar.addTab("💰 Purchases")
         self.stack.addWidget(self.purchases_tab)
