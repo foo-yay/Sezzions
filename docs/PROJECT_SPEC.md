@@ -216,8 +216,8 @@ To maintain data integrity and prevent ambiguous event ordering, Sezzions enforc
 
 **Redemption validation** (Issue #90 bug fix):
 - Previously checked for game sessions using user-entered timestamp → false "No game sessions" errors
-- Now uses ADJUSTED timestamp from `ensure_unique_timestamp()` → correct validation
-- Code: `ui/tabs/redemptions_tab.py` lines 1846-1889
+- Now uses ADJUSTED timestamp from `ensure_unique_timestamp()` and converts to UTC for session queries
+- Code: `ui/tabs/redemptions_tab.py` (session check block)
 
 **Session end validation**:
 - Previously used wrong event_type ("session_start" instead of "session_end")
