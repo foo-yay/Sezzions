@@ -310,7 +310,7 @@ Sezzions provides comprehensive audit trails, soft deletion for core entities, a
 #### 4.7.2 Audit Logging
 
 **Purpose:**
-Capture a durable, structured log of all CRUD operations on core entities (purchases, redemptions, game_sessions) with sufficient detail to drive undo/redo and provide compliance/debugging trails.
+Capture a durable, structured log of all CRUD operations on core entities (purchases, redemptions, game_sessions, account_adjustments) with sufficient detail to drive undo/redo and provide compliance/debugging trails.
 
 **Schema (`audit_log` table):**
 - `action`: CREATE, UPDATE, DELETE, RESTORE, UNDO, REDO
@@ -325,6 +325,10 @@ Capture a durable, structured log of all CRUD operations on core entities (purch
 
 **Implementation Architecture:**
 Audit logging happens at the **service layer** (not AppFacade). See ADR-0002 for detailed rationale.
+
+**Adjustments/Checkpoints:**
+- `account_adjustments` now emits CREATE/DELETE/RESTORE audit entries for basis adjustments and balance checkpoints.
+- Undo/redo stacks include adjustment operations so changes can be reversed and replayed like purchases/redemptions/sessions.
 
 **Pattern (service methods):**
 ```python

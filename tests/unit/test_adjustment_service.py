@@ -10,6 +10,8 @@ from repositories.user_repository import UserRepository
 from repositories.site_repository import SiteRepository
 from repositories.purchase_repository import PurchaseRepository
 from services.adjustment_service import AdjustmentService
+from services.audit_service import AuditService
+from services.undo_redo_service import UndoRedoService
 from models.adjustment import AdjustmentType
 from models.user import User
 from models.site import Site
@@ -34,6 +36,32 @@ def adjustment_repo(db):
 def adjustment_service(adjustment_repo):
     """Create adjustment service"""
     return AdjustmentService(adjustment_repo)
+
+
+@pytest.fixture
+def audit_service(db):
+    return AuditService(db)
+
+
+@pytest.fixture
+def undo_redo_service(db, audit_service, adjustment_repo):
+    return UndoRedoService(
+        db,
+        audit_service,
+        repositories={
+            "account_adjustments": adjustment_repo,
+        },
+    )
+
+
+@pytest.fixture
+def adjustment_service_with_audit(adjustment_repo, audit_service, undo_redo_service):
+    service = AdjustmentService(
+        adjustment_repo,
+        audit_service=audit_service,
+        undo_redo_service=undo_redo_service,
+    )
+    return service
 
 
 @pytest.fixture
@@ -193,6 +221,75 @@ class TestAdjustmentService:
         )
         
         assert latest is None
+
+    def test_create_basis_adjustment_logs_audit_and_undo(self, adjustment_service_with_audit, audit_service, undo_redo_service, test_user, test_site):
+        adj = adjustment_service_with_audit.create_basis_adjustment(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 1, 15),
+            delta_basis_usd=Decimal("25.00"),
+            reason="Audit test",
+        )
+
+        entries = audit_service.get_audit_log(table_name="account_adjustments", action="CREATE", record_id=adj.id, limit=5)
+        assert entries
+        assert undo_redo_service.can_undo()
+
+    def test_soft_delete_logs_audit_and_undo(self, adjustment_service_with_audit, audit_service, undo_redo_service, test_user, test_site):
+        adj = adjustment_service_with_audit.create_balance_checkpoint(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 1, 15),
+            checkpoint_total_sc=Decimal("1000.00"),
+            checkpoint_redeemable_sc=Decimal("900.00"),
+            reason="Delete test",
+        )
+
+        adjustment_service_with_audit.soft_delete(adj.id, reason="Cleanup")
+        entries = audit_service.get_audit_log(table_name="account_adjustments", action="DELETE", record_id=adj.id, limit=5)
+        assert entries
+        assert undo_redo_service.can_undo()
+
+    def test_restore_logs_audit_and_undo(self, adjustment_service_with_audit, audit_service, undo_redo_service, test_user, test_site):
+        adj = adjustment_service_with_audit.create_balance_checkpoint(
+            user_id=test_user.id,
+            site_id=test_site.id,
+            effective_date=date(2026, 1, 15),
+            checkpoint_total_sc=Decimal("1100.00"),
+            checkpoint_redeemable_sc=Decimal("1000.00"),
+            reason="Restore test",
+        )
+
+        adjustment_service_with_audit.soft_delete(adj.id, reason="Cleanup")
+        adjustment_service_with_audit.restore(adj.id)
+        entries = audit_service.get_audit_log(table_name="account_adjustments", action="RESTORE", record_id=adj.id, limit=5)
+        assert entries
+        assert undo_redo_service.can_undo()
+
+    def test_create_adjustment_rolls_back_on_audit_failure(self, adjustment_repo, test_user, test_site):
+        class FailingAuditService:
+            def generate_group_id(self):
+                return "fail-group"
+
+            def log_create(self, *args, **kwargs):
+                raise RuntimeError("Audit failed")
+
+        service = AdjustmentService(
+            adjustment_repo,
+            audit_service=FailingAuditService(),
+            undo_redo_service=None,
+        )
+
+        with pytest.raises(RuntimeError, match="Audit failed"):
+            service.create_basis_adjustment(
+                user_id=test_user.id,
+                site_id=test_site.id,
+                effective_date=date(2026, 1, 15),
+                delta_basis_usd=Decimal("10.00"),
+                reason="Should fail",
+            )
+
+        assert adjustment_repo.get_all(include_deleted=True) == []
 
     def test_get_next_checkpoint_after(self, adjustment_service, test_user, test_site):
         """Test getting the earliest checkpoint strictly after a cutoff."""

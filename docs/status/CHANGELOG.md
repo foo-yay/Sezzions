@@ -210,6 +210,29 @@ files_changed:
 - Autocomplete behavior now mirrors the Add Purchase dialog for editable combo boxes.
 - Time inputs now accept HH:MM or HH:MM:SS and store as HH:MM:SS (defaulting seconds to :00).
 
+---
+
+```yaml
+id: 2026-02-13-11
+type: feature
+areas: [services, audit]
+summary: "Add audit logging + undo/redo support for adjustments and checkpoints"
+files_changed:
+  - app_facade.py
+  - repositories/adjustment_repository.py
+  - services/adjustment_service.py
+  - services/undo_redo_service.py
+  - tests/unit/test_adjustment_service.py
+  - tests/integration/test_adjustment_audit_undo_redo.py
+  - docs/PROJECT_SPEC.md
+```
+
+**Feature: Audit + Undo/Redo for Adjustments/Checkpoints**
+
+- Basis adjustments and balance checkpoints now emit audit log entries for CREATE/DELETE/RESTORE.
+- Adjustment operations now push undo/redo stack entries and participate in undo/redo flows.
+- Undo/redo recalculation logic now recognizes `account_adjustments` timestamps.
+
 ## 2026-02-10
 
 ```yaml

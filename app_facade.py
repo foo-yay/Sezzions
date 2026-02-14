@@ -204,6 +204,7 @@ class AppFacade:
                 'purchases': self.purchase_repo,
                 'redemptions': self.redemption_repo,
                 'game_sessions': self.game_session_repo,
+                'account_adjustments': self.adjustment_repo,
             }
         )
         
@@ -214,6 +215,8 @@ class AppFacade:
         self.redemption_service.undo_redo_service = self.undo_redo_service
         self.game_session_service.audit_service = self.audit_service
         self.game_session_service.undo_redo_service = self.undo_redo_service
+        self.adjustment_service.audit_service = self.audit_service
+        self.adjustment_service.undo_redo_service = self.undo_redo_service
 
     @staticmethod
     def _normalize_time(value: Optional[str]) -> str:
@@ -447,7 +450,7 @@ class AppFacade:
             table_name = entry.get('table_name')
             
             # Only recalculate for tables that affect accounting
-            if table_name not in ('purchases', 'redemptions', 'game_sessions'):
+            if table_name not in ('purchases', 'redemptions', 'game_sessions', 'account_adjustments'):
                 continue
             
             # Parse the data to get user_id, site_id, date, time
@@ -478,6 +481,9 @@ class AppFacade:
             elif table_name == 'game_sessions':
                 date_str = data.get('session_date')
                 time_str = data.get('session_time', '00:00:00')
+            elif table_name == 'account_adjustments':
+                date_str = data.get('effective_date')
+                time_str = data.get('effective_time', '00:00:00')
             else:
                 continue
             
