@@ -237,7 +237,9 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
             timestamp = entry.get('timestamp', '')
             if timestamp:
                 try:
-                    dt = datetime.fromisoformat(timestamp)
+                    from tools.timezone_utils import get_configured_timezone_name, utc_timestamp_to_local
+                    tz_name = get_configured_timezone_name()
+                    dt = utc_timestamp_to_local(timestamp, tz_name)
                     timestamp = dt.strftime("%Y-%m-%d %H:%M:%S")
                 except:
                     pass
@@ -292,7 +294,16 @@ class AuditLogViewerDialog(QtWidgets.QDialog):
         # Format entry details
         details = []
         details.append(f"=== Audit Entry #{entry.get('id')} ===\n")
-        details.append(f"Timestamp: {entry.get('timestamp', 'N/A')}")
+        timestamp = entry.get('timestamp', 'N/A')
+        if timestamp not in (None, 'N/A', ''):
+            try:
+                from tools.timezone_utils import get_configured_timezone_name, utc_timestamp_to_local
+                tz_name = get_configured_timezone_name()
+                dt = utc_timestamp_to_local(str(timestamp), tz_name)
+                timestamp = dt.strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                pass
+        details.append(f"Timestamp: {timestamp}")
         details.append(f"Action:    {entry.get('action', 'N/A')}")
         details.append(f"Table:     {entry.get('table_name', 'N/A')}")
         details.append(f"Record ID: {entry.get('record_id', 'N/A')}")

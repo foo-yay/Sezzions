@@ -42,6 +42,13 @@ class MainWindow(QtWidgets.QMainWindow):
         # Check data integrity before proceeding
         self.maintenance_mode = False
         self._check_data_integrity()
+
+        # One-time migration to store timestamps in UTC
+        try:
+            from services.timezone_migration_service import TimezoneMigrationService
+            TimezoneMigrationService(self.facade.db, self.settings).migrate_local_timestamps_to_utc()
+        except Exception as e:
+            print(f"Warning: Could not migrate timestamps to UTC: {e}")
         
         # Restore window size
         width = self.settings.get('window_width', 1400)

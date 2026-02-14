@@ -322,8 +322,11 @@ class AppFacade:
         session_date: date,
         session_time: Optional[str],
     ) -> Optional[Tuple[date, str]]:
+        from tools.timezone_utils import get_configured_timezone_name, local_date_time_to_utc, utc_date_time_to_local
+
         ts_time = self._normalize_time(session_time)
-        date_str = session_date.isoformat() if hasattr(session_date, "isoformat") else str(session_date)
+        tz_name = get_configured_timezone_name()
+        date_str, ts_time = local_date_time_to_utc(session_date, ts_time, tz_name)
 
         row = self.db.fetch_one(
             """
@@ -344,7 +347,8 @@ class AppFacade:
         start_date = row["session_date"]
         if isinstance(start_date, str):
             start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
-        return start_date, row["start_time"]
+        start_date, start_time = utc_date_time_to_local(start_date, row["start_time"], tz_name)
+        return start_date, start_time
 
     def _containing_boundary(
         self,
@@ -2079,10 +2083,18 @@ class AppFacade:
             WHERE site_id = ? AND user_id = ?
               AND deleted_at IS NULL
               AND (status IS NULL OR status = 'active')
-              AND (? IS NULL OR purchase_date >= ?)
+              AND (? IS NULL OR (purchase_date > ? OR (purchase_date = ? AND COALESCE(purchase_time, '00:00:00') >= ?)))
             ORDER BY purchase_date ASC, COALESCE(purchase_time,'00:00:00') ASC, id ASC
         """
-        return self.db.fetch_all(query, (site_id, user_id, start_date, start_date))
+        if start_date:
+            from tools.timezone_utils import get_configured_timezone_name, local_date_time_to_utc
+            tz_name = get_configured_timezone_name()
+            start_date_utc, start_time_utc = local_date_time_to_utc(start_date, "00:00:00", tz_name)
+            return self.db.fetch_all(
+                query,
+                (site_id, user_id, start_date_utc, start_date_utc, start_date_utc, start_time_utc),
+            )
+        return self.db.fetch_all(query, (site_id, user_id, None, None, None, None))
 
     def get_unrealized_related_purchases(
         self,
@@ -2113,12 +2125,21 @@ class AppFacade:
               AND CAST(ra.allocated_amount AS REAL) > 0
               AND p.deleted_at IS NULL
               AND (p.status IS NULL OR p.status = 'active')
-              AND (? IS NULL OR r.redemption_date >= ?)
+              AND (? IS NULL OR (r.redemption_date > ? OR (r.redemption_date = ? AND COALESCE(r.redemption_time, '00:00:00') >= ?)))
             ORDER BY p.purchase_date ASC, COALESCE(p.purchase_time,'00:00:00') ASC, p.id ASC
         """
-        purchases = self.db.fetch_all(
-            allocations_since_query, (site_id, user_id, start_date, start_date)
-        )
+        if start_date:
+            from tools.timezone_utils import get_configured_timezone_name, local_date_time_to_utc
+            tz_name = get_configured_timezone_name()
+            start_date_utc, start_time_utc = local_date_time_to_utc(start_date, "00:00:00", tz_name)
+            purchases = self.db.fetch_all(
+                allocations_since_query,
+                (site_id, user_id, start_date_utc, start_date_utc, start_date_utc, start_time_utc),
+            )
+        else:
+            purchases = self.db.fetch_all(
+                allocations_since_query, (site_id, user_id, None, None, None, None)
+            )
         if purchases:
             return purchases
 
@@ -2191,12 +2212,20 @@ class AppFacade:
             LEFT JOIN games g ON gs.game_id = g.id
             WHERE gs.site_id = ? AND gs.user_id = ?
               AND gs.deleted_at IS NULL
-                            AND (? IS NULL OR COALESCE(gs.end_date, gs.session_date) >= ?)
+                            AND (? IS NULL OR (COALESCE(gs.end_date, gs.session_date) > ? OR (COALESCE(gs.end_date, gs.session_date) = ? AND COALESCE(gs.end_time, gs.session_time, '00:00:00') >= ?)))
                         ORDER BY COALESCE(gs.end_date, gs.session_date) DESC,
                                          COALESCE(gs.end_time, gs.session_time, '00:00:00') DESC,
                                          gs.id DESC
         """
-        return self.db.fetch_all(query, (site_id, user_id, start_date, start_date))
+        if start_date:
+            from tools.timezone_utils import get_configured_timezone_name, local_date_time_to_utc
+            tz_name = get_configured_timezone_name()
+            start_date_utc, start_time_utc = local_date_time_to_utc(start_date, "00:00:00", tz_name)
+            return self.db.fetch_all(
+                query,
+                (site_id, user_id, start_date_utc, start_date_utc, start_date_utc, start_time_utc),
+            )
+        return self.db.fetch_all(query, (site_id, user_id, None, None, None, None))
 
     def close_unrealized_position(
         self,

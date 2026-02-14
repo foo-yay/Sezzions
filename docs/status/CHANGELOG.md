@@ -12,6 +12,41 @@ Rules:
 ## 2026-02-13
 
 ```yaml
+id: 2026-02-13-05
+type: feature
+areas: [settings, time, repositories, services, ui]
+summary: "Add time zone setting with UTC storage + local display"
+files_changed:
+  - tools/timezone_utils.py
+  - ui/settings.py
+  - ui/settings_dialog.py
+  - ui/main_window.py
+  - app_facade.py
+  - services/timezone_migration_service.py
+  - services/audit_service.py
+  - services/daily_sessions_service.py
+  - services/notification_rules_service.py
+  - repositories/purchase_repository.py
+  - repositories/redemption_repository.py
+  - repositories/game_session_repository.py
+  - repositories/adjustment_repository.py
+  - repositories/expense_repository.py
+  - ui/audit_log_viewer_dialog.py
+  - tests/unit/test_timezone_utils.py
+  - tests/integration/test_timezone_storage.py
+  - docs/PROJECT_SPEC.md
+```
+
+**Feature: Time Zone + UTC Storage**
+
+- Added a Settings time zone selector and persisted `time_zone`/`timezone_storage_migrated`.
+- User-entered timestamps now store in UTC with local display conversion across UI/views.
+- Audit log filtering/CSV export use local date ranges mapped to UTC bounds.
+- One-time migration converts existing local timestamps to UTC using the current time zone.
+
+---
+
+```yaml
 id: 2026-02-13-01
 type: bugfix
 areas: [repositories, accounting]

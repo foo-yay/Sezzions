@@ -4,6 +4,12 @@ Purchase repository - Data access for Purchase entity
 from typing import Optional, List
 from decimal import Decimal
 from datetime import date, datetime
+from tools.timezone_utils import (
+    get_configured_timezone_name,
+    local_date_time_to_utc,
+    local_date_range_to_utc_bounds,
+    utc_date_time_to_local,
+)
 from models.purchase import Purchase
 
 
@@ -33,14 +39,17 @@ class PurchaseRepository:
             WHERE p.deleted_at IS NULL
         """
         params = []
+        tz_name = get_configured_timezone_name()
         
         if start_date:
-            query += " AND p.purchase_date >= ?"
-            params.append(start_date.isoformat() if hasattr(start_date, 'isoformat') else start_date)
+            start_utc, end_utc = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
+            query += " AND (p.purchase_date > ? OR (p.purchase_date = ? AND COALESCE(p.purchase_time, '00:00:00') >= ?))"
+            params.extend([start_utc[0], start_utc[0], start_utc[1]])
         
         if end_date:
-            query += " AND p.purchase_date <= ?"
-            params.append(end_date.isoformat() if hasattr(end_date, 'isoformat') else end_date)
+            start_utc, end_utc = local_date_range_to_utc_bounds(end_date, end_date, tz_name)
+            query += " AND (p.purchase_date < ? OR (p.purchase_date = ? AND COALESCE(p.purchase_time, '00:00:00') <= ?))"
+            params.extend([end_utc[0], end_utc[0], end_utc[1]])
         
         query += " ORDER BY p.purchase_date DESC, p.purchase_time DESC"
         
@@ -100,6 +109,9 @@ class PurchaseRepository:
         if not redemption_time:
             redemption_time = "23:59:59"
 
+        tz_name = get_configured_timezone_name()
+        redemption_date, redemption_time = local_date_time_to_utc(redemption_date, redemption_time, tz_name)
+
         query = """
             SELECT * FROM purchases
             WHERE user_id = ? AND site_id = ? 
@@ -119,6 +131,12 @@ class PurchaseRepository:
     
     def create(self, purchase: Purchase) -> Purchase:
         """Create new purchase"""
+        tz_name = get_configured_timezone_name()
+        utc_date, utc_time = local_date_time_to_utc(
+            purchase.purchase_date,
+            purchase.purchase_time,
+            tz_name,
+        )
         query = """
             INSERT INTO purchases 
             (user_id, site_id, amount, sc_received, starting_sc_balance, cashback_earned,
@@ -133,8 +151,8 @@ class PurchaseRepository:
             str(purchase.starting_sc_balance),
             str(purchase.cashback_earned),
             1 if purchase.cashback_is_manual else 0,
-            purchase.purchase_date.isoformat(),
-            purchase.purchase_time,
+            utc_date,
+            utc_time,
             purchase.card_id,
             str(purchase.remaining_amount),
             purchase.notes
@@ -146,6 +164,13 @@ class PurchaseRepository:
         """Update existing purchase"""
         if not purchase.id:
             raise ValueError("Cannot update purchase without ID")
+
+        tz_name = get_configured_timezone_name()
+        utc_date, utc_time = local_date_time_to_utc(
+            purchase.purchase_date,
+            purchase.purchase_time,
+            tz_name,
+        )
         
         query = """
             UPDATE purchases
@@ -162,8 +187,8 @@ class PurchaseRepository:
             str(purchase.starting_sc_balance),
             str(purchase.cashback_earned),
             1 if purchase.cashback_is_manual else 0,
-            purchase.purchase_date.isoformat(),
-            purchase.purchase_time,
+            utc_date,
+            utc_time,
             purchase.card_id,
             str(purchase.remaining_amount),
             purchase.notes,
@@ -187,6 +212,13 @@ class PurchaseRepository:
         purchase_date = row['purchase_date']
         if isinstance(purchase_date, str):
             purchase_date = datetime.strptime(purchase_date, "%Y-%m-%d").date()
+
+        tz_name = get_configured_timezone_name()
+        purchase_date, purchase_time = utc_date_time_to_local(
+            purchase_date,
+            row.get('purchase_time'),
+            tz_name,
+        )
         
         purchase = Purchase(
             id=row['id'],
@@ -198,7 +230,7 @@ class PurchaseRepository:
             cashback_earned=Decimal(str(row.get('cashback_earned', '0.00'))),
             cashback_is_manual=bool(row.get('cashback_is_manual', 0)),
             purchase_date=purchase_date,
-            purchase_time=row.get('purchase_time'),
+            purchase_time=purchase_time,
             card_id=row.get('card_id'),
             remaining_amount=Decimal(str(row['remaining_amount'])),
             status=row.get('status'),  # 'active', 'dormant', or NULL

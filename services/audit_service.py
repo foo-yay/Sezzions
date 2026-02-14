@@ -364,13 +364,19 @@ class AuditService:
         
         if start_date:
             if isinstance(start_date, date):
-                query += " AND DATE(timestamp) >= ?"
-                params.append(start_date.isoformat())
+                from tools.timezone_utils import get_configured_timezone_name, local_date_range_to_utc_bounds
+                tz_name = get_configured_timezone_name()
+                start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
+                query += " AND timestamp >= ?"
+                params.append(f"{start_utc[0]} {start_utc[1]}")
         
         if end_date:
             if isinstance(end_date, date):
-                query += " AND DATE(timestamp) <= ?"
-                params.append(end_date.isoformat())
+                from tools.timezone_utils import get_configured_timezone_name, local_date_range_to_utc_bounds
+                tz_name = get_configured_timezone_name()
+                _, end_utc = local_date_range_to_utc_bounds(end_date, end_date, tz_name)
+                query += " AND timestamp <= ?"
+                params.append(f"{end_utc[0]} {end_utc[1]}")
         
         query += " ORDER BY timestamp DESC LIMIT ?"
         params.append(limit)
@@ -516,13 +522,19 @@ class AuditService:
         if start_date:
             # Filter by timestamp (audit_log.timestamp is a TEXT field in ISO format)
             if isinstance(start_date, date):
-                query += " AND DATE(timestamp) >= ?"
-                params.append(start_date.isoformat())
+                from tools.timezone_utils import get_configured_timezone_name, local_date_range_to_utc_bounds
+                tz_name = get_configured_timezone_name()
+                start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
+                query += " AND timestamp >= ?"
+                params.append(f"{start_utc[0]} {start_utc[1]}")
         
         if end_date:
             if isinstance(end_date, date):
-                query += " AND DATE(timestamp) <= ?"
-                params.append(end_date.isoformat())
+                from tools.timezone_utils import get_configured_timezone_name, local_date_range_to_utc_bounds
+                tz_name = get_configured_timezone_name()
+                _, end_utc = local_date_range_to_utc_bounds(end_date, end_date, tz_name)
+                query += " AND timestamp <= ?"
+                params.append(f"{end_utc[0]} {end_utc[1]}")
         
         query += " ORDER BY id ASC"
         
@@ -538,9 +550,18 @@ class AuditService:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             
+            from tools.timezone_utils import get_configured_timezone_name, utc_timestamp_to_local
+            tz_name = get_configured_timezone_name()
             for row in rows:
                 # Convert dict to plain dict (in case it's a sqlite3.Row)
                 row_dict = dict(row)
+                timestamp = row_dict.get("timestamp")
+                if timestamp:
+                    try:
+                        local_dt = utc_timestamp_to_local(str(timestamp), tz_name)
+                        row_dict["timestamp"] = local_dt.strftime("%Y-%m-%d %H:%M:%S")
+                    except Exception:
+                        pass
                 writer.writerow(row_dict)
         
         return len(rows)
