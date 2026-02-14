@@ -762,6 +762,13 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
   - Example: `ToolsTab._load_automatic_backup_settings()` blocks spinbox/checkbox signals during load to prevent premature saves
 - **Disk Sync**: Settings.save() uses `flush()` and `fsync()` to force OS buffer writes, preventing data loss on crash
 
+**Time Zone & UTC Storage (Issue #107):**
+- `settings.json` stores `time_zone` (IANA name) and `timezone_storage_migrated` flag.
+- All user-entered timestamps are stored in UTC in the database (purchases, redemptions, sessions, adjustments, expenses, audit log).
+- Repository/services convert UTC → local for display and business logic using the selected `time_zone`.
+- Audit log date filters convert local date ranges to UTC bounds before querying.
+- One-time migration converts existing local timestamps to UTC using the currently selected time zone.
+
 **UI Integration:**
 - Tools tab provides unified interface for all database operations
 - Manual backup: directory picker, "Backup Now" button, status display with file size, last backup timestamp

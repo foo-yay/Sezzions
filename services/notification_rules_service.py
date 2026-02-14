@@ -128,20 +128,26 @@ class NotificationRulesService:
         
         # Query redemptions where receipt_date is NULL and redemption_date is > threshold days ago
         threshold_date = (datetime.now() - timedelta(days=threshold_days)).date()
+        from tools.timezone_utils import get_configured_timezone_name, local_date_time_to_utc, utc_date_time_to_local
+        tz_name = get_configured_timezone_name()
+        cutoff_date, cutoff_time = local_date_time_to_utc(threshold_date, "23:59:59", tz_name)
         
         query = """
-            SELECT r.id, r.redemption_date, r.amount, r.receipt_date,
+            SELECT r.id, r.redemption_date, r.redemption_time, r.amount, r.receipt_date,
                    u.name as user_name, s.name as site_name
             FROM redemptions r
             JOIN users u ON r.user_id = u.id
             JOIN sites s ON r.site_id = s.id
             WHERE r.receipt_date IS NULL
-              AND r.redemption_date <= ?
+                            AND (
+                                        r.redemption_date < ?
+                                        OR (r.redemption_date = ? AND COALESCE(r.redemption_time, '00:00:00') <= ?)
+                                    )
             ORDER BY r.redemption_date ASC
         """
         
         try:
-            pending_redemptions = self.db.fetch_all(query, (threshold_date.isoformat(),))
+            pending_redemptions = self.db.fetch_all(query, (cutoff_date, cutoff_date, cutoff_time))
             
             # Track which redemption notifications should exist
             active_redemption_ids = set()
@@ -149,6 +155,7 @@ class NotificationRulesService:
             for row in pending_redemptions:
                 redemption_id = row['id']
                 redemption_date_str = row['redemption_date']
+                redemption_time_str = row['redemption_time'] if 'redemption_time' in row.keys() else None
                 amount = float(row['amount'])
                 user_name = row['user_name']
                 site_name = row['site_name']
@@ -159,6 +166,12 @@ class NotificationRulesService:
                         redemption_date = datetime.strptime(redemption_date_str, "%Y-%m-%d").date()
                     else:
                         redemption_date = redemption_date_str
+
+                    redemption_date, _ = utc_date_time_to_local(
+                        redemption_date,
+                        redemption_time_str or "00:00:00",
+                        tz_name,
+                    )
                     
                     days_pending = (date.today() - redemption_date).days
                     

@@ -4,6 +4,12 @@ Redemption repository - Data access for Redemption entity
 from typing import Optional, List
 from decimal import Decimal
 from datetime import date, datetime
+from tools.timezone_utils import (
+    get_configured_timezone_name,
+    local_date_time_to_utc,
+    local_date_range_to_utc_bounds,
+    utc_date_time_to_local,
+)
 from models.redemption import Redemption
 
 
@@ -52,14 +58,17 @@ class RedemptionRepository:
             WHERE r.deleted_at IS NULL
         """
         params = []
+        tz_name = get_configured_timezone_name()
         
         if start_date:
-            query += " AND r.redemption_date >= ?"
-            params.append(start_date)
+            start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
+            query += " AND (r.redemption_date > ? OR (r.redemption_date = ? AND COALESCE(r.redemption_time, '00:00:00') >= ?))"
+            params.extend([start_utc[0], start_utc[0], start_utc[1]])
         
         if end_date:
-            query += " AND r.redemption_date <= ?"
-            params.append(end_date)
+            _, end_utc = local_date_range_to_utc_bounds(end_date, end_date, tz_name)
+            query += " AND (r.redemption_date < ? OR (r.redemption_date = ? AND COALESCE(r.redemption_time, '00:00:00') <= ?))"
+            params.extend([end_utc[0], end_utc[0], end_utc[1]])
         
         query += " ORDER BY r.redemption_date DESC, r.redemption_time DESC"
         
@@ -113,6 +122,12 @@ class RedemptionRepository:
     
     def create(self, redemption: Redemption) -> Redemption:
         """Create new redemption"""
+        tz_name = get_configured_timezone_name()
+        utc_date, utc_time = local_date_time_to_utc(
+            redemption.redemption_date,
+            redemption.redemption_time,
+            tz_name,
+        )
         query = """
             INSERT INTO redemptions 
             (user_id, site_id, amount, fees, redemption_date, redemption_time, 
@@ -124,8 +139,8 @@ class RedemptionRepository:
             redemption.site_id,
             str(redemption.amount),
             str(redemption.fees),
-            redemption.redemption_date.isoformat(),
-            redemption.redemption_time,
+            utc_date,
+            utc_time,
             redemption.redemption_method_id,
             1 if redemption.is_free_sc else 0,
             redemption.receipt_date.isoformat() if redemption.receipt_date else None,
@@ -140,6 +155,13 @@ class RedemptionRepository:
         """Update existing redemption"""
         if not redemption.id:
             raise ValueError("Cannot update redemption without ID")
+
+        tz_name = get_configured_timezone_name()
+        utc_date, utc_time = local_date_time_to_utc(
+            redemption.redemption_date,
+            redemption.redemption_time,
+            tz_name,
+        )
         
         query = """
             UPDATE redemptions
@@ -154,8 +176,8 @@ class RedemptionRepository:
             redemption.site_id,
             str(redemption.amount),
             str(redemption.fees),
-            redemption.redemption_date.isoformat(),
-            redemption.redemption_time,
+            utc_date,
+            utc_time,
             redemption.redemption_method_id,
             1 if redemption.is_free_sc else 0,
             redemption.receipt_date.isoformat() if redemption.receipt_date else None,
@@ -182,6 +204,13 @@ class RedemptionRepository:
         redemption_date = row['redemption_date']
         if isinstance(redemption_date, str):
             redemption_date = datetime.strptime(redemption_date, "%Y-%m-%d").date()
+
+        tz_name = get_configured_timezone_name()
+        redemption_date, redemption_time = utc_date_time_to_local(
+            redemption_date,
+            row['redemption_time'] if 'redemption_time' in row.keys() else None,
+            tz_name,
+        )
         
         redemption = Redemption(
             id=row['id'],
@@ -192,7 +221,7 @@ class RedemptionRepository:
             redemption_date=redemption_date,
             cost_basis=Decimal(str(row['cost_basis'])) if 'cost_basis' in row.keys() and row['cost_basis'] is not None else None,
             taxable_profit=Decimal(str(row['taxable_profit'])) if 'taxable_profit' in row.keys() and row['taxable_profit'] is not None else None,
-            redemption_time=row['redemption_time'] if 'redemption_time' in row.keys() else None,
+            redemption_time=redemption_time,
             redemption_method_id=row['redemption_method_id'] if 'redemption_method_id' in row.keys() else None,
             receipt_date=row['receipt_date'] if 'receipt_date' in row.keys() else None,
             processed=bool(row['processed']) if 'processed' in row.keys() else False,

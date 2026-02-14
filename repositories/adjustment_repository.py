@@ -5,6 +5,12 @@ from typing import Optional, List
 from decimal import Decimal
 from datetime import date, datetime
 from models.adjustment import Adjustment, AdjustmentType
+from tools.timezone_utils import (
+    get_configured_timezone_name,
+    local_date_time_to_utc,
+    local_date_range_to_utc_bounds,
+    utc_date_time_to_local,
+)
 
 
 class AdjustmentRepository:
@@ -39,6 +45,7 @@ class AdjustmentRepository:
             WHERE 1=1
         """
         params = []
+        tz_name = get_configured_timezone_name()
         
         if not include_deleted:
             query += " AND a.deleted_at IS NULL"
@@ -56,12 +63,14 @@ class AdjustmentRepository:
             params.append(adjustment_type.value)
         
         if start_date:
-            query += " AND a.effective_date >= ?"
-            params.append(start_date.isoformat() if hasattr(start_date, 'isoformat') else start_date)
+            start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
+            query += " AND (a.effective_date > ? OR (a.effective_date = ? AND COALESCE(a.effective_time, '00:00:00') >= ?))"
+            params.extend([start_utc[0], start_utc[0], start_utc[1]])
         
         if end_date:
-            query += " AND a.effective_date <= ?"
-            params.append(end_date.isoformat() if hasattr(end_date, 'isoformat') else end_date)
+            _, end_utc = local_date_range_to_utc_bounds(end_date, end_date, tz_name)
+            query += " AND (a.effective_date < ? OR (a.effective_date = ? AND COALESCE(a.effective_time, '00:00:00') <= ?))"
+            params.extend([end_utc[0], end_utc[0], end_utc[1]])
         
         query += " ORDER BY a.effective_date DESC, a.effective_time DESC"
         
@@ -115,6 +124,12 @@ class AdjustmentRepository:
         cutoff_time: str = "23:59:59"
     ) -> List[Adjustment]:
         """Get active balance checkpoint adjustments before a cutoff datetime"""
+        tz_name = get_configured_timezone_name()
+        cutoff_date_str, cutoff_time_str = local_date_time_to_utc(
+            cutoff_date,
+            cutoff_time,
+            tz_name,
+        )
         query = """
             SELECT * FROM account_adjustments 
             WHERE user_id = ? 
@@ -133,9 +148,9 @@ class AdjustmentRepository:
                 user_id,
                 site_id,
                 AdjustmentType.BALANCE_CHECKPOINT_CORRECTION.value,
-                cutoff_date.isoformat() if hasattr(cutoff_date, 'isoformat') else cutoff_date,
-                cutoff_date.isoformat() if hasattr(cutoff_date, 'isoformat') else cutoff_date,
-                cutoff_time
+                cutoff_date_str,
+                cutoff_date_str,
+                cutoff_time_str,
             )
         )
         return [self._row_to_model(row) for row in rows]
@@ -163,7 +178,12 @@ class AdjustmentRepository:
               )
             ORDER BY effective_date ASC, effective_time ASC
         """
-        cutoff_date_str = cutoff_date.isoformat() if hasattr(cutoff_date, "isoformat") else cutoff_date
+        tz_name = get_configured_timezone_name()
+        cutoff_date_str, cutoff_time_str = local_date_time_to_utc(
+            cutoff_date,
+            cutoff_time,
+            tz_name,
+        )
         rows = self.db.fetch_all(
             query,
             (
@@ -172,7 +192,7 @@ class AdjustmentRepository:
                 AdjustmentType.BALANCE_CHECKPOINT_CORRECTION.value,
                 cutoff_date_str,
                 cutoff_date_str,
-                cutoff_time,
+                cutoff_time_str,
             ),
         )
         return [self._row_to_model(row) for row in rows]
@@ -201,16 +221,25 @@ class AdjustmentRepository:
               AND deleted_at IS NULL
         """
         params: list = [user_id, site_id]
+        tz_name = get_configured_timezone_name()
 
         if start_date is not None:
-            start_date_str = start_date.isoformat() if hasattr(start_date, "isoformat") else start_date
+            start_date_str, start_time_str = local_date_time_to_utc(
+                start_date,
+                start_time or "00:00:00",
+                tz_name,
+            )
             query += " AND (effective_date > ? OR (effective_date = ? AND effective_time >= ?))"
-            params.extend([start_date_str, start_date_str, start_time or "00:00:00"])
+            params.extend([start_date_str, start_date_str, start_time_str])
 
         if end_date is not None:
-            end_date_str = end_date.isoformat() if hasattr(end_date, "isoformat") else end_date
+            end_date_str, end_time_str = local_date_time_to_utc(
+                end_date,
+                end_time or "23:59:59",
+                tz_name,
+            )
             query += " AND (effective_date < ? OR (effective_date = ? AND effective_time <= ?))"
-            params.extend([end_date_str, end_date_str, end_time or "23:59:59"])
+            params.extend([end_date_str, end_date_str, end_time_str])
 
         query += " ORDER BY effective_date ASC, effective_time ASC"
 
@@ -239,6 +268,12 @@ class AdjustmentRepository:
     
     def create(self, adjustment: Adjustment, *, auto_commit: bool = True) -> Adjustment:
         """Create a new adjustment"""
+        tz_name = get_configured_timezone_name()
+        utc_date, utc_time = local_date_time_to_utc(
+            adjustment.effective_date,
+            adjustment.effective_time or "00:00:00",
+            tz_name,
+        )
         query = """
             INSERT INTO account_adjustments (
                 user_id, site_id, effective_date, effective_time, type,
@@ -249,8 +284,8 @@ class AdjustmentRepository:
         params = (
             adjustment.user_id,
             adjustment.site_id,
-            adjustment.effective_date.isoformat() if hasattr(adjustment.effective_date, 'isoformat') else adjustment.effective_date,
-            adjustment.effective_time or "00:00:00",
+            utc_date,
+            utc_time,
             adjustment.type.value if isinstance(adjustment.type, AdjustmentType) else adjustment.type,
             str(adjustment.delta_basis_usd),
             str(adjustment.checkpoint_total_sc),
@@ -318,9 +353,12 @@ class AdjustmentRepository:
         - Only counts non-deleted rows.
         - Uses each table's primary timestamp fields.
         """
-
-        date_str = effective_date.isoformat() if hasattr(effective_date, "isoformat") else str(effective_date)
-        time_str = effective_time or "00:00:00"
+        tz_name = get_configured_timezone_name()
+        date_str, time_str = local_date_time_to_utc(
+            effective_date,
+            effective_time or "00:00:00",
+            tz_name,
+        )
 
         def _count(query: str, params: tuple) -> int:
             row = self.db.fetch_one(query, params)
@@ -453,13 +491,20 @@ class AdjustmentRepository:
         effective_date = row['effective_date']
         if isinstance(effective_date, str):
             effective_date = date.fromisoformat(effective_date)
+
+        tz_name = get_configured_timezone_name()
+        effective_date, effective_time = utc_date_time_to_local(
+            effective_date,
+            row['effective_time'] or "00:00:00",
+            tz_name,
+        )
         
         return Adjustment(
             id=row['id'],
             user_id=row['user_id'],
             site_id=row['site_id'],
             effective_date=effective_date,
-            effective_time=row['effective_time'] or "00:00:00",
+            effective_time=effective_time or "00:00:00",
             type=AdjustmentType(row['type']),
             delta_basis_usd=Decimal(row['delta_basis_usd']),
             checkpoint_total_sc=Decimal(row['checkpoint_total_sc']),

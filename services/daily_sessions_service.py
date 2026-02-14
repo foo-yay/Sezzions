@@ -70,29 +70,37 @@ class DailySessionsService:
                 params.extend(sites)
 
         start_date, end_date = active_date_filter
-        if start_date and end_date:
-            query += " AND COALESCE(gs.end_date, gs.session_date) BETWEEN ? AND ?"
-            params.extend([
-                start_date.strftime("%Y-%m-%d"),
-                end_date.strftime("%Y-%m-%d"),
-            ])
-        elif start_date:
-            query += " AND COALESCE(gs.end_date, gs.session_date) >= ?"
-            params.append(start_date.strftime("%Y-%m-%d"))
-        elif end_date:
-            query += " AND COALESCE(gs.end_date, gs.session_date) <= ?"
-            params.append(end_date.strftime("%Y-%m-%d"))
-        else:
-            current_year_start = f"{date_type.today().year}-01-01"
-            current_year_end = date_type.today().strftime("%Y-%m-%d")
-            query += " AND COALESCE(gs.end_date, gs.session_date) BETWEEN ? AND ?"
-            params.extend([current_year_start, current_year_end])
+        from tools.timezone_utils import get_configured_timezone_name, local_date_range_to_utc_bounds
+        tz_name = get_configured_timezone_name()
+
+        if not start_date and not end_date:
+            start_date = date_type(date_type.today().year, 1, 1)
+            end_date = date_type.today()
+
+        if start_date:
+            start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
+            query += " AND (COALESCE(gs.end_date, gs.session_date) > ? OR (COALESCE(gs.end_date, gs.session_date) = ? AND COALESCE(gs.end_time, gs.session_time, '00:00:00') >= ?))"
+            params.extend([start_utc[0], start_utc[0], start_utc[1]])
+
+        if end_date:
+            _, end_utc = local_date_range_to_utc_bounds(end_date, end_date, tz_name)
+            query += " AND (COALESCE(gs.end_date, gs.session_date) < ? OR (COALESCE(gs.end_date, gs.session_date) = ? AND COALESCE(gs.end_time, gs.session_time, '00:00:00') <= ?))"
+            params.extend([end_utc[0], end_utc[0], end_utc[1]])
 
         query += " ORDER BY gs.session_date DESC, u.name, s.name, gs.session_time"
         rows = self.db.fetch_all(query, tuple(params))
 
         sessions: List[Dict] = []
+        from tools.timezone_utils import utc_date_time_to_local
         for row in rows:
+            session_date = row["session_date"]
+            start_time = row["start_time"] or "00:00:00"
+            session_date, start_time = utc_date_time_to_local(session_date, start_time, tz_name)
+
+            end_date = row["end_date"]
+            end_time = row["end_time"] or ""
+            if end_date:
+                end_date, end_time = utc_date_time_to_local(end_date, end_time or "00:00:00", tz_name)
             delta_total = float(row["delta_total"] or 0.0)
             delta_redeem = row["delta_redeem"]
             if delta_redeem is None:
@@ -120,7 +128,7 @@ class DailySessionsService:
             search_blob = " ".join(
                 str(value).lower()
                 for value in (
-                    row["session_date"],
+                    session_date,
                     row["user_name"],
                     row["site_name"],
                     game_type,
@@ -141,7 +149,7 @@ class DailySessionsService:
             sessions.append(
                 {
                     "id": row["id"],
-                    "session_date": row["session_date"],
+                    "session_date": session_date,
                     "user_id": row["user_id"],
                     "user_name": row["user_name"],
                     "site_id": row["site_id"],
@@ -153,9 +161,9 @@ class DailySessionsService:
                     "end_total": end_total,
                     "start_redeem": start_redeem,
                     "end_redeem": end_redeem,
-                    "start_time": row["start_time"] or "",
-                    "end_date": row["end_date"],
-                    "end_time": row["end_time"] or "",
+                    "start_time": start_time or "",
+                    "end_date": end_date,
+                    "end_time": end_time or "",
                     "delta_total": delta_total,
                     "delta_redeem": delta_redeem,
                     "basis_consumed": basis_consumed,

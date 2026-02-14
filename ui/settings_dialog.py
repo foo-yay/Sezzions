@@ -178,6 +178,21 @@ class SettingsDialog(QtWidgets.QDialog):
         layout.addRow(theme_label, self.theme_combo)
         layout.setAlignment(theme_label, QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         layout.setAlignment(self.theme_combo, QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+        # Time zone selector
+        tz_label = QtWidgets.QLabel("Time Zone:")
+        tz_label.setToolTip("Select the time zone used for date/time display")
+        tz_label.setObjectName("FieldLabel")
+        tz_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.timezone_combo = QtWidgets.QComboBox()
+        self.timezone_combo.setEditable(True)
+        from tools.timezone_utils import list_timezones
+        tz_list = list_timezones()
+        self.timezone_combo.addItems(tz_list)
+        tz_label.setMinimumHeight(self.timezone_combo.sizeHint().height())
+        layout.addRow(tz_label, self.timezone_combo)
+        layout.setAlignment(tz_label, QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        layout.setAlignment(self.timezone_combo, QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
         
         # Info label
         info_label = QtWidgets.QLabel(
@@ -362,6 +377,15 @@ class SettingsDialog(QtWidgets.QDialog):
         theme_index = self.theme_combo.findText(current_theme)
         if theme_index >= 0:
             self.theme_combo.setCurrentIndex(theme_index)
+
+        # Time zone selection
+        current_tz = self.settings.settings.get("time_zone")
+        if current_tz:
+            tz_index = self.timezone_combo.findText(current_tz)
+            if tz_index >= 0:
+                self.timezone_combo.setCurrentIndex(tz_index)
+            else:
+                self.timezone_combo.setCurrentText(current_tz)
         
         # Tax withholding settings
         tax_enabled = self.settings.settings.get("tax_withholding_enabled", False)
@@ -408,6 +432,12 @@ class SettingsDialog(QtWidgets.QDialog):
         # Write display settings
         selected_theme = self.theme_combo.currentText()
         self.settings.settings["theme"] = selected_theme
+
+        # Write time zone settings
+        previous_tz = self.settings.settings.get("time_zone")
+        selected_tz = self.timezone_combo.currentText().strip()
+        if selected_tz:
+            self.settings.settings["time_zone"] = selected_tz
         
         # Write tax withholding settings
         self.settings.settings["tax_withholding_enabled"] = self.tax_withholding_enabled_checkbox.isChecked()
@@ -484,6 +514,11 @@ class SettingsDialog(QtWidgets.QDialog):
         # Apply theme immediately (notify parent window)
         if self.parent() and hasattr(self.parent(), 'apply_theme'):
             self.parent().apply_theme(selected_theme)
+
+        # Refresh data if time zone changed
+        if previous_tz != self.settings.settings.get("time_zone"):
+            if self.parent() and hasattr(self.parent(), 'refresh_all_tabs'):
+                self.parent().refresh_all_tabs()
         
         # Accept dialog
         self.accept()

@@ -28,11 +28,14 @@ class Settings:
     
     def _default_settings(self) -> Dict[str, Any]:
         """Get default settings"""
+        from tools.timezone_utils import get_system_timezone_name
         return {
             'theme': 'Light',
             'window_width': 1400,
             'window_height': 900,
             'last_tab': 0,
+            'time_zone': get_system_timezone_name(),
+            'timezone_storage_migrated': False,
             'automatic_backup': {
                 'enabled': False,
                 'directory': '',
