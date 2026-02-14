@@ -9,6 +9,28 @@ Rules:
 
 ---
 
+## 2026-02-14
+
+```yaml
+id: 2026-02-14-01
+type: bugfix
+areas: [ui, services, time]
+summary: "Fix redemption edit validation when sessions exist (UTC-aware checks)"
+files_changed:
+  - services/timestamp_service.py
+  - ui/tabs/redemptions_tab.py
+  - tests/unit/test_timestamp_service.py
+  - tests/integration/test_settings_dialog_smoke.py
+```
+
+**Bugfix: Redemption Edit Session Validation**
+
+- Timestamp uniqueness checks now compare against UTC storage and return local-adjusted values.
+- Redemption session validation now converts adjusted local timestamps to UTC before querying closed sessions.
+- Added unit coverage for timezone-aware timestamp adjustment and extended UI smoke coverage.
+
+---
+
 ## 2026-02-13
 
 ```yaml
