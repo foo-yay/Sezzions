@@ -1,18 +1,31 @@
 """
 Adjustment service - Business logic for account adjustments
 """
-from typing import List, Optional
+import uuid
+from dataclasses import asdict
+from typing import List, Optional, TYPE_CHECKING
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime
 from models.adjustment import Adjustment, AdjustmentType
 from repositories.adjustment_repository import AdjustmentRepository
+
+if TYPE_CHECKING:
+    from services.audit_service import AuditService
+    from services.undo_redo_service import UndoRedoService
 
 
 class AdjustmentService:
     """Business logic for account adjustments (basis corrections and balance checkpoints)"""
     
-    def __init__(self, adjustment_repo: AdjustmentRepository):
+    def __init__(
+        self,
+        adjustment_repo: AdjustmentRepository,
+        audit_service: Optional['AuditService'] = None,
+        undo_redo_service: Optional['UndoRedoService'] = None,
+    ):
         self.adjustment_repo = adjustment_repo
+        self.audit_service = audit_service
+        self.undo_redo_service = undo_redo_service
     
     def create_basis_adjustment(
         self,
@@ -64,7 +77,28 @@ class AdjustmentService:
         )
         
         # Save to repository
-        return self.adjustment_repo.create(adjustment)
+        group_id = self.audit_service.generate_group_id() if self.audit_service else str(uuid.uuid4())
+        if self.audit_service:
+            with self.adjustment_repo.db.transaction():
+                adjustment = self.adjustment_repo.create(adjustment, auto_commit=False)
+                self.audit_service.log_create(
+                    table_name="account_adjustments",
+                    record_id=adjustment.id,
+                    new_data=asdict(adjustment),
+                    group_id=group_id,
+                    auto_commit=False,
+                )
+        else:
+            adjustment = self.adjustment_repo.create(adjustment)
+
+        if self.undo_redo_service and self.audit_service:
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Create basis adjustment (${adjustment.delta_basis_usd})",
+                timestamp=datetime.now().isoformat(),
+            )
+
+        return adjustment
     
     def create_balance_checkpoint(
         self,
@@ -121,7 +155,28 @@ class AdjustmentService:
         )
         
         # Save to repository
-        return self.adjustment_repo.create(adjustment)
+        group_id = self.audit_service.generate_group_id() if self.audit_service else str(uuid.uuid4())
+        if self.audit_service:
+            with self.adjustment_repo.db.transaction():
+                adjustment = self.adjustment_repo.create(adjustment, auto_commit=False)
+                self.audit_service.log_create(
+                    table_name="account_adjustments",
+                    record_id=adjustment.id,
+                    new_data=asdict(adjustment),
+                    group_id=group_id,
+                    auto_commit=False,
+                )
+        else:
+            adjustment = self.adjustment_repo.create(adjustment)
+
+        if self.undo_redo_service and self.audit_service:
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Create balance checkpoint ({adjustment.checkpoint_total_sc:,.2f} SC)",
+                timestamp=datetime.now().isoformat(),
+            )
+
+        return adjustment
     
     def get_by_id(self, adjustment_id: int) -> Optional[Adjustment]:
         """Get adjustment by ID"""
@@ -359,7 +414,30 @@ class AdjustmentService:
         if adjustment.is_deleted():
             raise ValueError("Adjustment is already deleted")
         
-        return self.adjustment_repo.soft_delete(adjustment_id, reason)
+        old_data = asdict(adjustment)
+        group_id = self.audit_service.generate_group_id() if self.audit_service else str(uuid.uuid4())
+
+        if self.audit_service:
+            with self.adjustment_repo.db.transaction():
+                self.adjustment_repo.soft_delete(adjustment_id, reason, auto_commit=False)
+                self.audit_service.log_delete(
+                    table_name="account_adjustments",
+                    record_id=adjustment_id,
+                    old_data=old_data,
+                    group_id=group_id,
+                    auto_commit=False,
+                )
+        else:
+            self.adjustment_repo.soft_delete(adjustment_id, reason)
+
+        if self.undo_redo_service and self.audit_service:
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Delete adjustment #{adjustment_id}",
+                timestamp=datetime.now().isoformat(),
+            )
+
+        return True
 
     def get_soft_delete_warning_summary(self, adjustment_id: int) -> dict:
         """Return a downstream-activity summary used to warn before soft-delete.
@@ -403,4 +481,28 @@ class AdjustmentService:
         if not adjustment.is_deleted():
             raise ValueError("Adjustment is not deleted")
         
-        return self.adjustment_repo.restore(adjustment_id)
+        group_id = self.audit_service.generate_group_id() if self.audit_service else str(uuid.uuid4())
+
+        if self.audit_service:
+            with self.adjustment_repo.db.transaction():
+                self.adjustment_repo.restore(adjustment_id, auto_commit=False)
+                restored = self.adjustment_repo.get_by_id(adjustment_id)
+                if restored:
+                    self.audit_service.log_restore(
+                        table_name="account_adjustments",
+                        record_id=adjustment_id,
+                        restored_data=asdict(restored),
+                        group_id=group_id,
+                        auto_commit=False,
+                    )
+        else:
+            self.adjustment_repo.restore(adjustment_id)
+
+        if self.undo_redo_service and self.audit_service:
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Restore adjustment #{adjustment_id}",
+                timestamp=datetime.now().isoformat(),
+            )
+
+        return True

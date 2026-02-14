@@ -461,12 +461,13 @@ class UndoRedoService:
         This ensures all model validation, type coercion, and business logic is applied.
         Falls back to raw SQL only for tables without model definitions.
         """
+        model_data = self._prepare_model_data(data.copy())
         model_class = self.MODEL_MAP.get(table_name)
+        if table_name == 'account_adjustments':
+            model_class = None
         
         if model_class and repo and hasattr(repo, 'update'):
             # Reconstruct full model from snapshot
-            model_data = self._prepare_model_data(data.copy())
-            
             # Remove metadata fields that aren't in the model
             # (deleted_at is in DB but not in model classes)
             model_data.pop('deleted_at', None)
@@ -490,7 +491,7 @@ class UndoRedoService:
         else:
             # Fallback to raw SQL for tables without models (e.g., lookup tables)
             skip_fields = {'id', 'created_at', 'updated_at', 'deleted_at'}
-            fields = {k: v for k, v in data.items() if k not in skip_fields}
+            fields = {k: v for k, v in model_data.items() if k not in skip_fields}
             
             if not fields:
                 return
@@ -516,6 +517,11 @@ class UndoRedoService:
         for key, value in data.items():
             if value is None:
                 result[key] = value
+            elif key == 'type':
+                if isinstance(value, str) and value.startswith('AdjustmentType.'):
+                    result[key] = value.split('.', 1)[1]
+                else:
+                    result[key] = value
             # Date fields: purchase_date, redemption_date, session_date, end_date, receipt_date
             elif key.endswith('_date') or key == 'session_date':
                 if isinstance(value, str):

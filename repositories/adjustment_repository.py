@@ -237,7 +237,7 @@ class AdjustmentRepository:
         )
         return [self._row_to_model(row) for row in rows]
     
-    def create(self, adjustment: Adjustment) -> Adjustment:
+    def create(self, adjustment: Adjustment, *, auto_commit: bool = True) -> Adjustment:
         """Create a new adjustment"""
         query = """
             INSERT INTO account_adjustments (
@@ -261,7 +261,10 @@ class AdjustmentRepository:
             adjustment.related_id
         )
         
-        adjustment.id = self.db.execute(query, params)
+        if auto_commit:
+            adjustment.id = self.db.execute(query, params)
+        else:
+            adjustment.id = self.db.execute_no_commit(query, params)
         return adjustment
     
     def update(self, adjustment: Adjustment) -> bool:
@@ -283,7 +286,7 @@ class AdjustmentRepository:
         self.db.execute(query, params)
         return True
     
-    def soft_delete(self, adjustment_id: int, reason: str) -> bool:
+    def soft_delete(self, adjustment_id: int, reason: str, *, auto_commit: bool = True) -> bool:
         """Soft delete an adjustment"""
         query = """
             UPDATE account_adjustments 
@@ -292,7 +295,10 @@ class AdjustmentRepository:
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND deleted_at IS NULL
         """
-        self.db.execute(query, (reason, adjustment_id))
+        if auto_commit:
+            self.db.execute(query, (reason, adjustment_id))
+        else:
+            self.db.execute_no_commit(query, (reason, adjustment_id))
         return True
 
     def get_downstream_activity_summary(
@@ -401,7 +407,7 @@ class AdjustmentRepository:
             "adjustments": later_adjustments,
         }
     
-    def restore(self, adjustment_id: int) -> bool:
+    def restore(self, adjustment_id: int, *, auto_commit: bool = True) -> bool:
         """Restore a soft-deleted adjustment"""
         query = """
             UPDATE account_adjustments 
@@ -410,7 +416,10 @@ class AdjustmentRepository:
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND deleted_at IS NOT NULL
         """
-        self.db.execute(query, (adjustment_id,))
+        if auto_commit:
+            self.db.execute(query, (adjustment_id,))
+        else:
+            self.db.execute_no_commit(query, (adjustment_id,))
         return True
     
     def _row_to_model(self, row) -> Optional[Adjustment]:
