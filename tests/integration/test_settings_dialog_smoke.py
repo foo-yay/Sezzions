@@ -35,13 +35,16 @@ def test_settings_gear_and_dialog_open_close(qtbot, temp_db_path):
     # Process pending events
     QtCore.QCoreApplication.processEvents()
     
-    # 1. Gear icon should exist and be accessible
+    # 1. Core tabs should be available
+    assert hasattr(window, "redemptions_tab"), "MainWindow should have redemptions_tab"
+
+    # 2. Gear icon should exist and be accessible
     assert hasattr(window, "_settings_gear"), "MainWindow should have _settings_gear attribute"
     gear = window._settings_gear
     assert gear is not None, "Settings gear button should exist"
     assert gear.isVisible() or gear.parent() is not None, "Settings gear should be visible or parented"
     
-    # 2. Trigger gear action (simulate click)
+    # 3. Trigger gear action (simulate click)
     # The gear should open a Settings dialog
     # We'll use QTimer to close it immediately after opening
     dialog_opened = []
@@ -65,7 +68,7 @@ def test_settings_gear_and_dialog_open_close(qtbot, temp_db_path):
     # Process events to allow dialog to open and be checked
     qtbot.wait(200)
     
-    # 3. Verify dialog opened
+    # 4. Verify dialog opened
     assert len(dialog_opened) > 0, "Settings dialog should have opened after gear click"
     
     # Cleanup

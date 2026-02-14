@@ -21,6 +21,10 @@ Rules:
 
 ## Ready for Review (Owner Approval Required)
 
+- [x] **Fix redemption edit session validation (UTC-aware)** (PR #110, Issue #109)
+  - Validation: QT_QPA_PLATFORM=offscreen pytest -q tests/unit/test_timestamp_service.py tests/integration/test_settings_dialog_smoke.py
+  - Manual: Queried DB for affected redemptions and confirmed closed sessions exist for the user/site pairs
+
 - [x] **Tax withholding moved to daily sessions only** (PR #34, Issue #29)
   - Validation: Database migration added tax columns to daily_sessions, removed from game_sessions schema
   - TaxWithholdingService rewritten for daily-only semantics (apply_to_daily_session, bulk_recalculate)

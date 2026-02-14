@@ -1916,19 +1916,23 @@ class RedemptionDialog(QtWidgets.QDialog):
                 adjusted_date = dt_module.strptime(adjusted_date_str, "%Y-%m-%d").date()
             else:
                 adjusted_date = adjusted_date_str
-            
+
             # Check if there's at least one CLOSED session for this site/user
-            # using the ADJUSTED timestamp
+            # using the ADJUSTED timestamp (stored as UTC in DB)
+            from tools.timezone_utils import get_configured_timezone_name, local_date_time_to_utc
+            tz_name = get_configured_timezone_name()
+            utc_date_str, utc_time_str = local_date_time_to_utc(adjusted_date, adjusted_time_str, tz_name)
+
             db = self.facade.game_session_repo.db
             cursor = db._connection.cursor()
             cursor.execute("""
                 SELECT COUNT(*) as session_count
                 FROM game_sessions
-                WHERE site_id = ? AND user_id = ? 
+                WHERE site_id = ? AND user_id = ?
                   AND status = 'Closed'
                   AND end_date IS NOT NULL
                   AND (end_date < ? OR (end_date = ? AND end_time <= ?))
-            """, (self.site_id, self.user_id, adjusted_date, adjusted_date, adjusted_time_str))
+            """, (self.site_id, self.user_id, utc_date_str, utc_date_str, utc_time_str))
             result = cursor.fetchone()
             has_closed_sessions = result["session_count"] > 0 if result else False
             
