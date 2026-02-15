@@ -21,6 +21,10 @@ Rules:
 
 ## Ready for Review (Owner Approval Required)
 
+- [x] **Keep Unrealized positions after partial redemptions** (PR #112, Issue #111)
+  - Validation: pytest -q tests/integration/test_issue_44_unrealized_live_balances.py::TestUnrealizedBalancesAfterSession::test_unrealized_date_filter_uses_local_timezone
+  - Manual: Queried Sixty6/fooyay data (remaining basis 59.97, total_sc 377.6) after partial redemption
+
 - [x] **Fix redemption edit session validation (UTC-aware)** (PR #110, Issue #109)
   - Validation: QT_QPA_PLATFORM=offscreen pytest -q tests/unit/test_timestamp_service.py tests/integration/test_settings_dialog_smoke.py
   - Manual: Queried DB for affected redemptions and confirmed closed sessions exist for the user/site pairs
