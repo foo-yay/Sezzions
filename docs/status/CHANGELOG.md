@@ -106,6 +106,43 @@ files_changed:
 
 ---
 
+```yaml
+id: 2026-02-15-06
+type: feature
+areas: [ui, settings, time]
+summary: "Add Time Zones settings and Travel Mode indicator"
+files_changed:
+  - repositories/database.py
+  - repositories/game_session_repository.py
+  - repositories/purchase_repository.py
+  - repositories/redemption_repository.py
+  - services/accounting_time_zone_service.py
+  - services/daily_sessions_service.py
+  - services/game_session_service.py
+  - services/redemption_service.py
+  - services/tax_withholding_service.py
+  - ui/settings_dialog.py
+  - ui/main_window.py
+  - tests/integration/test_accounting_timezone_change_rollback.py
+  - tests/integration/test_daily_sessions_accounting_timezone.py
+  - tests/integration/test_dual_timezone_entry_display.py
+  - tests/integration/test_timezone_storage.py
+  - tests/ui/test_settings_undo_retention_ui.py
+  - tests/unit/test_game_session_service.py
+  - tests/unit/test_realized_transaction_repository.py
+  - tests/unit/test_report_service.py
+  - tests/unit/test_tax_withholding_service.py
+  - docs/PROJECT_SPEC.md
+```
+
+**Feature: Time Zones Settings + Travel Mode Banner**
+
+- Settings now include a Time Zones section with Accounting TZ, Entry TZ (Travel Mode), and effective-dated change flow.
+- Accounting TZ changes prompt for an effective timestamp and recommend backup before rebucketing daily totals.
+- Main window shows a Travel Mode banner; new redemptions persist the entry time zone.
+
+---
+
 ## 2026-02-14
 
 ```yaml

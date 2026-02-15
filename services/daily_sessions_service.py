@@ -70,37 +70,41 @@ class DailySessionsService:
                 params.extend(sites)
 
         start_date, end_date = active_date_filter
-        from tools.timezone_utils import get_configured_timezone_name, local_date_range_to_utc_bounds
-        tz_name = get_configured_timezone_name()
+        from services.accounting_time_zone_service import AccountingTimeZoneResolver
+
+        resolver = AccountingTimeZoneResolver(self.db)
+        use_sql_bounds = len(getattr(resolver, "_entries", [])) <= 1
 
         if not start_date and not end_date:
             start_date = date_type(date_type.today().year, 1, 1)
             end_date = date_type.today()
 
-        if start_date:
-            start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
-            query += " AND (COALESCE(gs.end_date, gs.session_date) > ? OR (COALESCE(gs.end_date, gs.session_date) = ? AND COALESCE(gs.end_time, gs.session_time, '00:00:00') >= ?))"
-            params.extend([start_utc[0], start_utc[0], start_utc[1]])
+        if use_sql_bounds and (start_date or end_date):
+            from tools.timezone_utils import local_date_range_to_utc_bounds
 
-        if end_date:
-            _, end_utc = local_date_range_to_utc_bounds(end_date, end_date, tz_name)
-            query += " AND (COALESCE(gs.end_date, gs.session_date) < ? OR (COALESCE(gs.end_date, gs.session_date) = ? AND COALESCE(gs.end_time, gs.session_time, '00:00:00') <= ?))"
-            params.extend([end_utc[0], end_utc[0], end_utc[1]])
+            tz_name = resolver._entries[0].tz_name
+            if start_date:
+                start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
+                query += " AND (COALESCE(gs.end_date, gs.session_date) > ? OR (COALESCE(gs.end_date, gs.session_date) = ? AND COALESCE(gs.end_time, gs.session_time, '00:00:00') >= ?))"
+                params.extend([start_utc[0], start_utc[0], start_utc[1]])
+            if end_date:
+                _, end_utc = local_date_range_to_utc_bounds(end_date, end_date, tz_name)
+                query += " AND (COALESCE(gs.end_date, gs.session_date) < ? OR (COALESCE(gs.end_date, gs.session_date) = ? AND COALESCE(gs.end_time, gs.session_time, '00:00:00') <= ?))"
+                params.extend([end_utc[0], end_utc[0], end_utc[1]])
 
         query += " ORDER BY gs.session_date DESC, u.name, s.name, gs.session_time"
         rows = self.db.fetch_all(query, tuple(params))
 
         sessions: List[Dict] = []
-        from tools.timezone_utils import utc_date_time_to_local
         for row in rows:
             session_date = row["session_date"]
             start_time = row["start_time"] or "00:00:00"
-            session_date, start_time = utc_date_time_to_local(session_date, start_time, tz_name)
+            session_date, start_time = resolver.utc_to_accounting_local(session_date, start_time)
 
-            end_date = row["end_date"]
+            session_end_date = row["end_date"]
             end_time = row["end_time"] or ""
-            if end_date:
-                end_date, end_time = utc_date_time_to_local(end_date, end_time or "00:00:00", tz_name)
+            if session_end_date:
+                session_end_date, end_time = resolver.utc_to_accounting_local(session_end_date, end_time or "00:00:00")
             delta_total = float(row["delta_total"] or 0.0)
             delta_redeem = row["delta_redeem"]
             if delta_redeem is None:
@@ -146,6 +150,12 @@ class DailySessionsService:
                 if value is not None
             )
 
+            if start_date or end_date:
+                if start_date and session_date < start_date:
+                    continue
+                if end_date and session_date > end_date:
+                    continue
+
             sessions.append(
                 {
                     "id": row["id"],
@@ -162,7 +172,7 @@ class DailySessionsService:
                     "start_redeem": start_redeem,
                     "end_redeem": end_redeem,
                     "start_time": start_time or "",
-                    "end_date": end_date,
+                    "end_date": session_end_date,
                     "end_time": end_time or "",
                     "delta_total": delta_total,
                     "delta_redeem": delta_redeem,
@@ -269,14 +279,12 @@ class DailySessionsService:
             VALUES (?, ?)
             ON CONFLICT(session_date) DO UPDATE SET notes = excluded.notes
             """,
-            (notes if notes else None, session_date),
+            (session_date, notes if notes else None),
         )
 
     def group_sessions(self, sessions: List[Dict], daily_tax_data: Optional[Dict] = None) -> List[Dict]:
         from collections import defaultdict
-
-        if daily_tax_data is None:
-            daily_tax_data = {}
+        daily_tax_data = daily_tax_data or {}
 
         dates = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         for sess in sessions:

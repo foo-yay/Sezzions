@@ -40,9 +40,9 @@ class TaxWithholdingService:
         return bool(row)
 
     def _get_timezone_name(self) -> str:
-        from tools.timezone_utils import get_configured_timezone_name
+        from tools.timezone_utils import get_accounting_timezone_name
 
-        return get_configured_timezone_name(self.settings)
+        return get_accounting_timezone_name(self.settings)
 
     def _parse_local_date(self, value: str | date_type) -> date_type:
         if isinstance(value, date_type):
@@ -72,32 +72,35 @@ class TaxWithholdingService:
 
         if start_date or end_date:
             from tools.timezone_utils import local_date_range_to_utc_bounds
+            from services.accounting_time_zone_service import AccountingTimeZoneResolver
 
-            tz_name = self._get_timezone_name()
-            start_value = start_date or end_date
-            end_value = end_date or start_date
-            if start_value and end_value:
-                start_utc, end_utc = local_date_range_to_utc_bounds(start_value, end_value, tz_name)
-                query += (
-                    " AND (COALESCE(end_date, session_date) > ? OR "
-                    "(COALESCE(end_date, session_date) = ? AND COALESCE(end_time, session_time, '00:00:00') >= ?))"
-                    " AND (COALESCE(end_date, session_date) < ? OR "
-                    "(COALESCE(end_date, session_date) = ? AND COALESCE(end_time, session_time, '00:00:00') <= ?))"
-                )
-                params.extend([start_utc[0], start_utc[0], start_utc[1], end_utc[0], end_utc[0], end_utc[1]])
+            resolver = AccountingTimeZoneResolver(self.db, self.settings)
+            if len(getattr(resolver, "_entries", [])) <= 1:
+                tz_name = self._get_timezone_name()
+                start_value = start_date or end_date
+                end_value = end_date or start_date
+                if start_value and end_value:
+                    start_utc, end_utc = local_date_range_to_utc_bounds(start_value, end_value, tz_name)
+                    query += (
+                        " AND (COALESCE(end_date, session_date) > ? OR "
+                        "(COALESCE(end_date, session_date) = ? AND COALESCE(end_time, session_time, '00:00:00') >= ?))"
+                        " AND (COALESCE(end_date, session_date) < ? OR "
+                        "(COALESCE(end_date, session_date) = ? AND COALESCE(end_time, session_time, '00:00:00') <= ?))"
+                    )
+                    params.extend([start_utc[0], start_utc[0], start_utc[1], end_utc[0], end_utc[0], end_utc[1]])
 
         return self.db.fetch_all(query, tuple(params))
 
     def _iter_local_dates(self, rows: Iterable[dict]) -> Iterable[tuple[date_type, Decimal]]:
-        from tools.timezone_utils import utc_date_time_to_local
+        from services.accounting_time_zone_service import AccountingTimeZoneResolver
 
-        tz_name = self._get_timezone_name()
+        resolver = AccountingTimeZoneResolver(self.db, self.settings)
         for row in rows:
             accounting_date = row.get("end_date") or row.get("session_date")
             accounting_time = row.get("end_time") or row.get("session_time") or "00:00:00"
             if not accounting_date:
                 continue
-            local_date, _ = utc_date_time_to_local(accounting_date, accounting_time, tz_name)
+            local_date, _ = resolver.utc_to_accounting_local(accounting_date, accounting_time)
             try:
                 net_taxable = Decimal(str(row.get("net_taxable_pl") or 0))
             except Exception:

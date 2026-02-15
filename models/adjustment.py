@@ -23,6 +23,7 @@ class Adjustment:
     type: AdjustmentType
     reason: str
     effective_time: str = "00:00:00"
+    effective_entry_time_zone: Optional[str] = None
     delta_basis_usd: Decimal = Decimal("0.00")
     checkpoint_total_sc: Decimal = Decimal("0.00")
     checkpoint_redeemable_sc: Decimal = Decimal("0.00")

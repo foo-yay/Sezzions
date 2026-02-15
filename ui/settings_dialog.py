@@ -8,6 +8,103 @@ Provides a centralized Settings UI with sections:
 from PySide6 import QtWidgets, QtCore, QtGui
 
 
+class AccountingTimeZoneChangeDialog(QtWidgets.QDialog):
+    """Dialog to confirm Accounting TZ changes with effective date/time."""
+
+    def __init__(self, current_tz: str, timezones: list[str], selected_tz: str | None = None, parent=None, open_tools_callback=None):
+        super().__init__(parent)
+        self.setWindowTitle("Change Accounting Time Zone")
+        self.setModal(True)
+        self.setMinimumSize(520, 320)
+        self._open_tools_callback = open_tools_callback
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        title = QtWidgets.QLabel("🕒 Change Accounting Time Zone")
+        title.setObjectName("PageTitle")
+        layout.addWidget(title)
+
+        info = QtWidgets.QLabel(
+            "Accounting time zone changes can rebucket daily totals from the effective date forward.\n"
+            "A backup is strongly recommended before applying this change."
+        )
+        info.setWordWrap(True)
+        info.setObjectName("HelperText")
+        layout.addWidget(info)
+
+        form = QtWidgets.QFormLayout()
+        form.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+        self.tz_combo = QtWidgets.QComboBox()
+        self.tz_combo.setEditable(True)
+        self.tz_combo.addItems(timezones)
+        if selected_tz:
+            idx = self.tz_combo.findText(selected_tz)
+            if idx >= 0:
+                self.tz_combo.setCurrentIndex(idx)
+            else:
+                self.tz_combo.setCurrentText(selected_tz)
+        else:
+            idx = self.tz_combo.findText(current_tz)
+            if idx >= 0:
+                self.tz_combo.setCurrentIndex(idx)
+        form.addRow("New Accounting TZ:", self.tz_combo)
+
+        self.effective_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
+        self.effective_date.setCalendarPopup(True)
+        self.effective_date.setDisplayFormat("yyyy-MM-dd")
+        form.addRow("Effective date:", self.effective_date)
+
+        self.effective_time = QtWidgets.QLineEdit(QtCore.QTime.currentTime().toString("HH:mm:ss"))
+        self.effective_time.setPlaceholderText("HH:MM or HH:MM:SS")
+        form.addRow("Effective time:", self.effective_time)
+
+        layout.addLayout(form)
+
+        backup_row = QtWidgets.QHBoxLayout()
+        backup_label = QtWidgets.QLabel("Backup recommended before rebucketing.")
+        backup_label.setObjectName("HelperText")
+        backup_row.addWidget(backup_label)
+        backup_row.addStretch()
+        backup_btn = QtWidgets.QPushButton("Open Tools")
+        backup_btn.clicked.connect(self._open_tools)
+        backup_row.addWidget(backup_btn)
+        layout.addLayout(backup_row)
+
+        self.confirm_checkbox = QtWidgets.QCheckBox("I understand daily totals may change for affected dates")
+        self.confirm_checkbox.toggled.connect(self._on_confirm_changed)
+        layout.addWidget(self.confirm_checkbox)
+
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Cancel | QtWidgets.QDialogButtonBox.StandardButton.Ok
+        )
+        self._ok_button = buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Ok)
+        self._ok_button.setEnabled(False)
+        buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self._on_accept)
+        layout.addWidget(buttons)
+
+    def _on_confirm_changed(self, checked: bool):
+        self._ok_button.setEnabled(bool(checked))
+
+    def _open_tools(self):
+        if self._open_tools_callback:
+            self._open_tools_callback()
+
+    def _on_accept(self):
+        if not self.confirm_checkbox.isChecked():
+            return
+        self.accept()
+
+    def values(self) -> tuple[str, str, str]:
+        tz_name = self.tz_combo.currentText().strip()
+        effective_date = self.effective_date.date().toString("yyyy-MM-dd")
+        effective_time = self.effective_time.text().strip() or "00:00:00"
+        return tz_name, effective_date, effective_time
+
+
 class SettingsDialog(QtWidgets.QDialog):
     """
     Centralized Settings dialog with left navigation and section content.
@@ -21,6 +118,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.setMinimumSize(700, 500)
         self.setModal(True)
         self._initial_max_undo = None  # Track initial value for warning (Issue #95)
+        self._pending_accounting_tz_change = None
         
         self._setup_ui()
         self._load_settings()
@@ -30,7 +128,7 @@ class SettingsDialog(QtWidgets.QDialog):
         # Left navigation list
         self.nav_list = QtWidgets.QListWidget()
         self.nav_list.setMaximumWidth(180)
-        self.nav_list.addItems(["Notifications", "Display", "Taxes", "Data"])
+        self.nav_list.addItems(["Notifications", "Display", "Time Zones", "Taxes", "Data"])
         self.nav_list.setCurrentRow(0)
         self.nav_list.currentRowChanged.connect(self._on_section_changed)
         
@@ -38,6 +136,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.content_stack = QtWidgets.QStackedWidget()
         self.content_stack.addWidget(self._build_notifications_section())
         self.content_stack.addWidget(self._build_display_section())
+        self.content_stack.addWidget(self._build_time_zones_section())
         self.content_stack.addWidget(self._build_taxes_section())
         self.content_stack.addWidget(self._build_data_section())
         
@@ -179,21 +278,6 @@ class SettingsDialog(QtWidgets.QDialog):
         layout.setAlignment(theme_label, QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         layout.setAlignment(self.theme_combo, QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
 
-        # Time zone selector
-        tz_label = QtWidgets.QLabel("Time Zone:")
-        tz_label.setToolTip("Select the time zone used for date/time display")
-        tz_label.setObjectName("FieldLabel")
-        tz_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
-        self.timezone_combo = QtWidgets.QComboBox()
-        self.timezone_combo.setEditable(True)
-        from tools.timezone_utils import list_timezones
-        tz_list = list_timezones()
-        self.timezone_combo.addItems(tz_list)
-        tz_label.setMinimumHeight(self.timezone_combo.sizeHint().height())
-        layout.addRow(tz_label, self.timezone_combo)
-        layout.setAlignment(tz_label, QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
-        layout.setAlignment(self.timezone_combo, QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
-        
         # Info label
         info_label = QtWidgets.QLabel(
             "<i>Theme changes take effect immediately after saving.</i>"
@@ -202,6 +286,64 @@ class SettingsDialog(QtWidgets.QDialog):
         info_label.setObjectName("HelperText")
         layout.addRow(info_label)
         
+        return widget
+
+    def _build_time_zones_section(self):
+        """Build Time Zones settings section."""
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QFormLayout(widget)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+        layout.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+        title = QtWidgets.QLabel("🕒 Time Zones")
+        title.setObjectName("PageTitle")
+        layout.addRow(title)
+
+        from tools.timezone_utils import list_timezones
+        tz_list = list_timezones()
+
+        accounting_label = QtWidgets.QLabel("Accounting Time Zone:")
+        accounting_label.setToolTip("Controls daily bucketing and reports")
+        accounting_label.setObjectName("FieldLabel")
+        accounting_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.accounting_tz_combo = QtWidgets.QComboBox()
+        self.accounting_tz_combo.setEditable(True)
+        self.accounting_tz_combo.addItems(tz_list)
+        accounting_label.setMinimumHeight(self.accounting_tz_combo.sizeHint().height())
+        layout.addRow(accounting_label, self.accounting_tz_combo)
+        layout.setAlignment(accounting_label, QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        layout.setAlignment(self.accounting_tz_combo, QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+        self.change_accounting_tz_button = QtWidgets.QPushButton("Change Accounting TZ...")
+        self.change_accounting_tz_button.setToolTip("Set effective date/time and rebucket daily totals")
+        self.change_accounting_tz_button.clicked.connect(self._on_accounting_tz_change_clicked)
+        layout.addRow("", self.change_accounting_tz_button)
+
+        self.travel_mode_checkbox = QtWidgets.QCheckBox("Enable Travel Mode (Entry Time Zone)")
+        self.travel_mode_checkbox.setToolTip("Use a separate time zone when entering new data")
+        self.travel_mode_checkbox.toggled.connect(self._on_travel_mode_toggle)
+        layout.addRow("", self.travel_mode_checkbox)
+
+        current_label = QtWidgets.QLabel("Current Entry Time Zone:")
+        current_label.setToolTip("Used for new entries when Travel Mode is enabled")
+        current_label.setObjectName("FieldLabel")
+        current_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.current_tz_combo = QtWidgets.QComboBox()
+        self.current_tz_combo.setEditable(True)
+        self.current_tz_combo.addItems(tz_list)
+        current_label.setMinimumHeight(self.current_tz_combo.sizeHint().height())
+        layout.addRow(current_label, self.current_tz_combo)
+        layout.setAlignment(current_label, QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        layout.setAlignment(self.current_tz_combo, QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
+
+        info_label = QtWidgets.QLabel(
+            "<i>Accounting time zone controls reporting dates. Entry time zone controls how new timestamps are interpreted.</i>"
+        )
+        info_label.setWordWrap(True)
+        info_label.setObjectName("HelperText")
+        layout.addRow(info_label)
+
         return widget
     
     def _build_taxes_section(self):
@@ -354,6 +496,33 @@ class SettingsDialog(QtWidgets.QDialog):
     def _on_section_changed(self, index):
         """Switch displayed section when nav list selection changes."""
         self.content_stack.setCurrentIndex(index)
+
+    def _on_travel_mode_toggle(self, checked: bool):
+        self.current_tz_combo.setEnabled(bool(checked))
+
+    def _open_tools_tab(self):
+        parent = self.parent()
+        if parent and hasattr(parent, "switch_to_tab"):
+            parent.switch_to_tab("Tools")
+
+    def _on_accounting_tz_change_clicked(self):
+        current_tz = self.accounting_tz_combo.currentText().strip()
+        dialog = AccountingTimeZoneChangeDialog(
+            current_tz=current_tz,
+            timezones=[self.accounting_tz_combo.itemText(i) for i in range(self.accounting_tz_combo.count())],
+            selected_tz=current_tz,
+            parent=self,
+            open_tools_callback=self._open_tools_tab,
+        )
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            new_tz, effective_date, effective_time = dialog.values()
+            if new_tz:
+                self.accounting_tz_combo.setCurrentText(new_tz)
+            self._pending_accounting_tz_change = {
+                "time_zone": new_tz,
+                "effective_date": effective_date,
+                "effective_time": effective_time,
+            }
     
     def _load_settings(self):
         """Load current settings values into UI controls."""
@@ -379,13 +548,25 @@ class SettingsDialog(QtWidgets.QDialog):
             self.theme_combo.setCurrentIndex(theme_index)
 
         # Time zone selection
-        current_tz = self.settings.settings.get("time_zone")
-        if current_tz:
-            tz_index = self.timezone_combo.findText(current_tz)
+        accounting_tz = self.settings.settings.get("accounting_time_zone") or self.settings.settings.get("time_zone")
+        if accounting_tz:
+            tz_index = self.accounting_tz_combo.findText(accounting_tz)
             if tz_index >= 0:
-                self.timezone_combo.setCurrentIndex(tz_index)
+                self.accounting_tz_combo.setCurrentIndex(tz_index)
             else:
-                self.timezone_combo.setCurrentText(current_tz)
+                self.accounting_tz_combo.setCurrentText(accounting_tz)
+
+        travel_mode_enabled = self.settings.settings.get("travel_mode_enabled", False)
+        self.travel_mode_checkbox.setChecked(travel_mode_enabled)
+
+        current_tz = self.settings.settings.get("current_time_zone") or accounting_tz
+        if current_tz:
+            tz_index = self.current_tz_combo.findText(current_tz)
+            if tz_index >= 0:
+                self.current_tz_combo.setCurrentIndex(tz_index)
+            else:
+                self.current_tz_combo.setCurrentText(current_tz)
+        self.current_tz_combo.setEnabled(travel_mode_enabled)
         
         # Tax withholding settings
         tax_enabled = self.settings.settings.get("tax_withholding_enabled", False)
@@ -434,11 +615,66 @@ class SettingsDialog(QtWidgets.QDialog):
         self.settings.settings["theme"] = selected_theme
 
         # Write time zone settings
-        previous_tz = self.settings.settings.get("time_zone")
-        selected_tz = self.timezone_combo.currentText().strip()
-        if selected_tz:
-            self.settings.settings["time_zone"] = selected_tz
+        previous_tz = self.settings.settings.get("accounting_time_zone") or self.settings.settings.get("time_zone")
+        selected_accounting_tz = self.accounting_tz_combo.currentText().strip()
+        if not selected_accounting_tz:
+            selected_accounting_tz = previous_tz
+
+        effective_change = None
+        if selected_accounting_tz and selected_accounting_tz != previous_tz:
+            if self._pending_accounting_tz_change and self._pending_accounting_tz_change.get("time_zone") == selected_accounting_tz:
+                effective_change = self._pending_accounting_tz_change
+            else:
+                dialog = AccountingTimeZoneChangeDialog(
+                    current_tz=previous_tz or selected_accounting_tz,
+                    timezones=[self.accounting_tz_combo.itemText(i) for i in range(self.accounting_tz_combo.count())],
+                    selected_tz=selected_accounting_tz,
+                    parent=self,
+                    open_tools_callback=self._open_tools_tab,
+                )
+                if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
+                    return
+                new_tz, effective_date, effective_time = dialog.values()
+                if not new_tz:
+                    return
+                selected_accounting_tz = new_tz
+                self.accounting_tz_combo.setCurrentText(new_tz)
+                effective_change = {
+                    "time_zone": new_tz,
+                    "effective_date": effective_date,
+                    "effective_time": effective_time,
+                }
+
+        self.settings.settings["accounting_time_zone"] = selected_accounting_tz
+        self.settings.settings["time_zone"] = selected_accounting_tz
+
+        travel_mode_enabled = self.travel_mode_checkbox.isChecked()
+        self.settings.settings["travel_mode_enabled"] = travel_mode_enabled
+        selected_current_tz = self.current_tz_combo.currentText().strip() if travel_mode_enabled else selected_accounting_tz
+        self.settings.settings["current_time_zone"] = selected_current_tz or selected_accounting_tz
         
+        # Apply accounting TZ history change (if any)
+        if effective_change and self.parent() and hasattr(self.parent(), "facade"):
+            facade = self.parent().facade
+            if hasattr(facade, "db"):
+                from services.accounting_time_zone_service import AccountingTimeZoneService
+                tz_service = AccountingTimeZoneService(facade.db, self.settings)
+                effective_utc_ts = tz_service.add_history_entry(
+                    effective_change["time_zone"],
+                    effective_change["effective_date"],
+                    effective_change["effective_time"],
+                    reason="Settings change",
+                )
+                tz_service.recompute_from_utc(effective_utc_ts)
+                try:
+                    facade.db.log_audit(
+                        "ACCOUNTING_TZ_CHANGE",
+                        "accounting_time_zone_history",
+                        f"{previous_tz} -> {effective_change['time_zone']} effective {effective_change['effective_date']} {effective_change['effective_time']}",
+                    )
+                except Exception:
+                    pass
+
         # Write tax withholding settings
         self.settings.settings["tax_withholding_enabled"] = self.tax_withholding_enabled_checkbox.isChecked()
         self.settings.settings["tax_withholding_default_rate_pct"] = self.tax_withholding_rate_spin.value()
@@ -516,7 +752,7 @@ class SettingsDialog(QtWidgets.QDialog):
             self.parent().apply_theme(selected_theme)
 
         # Refresh data if time zone changed
-        if previous_tz != self.settings.settings.get("time_zone"):
+        if previous_tz != selected_accounting_tz:
             if self.parent() and hasattr(self.parent(), 'refresh_all_tabs'):
                 self.parent().refresh_all_tabs()
         

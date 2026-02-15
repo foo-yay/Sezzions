@@ -20,6 +20,7 @@ class Purchase:
     cashback_is_manual: bool = False
     card_id: Optional[int] = None
     purchase_time: Optional[str] = None
+    purchase_entry_time_zone: Optional[str] = None
     remaining_amount: Optional[Decimal] = None
     status: Optional[str] = None  # 'active', 'dormant', or NULL
     notes: Optional[str] = None

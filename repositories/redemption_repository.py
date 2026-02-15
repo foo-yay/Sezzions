@@ -5,9 +5,10 @@ from typing import Optional, List
 from decimal import Decimal
 from datetime import date, datetime
 from tools.timezone_utils import (
-    get_configured_timezone_name,
-    local_date_time_to_utc,
+    get_accounting_timezone_name,
+    get_entry_timezone_name,
     local_date_range_to_utc_bounds,
+    local_date_time_to_utc,
     utc_date_time_to_local,
 )
 from models.redemption import Redemption
@@ -58,7 +59,7 @@ class RedemptionRepository:
             WHERE r.deleted_at IS NULL
         """
         params = []
-        tz_name = get_configured_timezone_name()
+        tz_name = get_accounting_timezone_name()
         
         if start_date:
             start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
@@ -122,17 +123,18 @@ class RedemptionRepository:
     
     def create(self, redemption: Redemption) -> Redemption:
         """Create new redemption"""
-        tz_name = get_configured_timezone_name()
+        entry_tz = redemption.redemption_entry_time_zone or get_entry_timezone_name()
         utc_date, utc_time = local_date_time_to_utc(
             redemption.redemption_date,
             redemption.redemption_time,
-            tz_name,
+            entry_tz,
         )
         query = """
             INSERT INTO redemptions 
-            (user_id, site_id, amount, fees, redemption_date, redemption_time, 
-             redemption_method_id, is_free_sc, receipt_date, processed, more_remaining, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (user_id, site_id, amount, fees, redemption_date, redemption_time,
+             redemption_entry_time_zone, redemption_method_id, is_free_sc,
+             receipt_date, processed, more_remaining, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         redemption_id = self.db.execute(query, (
             redemption.user_id,
@@ -141,6 +143,7 @@ class RedemptionRepository:
             str(redemption.fees),
             utc_date,
             utc_time,
+            entry_tz,
             redemption.redemption_method_id,
             1 if redemption.is_free_sc else 0,
             redemption.receipt_date.isoformat() if redemption.receipt_date else None,
@@ -149,6 +152,7 @@ class RedemptionRepository:
             redemption.notes
         ))
         redemption.id = redemption_id
+        redemption.redemption_entry_time_zone = entry_tz
         return redemption
     
     def update(self, redemption: Redemption) -> Redemption:
@@ -156,17 +160,17 @@ class RedemptionRepository:
         if not redemption.id:
             raise ValueError("Cannot update redemption without ID")
 
-        tz_name = get_configured_timezone_name()
+        entry_tz = redemption.redemption_entry_time_zone or get_entry_timezone_name()
         utc_date, utc_time = local_date_time_to_utc(
             redemption.redemption_date,
             redemption.redemption_time,
-            tz_name,
+            entry_tz,
         )
         
         query = """
             UPDATE redemptions
             SET user_id = ?, site_id = ?, amount = ?, fees = ?, redemption_date = ?, 
-                redemption_time = ?, redemption_method_id = ?, is_free_sc = ?,
+                redemption_time = ?, redemption_entry_time_zone = ?, redemption_method_id = ?, is_free_sc = ?,
                 receipt_date = ?, processed = ?, more_remaining = ?,
                 notes = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -178,6 +182,7 @@ class RedemptionRepository:
             str(redemption.fees),
             utc_date,
             utc_time,
+            entry_tz,
             redemption.redemption_method_id,
             1 if redemption.is_free_sc else 0,
             redemption.receipt_date.isoformat() if redemption.receipt_date else None,
@@ -186,6 +191,7 @@ class RedemptionRepository:
             redemption.notes,
             redemption.id
         ))
+        redemption.redemption_entry_time_zone = entry_tz
         return redemption
     
     def delete(self, redemption_id: int) -> None:
@@ -205,11 +211,11 @@ class RedemptionRepository:
         if isinstance(redemption_date, str):
             redemption_date = datetime.strptime(redemption_date, "%Y-%m-%d").date()
 
-        tz_name = get_configured_timezone_name()
+        entry_tz = row.get('redemption_entry_time_zone') or get_entry_timezone_name()
         redemption_date, redemption_time = utc_date_time_to_local(
             redemption_date,
             row['redemption_time'] if 'redemption_time' in row.keys() else None,
-            tz_name,
+            entry_tz,
         )
         
         redemption = Redemption(
@@ -222,6 +228,7 @@ class RedemptionRepository:
             cost_basis=Decimal(str(row['cost_basis'])) if 'cost_basis' in row.keys() and row['cost_basis'] is not None else None,
             taxable_profit=Decimal(str(row['taxable_profit'])) if 'taxable_profit' in row.keys() and row['taxable_profit'] is not None else None,
             redemption_time=redemption_time,
+            redemption_entry_time_zone=row.get('redemption_entry_time_zone') or entry_tz,
             redemption_method_id=row['redemption_method_id'] if 'redemption_method_id' in row.keys() else None,
             receipt_date=row['receipt_date'] if 'receipt_date' in row.keys() else None,
             processed=bool(row['processed']) if 'processed' in row.keys() else False,

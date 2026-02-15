@@ -6,9 +6,10 @@ from datetime import date, datetime
 from decimal import Decimal
 from models.expense import Expense
 from tools.timezone_utils import (
-    get_configured_timezone_name,
-    local_date_time_to_utc,
+    get_accounting_timezone_name,
+    get_entry_timezone_name,
     local_date_range_to_utc_bounds,
+    local_date_time_to_utc,
     utc_date_time_to_local,
 )
 
@@ -37,7 +38,7 @@ class ExpenseRepository:
             WHERE 1=1
         """
         params = []
-        tz_name = get_configured_timezone_name()
+        tz_name = get_accounting_timezone_name()
         if start_date:
             start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
             query += " AND (e.expense_date > ? OR (e.expense_date = ? AND COALESCE(e.expense_time, '00:00:00') >= ?))"
@@ -51,20 +52,24 @@ class ExpenseRepository:
         return [self._row_to_model(row) for row in rows]
 
     def create(self, expense: Expense) -> Expense:
-        tz_name = get_configured_timezone_name()
+        entry_tz = expense.expense_entry_time_zone or get_entry_timezone_name()
         utc_date, utc_time = local_date_time_to_utc(
             expense.expense_date,
             expense.expense_time,
-            tz_name,
+            entry_tz,
         )
         expense_id = self.db.execute(
             """
-            INSERT INTO expenses (expense_date, expense_time, amount, vendor, description, category, user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO expenses (
+                expense_date, expense_time, expense_entry_time_zone,
+                amount, vendor, description, category, user_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 utc_date,
                 utc_time,
+                entry_tz,
                 str(expense.amount),
                 expense.vendor,
                 expense.description,
@@ -73,27 +78,29 @@ class ExpenseRepository:
             ),
         )
         expense.id = expense_id
+        expense.expense_entry_time_zone = entry_tz
         return expense
 
     def update(self, expense: Expense) -> Expense:
         if not expense.id:
             raise ValueError("Cannot update expense without ID")
-        tz_name = get_configured_timezone_name()
+        entry_tz = expense.expense_entry_time_zone or get_entry_timezone_name()
         utc_date, utc_time = local_date_time_to_utc(
             expense.expense_date,
             expense.expense_time,
-            tz_name,
+            entry_tz,
         )
         self.db.execute(
             """
             UPDATE expenses
-            SET expense_date = ?, expense_time = ?, amount = ?, vendor = ?, description = ?, category = ?,
-                user_id = ?, updated_at = CURRENT_TIMESTAMP
+            SET expense_date = ?, expense_time = ?, expense_entry_time_zone = ?, amount = ?, vendor = ?,
+                description = ?, category = ?, user_id = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
             (
                 utc_date,
                 utc_time,
+                entry_tz,
                 str(expense.amount),
                 expense.vendor,
                 expense.description,
@@ -102,6 +109,7 @@ class ExpenseRepository:
                 expense.id,
             ),
         )
+        expense.expense_entry_time_zone = entry_tz
         return expense
 
     def delete(self, expense_id: int) -> None:
@@ -111,11 +119,11 @@ class ExpenseRepository:
         expense_date = row["expense_date"]
         if isinstance(expense_date, str):
             expense_date = datetime.strptime(expense_date, "%Y-%m-%d").date()
-        tz_name = get_configured_timezone_name()
+        entry_tz = row.get("expense_entry_time_zone") or get_entry_timezone_name()
         expense_date, expense_time = utc_date_time_to_local(
             expense_date,
             row["expense_time"] if "expense_time" in row.keys() else None,
-            tz_name,
+            entry_tz,
         )
         expense = Expense(
             id=row["id"],
@@ -126,6 +134,7 @@ class ExpenseRepository:
             category=row["category"] if "category" in row.keys() else None,
             user_id=row["user_id"] if "user_id" in row.keys() else None,
             expense_time=expense_time,
+            expense_entry_time_zone=row.get("expense_entry_time_zone") or entry_tz,
             created_at=row["created_at"] if "created_at" in row.keys() else None,
             updated_at=row["updated_at"] if "updated_at" in row.keys() else None,
         )

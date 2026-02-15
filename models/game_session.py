@@ -25,6 +25,8 @@ class GameSession:
     game_type_id: Optional[int] = None
     end_date: Optional[date] = None
     end_time: Optional[str] = None
+    start_entry_time_zone: Optional[str] = None
+    end_entry_time_zone: Optional[str] = None
     
     # Balance fields (required for proper P/L calculation)
     starting_balance: Decimal = Decimal("0.00")  # Total SC at start

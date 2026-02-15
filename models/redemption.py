@@ -19,6 +19,7 @@ class Redemption:
     fees: Decimal = Decimal("0.00")
     redemption_method_id: Optional[int] = None
     redemption_time: Optional[str] = None
+    redemption_entry_time_zone: Optional[str] = None
     receipt_date: Optional[date] = None
     processed: bool = False
     more_remaining: bool = False

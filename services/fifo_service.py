@@ -21,6 +21,7 @@ class FIFOService:
         redemption_amount: Decimal,
         redemption_date,
         redemption_time: str = "23:59:59",
+        redemption_entry_time_zone: str | None = None,
     ) -> Tuple[Decimal, Decimal, List[Tuple[int, Decimal]]]:
         """
         Calculate cost basis and profit for a redemption using FIFO.
@@ -41,6 +42,7 @@ class FIFOService:
             site_id,
             redemption_date,
             redemption_time,
+            entry_time_zone=redemption_entry_time_zone,
         )
         
         # Allocate from purchases using FIFO
