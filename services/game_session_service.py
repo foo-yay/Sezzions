@@ -1098,20 +1098,19 @@ class GameSessionService:
         """
         # Get all distinct end_dates for this user/site from boundary onwards
         boundary_str = from_date.isoformat() if hasattr(from_date, 'isoformat') else str(from_date)
-        
-                rows = self.session_repo.db.fetch_all(
-                        """
-                        SELECT DISTINCT end_date, COALESCE(end_time, session_time, '00:00:00') as end_time
-                        FROM game_sessions
-                        WHERE user_id = ?
-                            AND site_id = ?
-                            AND status = 'Closed'
-                            AND end_date IS NOT NULL
-                            AND end_date >= ?
-                        """,
-                        (user_id, site_id, boundary_str)
-                )
-        
+        rows = self.session_repo.db.fetch_all(
+            """
+            SELECT DISTINCT end_date, COALESCE(end_time, session_time, '00:00:00') as end_time
+            FROM game_sessions
+            WHERE user_id = ?
+              AND site_id = ?
+              AND status = 'Closed'
+              AND end_date IS NOT NULL
+              AND end_date >= ?
+            """,
+            (user_id, site_id, boundary_str)
+        )
+
         from tools.timezone_utils import get_configured_timezone_name, utc_date_time_to_local
 
         tz_name = get_configured_timezone_name()
