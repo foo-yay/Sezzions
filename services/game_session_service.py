@@ -1137,7 +1137,7 @@ class GameSessionService:
             local_dates.add(local_date)
 
         # Recalculate tax if enabled
-        if hasattr(self, 'tax_withholding_service'):
+        if hasattr(self, 'tax_withholding_service') and self.tax_withholding_service:
             tax_service = self.tax_withholding_service
             config = tax_service.get_config()
             if config.enabled:
