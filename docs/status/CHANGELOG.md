@@ -52,6 +52,7 @@ type: bugfix
 areas: [daily-sessions, tax, time]
 summary: "Align tax set-aside rollups to local session dates"
 files_changed:
+  - services/game_session_service.py
   - services/tax_withholding_service.py
   - tests/unit/test_tax_withholding_service.py
   - docs/PROJECT_SPEC.md
