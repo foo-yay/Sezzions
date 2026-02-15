@@ -770,6 +770,8 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - Unrealized positions convert UTC timestamps to local dates for start/last-activity filtering in the UI.
 - Daily Sessions merges `daily_date_tax` by local session dates so Tax Set-Aside aligns with displayed rows.
 - Tax withholding rollups compute net daily P/L using local end dates (local day boundaries).
+- Tax and session P/L reports (and realized transaction filters) convert local date ranges to UTC bounds using stored timestamps.
+- Game session recalculation uses local timestamps converted to UTC when finding containing sessions.
 - One-time migration converts existing local timestamps to UTC using the currently selected time zone.
 
 **UI Integration:**

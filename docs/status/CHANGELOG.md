@@ -65,6 +65,29 @@ files_changed:
 
 ---
 
+```yaml
+id: 2026-02-15-04
+type: bugfix
+areas: [reports, sessions, time]
+summary: "Report filters and session boundaries use local day rules"
+files_changed:
+  - services/report_service.py
+  - repositories/realized_transaction_repository.py
+  - tests/unit/test_report_service.py
+  - tests/unit/test_realized_transaction_repository.py
+  - services/game_session_service.py
+  - tests/unit/test_game_session_service.py
+  - docs/PROJECT_SPEC.md
+```
+
+**Bugfix: Local-Date Report Filtering**
+
+- Tax/realized transaction filters and session P/L reports now convert local date ranges to UTC bounds.
+- Prevents late-night sessions/redemptions from being dropped when UTC dates roll over.
+- Containing-session recalculation now converts local timestamps to UTC for boundary queries.
+
+---
+
 ## 2026-02-14
 
 ```yaml

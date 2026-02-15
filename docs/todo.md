@@ -22,6 +22,10 @@ Rules:
 
 ## Ready for Review (Owner Approval Required)
 
+- [x] **Align report date filters to local day boundaries** (PR #116, Issue #115)
+  - Validation: pytest -q
+  - Manual: Not run (tests only)
+
 - [x] **Keep Unrealized positions after partial redemptions** (PR #112, Issue #111)
   - Validation: pytest -q tests/integration/test_issue_44_unrealized_live_balances.py::TestUnrealizedBalancesAfterSession::test_unrealized_date_filter_uses_local_timezone
   - Manual: Queried Sixty6/fooyay data (remaining basis 59.97, total_sc 377.6) after partial redemption

@@ -6,6 +6,8 @@ from decimal import Decimal
 from datetime import date
 from dataclasses import dataclass
 
+from tools.timezone_utils import get_configured_timezone_name, local_date_range_to_utc_bounds
+
 
 @dataclass
 class UserSummary:
@@ -208,13 +210,23 @@ class ReportService:
             where_parts.append("rt.site_id = ?")
             params.append(site_id)
         
+        tz_name = None
+        if start_date or end_date:
+            tz_name = get_configured_timezone_name()
+
         if start_date:
-            where_parts.append("rt.redemption_date >= ?")
-            params.append(start_date.isoformat())
+            start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
+            where_parts.append(
+                "(r.redemption_date > ? OR (r.redemption_date = ? AND COALESCE(r.redemption_time, '00:00:00') >= ?))"
+            )
+            params.extend([start_utc[0], start_utc[0], start_utc[1]])
         
         if end_date:
-            where_parts.append("rt.redemption_date <= ?")
-            params.append(end_date.isoformat())
+            _, end_utc = local_date_range_to_utc_bounds(end_date, end_date, tz_name)
+            where_parts.append(
+                "(r.redemption_date < ? OR (r.redemption_date = ? AND COALESCE(r.redemption_time, '00:00:00') <= ?))"
+            )
+            params.extend([end_utc[0], end_utc[0], end_utc[1]])
         
         where_clause = " AND ".join(where_parts)
         
@@ -224,6 +236,7 @@ class ReportService:
                 COALESCE(SUM(CAST(rt.payout AS REAL)), 0) as total_proceeds,
                 COALESCE(SUM(CAST(rt.net_pl AS REAL)), 0) as total_gain_loss
             FROM realized_transactions rt
+            LEFT JOIN redemptions r ON rt.redemption_id = r.id
             WHERE {where_clause}
         """
         
@@ -248,6 +261,7 @@ class ReportService:
         """
         where_parts = ["net_taxable_pl IS NOT NULL"]
         params = []
+        tz_name = None
         
         if user_id:
             where_parts.append("user_id = ?")
@@ -258,12 +272,20 @@ class ReportService:
             params.append(site_id)
         
         if start_date:
-            where_parts.append("session_date >= ?")
-            params.append(start_date.isoformat())
+            tz_name = get_configured_timezone_name()
+            start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
+            where_parts.append(
+                "(session_date > ? OR (session_date = ? AND COALESCE(session_time, '00:00:00') >= ?))"
+            )
+            params.extend([start_utc[0], start_utc[0], start_utc[1]])
         
         if end_date:
-            where_parts.append("session_date <= ?")
-            params.append(end_date.isoformat())
+            tz_name = tz_name or get_configured_timezone_name()
+            _, end_utc = local_date_range_to_utc_bounds(end_date, end_date, tz_name)
+            where_parts.append(
+                "(session_date < ? OR (session_date = ? AND COALESCE(session_time, '00:00:00') <= ?))"
+            )
+            params.extend([end_utc[0], end_utc[0], end_utc[1]])
         
         where_clause = " AND ".join(where_parts)
         

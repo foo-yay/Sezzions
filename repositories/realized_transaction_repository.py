@@ -6,6 +6,7 @@ from decimal import Decimal
 from datetime import date
 
 from models.realized_transaction import RealizedTransaction
+from tools.timezone_utils import get_configured_timezone_name, local_date_range_to_utc_bounds
 
 
 class RealizedTransactionRepository:
@@ -52,14 +53,20 @@ class RealizedTransactionRepository:
         
         params = []
         
-        # Date filters
+        tz_name = None
+        if start_date or end_date:
+            tz_name = get_configured_timezone_name()
+
+        # Date filters (local date range mapped to UTC bounds using redemption timestamps)
         if start_date:
-            query += " AND rt.redemption_date >= ?"
-            params.append(start_date.isoformat() if hasattr(start_date, 'isoformat') else start_date)
+            start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
+            query += " AND (r.redemption_date > ? OR (r.redemption_date = ? AND COALESCE(r.redemption_time, '00:00:00') >= ?))"
+            params.extend([start_utc[0], start_utc[0], start_utc[1]])
         
         if end_date:
-            query += " AND rt.redemption_date <= ?"
-            params.append(end_date.isoformat() if hasattr(end_date, 'isoformat') else end_date)
+            _, end_utc = local_date_range_to_utc_bounds(end_date, end_date, tz_name)
+            query += " AND (r.redemption_date < ? OR (r.redemption_date = ? AND COALESCE(r.redemption_time, '00:00:00') <= ?))"
+            params.extend([end_utc[0], end_utc[0], end_utc[1]])
         
         # Site filter
         if site_ids:
@@ -73,7 +80,7 @@ class RealizedTransactionRepository:
             query += f" AND rt.user_id IN ({placeholders})"
             params.extend(user_ids)
         
-        query += " ORDER BY rt.redemption_date DESC, rt.id DESC"
+        query += " ORDER BY r.redemption_date DESC, r.redemption_time DESC, rt.id DESC"
         
         rows = self.db.fetch_all(query, tuple(params))
         
