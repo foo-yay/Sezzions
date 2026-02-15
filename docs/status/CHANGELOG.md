@@ -46,6 +46,23 @@ files_changed:
 
 ---
 
+```yaml
+id: 2026-02-15-03
+type: bugfix
+areas: [daily-sessions, tax, time]
+summary: "Align tax set-aside rollups to local session dates"
+files_changed:
+  - services/tax_withholding_service.py
+  - tests/unit/test_tax_withholding_service.py
+  - docs/PROJECT_SPEC.md
+```
+
+**Bugfix: Local-Date Tax Rollups**
+
+- Tax withholding now computes net daily P/L using local end dates so set-aside matches Daily Sessions rollups.
+
+---
+
 ## 2026-02-14
 
 ```yaml
