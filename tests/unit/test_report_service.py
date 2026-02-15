@@ -203,6 +203,67 @@ def test_get_tax_report_with_filters(test_db, sample_user, sample_site, purchase
     assert tax_report["total_cost_basis"] == Decimal("50.00")
 
 
+def test_get_tax_report_uses_local_redemption_dates(
+    monkeypatch,
+    test_db,
+    sample_user,
+    sample_site,
+    purchase_repo,
+    redemption_service,
+):
+    """Tax report filters should respect local day boundaries."""
+    from models.purchase import Purchase
+    from tools.timezone_utils import local_date_time_to_utc
+
+    monkeypatch.setattr(
+        "repositories.redemption_repository.get_configured_timezone_name",
+        lambda: "America/New_York",
+    )
+    monkeypatch.setattr(
+        "services.report_service.get_configured_timezone_name",
+        lambda: "America/New_York",
+    )
+
+    purchase_repo.create(
+        Purchase(
+            user_id=sample_user.id,
+            site_id=sample_site.id,
+            amount=Decimal("100.00"),
+            purchase_date=date(2026, 1, 1),
+        )
+    )
+
+    redemption = redemption_service.create_redemption(
+        user_id=sample_user.id,
+        site_id=sample_site.id,
+        amount=Decimal("80.00"),
+        redemption_date=date(2026, 1, 1),
+        redemption_time="23:30:00",
+        apply_fifo=True,
+        more_remaining=True,
+    )
+
+    utc_date, _ = local_date_time_to_utc(
+        date(2026, 1, 1),
+        "23:30:00",
+        "America/New_York",
+    )
+    test_db.execute(
+        "UPDATE realized_transactions SET redemption_date = ? WHERE redemption_id = ?",
+        (utc_date, redemption.id),
+    )
+
+    report_service = ReportService(test_db)
+    tax_report = report_service.get_tax_report(
+        sample_user.id,
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 1, 1),
+    )
+
+    assert tax_report["total_cost_basis"] == Decimal("80.00")
+    assert tax_report["total_proceeds"] == Decimal("80.00")
+
+
 def test_get_session_profit_loss_report(test_db, sample_user, sample_site, sample_game, game_session_service):
     """Test session P/L report"""
     # Create winning session
@@ -277,6 +338,56 @@ def test_get_session_profit_loss_report_with_filters(test_db, sample_user, sampl
         end_date=date(2026, 1, 15)
     )
     
+    assert pl_report["total_sessions"] == 1
+    assert pl_report["total_pl"] == Decimal("20.00")
+
+
+def test_get_session_profit_loss_report_uses_local_session_dates(monkeypatch, test_db, sample_user, sample_site):
+    """Session P/L filters should respect local day boundaries."""
+    from tools.timezone_utils import local_date_time_to_utc
+
+    monkeypatch.setattr(
+        "services.report_service.get_configured_timezone_name",
+        lambda: "America/New_York",
+    )
+
+    cursor = test_db._connection.cursor()
+    first_date, first_time = local_date_time_to_utc(
+        date(2026, 1, 1),
+        "23:30:00",
+        "America/New_York",
+    )
+    second_date, second_time = local_date_time_to_utc(
+        date(2026, 1, 2),
+        "00:30:00",
+        "America/New_York",
+    )
+
+    cursor.execute(
+        """
+        INSERT INTO game_sessions (
+            user_id, site_id, session_date, session_time, net_taxable_pl, status
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (sample_user.id, sample_site.id, first_date, first_time, "20.00", "Closed"),
+    )
+    cursor.execute(
+        """
+        INSERT INTO game_sessions (
+            user_id, site_id, session_date, session_time, net_taxable_pl, status
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (sample_user.id, sample_site.id, second_date, second_time, "10.00", "Closed"),
+    )
+    test_db._connection.commit()
+
+    report_service = ReportService(test_db)
+    pl_report = report_service.get_session_profit_loss_report(
+        user_id=sample_user.id,
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 1, 1),
+    )
+
     assert pl_report["total_sessions"] == 1
     assert pl_report["total_pl"] == Decimal("20.00")
 
