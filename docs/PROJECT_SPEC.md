@@ -768,6 +768,8 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - Repository/services convert UTC → local for display and business logic using the selected `time_zone`.
 - Audit log date filters convert local date ranges to UTC bounds before querying.
 - Unrealized positions convert UTC timestamps to local dates for start/last-activity filtering in the UI.
+- Daily Sessions merges `daily_date_tax` by local session dates so Tax Set-Aside aligns with displayed rows.
+- Tax withholding rollups compute net daily P/L using local end dates (local day boundaries).
 - One-time migration converts existing local timestamps to UTC using the currently selected time zone.
 
 **UI Integration:**

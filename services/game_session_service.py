@@ -276,14 +276,20 @@ class GameSessionService:
                         tax_service = self.tax_withholding_service
                         config = tax_service.get_config()
                         if config.enabled:
-                            # Recalculate tax for current date
-                            date_str = accounting_date.isoformat() if hasattr(accounting_date, 'isoformat') else str(accounting_date)
-                            tax_service.apply_to_date(session_date=date_str)
+                            from tools.timezone_utils import get_configured_timezone_name, utc_date_time_to_local
+
+                            tz_name = get_configured_timezone_name()
+                            accounting_time = session.end_time or session.session_time or "00:00:00"
+                            local_accounting_date, _ = utc_date_time_to_local(accounting_date, accounting_time, tz_name)
+
+                            # Recalculate tax for current local date
+                            tax_service.apply_to_date(session_date=local_accounting_date.isoformat())
                             
                             # If session moved to different date, recalculate old date too
                             if old_status == "Closed" and old_end_date != accounting_date:
-                                old_date_str = old_end_date.isoformat() if hasattr(old_end_date, 'isoformat') else str(old_end_date)
-                                tax_service.apply_to_date(session_date=old_date_str)
+                                old_end_time = old_data.get("end_time") or old_session_time or "00:00:00"
+                                old_local_date, _ = utc_date_time_to_local(old_end_date, old_end_time, tz_name)
+                                tax_service.apply_to_date(session_date=old_local_date.isoformat())
                     except Exception:
                         pass  # Don't fail the update if tax calculation fails
             
@@ -1092,10 +1098,9 @@ class GameSessionService:
         """
         # Get all distinct end_dates for this user/site from boundary onwards
         boundary_str = from_date.isoformat() if hasattr(from_date, 'isoformat') else str(from_date)
-        
         rows = self.session_repo.db.fetch_all(
             """
-            SELECT DISTINCT end_date
+            SELECT DISTINCT end_date, COALESCE(end_time, session_time, '00:00:00') as end_time
             FROM game_sessions
             WHERE user_id = ?
               AND site_id = ?
@@ -1105,21 +1110,30 @@ class GameSessionService:
             """,
             (user_id, site_id, boundary_str)
         )
-        
-        # Sync daily_sessions and recalculate tax for each affected date
+
+        from tools.timezone_utils import get_configured_timezone_name, utc_date_time_to_local
+
+        tz_name = get_configured_timezone_name()
+        local_dates = set()
+
+        # Sync daily_sessions and collect affected local dates
         for row in rows:
             end_date = row["end_date"]
+            end_time = row["end_time"] or "00:00:00"
             self._sync_daily_sessions_for_pair(user_id, site_id, end_date)
-            
-            # Recalculate tax if enabled
-            if hasattr(self, 'tax_withholding_service'):
-                try:
-                    tax_service = self.tax_withholding_service
-                    config = tax_service.get_config()
-                    if config.enabled:
-                        tax_service.apply_to_date(session_date=end_date)
-                except Exception:
-                    pass  # Don't fail cascade if tax calc fails
+            local_date, _ = utc_date_time_to_local(end_date, end_time, tz_name)
+            local_dates.add(local_date)
+
+        # Recalculate tax if enabled
+        if hasattr(self, 'tax_withholding_service'):
+            tax_service = self.tax_withholding_service
+            config = tax_service.get_config()
+            if config.enabled:
+                for local_date in sorted(local_dates):
+                    try:
+                        tax_service.apply_to_date(session_date=local_date.isoformat())
+                    except Exception:
+                        pass  # Don't fail cascade if tax calc fails
 
     def update_game_rtp_incremental(
         self,

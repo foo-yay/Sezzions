@@ -4,7 +4,7 @@ Computes an estimated tax set-aside amount per DATE (rollup of all users' game s
 
 Key semantics:
 - Tax withholding is calculated at the DATE level (not per user, not per session).
-- Daily net P/L = sum of ALL users' net P/L for that date.
+- Daily net P/L = sum of ALL users' net P/L for that local date (based on local end date/time).
 - Only positive net is taxed: max(0, sum_of_all_users_pnl) * rate.
 - Uses stored rate when present (historical or custom override).
 - When enabled and a date has no stored rate yet, uses the global default rate.
@@ -15,8 +15,9 @@ Key semantics:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date as date_type
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Optional
+from typing import Iterable, Optional
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,78 @@ class TaxWithholdingService:
         self.db = db_manager
         # settings is intentionally duck-typed: `.get(key, default)`
         self.settings = settings
+
+    def _table_exists(self, table_name: str) -> bool:
+        row = self.db.fetch_one(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+            (table_name,),
+        )
+        return bool(row)
+
+    def _get_timezone_name(self) -> str:
+        from tools.timezone_utils import get_configured_timezone_name
+
+        return get_configured_timezone_name(self.settings)
+
+    def _parse_local_date(self, value: str | date_type) -> date_type:
+        if isinstance(value, date_type):
+            return value
+        return date_type.fromisoformat(value)
+
+    def _fetch_closed_sessions_for_local_range(
+        self,
+        start_date: Optional[date_type],
+        end_date: Optional[date_type],
+    ) -> list[dict]:
+        if not self._table_exists("game_sessions"):
+            return []
+
+        query = """
+            SELECT
+                session_date,
+                session_time,
+                end_date,
+                end_time,
+                net_taxable_pl
+                        FROM game_sessions
+                        WHERE status = 'Closed'
+                            AND deleted_at IS NULL
+        """
+        params: list = []
+
+        if start_date or end_date:
+            from tools.timezone_utils import local_date_range_to_utc_bounds
+
+            tz_name = self._get_timezone_name()
+            start_value = start_date or end_date
+            end_value = end_date or start_date
+            if start_value and end_value:
+                start_utc, end_utc = local_date_range_to_utc_bounds(start_value, end_value, tz_name)
+                query += (
+                    " AND (COALESCE(end_date, session_date) > ? OR "
+                    "(COALESCE(end_date, session_date) = ? AND COALESCE(end_time, session_time, '00:00:00') >= ?))"
+                    " AND (COALESCE(end_date, session_date) < ? OR "
+                    "(COALESCE(end_date, session_date) = ? AND COALESCE(end_time, session_time, '00:00:00') <= ?))"
+                )
+                params.extend([start_utc[0], start_utc[0], start_utc[1], end_utc[0], end_utc[0], end_utc[1]])
+
+        return self.db.fetch_all(query, tuple(params))
+
+    def _iter_local_dates(self, rows: Iterable[dict]) -> Iterable[tuple[date_type, Decimal]]:
+        from tools.timezone_utils import utc_date_time_to_local
+
+        tz_name = self._get_timezone_name()
+        for row in rows:
+            accounting_date = row.get("end_date") or row.get("session_date")
+            accounting_time = row.get("end_time") or row.get("session_time") or "00:00:00"
+            if not accounting_date:
+                continue
+            local_date, _ = utc_date_time_to_local(accounting_date, accounting_time, tz_name)
+            try:
+                net_taxable = Decimal(str(row.get("net_taxable_pl") or 0))
+            except Exception:
+                net_taxable = Decimal("0")
+            yield local_date, net_taxable
 
     def get_config(self) -> TaxWithholdingConfig:
         settings = self.settings
@@ -149,23 +222,13 @@ class TaxWithholdingService:
 
     def _calculate_date_net_pl(self, session_date: str) -> Decimal:
         """Calculate total net P/L for a date across ALL users."""
-        # Check if daily_sessions table exists (for tests)
-        cursor = self.db._connection.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_sessions'")
-        if not cursor.fetchone():
-            return Decimal("0.00")
-        
-        row = self.db.fetch_one(
-            """
-            SELECT SUM(COALESCE(net_daily_pnl, 0)) as total_net_pnl
-            FROM daily_sessions
-            WHERE session_date = ?
-            """,
-            (session_date,)
-        )
-        if row and row["total_net_pnl"] is not None:
-            return Decimal(str(row["total_net_pnl"]))
-        return Decimal("0.00")
+        target_date = self._parse_local_date(session_date)
+        rows = self._fetch_closed_sessions_for_local_range(target_date, target_date)
+        total = Decimal("0.00")
+        for local_date, net_taxable in self._iter_local_dates(rows):
+            if local_date == target_date:
+                total += net_taxable
+        return total
 
     def bulk_recalculate(
         self,
@@ -198,33 +261,22 @@ class TaxWithholdingService:
         if not config.enabled:
             return 0
 
-        # Build WHERE clause for date range
-        where_parts = []
-        params = []
-        if start_date is not None:
-            where_parts.append("session_date >= ?")
-            params.append(start_date)
-        if end_date is not None:
-            where_parts.append("session_date <= ?")
-            params.append(end_date)
-        
-        where_clause = " AND ".join(where_parts) if where_parts else "1=1"
+        start_local = self._parse_local_date(start_date) if start_date else None
+        end_local = self._parse_local_date(end_date) if end_date else None
+        rows = self._fetch_closed_sessions_for_local_range(start_local, end_local)
 
-        # Fetch all DISTINCT dates that need updating
-        rows = self.db.fetch_all(
-            f"""
-            SELECT DISTINCT session_date
-            FROM daily_sessions
-            WHERE {where_clause}
-            ORDER BY session_date ASC
-            """,
-            tuple(params),
-        )
+        local_dates = set()
+        for local_date, _ in self._iter_local_dates(rows):
+            if start_local and local_date < start_local:
+                continue
+            if end_local and local_date > end_local:
+                continue
+            local_dates.add(local_date)
 
         updates = []
         updated_count = 0
-        for row in rows:
-            session_date = row["session_date"]
+        for local_date in sorted(local_dates):
+            session_date = local_date.isoformat()
             
             # Check if this date has custom tax (skip if overwrite_custom is False)
             existing = self.db.fetch_one(
