@@ -9,6 +9,26 @@ Rules:
 
 ---
 
+## 2026-02-15
+
+```yaml
+id: 2026-02-15-01
+type: bugfix
+areas: [unrealized, time, repositories]
+summary: "Keep Unrealized positions visible after partial redemptions (local date filtering)"
+files_changed:
+  - repositories/unrealized_position_repository.py
+  - tests/integration/test_issue_44_unrealized_live_balances.py
+  - docs/PROJECT_SPEC.md
+```
+
+**Bugfix: Unrealized Partial Redemptions**
+
+- Unrealized positions now convert UTC timestamps to local dates for start/last-activity filtering.
+- Prevents positions from disappearing when partial redemptions fall on a different UTC date.
+
+---
+
 ## 2026-02-14
 
 ```yaml

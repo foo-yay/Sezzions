@@ -767,6 +767,7 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - All user-entered timestamps are stored in UTC in the database (purchases, redemptions, sessions, adjustments, expenses, audit log).
 - Repository/services convert UTC → local for display and business logic using the selected `time_zone`.
 - Audit log date filters convert local date ranges to UTC bounds before querying.
+- Unrealized positions convert UTC timestamps to local dates for start/last-activity filtering in the UI.
 - One-time migration converts existing local timestamps to UTC using the currently selected time zone.
 
 **UI Integration:**

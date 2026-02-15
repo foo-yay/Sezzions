@@ -5,6 +5,8 @@ from typing import List, Optional
 from decimal import Decimal
 from datetime import date, datetime
 
+from tools.timezone_utils import get_configured_timezone_name, utc_date_time_to_local
+
 from models.unrealized_position import UnrealizedPosition
 
 
@@ -14,46 +16,55 @@ class UnrealizedPositionRepository:
     def __init__(self, db):
         self.db = db
 
-    def _get_profit_only_position_start_date(self, site_id: int, user_id: int) -> Optional[str]:
-        """Best-effort start date for profit-only positions (remaining basis == 0).
+        def _get_profit_only_position_start(self, site_id: int, user_id: int, tz_name: str) -> tuple[Optional[date], Optional[datetime]]:
+                """Best-effort start date for profit-only positions (remaining basis == 0).
 
-        When FIFO has consumed all basis, the "oldest purchase with remaining basis" is undefined.
-        In practice, users want to see the purchase(s) that most recently contributed basis to the
-        current on-site balance.
+                When FIFO has consumed all basis, the "oldest purchase with remaining basis" is undefined.
+                In practice, users want to see the purchase(s) that most recently contributed basis to the
+                current on-site balance.
 
-        We approximate this by finding the most recent non-free-SC redemption with FIFO allocations
-        and returning the latest purchase_date among its allocated purchases.
-        """
-        query = """
-            SELECT MAX(p.purchase_date) as start_date
-            FROM redemptions r
-            JOIN redemption_allocations ra ON ra.redemption_id = r.id
-            JOIN purchases p ON p.id = ra.purchase_id
-            WHERE r.site_id = ? AND r.user_id = ?
-              AND r.deleted_at IS NULL
-              AND r.is_free_sc = 0
-              AND CAST(ra.allocated_amount AS REAL) > 0
-              AND p.deleted_at IS NULL
-              AND (p.status IS NULL OR p.status = 'active')
-              AND r.id = (
-                  SELECT r2.id
-                  FROM redemptions r2
-                  WHERE r2.site_id = ? AND r2.user_id = ?
-                    AND r2.deleted_at IS NULL
-                    AND r2.is_free_sc = 0
-                    AND EXISTS (
-                        SELECT 1 FROM redemption_allocations ra2
-                        WHERE ra2.redemption_id = r2.id
-                          AND CAST(ra2.allocated_amount AS REAL) > 0
-                    )
-                  ORDER BY r2.redemption_date DESC,
-                           COALESCE(r2.redemption_time, '00:00:00') DESC,
-                           r2.id DESC
-                  LIMIT 1
-              )
-        """
-        row = self.db.fetch_one(query, (site_id, user_id, site_id, user_id))
-        return row["start_date"] if row and row.get("start_date") else None
+                We approximate this by finding the most recent non-free-SC redemption with FIFO allocations
+                and returning the latest purchase datetime among its allocated purchases.
+                """
+                query = """
+                        SELECT p.purchase_date,
+                                     COALESCE(p.purchase_time, '00:00:00') as purchase_time
+                        FROM redemptions r
+                        JOIN redemption_allocations ra ON ra.redemption_id = r.id
+                        JOIN purchases p ON p.id = ra.purchase_id
+                        WHERE r.site_id = ? AND r.user_id = ?
+                            AND r.deleted_at IS NULL
+                            AND r.is_free_sc = 0
+                            AND CAST(ra.allocated_amount AS REAL) > 0
+                            AND p.deleted_at IS NULL
+                            AND (p.status IS NULL OR p.status = 'active')
+                            AND r.id = (
+                                    SELECT r2.id
+                                    FROM redemptions r2
+                                    WHERE r2.site_id = ? AND r2.user_id = ?
+                                        AND r2.deleted_at IS NULL
+                                        AND r2.is_free_sc = 0
+                                        AND EXISTS (
+                                                SELECT 1 FROM redemption_allocations ra2
+                                                WHERE ra2.redemption_id = r2.id
+                                                    AND CAST(ra2.allocated_amount AS REAL) > 0
+                                        )
+                                    ORDER BY r2.redemption_date DESC,
+                                                     COALESCE(r2.redemption_time, '00:00:00') DESC,
+                                                     r2.id DESC
+                                    LIMIT 1
+                            )
+                        ORDER BY p.purchase_date DESC,
+                                         COALESCE(p.purchase_time, '00:00:00') DESC,
+                                         p.id DESC
+                        LIMIT 1
+                """
+                row = self.db.fetch_one(query, (site_id, user_id, site_id, user_id))
+                if not row or not row.get("purchase_date"):
+                        return None, None
+                start_dt_utc = self._to_dt(row["purchase_date"], row["purchase_time"])
+                start_date_local = self._to_local_date(row["purchase_date"], row["purchase_time"], tz_name)
+                return start_date_local, start_dt_utc
     
     def get_all_positions(self, start_date: Optional[date] = None, end_date: Optional[date] = None) -> List[UnrealizedPosition]:
         """
@@ -68,6 +79,7 @@ class UnrealizedPositionRepository:
             return []
         
         positions = []
+        tz_name = get_configured_timezone_name()
 
         notes_map = self._get_notes_map()
         
@@ -106,39 +118,73 @@ class UnrealizedPositionRepository:
             site_name = names['site_name']
             user_name = names['user_name']
             
-            # Get remaining basis and start date
+            # Get remaining basis and start date (local date for filtering/display)
             basis_query = """
-                SELECT 
-                    MIN(purchase_date) as start_date,
-                    COALESCE(SUM(remaining_amount), 0) as remaining_basis
+                SELECT COALESCE(SUM(remaining_amount), 0) as remaining_basis
                 FROM purchases
                 WHERE site_id = ? AND user_id = ?
                   AND deleted_at IS NULL
                   AND (status IS NULL OR status = 'active')
                   AND remaining_amount > 0.001
             """
-            
+
             basis_data = self.db.fetch_one(basis_query, (site_id, user_id))
             remaining_basis = Decimal(str(basis_data['remaining_basis'] or 0)) if basis_data else Decimal("0.00")
-            position_start_date = basis_data['start_date'] if basis_data and basis_data['start_date'] else None
-            
-            # If no purchases with remaining basis, use earliest purchase date
+            position_start_date = None
+            position_start_dt_utc = None
+
+            if remaining_basis > Decimal("0.001"):
+                earliest_remaining_query = """
+                    SELECT purchase_date, COALESCE(purchase_time, '00:00:00') as purchase_time
+                    FROM purchases
+                    WHERE site_id = ? AND user_id = ?
+                      AND deleted_at IS NULL
+                      AND (status IS NULL OR status = 'active')
+                      AND remaining_amount > 0.001
+                    ORDER BY purchase_date ASC, COALESCE(purchase_time,'00:00:00') ASC, id ASC
+                    LIMIT 1
+                """
+                earliest_remaining = self.db.fetch_one(earliest_remaining_query, (site_id, user_id))
+                if earliest_remaining and earliest_remaining.get("purchase_date"):
+                    position_start_dt_utc = self._to_dt(
+                        earliest_remaining["purchase_date"],
+                        earliest_remaining["purchase_time"],
+                    )
+                    position_start_date = self._to_local_date(
+                        earliest_remaining["purchase_date"],
+                        earliest_remaining["purchase_time"],
+                        tz_name,
+                    )
+
             if not position_start_date:
                 if remaining_basis <= Decimal("0.001"):
-                    profit_only_start = self._get_profit_only_position_start_date(site_id, user_id)
+                    profit_only_start, profit_only_dt = self._get_profit_only_position_start(
+                        site_id,
+                        user_id,
+                        tz_name,
+                    )
                     if profit_only_start:
                         position_start_date = profit_only_start
+                        position_start_dt_utc = profit_only_dt
 
             if not position_start_date:
                 earliest_purchase_query = """
-                    SELECT MIN(purchase_date) as start_date
+                    SELECT purchase_date, COALESCE(purchase_time, '00:00:00') as purchase_time
                     FROM purchases
                     WHERE site_id = ? AND user_id = ?
-                        AND deleted_at IS NULL
+                      AND deleted_at IS NULL
                       AND (status IS NULL OR status = 'active')
+                    ORDER BY purchase_date ASC, COALESCE(purchase_time,'00:00:00') ASC, id ASC
+                    LIMIT 1
                 """
                 earliest = self.db.fetch_one(earliest_purchase_query, (site_id, user_id))
-                position_start_date = earliest['start_date'] if earliest and earliest['start_date'] else None
+                if earliest and earliest.get("purchase_date"):
+                    position_start_dt_utc = self._to_dt(earliest["purchase_date"], earliest["purchase_time"])
+                    position_start_date = self._to_local_date(
+                        earliest["purchase_date"],
+                        earliest["purchase_time"],
+                        tz_name,
+                    )
             
             # If still no start date, skip (no purchase activity)
             if not position_start_date:
@@ -176,6 +222,7 @@ class UnrealizedPositionRepository:
                 last_activity = last_purchase['purchase_date'] if last_purchase else None
                 last_activity_time = last_purchase['purchase_time'] if last_purchase else None
                 last_activity_dt = self._to_dt(last_activity, last_activity_time) if last_activity else None
+                last_activity = self._to_local_date_from_dt(last_activity_dt, tz_name) if last_activity_dt else None
             else:
                 # Use checkpoint + deltas
                 checkpoint_dt = checkpoint['checkpoint_dt']
@@ -260,7 +307,7 @@ class UnrealizedPositionRepository:
                 total_sc = baseline_total + purchases_since - redemptions_since
                 
                 # Redeemable: use checkpoint redeemable minus redemptions if checkpoint is within current position
-                position_start_dt = self._to_dt(position_start_date, '00:00:00')
+                position_start_dt = position_start_dt_utc
                 if checkpoint_dt and position_start_dt and checkpoint_dt >= position_start_dt:
                     redeemable_sc = baseline_redeemable - redeemable_redemptions_since
                 else:
@@ -298,7 +345,10 @@ class UnrealizedPositionRepository:
                 
                 last_activity_dts = [self._to_dt(d, t) for d, t in last_activity_candidates if d]
                 last_activity_dt = max(last_activity_dts) if last_activity_dts else checkpoint_dt
-                last_activity = last_activity_dt.date() if last_activity_dt else checkpoint_date
+                if last_activity_dt:
+                    last_activity = self._to_local_date_from_dt(last_activity_dt, tz_name)
+                else:
+                    last_activity = self._to_local_date(checkpoint_date, checkpoint_time, tz_name)
 
             close_balance_dt = self._get_close_balance_dt(site_id, user_id)
             if close_balance_dt and last_activity_dt and close_balance_dt >= last_activity_dt:
@@ -380,6 +430,18 @@ class UnrealizedPositionRepository:
             return datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S")
         except Exception:
             return None
+
+    def _to_local_date(self, date_value, time_value, tz_name: str) -> Optional[date]:
+        if not date_value:
+            return None
+        time_str = time_value if time_value else "00:00:00"
+        local_date, _local_time = utc_date_time_to_local(date_value, time_str, tz_name)
+        return local_date
+
+    def _to_local_date_from_dt(self, dt_value: Optional[datetime], tz_name: str) -> Optional[date]:
+        if dt_value is None:
+            return None
+        return self._to_local_date(dt_value.date().isoformat(), dt_value.strftime("%H:%M:%S"), tz_name)
 
     def _get_close_balance_dt(self, site_id: int, user_id: int):
         """

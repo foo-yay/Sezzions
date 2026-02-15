@@ -174,6 +174,41 @@ class TestUnrealizedBalancesAfterSession:
         assert pos.purchase_basis == Decimal("135.00")  # 60 + 50 + 25
         assert pos.unrealized_pl == Decimal("40.00")  # 175 - 135
 
+    def test_unrealized_date_filter_uses_local_timezone(self, db, repo, monkeypatch):
+        """Unrealized start_date should reflect local time when filtering."""
+        from repositories import unrealized_position_repository as repo_module
+
+        monkeypatch.setattr(repo_module, "get_configured_timezone_name", lambda: "America/New_York")
+
+        db.execute(
+            """
+            INSERT INTO purchases
+            (user_id, site_id, purchase_date, purchase_time, amount, sc_received, remaining_amount)
+            VALUES (1, 1, '2026-02-15', '00:30:00', 100.00, 100.00, 59.97)
+            """
+        )
+        db.execute(
+            """
+            INSERT INTO game_sessions
+            (user_id, site_id, game_id, session_date, session_time, end_date, end_time,
+             starting_balance, ending_balance, ending_redeemable, status)
+            VALUES (1, 1, 1, '2026-02-15', '00:00:00', '2026-02-15', '00:20:00',
+                    100.00, 1377.60, 1377.60, 'completed')
+            """
+        )
+        db.execute(
+            """
+            INSERT INTO redemptions
+            (user_id, site_id, redemption_date, redemption_time, amount, processed, more_remaining)
+            VALUES (1, 1, '2026-02-15', '00:40:00', 1000.00, 1, 1)
+            """
+        )
+        db.commit()
+
+        positions = repo.get_all_positions(start_date=date(2026, 2, 14), end_date=date(2026, 2, 14))
+        assert len(positions) == 1
+        assert positions[0].start_date == date(2026, 2, 14)
+
 
 class TestUnrealizedExcludesDeleted:
     def test_deleted_activity_does_not_create_position(self, db, repo):
