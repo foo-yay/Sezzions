@@ -26,6 +26,7 @@ files_changed:
 
 - Unrealized positions now convert UTC timestamps to local dates for start/last-activity filtering.
 - Prevents positions from disappearing when partial redemptions fall on a different UTC date.
+- Fixed a helper method indentation issue that could trigger maintenance mode at startup.
 
 ---
 
