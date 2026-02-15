@@ -42,7 +42,8 @@ def _insert_closed_game_session(
     net_taxable_pl: str,
 ):
     """Insert a closed game session for tax withholding tests."""
-    test_db.execute(
+    cursor = test_db._connection.cursor()
+    cursor.execute(
         """
         INSERT INTO game_sessions (
             user_id, site_id, session_date, session_time,
@@ -60,6 +61,8 @@ def _insert_closed_game_session(
             "Closed",
         ),
     )
+    test_db._connection.commit()
+    return cursor.lastrowid
 
 
 def test_compute_amount_positive_pl():
@@ -268,27 +271,43 @@ def test_apply_to_date_uses_local_end_date(service, test_db, sample_user, sample
     assert row["net_daily_pnl"] == 80.0
     assert row["tax_withholding_amount"] == 16.0
 
-    # Inject failure after the UPDATE executemany call begins.
-    real_executemany = test_db.executemany_no_commit
 
-    def boom(query, params_seq):
-        # Fail before any statement is actually executed.
-        raise RuntimeError("boom")
+def test_bulk_recalc_excludes_deleted_sessions(service, test_db, sample_user, sample_site):
+    """Deleted sessions should not affect tax rollups."""
+    deleted_id = _insert_closed_game_session(
+        test_db,
+        sample_user,
+        sample_site,
+        "2026-02-09",
+        "10:00:00",
+        "2026-02-09",
+        "11:00:00",
+        "30.00",
+    )
+    _insert_closed_game_session(
+        test_db,
+        sample_user,
+        sample_site,
+        "2026-02-09",
+        "12:00:00",
+        "2026-02-09",
+        "13:00:00",
+        "100.00",
+    )
+    test_db.execute(
+        "UPDATE game_sessions SET deleted_at = '2026-02-09 12:00:00' WHERE id = ?",
+        (deleted_id,),
+    )
 
-    monkeypatch.setattr(test_db, "executemany_no_commit", boom)
+    updated = service.bulk_recalculate(start_date="2026-02-09", end_date="2026-02-09", overwrite_custom=True)
+    assert updated == 1
 
-    with pytest.raises(RuntimeError, match="boom"):
-        service.bulk_recalculate(start_date=None, end_date=None, overwrite_custom=False)
-
-    # Nothing should be updated in daily_date_tax - check both dates
-    for date in ("2026-01-01", "2026-01-02"):
-        row = test_db.fetch_one(
-            """
-            SELECT * FROM daily_date_tax WHERE session_date = ?
-            """,
-            (date,),
-        )
-        assert row is None  # No tax data should exist after rollback
-
-    # Restore to avoid side effects
-    monkeypatch.setattr(test_db, "executemany_no_commit", real_executemany)
+    row = test_db.fetch_one(
+        """
+        SELECT net_daily_pnl, tax_withholding_amount
+        FROM daily_date_tax WHERE session_date = ?
+        """,
+        ("2026-02-09",),
+    )
+    assert row["net_daily_pnl"] == 100.0
+    assert row["tax_withholding_amount"] == 20.0

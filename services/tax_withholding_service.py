@@ -64,8 +64,9 @@ class TaxWithholdingService:
                 end_date,
                 end_time,
                 net_taxable_pl
-            FROM game_sessions
-            WHERE status = 'Closed'
+                        FROM game_sessions
+                        WHERE status = 'Closed'
+                            AND deleted_at IS NULL
         """
         params: list = []
 

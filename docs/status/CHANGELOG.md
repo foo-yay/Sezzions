@@ -61,6 +61,7 @@ files_changed:
 **Bugfix: Local-Date Tax Rollups**
 
 - Tax withholding now computes net daily P/L using local end dates so set-aside matches Daily Sessions rollups.
+- Deleted sessions no longer affect daily tax rollups.
 
 ---
 
