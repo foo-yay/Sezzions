@@ -22,6 +22,11 @@ Rules:
 
 ## Ready for Review (Owner Approval Required)
 
+- [x] **Normalize date/time displays to user TZ** (PR #118)
+  - Realized tab grouping uses local day; View Position related tables show local times
+  - Validation: QT_QPA_PLATFORM=offscreen pytest -q tests/ui/test_realized_tab_local_timezone.py
+  - Manual: Not run (tests only)
+
 - [x] **Align report date filters to local day boundaries** (PR #116, Issue #115)
   - Validation: pytest -q
   - Manual: Not run (tests only)

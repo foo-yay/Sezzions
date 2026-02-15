@@ -17,6 +17,11 @@ from ui.daily_sessions_filters import (
     header_menu_position,
 )
 from ui.input_parsers import parse_date_input
+from tools.timezone_utils import (
+    get_configured_timezone_name,
+    local_date_range_to_utc_bounds,
+    utc_date_time_to_local,
+)
 
 
 def format_currency(value):
@@ -137,19 +142,10 @@ class RealizedPositionDialog(QtWidgets.QDialog):
         layout.setSpacing(10)
 
         # Format helpers
-        def format_date(value):
-            if not value:
-                return "—"
-            if isinstance(value, date):
-                return value.strftime("%m/%d/%y")
-            try:
-                return datetime.strptime(str(value), "%Y-%m-%d").strftime("%m/%d/%y")
-            except ValueError:
-                return str(value)
-
-        def format_time(value):
-            """Format time for display with full HH:MM:SS precision (Issue #90)"""
-            return value if value else "—"
+        def format_local_date_time(date_value, time_value):
+            if not date_value:
+                return "—", "—"
+            return self._format_local_date_time_parts(date_value, time_value)
 
         def make_selectable_label(text, bold=False, align_right=False, color=None):
             """Create a selectable QLabel"""
@@ -192,7 +188,11 @@ class RealizedPositionDialog(QtWidgets.QDialog):
         date_label = QtWidgets.QLabel("Redemption Date:")
         date_label.setObjectName("MutedLabel")
         position_grid.addWidget(date_label, 0, 0)
-        position_grid.addWidget(make_selectable_label(format_date(self.position.get("redemption_date"))), 0, 1)
+        redemption_date_text, redemption_time_text = format_local_date_time(
+            self.position.get("redemption_date"),
+            self.position.get("redemption_time"),
+        )
+        position_grid.addWidget(make_selectable_label(redemption_date_text), 0, 1)
         
         user_label = QtWidgets.QLabel("User:")
         user_label.setObjectName("MutedLabel")
@@ -203,7 +203,7 @@ class RealizedPositionDialog(QtWidgets.QDialog):
         time_label = QtWidgets.QLabel("Redemption Time:")
         time_label.setObjectName("MutedLabel")
         position_grid.addWidget(time_label, 0, 2)
-        position_grid.addWidget(make_selectable_label(format_time(self.position.get("redemption_time"))), 0, 3)
+        position_grid.addWidget(make_selectable_label(redemption_time_text), 0, 3)
         
         site_label = QtWidgets.QLabel("Site:")
         site_label.setObjectName("MutedLabel")
@@ -532,9 +532,13 @@ class RealizedPositionDialog(QtWidgets.QDialog):
     def _populate_purchases_table(self):
         self.purchases_table.setRowCount(len(self.allocations))
         for row_idx, purchase in enumerate(self.allocations):
-            date_display = self._format_date(purchase.get("purchase_date")) if purchase.get("purchase_date") else "—"
-            time_display = purchase.get("purchase_time", "")[:5] if purchase.get("purchase_time") else "—"
-            date_time_display = f"{date_display} {time_display}" if date_display != "—" else time_display
+            date_text, time_text = self._format_local_date_time_parts(
+                purchase.get("purchase_date"),
+                purchase.get("purchase_time"),
+            )
+            date_time_display = (
+                f"{date_text} {time_text[:5]}" if date_text != "—" else "—"
+            )
             amount = format_currency(purchase.get("amount"))
             sc_received = f"{float(purchase.get('sc_received') or 0.0):.2f}"
             allocated = format_currency(purchase.get("allocated_amount"))
@@ -569,13 +573,20 @@ class RealizedPositionDialog(QtWidgets.QDialog):
     def _populate_sessions_table(self):
         self.sessions_table.setRowCount(len(self.linked_sessions))
         for row_idx, session in enumerate(self.linked_sessions):
-            session_date = self._format_date(session.session_date) if session.session_date else "—"
-            start_time = (session.session_time or "00:00:00")[:5]
-            start_display = f"{session_date} {start_time}" if session_date != "—" else "—"
+            start_date_text, start_time_text = self._format_local_date_time_parts(
+                session.session_date, session.session_time
+            )
+            start_display = (
+                f"{start_date_text} {start_time_text[:5]}" if start_date_text != "—" else "—"
+            )
             end_display = "—"
             if getattr(session, "end_date", None):
-                end_time = (getattr(session, "end_time", None) or "00:00:00")[:5]
-                end_display = f"{session.end_date} {end_time}"
+                end_date_text, end_time_text = self._format_local_date_time_parts(
+                    getattr(session, "end_date", None),
+                    getattr(session, "end_time", None),
+                )
+                if end_date_text != "—":
+                    end_display = f"{end_date_text} {end_time_text[:5]}"
             game_name = getattr(session, "game_name", None) or getattr(session, "game_type_name", None) or "—"
             net_pl = getattr(session, "net_taxable_pl", None)
             if net_pl is None:
@@ -650,6 +661,28 @@ class RealizedPositionDialog(QtWidgets.QDialog):
             return datetime.strptime(str(value), "%Y-%m-%d").strftime("%m/%d/%y")
         except Exception:
             return str(value)
+
+    def _format_local_date_time_parts(self, date_value, time_value):
+        if not date_value:
+            return "—", "—"
+        tz_name = get_configured_timezone_name()
+        try:
+            local_date, local_time = utc_date_time_to_local(date_value, time_value, tz_name)
+            date_text = local_date.strftime("%m/%d/%y")
+            time_text = local_time if local_time else "—"
+            return date_text, time_text
+        except Exception:
+            date_text = str(date_value)
+            time_text = time_value or "—"
+            return date_text, time_text
+
+    def _format_local_date_time(self, date_value, time_value):
+        date_text, time_text = self._format_local_date_time_parts(date_value, time_value)
+        if date_text == "—":
+            return "—"
+        if time_text == "—":
+            return date_text
+        return f"{date_text} {time_text[:5]}"
 
     def _format_signed_currency(self, value):
         if value is None:
@@ -1069,6 +1102,7 @@ class RealizedTab(QtWidgets.QWidget):
         return f"Redemption (${redemption_amount:.2f})"
 
     def _fetch_transactions(self):
+        tz_name = get_configured_timezone_name()
         query = """
             SELECT
                 rt.id as tax_session_id,
@@ -1084,7 +1118,9 @@ class RealizedTab(QtWidgets.QWidget):
                 r.fees as fees,
                 r.is_free_sc,
                 r.notes as redemption_notes,
-                rt.notes as session_notes
+                rt.notes as session_notes,
+                r.redemption_date as redemption_date,
+                r.redemption_time as redemption_time
             FROM realized_transactions rt
             JOIN sites s ON rt.site_id = s.id
             JOIN users u ON rt.user_id = u.id
@@ -1102,14 +1138,27 @@ class RealizedTab(QtWidgets.QWidget):
             params.extend(list(self.selected_users))
         start_date, end_date = self.active_date_filter
         if start_date:
-            conditions.append("rt.redemption_date >= ?")
-            params.append(start_date.isoformat() if isinstance(start_date, date) else start_date)
+            start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
+            conditions.append(
+                "(COALESCE(r.redemption_date, rt.redemption_date) > ? OR "
+                "(COALESCE(r.redemption_date, rt.redemption_date) = ? AND "
+                "COALESCE(r.redemption_time, '00:00:00') >= ?))"
+            )
+            params.extend([start_utc[0], start_utc[0], start_utc[1]])
         if end_date:
-            conditions.append("rt.redemption_date <= ?")
-            params.append(end_date.isoformat() if isinstance(end_date, date) else end_date)
+            _, end_utc = local_date_range_to_utc_bounds(end_date, end_date, tz_name)
+            conditions.append(
+                "(COALESCE(r.redemption_date, rt.redemption_date) < ? OR "
+                "(COALESCE(r.redemption_date, rt.redemption_date) = ? AND "
+                "COALESCE(r.redemption_time, '00:00:00') <= ?))"
+            )
+            params.extend([end_utc[0], end_utc[0], end_utc[1]])
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
-        query += " ORDER BY rt.redemption_date DESC, s.name ASC, u.name ASC, rt.id ASC"
+        query += (
+            " ORDER BY COALESCE(r.redemption_date, rt.redemption_date) DESC, "
+            "COALESCE(r.redemption_time, '00:00:00') DESC, s.name ASC, u.name ASC, rt.id ASC"
+        )
 
         rows = self.db.fetch_all(query, tuple(params))
         transactions = []
@@ -1119,9 +1168,16 @@ class RealizedTab(QtWidgets.QWidget):
             session_notes = row.get("session_notes") or ""
             notes = redemption_notes or session_notes
             redemption_amount = row.get("redemption_amount") or 0.0
+            redemption_date = row.get("redemption_date") or row.get("session_date")
+            redemption_time = row.get("redemption_time") or "00:00:00"
+            try:
+                local_date, _ = utc_date_time_to_local(redemption_date, redemption_time, tz_name)
+                session_date = local_date.isoformat()
+            except Exception:
+                session_date = row["session_date"]
             search_blob = " ".join(
                 [
-                    row["session_date"],
+                    session_date,
                     row["site_name"],
                     row["user_name"],
                     f"{Decimal(str(row['cost_basis'])):.2f}",
@@ -1134,7 +1190,9 @@ class RealizedTab(QtWidgets.QWidget):
                 {
                     "tax_session_id": row["tax_session_id"],
                     "redemption_id": row["redemption_id"],
-                    "session_date": row["session_date"],
+                    "session_date": session_date,
+                    "redemption_date": redemption_date,
+                    "redemption_time": redemption_time,
                     "site_id": row["site_id"],
                     "site_name": row["site_name"],
                     "user_id": row["user_id"],

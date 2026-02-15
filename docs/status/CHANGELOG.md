@@ -88,6 +88,24 @@ files_changed:
 
 ---
 
+```yaml
+id: 2026-02-15-05
+type: bugfix
+areas: [ui, realized, time]
+summary: "Realized tab groups by local day; view-position dialogs show local times"
+files_changed:
+  - ui/tabs/realized_tab.py
+  - ui/tabs/unrealized_tab.py
+  - tests/ui/test_realized_tab_local_timezone.py
+```
+
+**Bugfix: Local-Time Realized Grouping & View Dialogs**
+
+- Realized tab now groups and filters transactions by the configured local day using redemption timestamps.
+- View Position dialogs (Unrealized/Realized) now display related purchase/session times in local time.
+
+---
+
 ## 2026-02-14
 
 ```yaml
