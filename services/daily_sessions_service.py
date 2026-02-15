@@ -213,7 +213,10 @@ class DailySessionsService:
 
         result = {}
         for row in rows:
-            result[row["session_date"]] = {
+            session_date = row["session_date"]
+            if session_date:
+                session_date = date_type.fromisoformat(session_date)
+            result[session_date] = {
                 "net_daily_pnl": float(row["net_daily_pnl"] or 0.0),
                 "tax_withholding_rate_pct": float(row["tax_withholding_rate_pct"] or 0.0) if row["tax_withholding_rate_pct"] is not None else None,
                 "tax_withholding_is_custom": bool(row["tax_withholding_is_custom"]) if row["tax_withholding_is_custom"] is not None else False,

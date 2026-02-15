@@ -30,6 +30,22 @@ files_changed:
 
 ---
 
+```yaml
+id: 2026-02-15-02
+type: bugfix
+areas: [daily-sessions, tax]
+summary: "Fix Daily Sessions tax set-aside display"
+files_changed:
+  - services/daily_sessions_service.py
+  - tests/integration/test_daily_sessions_tax_withholding.py
+```
+
+**Bugfix: Daily Sessions Tax Set-Aside**
+
+- Daily tax withholding rows now align with session dates so the Tax Set-Aside column renders values.
+
+---
+
 ## 2026-02-14
 
 ```yaml
