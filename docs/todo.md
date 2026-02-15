@@ -15,13 +15,16 @@ Rules:
 
 - [ ] Add “🎮 End & Start New” flow (auto-carry balances; pick game; start new session)
 - [ ] Align Daily Sessions tax set-aside to local session dates (use local end date for rollups)
-- [ ] Align report date filters to local day boundaries (tax + session P/L + realized)
 - [ ] Unrealized Related tab: use checkpoint anchor for profit-only positions
 - [ ] Define 3–6 “golden scenario” accounting tests (basis + cashflow P/L + taxable P/L)
 - [ ] Reconcile Game Session taxable P/L algorithm vs current implementation
 - [ ] Confirm whether UI still fetches via repos (enforce UI→services only)
 
 ## Ready for Review (Owner Approval Required)
+
+- [x] **Align report date filters to local day boundaries** (PR #116, Issue #115)
+  - Validation: pytest -q
+  - Manual: Not run (tests only)
 
 - [x] **Keep Unrealized positions after partial redemptions** (PR #112, Issue #111)
   - Validation: pytest -q tests/integration/test_issue_44_unrealized_live_balances.py::TestUnrealizedBalancesAfterSession::test_unrealized_date_filter_uses_local_timezone
