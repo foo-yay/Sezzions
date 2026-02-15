@@ -1064,8 +1064,12 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         if len(time_str) == 5:
             time_str = f"{time_str}:00"
         try:
-            parsed = datetime.strptime(f"{date_value} {time_str}", "%Y-%m-%d %H:%M:%S")
-            return parsed.strftime("%m/%d/%y %H:%M")
+            from tools.timezone_utils import get_configured_timezone_name, utc_date_time_to_local
+
+            tz_name = get_configured_timezone_name()
+            local_date, local_time = utc_date_time_to_local(date_value, time_str, tz_name)
+            local_time = local_time or "00:00:00"
+            return f"{local_date.strftime('%m/%d/%y')} {local_time[:5]}"
         except Exception:
             return str(date_value)
 
