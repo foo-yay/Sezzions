@@ -16,55 +16,55 @@ class UnrealizedPositionRepository:
     def __init__(self, db):
         self.db = db
 
-        def _get_profit_only_position_start(self, site_id: int, user_id: int, tz_name: str) -> tuple[Optional[date], Optional[datetime]]:
-                """Best-effort start date for profit-only positions (remaining basis == 0).
+    def _get_profit_only_position_start(self, site_id: int, user_id: int, tz_name: str) -> tuple[Optional[date], Optional[datetime]]:
+        """Best-effort start date for profit-only positions (remaining basis == 0).
 
-                When FIFO has consumed all basis, the "oldest purchase with remaining basis" is undefined.
-                In practice, users want to see the purchase(s) that most recently contributed basis to the
-                current on-site balance.
+        When FIFO has consumed all basis, the "oldest purchase with remaining basis" is undefined.
+        In practice, users want to see the purchase(s) that most recently contributed basis to the
+        current on-site balance.
 
-                We approximate this by finding the most recent non-free-SC redemption with FIFO allocations
-                and returning the latest purchase datetime among its allocated purchases.
-                """
-                query = """
-                        SELECT p.purchase_date,
-                                     COALESCE(p.purchase_time, '00:00:00') as purchase_time
-                        FROM redemptions r
-                        JOIN redemption_allocations ra ON ra.redemption_id = r.id
-                        JOIN purchases p ON p.id = ra.purchase_id
-                        WHERE r.site_id = ? AND r.user_id = ?
-                            AND r.deleted_at IS NULL
-                            AND r.is_free_sc = 0
-                            AND CAST(ra.allocated_amount AS REAL) > 0
-                            AND p.deleted_at IS NULL
-                            AND (p.status IS NULL OR p.status = 'active')
-                            AND r.id = (
-                                    SELECT r2.id
-                                    FROM redemptions r2
-                                    WHERE r2.site_id = ? AND r2.user_id = ?
-                                        AND r2.deleted_at IS NULL
-                                        AND r2.is_free_sc = 0
-                                        AND EXISTS (
-                                                SELECT 1 FROM redemption_allocations ra2
-                                                WHERE ra2.redemption_id = r2.id
-                                                    AND CAST(ra2.allocated_amount AS REAL) > 0
-                                        )
-                                    ORDER BY r2.redemption_date DESC,
-                                                     COALESCE(r2.redemption_time, '00:00:00') DESC,
-                                                     r2.id DESC
-                                    LIMIT 1
-                            )
-                        ORDER BY p.purchase_date DESC,
-                                         COALESCE(p.purchase_time, '00:00:00') DESC,
-                                         p.id DESC
-                        LIMIT 1
-                """
-                row = self.db.fetch_one(query, (site_id, user_id, site_id, user_id))
-                if not row or not row.get("purchase_date"):
-                        return None, None
-                start_dt_utc = self._to_dt(row["purchase_date"], row["purchase_time"])
-                start_date_local = self._to_local_date(row["purchase_date"], row["purchase_time"], tz_name)
-                return start_date_local, start_dt_utc
+        We approximate this by finding the most recent non-free-SC redemption with FIFO allocations
+        and returning the latest purchase datetime among its allocated purchases.
+        """
+        query = """
+            SELECT p.purchase_date,
+                   COALESCE(p.purchase_time, '00:00:00') as purchase_time
+            FROM redemptions r
+            JOIN redemption_allocations ra ON ra.redemption_id = r.id
+            JOIN purchases p ON p.id = ra.purchase_id
+            WHERE r.site_id = ? AND r.user_id = ?
+              AND r.deleted_at IS NULL
+              AND r.is_free_sc = 0
+              AND CAST(ra.allocated_amount AS REAL) > 0
+              AND p.deleted_at IS NULL
+              AND (p.status IS NULL OR p.status = 'active')
+              AND r.id = (
+                  SELECT r2.id
+                  FROM redemptions r2
+                  WHERE r2.site_id = ? AND r2.user_id = ?
+                    AND r2.deleted_at IS NULL
+                    AND r2.is_free_sc = 0
+                    AND EXISTS (
+                        SELECT 1 FROM redemption_allocations ra2
+                        WHERE ra2.redemption_id = r2.id
+                          AND CAST(ra2.allocated_amount AS REAL) > 0
+                    )
+                  ORDER BY r2.redemption_date DESC,
+                           COALESCE(r2.redemption_time, '00:00:00') DESC,
+                           r2.id DESC
+                  LIMIT 1
+              )
+            ORDER BY p.purchase_date DESC,
+                     COALESCE(p.purchase_time, '00:00:00') DESC,
+                     p.id DESC
+            LIMIT 1
+        """
+        row = self.db.fetch_one(query, (site_id, user_id, site_id, user_id))
+        if not row or not row.get("purchase_date"):
+            return None, None
+        start_dt_utc = self._to_dt(row["purchase_date"], row["purchase_time"])
+        start_date_local = self._to_local_date(row["purchase_date"], row["purchase_time"], tz_name)
+        return start_date_local, start_dt_utc
     
     def get_all_positions(self, start_date: Optional[date] = None, end_date: Optional[date] = None) -> List[UnrealizedPosition]:
         """
