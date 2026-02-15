@@ -206,3 +206,39 @@ def test_recalculate_all_sessions_by_site(game_session_service, sample_user, sam
     
     count = game_session_service.recalculate_all_sessions(user_id=sample_user.id, site_id=sample_site.id)
     assert count >= 0
+
+
+def test_find_containing_session_start_uses_local_bounds(monkeypatch, game_session_service, sample_user, sample_site, test_db):
+    """Containing-session lookup should convert local timestamps to UTC for queries."""
+    from tools.timezone_utils import local_date_time_to_utc
+
+    monkeypatch.setattr(
+        "services.game_session_service.get_configured_timezone_name",
+        lambda: "America/New_York",
+    )
+
+    start_utc_date, start_utc_time = local_date_time_to_utc(
+        date(2026, 1, 1),
+        "23:30:00",
+        "America/New_York",
+    )
+    cursor = test_db._connection.cursor()
+    cursor.execute(
+        """
+        INSERT INTO game_sessions (
+            user_id, site_id, session_date, session_time, status
+        ) VALUES (?, ?, ?, ?, ?)
+        """,
+        (sample_user.id, sample_site.id, start_utc_date, start_utc_time, "Active"),
+    )
+    test_db._connection.commit()
+
+    start_date, start_time = game_session_service._find_containing_session_start(
+        sample_site.id,
+        sample_user.id,
+        date(2026, 1, 2),
+        "00:15:00",
+    )
+
+    assert start_date == date(2026, 1, 1)
+    assert start_time == "23:30:00"

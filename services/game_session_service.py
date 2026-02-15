@@ -13,6 +13,11 @@ from repositories.game_session_repository import GameSessionRepository
 from repositories.site_repository import SiteRepository
 from models.game_session import GameSession
 from services.fifo_service import FIFOService
+from tools.timezone_utils import (
+    get_configured_timezone_name,
+    local_date_time_to_utc,
+    utc_date_time_to_local,
+)
 
 if TYPE_CHECKING:
     from services.audit_service import AuditService
@@ -705,7 +710,9 @@ class GameSessionService:
         if not hasattr(self.session_repo, "db"):
             return None
         ts_time = self._normalize_time(session_time)
-        date_str = session_date.isoformat() if hasattr(session_date, "isoformat") else str(session_date)
+        tz_name = get_configured_timezone_name()
+        utc_date, utc_time = local_date_time_to_utc(session_date, ts_time, tz_name)
+        date_str = utc_date
         row = self.session_repo.db.fetch_one(
             """
             SELECT session_date, COALESCE(session_time,'00:00:00') as start_time
@@ -718,14 +725,19 @@ class GameSessionService:
             ORDER BY session_date DESC, COALESCE(session_time,'00:00:00') DESC
             LIMIT 1
             """,
-            (site_id, user_id, date_str, date_str, ts_time, date_str, date_str, ts_time),
+            (site_id, user_id, date_str, date_str, utc_time, date_str, date_str, utc_time),
         )
         if not row:
             return None
         start_date = row["session_date"]
         if isinstance(start_date, str):
             start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
-        return start_date, row["start_time"]
+        start_date_local, start_time_local = utc_date_time_to_local(
+            start_date,
+            row["start_time"],
+            tz_name,
+        )
+        return start_date_local, start_time_local
 
     def _containing_boundary(
         self,
