@@ -182,6 +182,14 @@ class UnrealizedTab(QtWidgets.QWidget):
             key = (adj.site_id, adj.user_id)
             adjustments_by_pair.setdefault(key, []).append(adj.effective_date)
         adjusted_icon = self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxInformation)
+        
+        # Check for active sessions (Issue #124)
+        active_sessions: dict[tuple[int, int], bool] = {}
+        for pos in positions:
+            key = (pos.site_id, pos.user_id)
+            if key not in active_sessions:
+                active_session = self.facade.get_active_game_session(pos.user_id, pos.site_id)
+                active_sessions[key] = active_session is not None
 
         sorting_was_enabled = self.table.isSortingEnabled()
         self.table.setSortingEnabled(False)
@@ -192,19 +200,37 @@ class UnrealizedTab(QtWidgets.QWidget):
             self.table.setRowCount(len(positions))
         
             for row, pos in enumerate(positions):
-                # Store position data
-                site_item = QtWidgets.QTableWidgetItem(pos.site_name)
+                # Store position data and build site name with indicators
+                site_name = pos.site_name
+                site_item = QtWidgets.QTableWidgetItem(site_name)
                 site_item.setData(QtCore.Qt.UserRole, (pos.site_id, pos.user_id))
-                anchor = anchors.get((pos.site_id, pos.user_id))
-                effective_dates = adjustments_by_pair.get((pos.site_id, pos.user_id), [])
+                
+                # Check for active session indicator
+                key = (pos.site_id, pos.user_id)
+                has_active_session = active_sessions.get(key, False)
+                if has_active_session:
+                    site_item.setText(f"⏳ {site_name}")
+                    site_item.setToolTip(
+                        "Active session in progress - currently playing at this site"
+                    )
+                
+                # Check for adjustments indicator
+                anchor = anchors.get(key)
+                effective_dates = adjustments_by_pair.get(key, [])
                 has_applicable_adjustments = bool(
                     anchor and any(d >= anchor for d in effective_dates)
                 )
                 if has_applicable_adjustments:
                     site_item.setIcon(adjusted_icon)
-                    site_item.setToolTip(
-                        "Adjusted: this position has adjustments/checkpoints in its active window (Tools)."
-                    )
+                    if has_active_session:
+                        site_item.setToolTip(
+                            "Active session in progress - currently playing at this site\n"
+                            "Adjusted: this position has adjustments/checkpoints in its active window (Tools)."
+                        )
+                    else:
+                        site_item.setToolTip(
+                            "Adjusted: this position has adjustments/checkpoints in its active window (Tools)."
+                        )
                 self.table.setItem(row, 0, site_item)
                 self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(pos.user_name))
                 self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(str(pos.start_date)))
