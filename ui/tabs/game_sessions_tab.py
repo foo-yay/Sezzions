@@ -2360,6 +2360,29 @@ class EditClosedSessionDialog(QDialog):
         
         datetime_layout.addLayout(end_row)
         
+        # Row 2.5: Travel mode badges (compact info row)
+        start_entry_tz = getattr(self.session, "start_entry_time_zone", None)
+        end_entry_tz = getattr(self.session, "end_entry_time_zone", None)
+        accounting_tz = get_accounting_timezone_name()
+        
+        travel_indicators = []
+        if start_entry_tz and start_entry_tz != accounting_tz:
+            travel_indicators.append(f"Start: 🌐 {start_entry_tz}")
+        if end_entry_tz and end_entry_tz != accounting_tz:
+            travel_indicators.append(f"End: 🌐 {end_entry_tz}")
+        
+        if travel_indicators:
+            travel_info_row = QHBoxLayout()
+            travel_info_row.setSpacing(12)
+            travel_label = QLabel("Travel Mode: " + " | ".join(travel_indicators))
+            travel_label.setObjectName("HelperText")
+            travel_label.setProperty("status", "info")
+            travel_label.setStyleSheet("color: #0066cc; font-size: 11px; padding: 4px 0;")
+            travel_label.setToolTip(f"Times entered in travel mode. Accounting TZ: {accounting_tz}.")
+            travel_info_row.addWidget(travel_label)
+            travel_info_row.addStretch()
+            datetime_layout.addLayout(travel_info_row)
+        
         # Row 3: Start timestamp adjustment info banner
         self.start_timestamp_info_label = QLabel()
         self.start_timestamp_info_label.setObjectName("HelperText")
@@ -3697,21 +3720,52 @@ class ViewSessionDialog(QDialog):
         start_dt_label.setObjectName("MutedLabel")
         details_grid.addWidget(start_dt_label, 0, 0)
 
+        # Start time with travel mode badge
         start_dt_value = self._format_datetime(self.session.session_date, self.session.session_time)
+        start_dt_container = QWidget()
+        start_dt_layout = QHBoxLayout(start_dt_container)
+        start_dt_layout.setContentsMargins(0, 0, 0, 0)
+        start_dt_layout.setSpacing(4)
         start_dt_display = QLabel(start_dt_value)
         start_dt_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
         start_dt_display.setCursor(Qt.IBeamCursor)
-        details_grid.addWidget(start_dt_display, 0, 1)
+        start_dt_layout.addWidget(start_dt_display)
+        
+        # Add travel mode badge if entry TZ differs from accounting TZ
+        start_entry_tz = getattr(self.session, "start_entry_time_zone", None)
+        accounting_tz = get_accounting_timezone_name()
+        if start_entry_tz and start_entry_tz != accounting_tz:
+            start_globe = QLabel("🌐")
+            start_globe.setToolTip(f"Entered in travel mode ({start_entry_tz}). Accounting TZ: {accounting_tz}.")
+            start_dt_layout.addWidget(start_globe)
+        
+        start_dt_layout.addStretch()
+        details_grid.addWidget(start_dt_container, 0, 1)
 
         end_dt_label = QLabel("End Date / Time:")
         end_dt_label.setObjectName("MutedLabel")
         details_grid.addWidget(end_dt_label, 0, 2)
 
+        # End time with travel mode badge
         end_dt_value = self._format_datetime(self.session.end_date, self.session.end_time) if self.session.end_date else "—"
+        end_dt_container = QWidget()
+        end_dt_layout = QHBoxLayout(end_dt_container)
+        end_dt_layout.setContentsMargins(0, 0, 0, 0)
+        end_dt_layout.setSpacing(4)
         end_dt_display = QLabel(end_dt_value)
         end_dt_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
         end_dt_display.setCursor(Qt.IBeamCursor)
-        details_grid.addWidget(end_dt_display, 0, 3)
+        end_dt_layout.addWidget(end_dt_display)
+        
+        # Add travel mode badge if entry TZ differs from accounting TZ
+        end_entry_tz = getattr(self.session, "end_entry_time_zone", None)
+        if end_entry_tz and end_entry_tz != accounting_tz:
+            end_globe = QLabel("🌐")
+            end_globe.setToolTip(f"Entered in travel mode ({end_entry_tz}). Accounting TZ: {accounting_tz}.")
+            end_dt_layout.addWidget(end_globe)
+        
+        end_dt_layout.addStretch()
+        details_grid.addWidget(end_dt_container, 0, 3)
 
         # Row 1: User (left), Site (right)
         user_label = QLabel("User:")
@@ -4468,11 +4522,28 @@ class EndSessionDialog(QDialog):
         start_time_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         datetime_layout.addWidget(start_time_label, 0, 2)
 
+        # Start time with travel mode badge
+        start_time_container = QWidget()
+        start_time_hlayout = QHBoxLayout(start_time_container)
+        start_time_hlayout.setContentsMargins(0, 0, 0, 0)
+        start_time_hlayout.setSpacing(4)
+        
         self.start_time_display = QLabel(self._format_time(self.session.session_time))
         self.start_time_display.setObjectName("ValueChip")
         self.start_time_display.setProperty("status", "neutral")
         self.start_time_display.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        datetime_layout.addWidget(self.start_time_display, 0, 3)
+        start_time_hlayout.addWidget(self.start_time_display)
+        
+        # Add travel mode badge if entry TZ differs from accounting TZ
+        start_entry_tz = getattr(self.session, "start_entry_time_zone", None)
+        accounting_tz = get_accounting_timezone_name()
+        if start_entry_tz and start_entry_tz != accounting_tz:
+            start_globe = QLabel("🌐")
+            start_globe.setToolTip(f"Entered in travel mode ({start_entry_tz}). Accounting TZ: {accounting_tz}.")
+            start_time_hlayout.addWidget(start_globe)
+        
+        start_time_hlayout.addStretch()
+        datetime_layout.addWidget(start_time_container, 0, 3)
 
         # Row 1: End Time with button
         end_time_label = QLabel("End Time:")
