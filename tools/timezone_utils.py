@@ -8,6 +8,18 @@ from typing import Optional, Tuple
 from zoneinfo import ZoneInfo, available_timezones
 
 
+_ACTIVE_SETTINGS: Optional[object] = None
+
+
+def set_active_settings(settings: Optional[object]) -> None:
+    global _ACTIVE_SETTINGS
+    _ACTIVE_SETTINGS = settings
+
+
+def _resolve_settings(settings: Optional[object]) -> Optional[object]:
+    return settings or _ACTIVE_SETTINGS
+
+
 def get_system_timezone_name() -> str:
     """Best-effort system timezone name (IANA)."""
     try:
@@ -30,6 +42,7 @@ def _get_settings_value(settings: Optional[object], key: str, default=None):
 
 def get_accounting_timezone_name(settings: Optional[object] = None) -> str:
     """Return Accounting (Home/Tax) timezone name or system default."""
+    settings = _resolve_settings(settings)
     value = _get_settings_value(settings, "accounting_time_zone", None)
     if value:
         return str(value)
@@ -52,6 +65,7 @@ def get_accounting_timezone_name(settings: Optional[object] = None) -> str:
 
 def get_entry_timezone_name(settings: Optional[object] = None) -> str:
     """Return Entry/Current timezone name (travel-aware)."""
+    settings = _resolve_settings(settings)
     travel_enabled = bool(_get_settings_value(settings, "travel_mode_enabled", False))
     if travel_enabled:
         current_tz = _get_settings_value(settings, "current_time_zone", None)

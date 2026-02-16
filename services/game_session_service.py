@@ -14,6 +14,7 @@ from repositories.site_repository import SiteRepository
 from models.game_session import GameSession
 from services.fifo_service import FIFOService
 from tools.timezone_utils import (
+    get_accounting_timezone_name,
     get_entry_timezone_name,
     local_date_time_to_utc,
     utc_date_time_to_accounting_local,
@@ -440,7 +441,8 @@ class GameSessionService:
         site_id: int,
         session_date: date,
         session_time: str,
-        exclude_purchase_id: Optional[int] = None
+        exclude_purchase_id: Optional[int] = None,
+        entry_time_zone: Optional[str] = None,
     ) -> Tuple[Decimal, Decimal]:
         """Compute expected total/redeemable balances at a cutoff timestamp.
 
@@ -461,13 +463,15 @@ class GameSessionService:
         expected_total = Decimal("0.00")
         expected_redeemable = Decimal("0.00")
 
-        def to_dt(d: date, t: Optional[str]) -> datetime:
+        def to_utc_dt(d: date, t: Optional[str], tz_name: Optional[str]) -> datetime:
             time_str = t or "00:00:00"
             if len(time_str) == 5:
                 time_str = f"{time_str}:00"
-            return datetime.combine(d, datetime.strptime(time_str, "%H:%M:%S").time())
+            utc_date, utc_time = local_date_time_to_utc(d, time_str, tz_name)
+            return datetime.strptime(f"{utc_date} {utc_time}", "%Y-%m-%d %H:%M:%S")
 
-        cutoff = to_dt(session_date, session_time)
+        cutoff_tz = entry_time_zone or get_entry_timezone_name() or get_accounting_timezone_name()
+        cutoff = to_utc_dt(session_date, session_time, cutoff_tz)
         anchor_dt: Optional[datetime] = None
 
         # Priority 1: explicit checkpoint
@@ -479,7 +483,11 @@ class GameSessionService:
                 session_time,
             )
             if latest_checkpoint:
-                anchor_dt = to_dt(latest_checkpoint.effective_date, latest_checkpoint.effective_time)
+                anchor_dt = to_utc_dt(
+                    latest_checkpoint.effective_date,
+                    latest_checkpoint.effective_time,
+                    latest_checkpoint.effective_entry_time_zone or get_accounting_timezone_name(),
+                )
                 expected_total = Decimal(str(latest_checkpoint.checkpoint_total_sc))
                 expected_redeemable = Decimal(str(latest_checkpoint.checkpoint_redeemable_sc))
 
@@ -491,7 +499,11 @@ class GameSessionService:
                     continue
                 sess_end_date = sess.end_date or sess.session_date
                 sess_end_time = sess.end_time or sess.session_time
-                sess_dt = to_dt(sess_end_date, sess_end_time)
+                sess_dt = to_utc_dt(
+                    sess_end_date,
+                    sess_end_time,
+                    sess.end_entry_time_zone or sess.start_entry_time_zone or get_accounting_timezone_name(),
+                )
                 if sess_dt < cutoff and (anchor_dt is None or sess_dt > anchor_dt):
                     anchor_dt = sess_dt
                     expected_total = Decimal(str(sess.ending_balance))
@@ -504,17 +516,35 @@ class GameSessionService:
         # Sort deterministically (datetime then id)
         purchases_sorted = sorted(
             purchases,
-            key=lambda p: (to_dt(p.purchase_date, p.purchase_time), int(p.id or 0)),
+            key=lambda p: (
+                to_utc_dt(
+                    p.purchase_date,
+                    p.purchase_time,
+                    p.purchase_entry_time_zone or get_accounting_timezone_name(),
+                ),
+                int(p.id or 0),
+            ),
         )
         redemptions_sorted = sorted(
             redemptions,
-            key=lambda r: (to_dt(r.redemption_date, r.redemption_time), int(r.id or 0)),
+            key=lambda r: (
+                to_utc_dt(
+                    r.redemption_date,
+                    r.redemption_time,
+                    r.redemption_entry_time_zone or get_accounting_timezone_name(),
+                ),
+                int(r.id or 0),
+            ),
         )
 
         # Apply redemptions (delta-based) first by walking time; purchases will overwrite total.
         # This is safe because purchase.starting_sc_balance is authoritative post-purchase.
         for r in redemptions_sorted:
-            r_dt = to_dt(r.redemption_date, r.redemption_time)
+            r_dt = to_utc_dt(
+                r.redemption_date,
+                r.redemption_time,
+                r.redemption_entry_time_zone or get_accounting_timezone_name(),
+            )
             if anchor_dt is not None and r_dt <= anchor_dt:
                 continue
             if not (r_dt < cutoff):
@@ -524,7 +554,11 @@ class GameSessionService:
             expected_redeemable -= amount
 
         for p in purchases_sorted:
-            p_dt = to_dt(p.purchase_date, p.purchase_time)
+            p_dt = to_utc_dt(
+                p.purchase_date,
+                p.purchase_time,
+                p.purchase_entry_time_zone or get_accounting_timezone_name(),
+            )
             if anchor_dt is not None and p_dt <= anchor_dt:
                 continue
 

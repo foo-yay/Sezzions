@@ -222,7 +222,7 @@ class PurchaseRepository:
         if isinstance(purchase_date, str):
             purchase_date = datetime.strptime(purchase_date, "%Y-%m-%d").date()
 
-        entry_tz = row.get('purchase_entry_time_zone') or get_entry_timezone_name()
+        entry_tz = row.get('purchase_entry_time_zone') or get_accounting_timezone_name()
         purchase_date, purchase_time = utc_date_time_to_local(
             purchase_date,
             row.get('purchase_time'),

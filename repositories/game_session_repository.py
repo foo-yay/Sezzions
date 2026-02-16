@@ -6,6 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from models.game_session import GameSession
 from tools.timezone_utils import (
+    get_accounting_timezone_name,
     get_entry_timezone_name,
     local_date_time_to_utc,
     utc_date_time_to_local,
@@ -37,7 +38,7 @@ class GameSessionRepository:
         if isinstance(end_date, str):
             end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
 
-        start_entry_tz = row.get("start_entry_time_zone") or get_entry_timezone_name()
+        start_entry_tz = row.get("start_entry_time_zone") or get_accounting_timezone_name()
         session_date, session_time = utc_date_time_to_local(
             session_date,
             row["session_time"] or "00:00:00",

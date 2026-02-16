@@ -211,7 +211,7 @@ class RedemptionRepository:
         if isinstance(redemption_date, str):
             redemption_date = datetime.strptime(redemption_date, "%Y-%m-%d").date()
 
-        entry_tz = row.get('redemption_entry_time_zone') or get_entry_timezone_name()
+        entry_tz = row.get('redemption_entry_time_zone') or get_accounting_timezone_name()
         redemption_date, redemption_time = utc_date_time_to_local(
             redemption_date,
             row['redemption_time'] if 'redemption_time' in row.keys() else None,

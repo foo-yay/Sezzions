@@ -18,6 +18,7 @@ from ui.daily_sessions_filters import (
 )
 from ui.input_parsers import parse_date_input
 from tools.timezone_utils import (
+    get_accounting_timezone_name,
     get_configured_timezone_name,
     local_date_range_to_utc_bounds,
     utc_date_time_to_local,
@@ -539,6 +540,10 @@ class RealizedPositionDialog(QtWidgets.QDialog):
             date_time_display = (
                 f"{date_text} {time_text[:5]}" if date_text != "—" else "—"
             )
+            entry_tz = purchase.get("purchase_entry_time_zone")
+            accounting_tz = get_accounting_timezone_name()
+            if entry_tz and entry_tz != accounting_tz:
+                date_time_display = f"{date_time_display} 🌐"
             amount = format_currency(purchase.get("amount"))
             sc_received = f"{float(purchase.get('sc_received') or 0.0):.2f}"
             allocated = format_currency(purchase.get("allocated_amount"))
@@ -548,6 +553,10 @@ class RealizedPositionDialog(QtWidgets.QDialog):
                 item = QtWidgets.QTableWidgetItem(str(value))
                 if col_idx in (1, 2, 3):
                     item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                if col_idx == 0 and entry_tz and entry_tz != accounting_tz:
+                    item.setToolTip(
+                        f"Entered in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}."
+                    )
                 self.purchases_table.setItem(row_idx, col_idx, item)
 
             view_btn = QtWidgets.QPushButton("👁️ View Purchase")
@@ -579,6 +588,10 @@ class RealizedPositionDialog(QtWidgets.QDialog):
             start_display = (
                 f"{start_date_text} {start_time_text[:5]}" if start_date_text != "—" else "—"
             )
+            entry_tz = getattr(session, "start_entry_time_zone", None) or getattr(session, "end_entry_time_zone", None)
+            accounting_tz = get_accounting_timezone_name()
+            if entry_tz and entry_tz != accounting_tz:
+                start_display = f"{start_display} 🌐"
             end_display = "—"
             if getattr(session, "end_date", None):
                 end_date_text, end_time_text = self._format_local_date_time_parts(
@@ -596,6 +609,10 @@ class RealizedPositionDialog(QtWidgets.QDialog):
             values = [start_display, end_display, game_name, net_display]
             for col_idx, value in enumerate(values):
                 item = QtWidgets.QTableWidgetItem(str(value))
+                if col_idx == 0 and entry_tz and entry_tz != accounting_tz:
+                    item.setToolTip(
+                        f"Entered in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}."
+                    )
                 self.sessions_table.setItem(row_idx, col_idx, item)
 
             view_btn = QtWidgets.QPushButton("👁️ View Session")
@@ -1565,6 +1582,7 @@ class RealizedTab(QtWidgets.QWidget):
                 ra.allocated_amount,
                 p.purchase_date,
                 p.purchase_time,
+                p.purchase_entry_time_zone,
                 p.amount,
                 p.sc_received,
                 p.remaining_amount

@@ -495,7 +495,7 @@ class AdjustmentRepository:
         if isinstance(effective_date, str):
             effective_date = date.fromisoformat(effective_date)
 
-        entry_tz = row.get('effective_entry_time_zone') or get_entry_timezone_name()
+        entry_tz = row.get('effective_entry_time_zone') or get_accounting_timezone_name()
         effective_date, effective_time = utc_date_time_to_local(
             effective_date,
             row['effective_time'] or "00:00:00",

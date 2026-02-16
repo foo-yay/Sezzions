@@ -18,6 +18,7 @@ from ui.settings_dialog import SettingsDialog
 from ui.maintenance_mode_dialog import MaintenanceModeDialog
 from services.data_integrity_service import DataIntegrityService
 from services.repair_mode_service import RepairModeService
+from tools.timezone_utils import set_active_settings
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -27,6 +28,7 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.facade = facade
         self.settings = Settings()
+        set_active_settings(self.settings)
         
         # Wire Repair Mode service to facade with settings and db_manager
         from services.repair_mode_service import RepairModeService

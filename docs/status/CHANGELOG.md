@@ -12,6 +12,110 @@ Rules:
 ## 2026-02-15
 
 ```yaml
+id: 2026-02-15-10
+type: bugfix
+areas: [sessions, time]
+summary: "Block session end before start in UTC"
+files_changed:
+  - ui/tabs/game_sessions_tab.py
+```
+
+**Bugfix: Session End Validation Across Time Zones**
+
+- Closing a session now blocks saving when the end time is earlier than the start time after UTC conversion.
+
+---
+
+```yaml
+id: 2026-02-15-09
+type: bugfix
+areas: [sessions, purchases, time]
+summary: "Expected balances compare UTC instants"
+files_changed:
+  - services/game_session_service.py
+  - app_facade.py
+  - tests/integration/test_expected_balance_entry_timezone_ordering.py
+```
+
+**Bugfix: Cross-TZ Expected Balance Ordering**
+
+- Expected balance calculations now compare UTC instants so purchases in other entry time zones don’t apply before they occur.
+
+---
+
+```yaml
+id: 2026-02-15-08
+type: enhancement
+areas: [ui, purchases, redemptions, sessions, time]
+summary: "Allow entry TZ re-stamp on edit"
+files_changed:
+  - ui/tabs/purchases_tab.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/game_sessions_tab.py
+  - repositories/game_session_repository.py
+  - docs/PROJECT_SPEC.md
+```
+
+**Edit Entry Time Zone Prompt**
+
+- Edit/save now prompts to re-stamp entry time zones to the current mode when they differ.
+
+---
+
+```yaml
+id: 2026-02-15-07
+type: bugfix
+areas: [purchases, redemptions, adjustments, time]
+summary: "Default missing entry TZ to accounting"
+files_changed:
+  - repositories/purchase_repository.py
+  - repositories/redemption_repository.py
+  - repositories/adjustment_repository.py
+```
+
+**Bugfix: Stable Entry TZ Fallback**
+
+- Records with missing entry time zones now default to the accounting TZ, preventing travel-mode toggles from retroactively adding globe badges.
+
+---
+
+```yaml
+id: 2026-02-15-06
+type: bugfix
+areas: [time, settings]
+summary: "Use active settings for entry time zone"
+files_changed:
+  - tools/timezone_utils.py
+  - ui/main_window.py
+```
+
+**Bugfix: Live Travel-Mode Settings**
+
+- Timezone helpers now honor the active settings instance so entry TZ selection reflects the latest travel-mode changes.
+
+---
+
+```yaml
+id: 2026-02-15-04
+type: enhancement
+areas: [ui, purchases, redemptions, sessions, time]
+summary: "Show travel-mode badge on entry timestamps"
+files_changed:
+  - app_facade.py
+  - ui/tabs/purchases_tab.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/game_sessions_tab.py
+  - ui/tabs/unrealized_tab.py
+  - ui/tabs/realized_tab.py
+```
+
+**UI: Travel-Mode Timestamp Badge**
+
+- Entries recorded in a non-accounting time zone now show a globe badge with a tooltip indicating the entry TZ.
+
+---
+
+```yaml
 id: 2026-02-15-01
 type: bugfix
 areas: [unrealized, time, repositories]

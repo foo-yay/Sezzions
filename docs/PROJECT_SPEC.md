@@ -768,6 +768,7 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - Repository/services convert UTC → local for display and business logic.
 - **Accounting Time Zone** controls daily bucketing/reporting; stored in `accounting_time_zone_history` for effective-dated changes.
 - **Entry Time Zone** controls how new timestamps are interpreted; Travel Mode allows Entry TZ to differ from Accounting TZ.
+  - On edit/save, if the stored entry TZ differs from current mode, the user is prompted to optionally re-stamp the entry TZ.
 - Accounting TZ changes recompute derived daily tables from the effective UTC timestamp.
 - Audit log date filters convert local date ranges to UTC bounds before querying.
 - Unrealized positions convert UTC timestamps to local dates for start/last-activity filtering in the UI.
@@ -776,6 +777,8 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - Tax and session P/L reports (and realized transaction filters) convert local date ranges to UTC bounds using stored timestamps.
 - Realized tab groups transactions by local day using redemption timestamps; view-position dialogs display related purchase/session times in local time.
 - Game session recalculation uses local timestamps converted to UTC when finding containing sessions.
+- Expected balance checks compare UTC instants across entry time zones to avoid out-of-order inclusion.
+- Session close validation blocks saves when end time is before start time after UTC conversion.
 - One-time migration converts existing local timestamps to UTC using the currently selected time zone.
 
 **UI Integration:**
