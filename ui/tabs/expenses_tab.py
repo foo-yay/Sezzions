@@ -11,6 +11,7 @@ from ui.table_header_filters import TableHeaderFilter
 from ui.spreadsheet_ux import SpreadsheetUXController
 from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 from ui.input_parsers import parse_date_input, parse_time_input
+from tools.timezone_utils import get_accounting_timezone_name
 
 
 EXPENSE_CATEGORIES = [
@@ -204,8 +205,18 @@ class ExpensesTab(QtWidgets.QWidget):
             self.table.setRowCount(len(filtered))
 
             for row, expense in enumerate(filtered):
-                date_item = QtWidgets.QTableWidgetItem(str(expense.expense_date))
+                date_display = str(expense.expense_date)
+                
+                # Add travel mode badge
+                entry_tz = getattr(expense, "expense_entry_time_zone", None)
+                accounting_tz = get_accounting_timezone_name()
+                if entry_tz and entry_tz != accounting_tz:
+                    date_display = f"{date_display} 🌐"
+                
+                date_item = QtWidgets.QTableWidgetItem(date_display)
                 date_item.setData(QtCore.Qt.UserRole, expense.id)
+                if entry_tz and entry_tz != accounting_tz:
+                    date_item.setToolTip(f"Entered in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}.")
                 self.table.setItem(row, 0, date_item)
                 self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(expense.category or ""))
                 self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(expense.vendor or ""))
@@ -874,15 +885,33 @@ class ExpenseViewDialog(QtWidgets.QDialog):
         left_grid.setHorizontalSpacing(12)
         left_grid.setVerticalSpacing(6)
         
-        # Date & Time
+        # Date & Time with travel mode badge
         date_label = QtWidgets.QLabel("Date:")
         date_label.setObjectName("MutedLabel")
         left_grid.addWidget(date_label, 0, 0)
+        
         date_time_str = self._format_date(expense.expense_date)
         if expense.expense_time:
             time_display = expense.expense_time if len(expense.expense_time) >= 5 else expense.expense_time
             date_time_str += f" {time_display}"
-        left_grid.addWidget(self._make_selectable_label(date_time_str), 0, 1)
+        
+        # Create container for date/time with optional badge
+        datetime_container = QtWidgets.QWidget()
+        datetime_layout = QtWidgets.QHBoxLayout(datetime_container)
+        datetime_layout.setContentsMargins(0, 0, 0, 0)
+        datetime_layout.setSpacing(4)
+        datetime_layout.addWidget(self._make_selectable_label(date_time_str))
+        
+        # Add travel mode badge
+        entry_tz = getattr(expense, "expense_entry_time_zone", None)
+        accounting_tz = get_accounting_timezone_name()
+        if entry_tz and entry_tz != accounting_tz:
+            globe_label = QtWidgets.QLabel("🌐")
+            globe_label.setToolTip(f"Entered in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}.")
+            datetime_layout.addWidget(globe_label)
+        
+        datetime_layout.addStretch()
+        left_grid.addWidget(datetime_container, 0, 1)
         
         # Vendor
         vendor_label = QtWidgets.QLabel("Vendor:")

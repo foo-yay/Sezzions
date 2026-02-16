@@ -792,6 +792,11 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - **Accounting Time Zone** controls daily bucketing/reporting; stored in `accounting_time_zone_history` for effective-dated changes.
 - **Entry Time Zone** controls how new timestamps are interpreted; Travel Mode allows Entry TZ to differ from Accounting TZ.
   - On edit/save, if the stored entry TZ differs from current mode, the user is prompted to optionally re-stamp the entry TZ.
+- **Travel Mode Badges (Issue #128)**: When displaying timestamps, if the entry timezone differs from the accounting timezone, a 🌐 globe badge is shown with a tooltip indicating the entry timezone. This prevents confusion when viewing records entered in different timezones.
+  - Badge locations: All dialogs (view/edit), all main table date/time columns, all linked event sub-tables
+  - Session tables: Single globe in date/time column if either start OR end was entered in travel mode; tooltip shows which timezone(s) differ
+  - Edit dialogs: Badge appears after NOW button when in travel mode
+  - Timezone update validation: When editing sessions, timezone update prompt occurs BEFORE UTC validation to prevent false "end earlier than start" errors
 - Accounting TZ changes recompute derived daily tables from the effective UTC timestamp.
 - Audit log date filters convert local date ranges to UTC bounds before querying.
 - Unrealized positions convert UTC timestamps to local dates for start/last-activity filtering in the UI.
