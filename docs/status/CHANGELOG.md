@@ -9,7 +9,89 @@ Rules:
 
 ---
 
+## 2026-02-16
+
+```yaml
+id: 2026-02-16-01
+type: bugfix
+areas: [ui, redemptions, balances]
+summary: "Treat 'full cashout' as total balance (not redeemable)"
+files_changed:
+  - ui/tabs/redemptions_tab.py
+  - tests/unit/test_redemption_confirmation_classification.py
+```
+
+**Bugfix: Partial Redemptions vs Redeemable-Only Balance**
+
+- The full/partial confirmation prompt now compares against expected TOTAL balance, so redeeming all currently redeemable can still be treated as a Partial redemption when additional non-redeemable balance remains.
+
+---
+
+```yaml
+id: 2026-02-16-02
+type: bugfix
+areas: [sessions, ui, redemptions]
+summary: "Ignore soft-deleted redemptions in session delete impact"
+files_changed:
+  - services/game_session_service.py
+  - tests/unit/test_game_session_deletion_impact.py
+```
+
+**Bugfix: Session Delete Impact vs Soft-Deleted Redemptions**
+
+- The session deletion impact warning now ignores soft-deleted redemptions, so deleting a redemption won’t keep triggering “future redemption(s) after this session” warnings.
+
+---
+
 ## 2026-02-15
+
+```yaml
+id: 2026-02-15-13
+type: bugfix
+areas: [redemptions, sessions, balances]
+summary: "Do not boost redeemable from purchases"
+files_changed:
+  - services/game_session_service.py
+  - tests/integration/test_expected_redeemable_not_from_purchases.py
+```
+
+**Bugfix: Redeemable Balance Expectations**
+
+- Purchases no longer increase expected redeemable balances; redeemable is anchored to sessions/checkpoints.
+
+---
+
+```yaml
+id: 2026-02-15-12
+type: bugfix
+areas: [redemptions, realized, fifo]
+summary: "Exclude deleted redemptions from realized rebuilds"
+files_changed:
+  - services/recalculation_service.py
+  - repositories/realized_transaction_repository.py
+  - tests/integration/test_deleted_redemption_excluded_from_realized.py
+```
+
+**Bugfix: Deleted Redemptions & Realized Basis**
+
+- Soft-deleted redemptions are now excluded from FIFO rebuilds and realized lists.
+
+---
+
+```yaml
+id: 2026-02-15-11
+type: bugfix
+areas: [ui, expenses]
+summary: "Confirm + close on expense delete"
+files_changed:
+  - ui/tabs/expenses_tab.py
+```
+
+**Bugfix: Expense View Delete Flow**
+
+- Deleting from the expense view dialog now closes the dialog and shows a confirmation prompt.
+
+---
 
 ```yaml
 id: 2026-02-15-10

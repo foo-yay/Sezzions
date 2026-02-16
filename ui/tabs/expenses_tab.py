@@ -340,6 +340,13 @@ class ExpensesTab(QtWidgets.QWidget):
         QtWidgets.QMessageBox.information(self, "Success", "Expense(s) deleted")
 
     def _delete_expense_by_id(self, expense_id: int):
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Delete",
+            "Delete this expense?",
+        )
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
         self.facade.delete_expense(expense_id)
         self.refresh_data()
 
@@ -942,7 +949,7 @@ class ExpenseViewDialog(QtWidgets.QDialog):
         button_layout = QtWidgets.QHBoxLayout()
         if self._on_delete:
             delete_btn = QtWidgets.QPushButton("🗑️ Delete")
-            delete_btn.clicked.connect(self._on_delete)
+            delete_btn.clicked.connect(self._handle_delete)
             button_layout.addWidget(delete_btn)
         button_layout.addStretch(1)
         if self._on_edit:
@@ -992,4 +999,10 @@ class ExpenseViewDialog(QtWidgets.QDialog):
         self.accept()
         if self._on_edit:
             self._on_edit()
+
+    def _handle_delete(self):
+        """Close dialog before triggering delete callback"""
+        self.accept()
+        if self._on_delete:
+            self._on_delete()
 

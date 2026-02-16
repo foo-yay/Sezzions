@@ -575,9 +575,8 @@ class GameSessionService:
                 continue
 
             expected_total = Decimal(str(p.starting_sc_balance))
-            # Best-effort: treat redeemable as tracking the same total when purchases are the last
-            # authoritative balance entry in the chain.
-            expected_redeemable = max(expected_redeemable, expected_total)
+            # Purchases do not increase expected redeemable; redeemable is earned via play-through
+            # captured in sessions/checkpoints.
 
         expected_total = max(Decimal("0.00"), expected_total)
         expected_redeemable = max(Decimal("0.00"), expected_redeemable)
@@ -1332,6 +1331,7 @@ class GameSessionService:
                 SELECT COUNT(*) as count, SUM(amount) as total
                 FROM redemptions
                 WHERE site_id = ? AND user_id = ?
+                   AND deleted_at IS NULL
                   AND (redemption_date > ? 
                        OR (redemption_date = ? AND redemption_time > ?))
                 """,
