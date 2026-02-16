@@ -190,6 +190,7 @@ To maintain data integrity and prevent ambiguous event ordering, Sezzions enforc
 - **Enforcement**: `services/timestamp_service.py` → `ensure_unique_timestamp(user_id, site_id, date_str, time_str, event_type, exclude_id)`
 - **Behavior**: If the requested timestamp conflicts with an existing event, auto-increment by 1 second until unique (max 3600 attempts)
 - **Return value**: `(adjusted_date_str, adjusted_time_str, was_adjusted)`
+- **Timezone handling**: Uses **entry timezone** (same as repositories) for local→UTC conversion to ensure conflict checks match database storage. This is critical for travel mode where entry timezone may differ from accounting timezone.
 
 #### UI Integration (Real-Time Warnings)
 

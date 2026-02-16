@@ -12,6 +12,26 @@ Rules:
 ## 2026-02-16
 
 ```yaml
+id: 2026-02-16-04
+type: bugfix
+areas: [services, timestamp, timezone]
+summary: "Fix timestamp uniqueness to use entry timezone instead of accounting timezone"
+files_changed:
+  - services/timestamp_service.py
+  - tests/unit/test_timestamp_service.py
+pr: 127
+```
+
+**Bugfix: Timestamp Uniqueness Timezone Mismatch**
+
+- **Problem**: `TimestampService` was using accounting timezone for UTC conversion when checking for conflicts, but all repositories use entry timezone when storing. This mismatch caused the uniqueness check to happen in the wrong timezone, allowing duplicate timestamps when entry and accounting timezones differed (e.g., in travel mode).
+- **Example failure**: User in EST (entry TZ) with PST (accounting TZ) could create purchase at 23:30 EST and session at 23:30 EST because service checked for conflicts using PST conversion (wrong UTC time).
+- **Fix**: Changed `TimestampService.ensure_unique_timestamp()` to use `get_entry_timezone_name()` instead of `get_configured_timezone_name()`, ensuring conflict checks use the same timezone as storage.
+- **Impact**: Critical fix for cross-event timestamp uniqueness feature; prevents duplicate timestamps that could break event linking and data integrity.
+
+---
+
+```yaml
 id: 2026-02-16-03
 type: enhancement
 areas: [ui, purchases, redemptions, sessions]
