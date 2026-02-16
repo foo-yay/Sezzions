@@ -27,6 +27,22 @@ files_changed:
 
 ---
 
+```yaml
+id: 2026-02-16-02
+type: bugfix
+areas: [sessions, ui, redemptions]
+summary: "Ignore soft-deleted redemptions in session delete impact"
+files_changed:
+  - services/game_session_service.py
+  - tests/unit/test_game_session_deletion_impact.py
+```
+
+**Bugfix: Session Delete Impact vs Soft-Deleted Redemptions**
+
+- The session deletion impact warning now ignores soft-deleted redemptions, so deleting a redemption won’t keep triggering “future redemption(s) after this session” warnings.
+
+---
+
 ## 2026-02-15
 
 ```yaml

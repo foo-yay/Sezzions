@@ -1331,6 +1331,7 @@ class GameSessionService:
                 SELECT COUNT(*) as count, SUM(amount) as total
                 FROM redemptions
                 WHERE site_id = ? AND user_id = ?
+                   AND deleted_at IS NULL
                   AND (redemption_date > ? 
                        OR (redemption_date = ? AND redemption_time > ?))
                 """,
