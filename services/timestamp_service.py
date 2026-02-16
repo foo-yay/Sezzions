@@ -8,7 +8,7 @@ timestamp is found.
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from repositories.database import DatabaseManager
-from tools.timezone_utils import get_configured_timezone_name, local_date_time_to_utc, utc_date_time_to_local
+from tools.timezone_utils import get_entry_timezone_name, local_date_time_to_utc, utc_date_time_to_local
 
 
 class TimestampService:
@@ -55,7 +55,9 @@ class TimestampService:
             # If parsing fails, return original
             return (date_str, time_str, False)
 
-        tz_name = get_configured_timezone_name()
+        # Use ENTRY timezone (same as repositories use for storage) not ACCOUNTING timezone
+        # This ensures conflict checks happen in the same timezone that will be used for storage
+        tz_name = get_entry_timezone_name()
         utc_date_str, utc_time_str = local_date_time_to_utc(date_str, time_str, tz_name)
         utc_dt = datetime.strptime(f"{utc_date_str} {utc_time_str}", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
         original_utc_dt = utc_dt
