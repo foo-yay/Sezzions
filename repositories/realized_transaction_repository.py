@@ -48,7 +48,8 @@ class RealizedTransactionRepository:
             JOIN users u ON rt.user_id = u.id
             LEFT JOIN redemptions r ON rt.redemption_id = r.id
             LEFT JOIN redemption_methods rm ON r.redemption_method_id = rm.id
-            WHERE 1=1
+                        WHERE 1=1
+                            AND r.deleted_at IS NULL
         """
         
         params = []

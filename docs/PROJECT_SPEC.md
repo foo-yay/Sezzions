@@ -779,6 +779,7 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - Game session recalculation uses local timestamps converted to UTC when finding containing sessions.
 - Expected balance checks compare UTC instants across entry time zones to avoid out-of-order inclusion.
 - Session close validation blocks saves when end time is before start time after UTC conversion.
+- Soft-deleted redemptions are excluded from FIFO rebuilds and realized transaction listings.
 - One-time migration converts existing local timestamps to UTC using the currently selected time zone.
 
 **UI Integration:**

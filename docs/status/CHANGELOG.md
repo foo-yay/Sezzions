@@ -12,6 +12,38 @@ Rules:
 ## 2026-02-15
 
 ```yaml
+id: 2026-02-15-12
+type: bugfix
+areas: [redemptions, realized, fifo]
+summary: "Exclude deleted redemptions from realized rebuilds"
+files_changed:
+  - services/recalculation_service.py
+  - repositories/realized_transaction_repository.py
+  - tests/integration/test_deleted_redemption_excluded_from_realized.py
+```
+
+**Bugfix: Deleted Redemptions & Realized Basis**
+
+- Soft-deleted redemptions are now excluded from FIFO rebuilds and realized lists.
+
+---
+
+```yaml
+id: 2026-02-15-11
+type: bugfix
+areas: [ui, expenses]
+summary: "Confirm + close on expense delete"
+files_changed:
+  - ui/tabs/expenses_tab.py
+```
+
+**Bugfix: Expense View Delete Flow**
+
+- Deleting from the expense view dialog now closes the dialog and shows a confirmation prompt.
+
+---
+
+```yaml
 id: 2026-02-15-10
 type: bugfix
 areas: [sessions, time]
