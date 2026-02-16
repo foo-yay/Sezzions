@@ -144,6 +144,10 @@ class GameSessionsTab(QWidget):
         toolbar.addWidget(self.delete_button)
         toolbar.addStretch(1)
         toolbar.addWidget(self.active_label)
+        self.active_only_filter_check = QCheckBox("Active Only")
+        self.active_only_filter_check.setToolTip("Show only active sessions")
+        self.active_only_filter_check.toggled.connect(self._on_active_only_filter_toggled)
+        toolbar.addWidget(self.active_only_filter_check)
         toolbar.addWidget(self.export_button)
         toolbar.addWidget(self.refresh_button)
         layout.addLayout(toolbar)
@@ -188,6 +192,8 @@ class GameSessionsTab(QWidget):
         layout.addWidget(self.stats_bar)
         
         self.table_filter = TableHeaderFilter(self.table, date_columns=[0], refresh_callback=self.load_data)
+
+        self._load_quick_filter_state()
         
         # Set up keyboard shortcuts for spreadsheet UX
         copy_shortcut = QShortcut(QKeySequence.Copy, self.table)
@@ -235,6 +241,41 @@ class GameSessionsTab(QWidget):
     def _filter_sessions(self):
         """Filter sessions based on search text"""
         self.apply_filters()
+
+    def _get_settings_object(self):
+        """Get settings object for reading/writing persistent UI preferences."""
+        if self.main_window is not None and hasattr(self.main_window, "settings"):
+            settings = getattr(self.main_window, "settings")
+            if hasattr(settings, "get") and hasattr(settings, "set"):
+                return settings
+
+        widget = self.parentWidget()
+        while widget:
+            if hasattr(widget, "settings"):
+                settings = getattr(widget, "settings")
+                if hasattr(settings, "get") and hasattr(settings, "set"):
+                    return settings
+            widget = widget.parentWidget()
+        return None
+
+    def _load_quick_filter_state(self):
+        settings = self._get_settings_object()
+        if settings is None:
+            return
+        checked = bool(settings.get("quick_filter_sessions_active_only", False))
+        self.active_only_filter_check.blockSignals(True)
+        self.active_only_filter_check.setChecked(checked)
+        self.active_only_filter_check.blockSignals(False)
+
+    def _save_quick_filter_state(self):
+        settings = self._get_settings_object()
+        if settings is None:
+            return
+        settings.set("quick_filter_sessions_active_only", self.active_only_filter_check.isChecked())
+
+    def _on_active_only_filter_toggled(self, _checked: bool):
+        self._save_quick_filter_state()
+        self.apply_filters()
     
     def apply_filters(self):
         filtered = self._get_filtered_sessions()
@@ -252,6 +293,11 @@ class GameSessionsTab(QWidget):
             rows = [s for s in rows if s.session_date <= end_date]
 
         search_text = self.search_edit.text().lower().strip()
+        active_only = self.active_only_filter_check.isChecked()
+
+        if active_only:
+            rows = [s for s in rows if s.status == "Active"]
+
         if search_text:
             # Resolve names the same way _populate_table does (so search matches what's displayed)
             users = {u.id: u.name for u in self.facade.get_all_users()}
@@ -1031,6 +1077,7 @@ class GameSessionsTab(QWidget):
     def clear_all_filters(self):
         self.search_edit.clear()
         self.date_filter.set_all_time()
+        self.active_only_filter_check.setChecked(False)
         self.table.clearSelection()
         self._on_selection_changed()
         if hasattr(self, "table_filter"):

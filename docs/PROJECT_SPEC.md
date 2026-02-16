@@ -483,6 +483,28 @@ Default presets (on initial tab load):
 - Purchases / Redemptions / Game Sessions / Daily Sessions / Realized / Expenses: **current calendar year**
 - Unrealized: **all time** (implemented as 2000-01-01 → today)
 
+### Quick Filter Toggles (Issue #121)
+
+In addition to date/search/header filters, key tabs provide persistent one-click quick filters:
+
+- **Purchases tab**: `Basis Remaining`
+  - Placement: immediately left of `📤 Export CSV`
+  - Behavior: shows only purchases with `remaining_amount > 0`
+
+- **Redemptions tab**: `Pending`, `Unprocessed`
+  - Placement: immediately left of `📤 Export CSV`
+  - `Pending`: receipt not recorded (`receipt_date` empty/NULL)
+  - `Unprocessed`: `processed == False`
+  - If both are checked, both predicates are applied (AND behavior)
+
+- **Game Sessions tab**: `Active Only`
+  - Placement: between `Active Sessions: X` and `📤 Export CSV`
+  - Behavior: shows only sessions with `status == 'Active'`
+
+Persistence and clearing rules:
+- States persist via application settings across restarts.
+- Existing per-tab “Clear All Filters” actions also clear these quick toggles.
+
 ### 5.1 Spreadsheet UX (Issue #14, Phase 1)
 
 **Purpose:**
