@@ -2544,7 +2544,23 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         time_label = QtWidgets.QLabel("Time:")
         time_label.setObjectName("MutedLabel")
         when_grid.addWidget(time_label, 1, 0)
-        when_grid.addWidget(make_selectable_label(format_time(self.redemption.redemption_time)), 1, 1)
+        
+        # Time with travel mode badge
+        time_container = QtWidgets.QWidget()
+        time_layout = QtWidgets.QHBoxLayout(time_container)
+        time_layout.setContentsMargins(0, 0, 0, 0)
+        time_layout.setSpacing(4)
+        time_layout.addWidget(make_selectable_label(format_time(self.redemption.redemption_time)))
+        
+        entry_tz = getattr(self.redemption, "redemption_entry_time_zone", None)
+        accounting_tz = get_accounting_timezone_name()
+        if entry_tz and entry_tz != accounting_tz:
+            globe_label = QtWidgets.QLabel("🌐")
+            globe_label.setToolTip(f"Entered in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}.")
+            time_layout.addWidget(globe_label)
+        
+        time_layout.addStretch()
+        when_grid.addWidget(time_container, 1, 1)
         
         when_grid.setColumnStretch(1, 1)
         when_layout.addLayout(when_grid)

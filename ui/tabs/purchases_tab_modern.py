@@ -9,6 +9,7 @@ from typing import Optional
 from app_facade import AppFacade
 from models.purchase import Purchase
 from ui.adjustment_dialogs import ViewAdjustmentsDialog
+from tools.timezone_utils import get_accounting_timezone_name
 
 
 class ModernPurchaseDialog(QtWidgets.QDialog):
@@ -1035,13 +1036,29 @@ class ModernPurchaseViewDialog(QtWidgets.QDialog):
         time_label.setObjectName("FieldLabel")
         when_layout.addWidget(time_label, 0, 4, 1, 3)
         
-        # Row 1: Date value | Time value
+        # Row 1: Date value | Time value with travel mode badge
         date_val = format_date(self.purchase.purchase_date)
         time_val = format_time(self.purchase.purchase_time)
         date_value = make_value_label(date_val)
         when_layout.addWidget(date_value, 1, 0, 1, 3)
+        
+        # Time with travel mode badge
+        time_container = QtWidgets.QWidget()
+        time_hlayout = QtWidgets.QHBoxLayout(time_container)
+        time_hlayout.setContentsMargins(0, 0, 0, 0)
+        time_hlayout.setSpacing(4)
         time_value = make_value_label(time_val)
-        when_layout.addWidget(time_value, 1, 4, 1, 3)
+        time_hlayout.addWidget(time_value)
+        
+        entry_tz = getattr(self.purchase, "purchase_entry_time_zone", None)
+        accounting_tz = get_accounting_timezone_name()
+        if entry_tz and entry_tz != accounting_tz:
+            globe_label = QtWidgets.QLabel("🌐")
+            globe_label.setToolTip(f"Entered in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}.")
+            time_hlayout.addWidget(globe_label)
+        
+        time_hlayout.addStretch()
+        when_layout.addWidget(time_container, 1, 4, 1, 3)
         
         when_layout.setColumnStretch(0, 1)
         when_layout.setColumnStretch(1, 1)

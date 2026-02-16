@@ -4363,6 +4363,13 @@ class ViewSessionDialog(QDialog):
             date_display = self._format_date(purchase.purchase_date) if purchase.purchase_date else "—"
             time_display = purchase.purchase_time if purchase.purchase_time else "—"
             date_time_display = f"{date_display} {time_display}" if date_display != "—" else time_display
+            
+            # Add travel mode badge
+            entry_tz = getattr(purchase, "purchase_entry_time_zone", None)
+            accounting_tz = get_accounting_timezone_name()
+            if entry_tz and entry_tz != accounting_tz:
+                date_time_display = f"{date_time_display} 🌐"
+            
             amount = format_currency(purchase.amount)
             sc_received = f"{float(purchase.sc_received or 0.0):.2f}"
             values = [date_time_display, amount, sc_received]
@@ -4370,6 +4377,8 @@ class ViewSessionDialog(QDialog):
                 item = QTableWidgetItem(str(value))
                 if col_idx in (1, 2):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                if col_idx == 0 and entry_tz and entry_tz != accounting_tz:
+                    item.setToolTip(f"Entered in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}.")
                 self.purchases_table.setItem(row_idx, col_idx, item)
 
             view_btn = QPushButton("👁️ View Purchase")
@@ -4396,6 +4405,13 @@ class ViewSessionDialog(QDialog):
             date_display = self._format_date(redemption.redemption_date) if redemption.redemption_date else "—"
             time_display = (redemption.redemption_time or "00:00:00")[:5]
             date_time_display = f"{date_display} {time_display}" if date_display != "—" else time_display
+            
+            # Add travel mode badge
+            entry_tz = getattr(redemption, "redemption_entry_time_zone", None)
+            accounting_tz = get_accounting_timezone_name()
+            if entry_tz and entry_tz != accounting_tz:
+                date_time_display = f"{date_time_display} 🌐"
+            
             amount = format_currency(redemption.amount)
 
             is_total_loss = float(redemption.amount) == 0
@@ -4406,6 +4422,8 @@ class ViewSessionDialog(QDialog):
                 item = QTableWidgetItem(str(value))
                 if col_idx == 1:
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                if col_idx == 0 and entry_tz and entry_tz != accounting_tz:
+                    item.setToolTip(f"Entered in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}.")
                 self.redemptions_table.setItem(row_idx, col_idx, item)
 
             view_btn = QPushButton("👁️ View Redemption")

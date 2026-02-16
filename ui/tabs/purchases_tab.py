@@ -2597,7 +2597,23 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         time_label = QtWidgets.QLabel("Time:")
         time_label.setObjectName("MutedLabel")
         when_grid.addWidget(time_label, 1, 0)
-        when_grid.addWidget(make_selectable_label(format_time(self.purchase.purchase_time)), 1, 1)
+        
+        # Time with travel mode badge
+        time_container = QtWidgets.QWidget()
+        time_layout = QtWidgets.QHBoxLayout(time_container)
+        time_layout.setContentsMargins(0, 0, 0, 0)
+        time_layout.setSpacing(4)
+        time_layout.addWidget(make_selectable_label(format_time(self.purchase.purchase_time)))
+        
+        entry_tz = getattr(self.purchase, "purchase_entry_time_zone", None)
+        accounting_tz = get_accounting_timezone_name()
+        if entry_tz and entry_tz != accounting_tz:
+            globe_label = QtWidgets.QLabel("🌐")
+            globe_label.setToolTip(f"Entered in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}.")
+            time_layout.addWidget(globe_label)
+        
+        time_layout.addStretch()
+        when_grid.addWidget(time_container, 1, 1)
         
         when_grid.setColumnStretch(1, 1)
         when_layout.addLayout(when_grid)
@@ -2904,8 +2920,17 @@ class PurchaseViewDialog(QtWidgets.QDialog):
                 date_val = str(alloc.get("redemption_date") or "—")
                 time_val = (alloc.get("redemption_time") or "00:00:00")[:5]
                 date_time_display = f"{date_val} {time_val}" if date_val != "—" else time_val
+                
+                # Add travel mode badge
+                entry_tz = alloc.get("redemption_entry_time_zone")
+                accounting_tz = get_accounting_timezone_name()
+                if entry_tz and entry_tz != accounting_tz:
+                    date_time_display = f"{date_time_display} 🌐"
+                
                 date_item = QtWidgets.QTableWidgetItem(date_time_display)
                 date_item.setData(QtCore.Qt.UserRole, alloc.get("redemption_id"))
+                if entry_tz and entry_tz != accounting_tz:
+                    date_item.setToolTip(f"Redeemed in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}.")
                 table.setItem(row, 0, date_item)
                 table.setItem(row, 1, QtWidgets.QTableWidgetItem(f"${float(alloc.get('amount') or 0):.2f}"))
                 table.setItem(row, 2, QtWidgets.QTableWidgetItem(f"${float(alloc.get('allocated_amount') or 0):.2f}"))
@@ -2962,14 +2987,35 @@ class PurchaseViewDialog(QtWidgets.QDialog):
                 session_date = str(session.session_date)
                 start_time = (session.session_time or "")[:5]
                 start_display = f"{session_date} {start_time}" if session_date else "—"
+                
+                # Add travel mode badge for start time
+                start_entry_tz = getattr(session, "start_entry_time_zone", None)
+                accounting_tz = get_accounting_timezone_name()
+                if start_entry_tz and start_entry_tz != accounting_tz:
+                    start_display = f"{start_display} 🌐"
+                
                 date_item = QtWidgets.QTableWidgetItem(start_display)
                 date_item.setData(QtCore.Qt.UserRole, session.id)
+                if start_entry_tz and start_entry_tz != accounting_tz:
+                    date_item.setToolTip(f"Started in travel mode ({start_entry_tz}). Accounting TZ: {accounting_tz}.")
                 table.setItem(row, 0, date_item)
+                
                 end_display = "—"
                 if getattr(session, "end_date", None):
                     end_time = (getattr(session, "end_time", None) or "00:00:00")[:5]
                     end_display = f"{session.end_date} {end_time}"
-                table.setItem(row, 1, QtWidgets.QTableWidgetItem(end_display))
+                    
+                    # Add travel mode badge for end time
+                    end_entry_tz = getattr(session, "end_entry_time_zone", None)
+                    if end_entry_tz and end_entry_tz != accounting_tz:
+                        end_display = f"{end_display} 🌐"
+                
+                end_item = QtWidgets.QTableWidgetItem(end_display)
+                if getattr(session, "end_date", None):
+                    end_entry_tz = getattr(session, "end_entry_time_zone", None)
+                    if end_entry_tz and end_entry_tz != accounting_tz:
+                        end_item.setToolTip(f"Ended in travel mode ({end_entry_tz}). Accounting TZ: {accounting_tz}.")
+                table.setItem(row, 1, end_item)
 
                 game = self._games.get(session.game_id)
                 game_name = game.name if game else "—"
