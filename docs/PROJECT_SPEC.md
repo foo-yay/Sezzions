@@ -780,6 +780,7 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - Expected balance checks compare UTC instants across entry time zones to avoid out-of-order inclusion.
 - Session close validation blocks saves when end time is before start time after UTC conversion.
 - Soft-deleted redemptions are excluded from FIFO rebuilds and realized transaction listings.
+- Expected redeemable balances are derived from sessions/checkpoints (purchases do not increase redeemable).
 - One-time migration converts existing local timestamps to UTC using the currently selected time zone.
 
 **UI Integration:**

@@ -9,7 +9,41 @@ Rules:
 
 ---
 
+## 2026-02-16
+
+```yaml
+id: 2026-02-16-01
+type: bugfix
+areas: [ui, redemptions, balances]
+summary: "Treat 'full cashout' as total balance (not redeemable)"
+files_changed:
+  - ui/tabs/redemptions_tab.py
+  - tests/unit/test_redemption_confirmation_classification.py
+```
+
+**Bugfix: Partial Redemptions vs Redeemable-Only Balance**
+
+- The full/partial confirmation prompt now compares against expected TOTAL balance, so redeeming all currently redeemable can still be treated as a Partial redemption when additional non-redeemable balance remains.
+
+---
+
 ## 2026-02-15
+
+```yaml
+id: 2026-02-15-13
+type: bugfix
+areas: [redemptions, sessions, balances]
+summary: "Do not boost redeemable from purchases"
+files_changed:
+  - services/game_session_service.py
+  - tests/integration/test_expected_redeemable_not_from_purchases.py
+```
+
+**Bugfix: Redeemable Balance Expectations**
+
+- Purchases no longer increase expected redeemable balances; redeemable is anchored to sessions/checkpoints.
+
+---
 
 ```yaml
 id: 2026-02-15-12

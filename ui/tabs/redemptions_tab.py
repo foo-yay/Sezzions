@@ -5,7 +5,7 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from decimal import Decimal
 from bisect import bisect_left, bisect_right
 from datetime import date, datetime
-from typing import Optional
+from typing import Literal, Optional
 from app_facade import AppFacade
 from models.redemption import Redemption
 from ui.date_filter_widget import DateFilterWidget
@@ -21,6 +21,51 @@ from tools.time_utils import (
 )
 from ui.adjustment_dialogs import ViewAdjustmentsDialog
 from tools.timezone_utils import get_accounting_timezone_name, get_entry_timezone_name
+
+
+RedemptionConfirmationDecision = Literal[
+    "ok",
+    "warn_full_selected_but_balance_remaining",
+    "warn_partial_selected_but_looks_like_full_cashout",
+    "info_redeems_all_redeemable_but_balance_remains",
+]
+
+
+def classify_redemption_confirmation(
+    *,
+    amount: Decimal,
+    expected_total_balance: Optional[Decimal],
+    expected_redeemable_balance: Optional[Decimal],
+    is_partial: bool,
+    threshold: Decimal = Decimal("0.50"),
+) -> RedemptionConfirmationDecision:
+    """Classify whether the UI should prompt for full vs partial.
+
+    All amounts are in the same currency units (typically $).
+    """
+    if expected_total_balance is None:
+        return "ok"
+
+    expected_total_balance = expected_total_balance or Decimal("0.00")
+    expected_redeemable_balance = expected_redeemable_balance or Decimal("0.00")
+
+    remaining_total = expected_total_balance - amount
+    remaining_redeemable = expected_redeemable_balance - amount
+
+    # Full selected but total balance appears to remain.
+    if not is_partial and remaining_total > threshold:
+        return "warn_full_selected_but_balance_remaining"
+
+    # Partial selected but this looks like a full site cashout.
+    if is_partial and remaining_total <= threshold:
+        return "warn_partial_selected_but_looks_like_full_cashout"
+
+    # The key "middle ground": redeeming all redeemable (or a hair above) is still
+    # a partial redemption when total balance remains.
+    if is_partial and remaining_total > threshold and remaining_redeemable <= threshold:
+        return "info_redeems_all_redeemable_but_balance_remains"
+
+    return "ok"
 
 
 class RedemptionsTab(QtWidgets.QWidget):
@@ -515,11 +560,13 @@ class RedemptionsTab(QtWidgets.QWidget):
                 )
                 site = self.facade.get_site(dialog.site_id)
                 sc_rate = Decimal(str(site.sc_rate if site else 1.0))
-                expected_balance = (expected_redeemable or Decimal("0.00")) * sc_rate
+                expected_total_balance = (expected_total or Decimal("0.00")) * sc_rate
+                expected_redeemable_balance = (expected_redeemable or Decimal("0.00")) * sc_rate
 
                 if not self._confirm_partial_vs_balance(
                     amount,
-                    expected_balance,
+                    expected_total_balance,
+                    expected_redeemable_balance,
                     dialog.is_partial_selected(),
                 ):
                     return
@@ -709,12 +756,14 @@ class RedemptionsTab(QtWidgets.QWidget):
                     )
                     site = self.facade.get_site(dialog.site_id)
                     sc_rate = Decimal(str(site.sc_rate if site else 1.0))
-                    expected_balance = (expected_redeemable or Decimal("0.00")) * sc_rate
+                    expected_total_balance = (expected_total or Decimal("0.00")) * sc_rate
+                    expected_redeemable_balance = (expected_redeemable or Decimal("0.00")) * sc_rate
                     amount = dialog.get_amount()
 
                     if not self._confirm_partial_vs_balance(
                         amount,
-                        expected_balance,
+                        expected_total_balance,
+                        expected_redeemable_balance,
                         dialog.is_partial_selected(),
                     ):
                         return
@@ -761,36 +810,56 @@ class RedemptionsTab(QtWidgets.QWidget):
                     self, "Error", f"Failed to update redemption:\n{str(e)}"
                 )
 
-    def _confirm_partial_vs_balance(self, amount: Decimal, expected_balance: Decimal, is_partial: bool) -> bool:
-        if expected_balance is None:
-            return True
+    def _confirm_partial_vs_balance(
+        self,
+        amount: Decimal,
+        expected_total_balance: Decimal,
+        expected_redeemable_balance: Decimal,
+        is_partial: bool,
+    ) -> bool:
+        decision = classify_redemption_confirmation(
+            amount=amount,
+            expected_total_balance=expected_total_balance,
+            expected_redeemable_balance=expected_redeemable_balance,
+            is_partial=is_partial,
+        )
 
-        diff = expected_balance - amount
-        threshold = Decimal("0.50")
-
-        if not is_partial and diff > threshold:
+        if decision == "warn_full_selected_but_balance_remaining":
             reply = QtWidgets.QMessageBox.question(
                 self,
                 "Balance Remaining",
-                "This redemption is below the expected balance for this site/user.\n\n"
-                f"Expected balance: {float(expected_balance):,.2f} SC\n"
+                "This redemption is below the expected TOTAL balance for this site/user.\n\n"
+                f"Expected total balance: ${float(expected_total_balance):,.2f}\n"
                 f"Redemption amount: ${float(amount):,.2f}\n\n"
                 "It looks like a partial cashout (balance remains). Continue as Full?",
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
             )
             return reply == QtWidgets.QMessageBox.Yes
 
-        if is_partial and diff <= threshold:
+        if decision == "warn_partial_selected_but_looks_like_full_cashout":
             reply = QtWidgets.QMessageBox.question(
                 self,
-                "Likely Full Redemption",
-                "This redemption is at or above the expected balance.\n\n"
-                f"Expected balance: {float(expected_balance):,.2f} SC\n"
+                "Likely Full Cashout",
+                "This redemption is at or above the expected TOTAL balance.\n\n"
+                f"Expected total balance: ${float(expected_total_balance):,.2f}\n"
                 f"Redemption amount: ${float(amount):,.2f}\n\n"
                 "It looks like a full cashout. Continue as Partial?",
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
             )
             return reply == QtWidgets.QMessageBox.Yes
+
+        if decision == "info_redeems_all_redeemable_but_balance_remains":
+            QtWidgets.QMessageBox.information(
+                self,
+                "Redeems All Redeemable",
+                "This redemption matches (or slightly exceeds) the expected REDEEMABLE balance,\n"
+                "but is below the expected TOTAL balance.\n\n"
+                f"Expected redeemable: ${float(expected_redeemable_balance):,.2f}\n"
+                f"Expected total: ${float(expected_total_balance):,.2f}\n"
+                f"Redemption amount: ${float(amount):,.2f}\n\n"
+                "This is a valid PARTIAL redemption (non-redeemable balance remains).",
+            )
+            return True
 
         return True
     
@@ -2013,17 +2082,17 @@ class RedemptionDialog(QtWidgets.QDialog):
                 )
                 site = self.facade.get_site(self.site_id)
                 sc_rate = Decimal(str(site.sc_rate if site else 1.0))
-                expected_balance = (expected_redeemable or Decimal("0.00")) * sc_rate
+                expected_redeemable_balance = (expected_redeemable or Decimal("0.00")) * sc_rate
                 
-                if amount > expected_balance:
-                    unsessioned_amount = amount - expected_balance
+                if amount > expected_redeemable_balance:
+                    unsessioned_amount = amount - expected_redeemable_balance
                     QtWidgets.QMessageBox.warning(
                         self,
                         "Redemption Exceeds Session Balance",
                         "This redemption exceeds the balance we can verify from recorded sessions.\n\n"
                         f"Redemption amount: ${float(amount):,.2f}\n"
-                        f"Expected sessioned balance: {float(expected_balance):,.2f} SC\n"
-                        f"Unsessioned amount: {float(unsessioned_amount):,.2f} SC\n\n"
+                        f"Expected redeemable balance: ${float(expected_redeemable_balance):,.2f}\n"
+                        f"Unsessioned amount: ${float(unsessioned_amount):,.2f}\n\n"
                         "What this means:\n"
                         "• Your redemption is higher than the verified balance from game sessions.\n"
                         "• This helps keep your session-based totals accurate.\n\n"
