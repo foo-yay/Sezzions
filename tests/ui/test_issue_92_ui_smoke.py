@@ -20,20 +20,21 @@ def qapp():
     # Don't quit - other tests may need it
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def app_facade():
-    """Create in-memory app facade"""
+    """Create in-memory app facade (module-scoped for read-only tests)"""
     facade = AppFacade(":memory:")
     yield facade
-    facade.db.close()  # Corrected: use db.close() not facade.close()
+    facade.db.close()
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def main_window(qapp, app_facade):
-    """Create main window without showing it"""
+    """Create main window without showing it (module-scoped for read-only tests)"""
     window = MainWindow(app_facade)
     yield window
     window.close()
+    qapp.processEvents()
 
 
 def test_undo_redo_menu_actions_exist(main_window):

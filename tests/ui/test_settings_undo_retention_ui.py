@@ -20,9 +20,9 @@ def qapp():
     yield app
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def app_facade():
-    """Create in-memory app facade"""
+    """Create in-memory app facade (module-scoped to amortize MainWindow setup cost)"""
     facade = AppFacade(":memory:")
     yield facade
     # Process events before closing to prevent "closed database" popup errors
@@ -31,14 +31,27 @@ def app_facade():
     facade.db.close()
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def main_window(qapp, app_facade):
-    """Create main window without showing it"""
+    """Create main window without showing it (module-scoped to amortize 10s setup cost)"""
     window = MainWindow(app_facade)
     yield window
     window.close()
     # Process events after window close to clean up pending operations
     qapp.processEvents()
+
+
+@pytest.fixture(autouse=True)
+def reset_undo_state(main_window):
+    """Reset undo/redo state between tests to prevent interference"""
+    # Each test establishes its own initial state, but clear the undo stack to be safe
+    yield
+    # After each test, clear undo stack
+    try:
+        main_window.facade.undo_redo_service._undo_stack.clear()
+        main_window.facade.undo_redo_service._redo_stack.clear()
+    except Exception:
+        pass  # Already closed or doesn't matter
 
 
 def test_settings_dialog_has_data_section(main_window):
