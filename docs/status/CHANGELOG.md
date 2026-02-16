@@ -12,6 +12,37 @@ Rules:
 ## 2026-02-16
 
 ```yaml
+id: 2026-02-16-05
+type: enhancement
+areas: [ui, timezone, travel-mode, sessions, purchases, redemptions, expenses, adjustments]
+summary: "Complete travel mode badge implementation with fixes"
+files_changed:
+  - ui/tabs/game_sessions_tab.py
+  - ui/tabs/purchases_tab.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/expenses_tab.py
+  - ui/adjustment_dialogs.py
+  - tests/integration/test_travel_mode_badges_comprehensive.py
+issue: 128
+pr: 129
+```
+
+**Enhancement: Complete Travel Mode Badge Implementation**
+
+- **Comprehensive badge coverage**: Added 🌐 globe badges + tooltips to all locations where dates/times are displayed when entry timezone differs from accounting timezone.
+- **Session dialogs**: ViewSessionDialog (start/end badges), EditClosedSessionDialog (inline badges), StartSessionDialog, EndSessionDialog.
+- **Transaction view dialogs**: PurchaseViewDialog, RedemptionViewDialog, ExpenseViewDialog.
+- **Edit dialogs**: Added badges to PurchaseDialog, RedemptionDialog, ExpenseDialog (after NOW button).
+- **Adjustment dialogs**: Added badges to BasisAdjustmentDialog and CheckpointDialog (after NOW button).
+- **Linked event tables**: Session-linked purchases/redemptions tables, purchase/redemption-linked sessions tables.
+- **Main tables**: Game Sessions (date/time column), Purchases, Redemptions, Expenses.
+- **Session table optimization**: Consolidated globe display to date/time column only (removed from End SC column); shows badge if either start OR end time was entered in travel mode; enhanced tooltip shows which timezone(s) differ.
+- **Bugfix: Edit session timezone validation**: Fixed logic to ask about timezone update BEFORE calculating UTC times for validation, preventing false "end time earlier than start time" errors when updating timezone from travel mode to current timezone.
+- **Testing**: 7 comprehensive integration tests covering all badge display locations; all 892 tests passing.
+
+---
+
+```yaml
 id: 2026-02-16-04
 type: bugfix
 areas: [services, timestamp, timezone]

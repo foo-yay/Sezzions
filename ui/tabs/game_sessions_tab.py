@@ -379,9 +379,16 @@ class GameSessionsTab(QWidget):
                     if time_val and len(time_val) > 5:
                         time_val = time_val
                     date_time = f"{session.session_date} {time_val}".strip()
-                    entry_tz = getattr(session, "start_entry_time_zone", None)
+                    start_entry_tz = getattr(session, "start_entry_time_zone", None)
+                    end_entry_tz = getattr(session, "end_entry_time_zone", None)
                     accounting_tz = get_accounting_timezone_name()
-                    if entry_tz and entry_tz != accounting_tz:
+                    
+                    # Show globe if either start or end was entered in different timezone
+                    has_travel_mode = (
+                        (start_entry_tz and start_entry_tz != accounting_tz) or
+                        (end_entry_tz and end_entry_tz != accounting_tz)
+                    )
+                    if has_travel_mode:
                         date_time = f"{date_time} 🌐"
                     
                     # Add multi-day indicator if session spans multiple days
@@ -405,6 +412,7 @@ class GameSessionsTab(QWidget):
                         delta_redeem = session.delta_redeem if session.delta_redeem is not None else Decimal("0.00")
                         basis = session.basis_consumed if session.basis_consumed is not None else Decimal("0.00")
                         net_pl = session.net_taxable_pl if session.net_taxable_pl is not None else Decimal("0.00")
+                        
                         values.extend([
                             f"{session.ending_balance:,.2f}",
                             f"{session.starting_redeemable:,.2f}",
@@ -420,9 +428,15 @@ class GameSessionsTab(QWidget):
                         item = QTableWidgetItem(value)
                         if col == 0:
                             item.setData(Qt.UserRole, session.id)
-                            if entry_tz and entry_tz != accounting_tz:
+                            # Build tooltip showing which timezone(s) differ
+                            if has_travel_mode:
+                                tz_parts = []
+                                if start_entry_tz and start_entry_tz != accounting_tz:
+                                    tz_parts.append(f"Start: {start_entry_tz}")
+                                if end_entry_tz and end_entry_tz != accounting_tz:
+                                    tz_parts.append(f"End: {end_entry_tz}")
                                 item.setToolTip(
-                                    f"Entered in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}."
+                                    f"Travel mode - {', '.join(tz_parts)}. Accounting TZ: {accounting_tz}."
                                 )
                         self.table.setItem(row, col, item)
 
@@ -580,11 +594,9 @@ class GameSessionsTab(QWidget):
                 }
                 original_start_tz = session.start_entry_time_zone or get_accounting_timezone_name()
                 current_tz = get_entry_timezone_name() or get_accounting_timezone_name()
-                start_utc_date, start_utc_time = local_date_time_to_utc(
-                    data["session_date"],
-                    data["start_time"],
-                    original_start_tz,
-                )
+                
+                # Ask about timezone update BEFORE calculating UTC times
+                effective_start_tz = original_start_tz
                 if current_tz != original_start_tz:
                     reply = QMessageBox.question(
                         self,
@@ -599,6 +611,15 @@ class GameSessionsTab(QWidget):
                         return
                     if reply == QMessageBox.Yes:
                         update_kwargs["start_entry_time_zone"] = current_tz
+                        effective_start_tz = current_tz
+                
+                # Now calculate start UTC with the effective timezone
+                start_utc_date, start_utc_time = local_date_time_to_utc(
+                    data["session_date"],
+                    data["start_time"],
+                    effective_start_tz,
+                )
+                
                 if (session.status or "Active") == "Closed":
                     update_kwargs.update(
                         {
@@ -611,25 +632,9 @@ class GameSessionsTab(QWidget):
                         }
                     )
                     original_end_tz = session.end_entry_time_zone or original_start_tz
-                    end_utc_date, end_utc_time = local_date_time_to_utc(
-                        data["end_date"],
-                        data["end_time"],
-                        original_end_tz,
-                    )
-                    start_utc_dt = datetime.strptime(
-                        f"{start_utc_date} {start_utc_time}", "%Y-%m-%d %H:%M:%S"
-                    )
-                    end_utc_dt = datetime.strptime(
-                        f"{end_utc_date} {end_utc_time}", "%Y-%m-%d %H:%M:%S"
-                    )
-                    if end_utc_dt < start_utc_dt:
-                        QMessageBox.warning(
-                            self,
-                            "Invalid End Time",
-                            "The end time is earlier than the start time when converted to UTC.\n"
-                            "Adjust the end time or entry time zone and try again.",
-                        )
-                        return
+                    
+                    # Ask about end timezone update BEFORE calculating UTC times
+                    effective_end_tz = original_end_tz
                     if current_tz != original_end_tz:
                         reply = QMessageBox.question(
                             self,
@@ -644,6 +649,29 @@ class GameSessionsTab(QWidget):
                             return
                         if reply == QMessageBox.Yes:
                             update_kwargs["end_entry_time_zone"] = current_tz
+                            effective_end_tz = current_tz
+                    
+                    # Now calculate end UTC with the effective timezone
+                    end_utc_date, end_utc_time = local_date_time_to_utc(
+                        data["end_date"],
+                        data["end_time"],
+                        effective_end_tz,
+                    )
+                    
+                    start_utc_dt = datetime.strptime(
+                        f"{start_utc_date} {start_utc_time}", "%Y-%m-%d %H:%M:%S"
+                    )
+                    end_utc_dt = datetime.strptime(
+                        f"{end_utc_date} {end_utc_time}", "%Y-%m-%d %H:%M:%S"
+                    )
+                    if end_utc_dt < start_utc_dt:
+                        QMessageBox.warning(
+                            self,
+                            "Invalid End Time",
+                            "The end time is earlier than the start time when converted to UTC.\n"
+                            "Adjust the end time or entry time zone and try again.",
+                        )
+                        return
                 self.facade.update_game_session(session_id=session_id, **update_kwargs)
                 dialog.accept()
                 self._refresh_after_mutation()
@@ -856,6 +884,7 @@ class GameSessionsTab(QWidget):
                     ending_redeemable=data["ending_redeemable_sc"],
                     end_date=data["end_date"],
                     end_time=data["end_time"],
+                    end_entry_time_zone=end_tz,
                     wager_amount=Decimal(str(data["wager_amount"] or 0)),
                     notes=data["notes"],
                     status="Closed",
@@ -1259,6 +1288,16 @@ class StartSessionDialog(QDialog):
         self.time_edit.setFixedWidth(90)
         datetime_row.addWidget(self.time_edit)
         datetime_row.addWidget(self.now_btn)
+        
+        # Add travel mode badge if editing existing session (inline after NOW button)
+        if self.session:
+            start_entry_tz = getattr(self.session, "start_entry_time_zone", None)
+            accounting_tz = get_accounting_timezone_name()
+            if start_entry_tz and start_entry_tz != accounting_tz:
+                start_globe = QLabel("🌐")
+                start_globe.setToolTip(f"Entered in travel mode ({start_entry_tz}). Accounting TZ: {accounting_tz}.")
+                datetime_row.addWidget(start_globe)
+        
         datetime_row.addStretch(1)
         
         datetime_section_layout.addLayout(datetime_row)
@@ -2322,6 +2361,15 @@ class EditClosedSessionDialog(QDialog):
         self.time_edit.setFixedWidth(90)
         start_row.addWidget(self.time_edit)
         start_row.addWidget(self.start_now_btn)
+        
+        # Add travel mode badge for start time (inline after NOW button)
+        start_entry_tz = getattr(self.session, "start_entry_time_zone", None)
+        accounting_tz = get_accounting_timezone_name()
+        if start_entry_tz and start_entry_tz != accounting_tz:
+            start_globe = QLabel("🌐")
+            start_globe.setToolTip(f"Entered in travel mode ({start_entry_tz}). Accounting TZ: {accounting_tz}.")
+            start_row.addWidget(start_globe)
+        
         start_row.addStretch(1)
         
         datetime_layout.addLayout(start_row)
@@ -2356,32 +2404,17 @@ class EditClosedSessionDialog(QDialog):
         self.end_time_edit.setFixedWidth(90)
         end_row.addWidget(self.end_time_edit)
         end_row.addWidget(self.end_now_btn)
+        
+        # Add travel mode badge for end time (inline after NOW button)
+        end_entry_tz = getattr(self.session, "end_entry_time_zone", None)
+        if end_entry_tz and end_entry_tz != accounting_tz:
+            end_globe = QLabel("🌐")
+            end_globe.setToolTip(f"Entered in travel mode ({end_entry_tz}). Accounting TZ: {accounting_tz}.")
+            end_row.addWidget(end_globe)
+        
         end_row.addStretch(1)
         
         datetime_layout.addLayout(end_row)
-        
-        # Row 2.5: Travel mode badges (compact info row)
-        start_entry_tz = getattr(self.session, "start_entry_time_zone", None)
-        end_entry_tz = getattr(self.session, "end_entry_time_zone", None)
-        accounting_tz = get_accounting_timezone_name()
-        
-        travel_indicators = []
-        if start_entry_tz and start_entry_tz != accounting_tz:
-            travel_indicators.append(f"Start: 🌐 {start_entry_tz}")
-        if end_entry_tz and end_entry_tz != accounting_tz:
-            travel_indicators.append(f"End: 🌐 {end_entry_tz}")
-        
-        if travel_indicators:
-            travel_info_row = QHBoxLayout()
-            travel_info_row.setSpacing(12)
-            travel_label = QLabel("Travel Mode: " + " | ".join(travel_indicators))
-            travel_label.setObjectName("HelperText")
-            travel_label.setProperty("status", "info")
-            travel_label.setStyleSheet("color: #0066cc; font-size: 11px; padding: 4px 0;")
-            travel_label.setToolTip(f"Times entered in travel mode. Accounting TZ: {accounting_tz}.")
-            travel_info_row.addWidget(travel_label)
-            travel_info_row.addStretch()
-            datetime_layout.addLayout(travel_info_row)
         
         # Row 3: Start timestamp adjustment info banner
         self.start_timestamp_info_label = QLabel()
@@ -3757,9 +3790,9 @@ class ViewSessionDialog(QDialog):
         end_dt_display.setCursor(Qt.IBeamCursor)
         end_dt_layout.addWidget(end_dt_display)
         
-        # Add travel mode badge if entry TZ differs from accounting TZ
+        # Add travel mode badge if entry TZ differs from accounting TZ (only if session has ended)
         end_entry_tz = getattr(self.session, "end_entry_time_zone", None)
-        if end_entry_tz and end_entry_tz != accounting_tz:
+        if self.session.end_date and end_entry_tz and end_entry_tz != accounting_tz:
             end_globe = QLabel("🌐")
             end_globe.setToolTip(f"Entered in travel mode ({end_entry_tz}). Accounting TZ: {accounting_tz}.")
             end_dt_layout.addWidget(end_globe)

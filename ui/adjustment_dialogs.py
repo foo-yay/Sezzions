@@ -16,6 +16,7 @@ from tools.time_utils import (
     format_time_display,
     time_to_db_string,
 )
+from tools.timezone_utils import get_accounting_timezone_name, get_entry_timezone_name
 
 
 class BasisAdjustmentDialog(QDialog):
@@ -142,6 +143,14 @@ class BasisAdjustmentDialog(QDialog):
         now_btn = QPushButton("Now")
         now_btn.clicked.connect(self._set_now)
         time_layout.addWidget(now_btn)
+        
+        # Travel mode badge (shows if entry timezone differs from accounting timezone)
+        entry_tz = get_entry_timezone_name()
+        accounting_tz = get_accounting_timezone_name()
+        if entry_tz != accounting_tz:
+            globe = QLabel("🌐")
+            globe.setToolTip(f"Travel mode active ({entry_tz}). Accounting TZ: {accounting_tz}.")
+            time_layout.addWidget(globe)
         
         time_layout.addStretch()
         grid.addWidget(time_container, row, 3)
@@ -566,6 +575,14 @@ class CheckpointDialog(QDialog):
         now_btn = QPushButton("Now")
         now_btn.clicked.connect(self._set_now)
         time_layout.addWidget(now_btn)
+        
+        # Travel mode badge (shows if entry timezone differs from accounting timezone)
+        entry_tz = get_entry_timezone_name()
+        accounting_tz = get_accounting_timezone_name()
+        if entry_tz != accounting_tz:
+            globe = QLabel("🌐")
+            globe.setToolTip(f"Travel mode active ({entry_tz}). Accounting TZ: {accounting_tz}.")
+            time_layout.addWidget(globe)
         
         time_layout.addStretch()
         grid.addWidget(time_container, row, 3)
