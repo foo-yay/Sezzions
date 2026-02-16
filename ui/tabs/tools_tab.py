@@ -135,7 +135,7 @@ class ToolsTab(QWidget):
         
         # Adjustments & Corrections Section
         adjustments_group = self._create_adjustments_group()
-        adjustments_collapsible = self._create_collapsible_section("⚖️ Adjustments & Corrections", adjustments_group, section_id="adjustments", expanded=False)
+        adjustments_collapsible = self._create_collapsible_section("⚖️ Adjustments && Corrections", adjustments_group, section_id="adjustments", expanded=False)
         layout.addWidget(adjustments_collapsible)
         
         # Database Tools Section
