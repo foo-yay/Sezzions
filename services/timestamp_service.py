@@ -4,11 +4,13 @@ Timestamp uniqueness enforcement service.
 Ensures no two events (purchases, redemptions, sessions) for a given user/site
 share the exact same timestamp. Auto-increments by 1 second until a unique
 timestamp is found.
+
+Note: All checks are performed in LOCAL time since the database stores timestamps
+in local time (not UTC).
 """
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Optional, Tuple
 from repositories.database import DatabaseManager
-from tools.timezone_utils import get_configured_timezone_name, local_date_time_to_utc, utc_date_time_to_local
 
 
 class TimestampService:
@@ -28,17 +30,19 @@ class TimestampService:
     ) -> Tuple[str, str, bool]:
         """
         Ensure timestamp is unique for this user/site pair across all events.
+        
+        Checks and auto-increments in LOCAL time since database stores local timestamps.
 
         Args:
             user_id: User ID
             site_id: Site ID
             date_val: Date value (date object or string)
-            time_str: Time string (HH:MM:SS format)
+            time_str: Time string (HH:MM:SS format) in local time
             exclude_id: Optional ID to exclude from conflict check (for edits)
             event_type: Optional event type to check only ('purchase', 'redemption', 'session_start', 'session_end')
 
         Returns:
-            Tuple of (adjusted_date_str, adjusted_time_str, was_adjusted)
+            Tuple of (adjusted_date_str, adjusted_time_str, was_adjusted) in local time
         """
         from datetime import date as date_type
 
@@ -55,30 +59,27 @@ class TimestampService:
             # If parsing fails, return original
             return (date_str, time_str, False)
 
-        tz_name = get_configured_timezone_name()
-        utc_date_str, utc_time_str = local_date_time_to_utc(date_str, time_str, tz_name)
-        utc_dt = datetime.strptime(f"{utc_date_str} {utc_time_str}", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-        original_utc_dt = utc_dt
+        original_local_dt = local_dt
         max_attempts = 3600  # Maximum 1 hour of incrementing
         attempt = 0
 
         while attempt < max_attempts:
-            current_date_str = utc_dt.date().isoformat()
-            current_time_str = utc_dt.time().strftime("%H:%M:%S")
+            current_date_str = local_dt.date().isoformat()
+            current_time_str = local_dt.time().strftime("%H:%M:%S")
 
             # Check if this timestamp conflicts with any existing event
+            # Note: Check in LOCAL time since DB stores local timestamps
             has_conflict = self._check_timestamp_conflict(
                 user_id, site_id, current_date_str, current_time_str, exclude_id, event_type
             )
 
             if not has_conflict:
-                # Found a unique UTC timestamp; return local time for UI/storage conversion
-                local_date, local_time = utc_date_time_to_local(current_date_str, current_time_str, tz_name)
-                was_adjusted = (utc_dt != original_utc_dt)
-                return (local_date.isoformat(), local_time, was_adjusted)
+                # Found a unique local timestamp
+                was_adjusted = (local_dt != original_local_dt)
+                return (current_date_str, current_time_str, was_adjusted)
 
             # Increment by 1 second and try again
-            utc_dt += timedelta(seconds=1)
+            local_dt += timedelta(seconds=1)
             attempt += 1
 
         # Fallback: return original if we couldn't find a slot

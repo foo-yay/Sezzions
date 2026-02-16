@@ -58,17 +58,14 @@ def _seed_purchase(db, user_id, site_id, purchase_date, purchase_time):
     )
 
 
-def test_timestamp_service_adjusts_for_existing_utc_conflict(timestamp_service, db, monkeypatch):
-    """Ensure local input is compared against UTC storage and adjusted if needed."""
-    from services import timestamp_service as ts_module
-
-    monkeypatch.setattr(ts_module, "get_configured_timezone_name", lambda: "America/New_York")
-
+def test_timestamp_service_adjusts_for_existing_local_conflict(timestamp_service, db):
+    """Ensure local input is compared against local DB storage and adjusted if needed."""
     _seed_user_site(db, user_id=1, site_id=1)
 
-    # Existing purchase stored in UTC at 20:00:00, which is 15:00:00 local (EST).
-    _seed_purchase(db, user_id=1, site_id=1, purchase_date="2026-02-10", purchase_time="20:00:00")
+    # Existing purchase stored in local time at 15:00:00
+    _seed_purchase(db, user_id=1, site_id=1, purchase_date="2026-02-10", purchase_time="15:00:00")
 
+    # Try to create another event at the same local time
     adjusted_date_str, adjusted_time_str, was_adjusted = timestamp_service.ensure_unique_timestamp(
         user_id=1,
         site_id=1,
