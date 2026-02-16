@@ -9,7 +9,7 @@ from services.audit_service import AuditService
 
 def test_purchase_stores_utc_and_displays_local(test_db, sample_user, sample_site, monkeypatch):
     monkeypatch.setattr(
-        "repositories.purchase_repository.get_configured_timezone_name",
+        "repositories.purchase_repository.get_entry_timezone_name",
         lambda *args, **kwargs: "America/Los_Angeles",
     )
 
@@ -40,8 +40,8 @@ def test_purchase_stores_utc_and_displays_local(test_db, sample_user, sample_sit
         lambda *args, **kwargs: "UTC",
     )
     fetched_utc = repo.get_by_id(purchase.id)
-    assert fetched_utc.purchase_date == date(2026, 2, 14)
-    assert fetched_utc.purchase_time == "04:30:00"
+    assert fetched_utc.purchase_date == date(2026, 2, 13)
+    assert fetched_utc.purchase_time == "20:30:00"
 
 
 def test_audit_log_date_filter_uses_local_time(test_db, monkeypatch):

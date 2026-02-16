@@ -8,6 +8,18 @@ from typing import Optional, Tuple
 from zoneinfo import ZoneInfo, available_timezones
 
 
+_ACTIVE_SETTINGS: Optional[object] = None
+
+
+def set_active_settings(settings: Optional[object]) -> None:
+    global _ACTIVE_SETTINGS
+    _ACTIVE_SETTINGS = settings
+
+
+def _resolve_settings(settings: Optional[object]) -> Optional[object]:
+    return settings or _ACTIVE_SETTINGS
+
+
 def get_system_timezone_name() -> str:
     """Best-effort system timezone name (IANA)."""
     try:
@@ -19,23 +31,52 @@ def get_system_timezone_name() -> str:
     return "UTC"
 
 
-def get_configured_timezone_name(settings: Optional[object] = None) -> str:
-    """Return user-configured timezone name or system default."""
-    if settings is not None:
-        tz_name = getattr(settings, "get", None)
-        if callable(tz_name):
-            value = settings.get("time_zone", None)
-            if value:
-                return str(value)
+def _get_settings_value(settings: Optional[object], key: str, default=None):
+    if settings is None:
+        return default
+    getter = getattr(settings, "get", None)
+    if callable(getter):
+        return settings.get(key, default)
+    return default
+
+
+def get_accounting_timezone_name(settings: Optional[object] = None) -> str:
+    """Return Accounting (Home/Tax) timezone name or system default."""
+    settings = _resolve_settings(settings)
+    value = _get_settings_value(settings, "accounting_time_zone", None)
+    if value:
+        return str(value)
+    value = _get_settings_value(settings, "time_zone", None)
+    if value:
+        return str(value)
     try:
         from ui.settings import Settings
 
+        stored = Settings().get("accounting_time_zone", None)
+        if stored:
+            return str(stored)
         stored = Settings().get("time_zone", None)
         if stored:
             return str(stored)
     except Exception:
         pass
     return get_system_timezone_name()
+
+
+def get_entry_timezone_name(settings: Optional[object] = None) -> str:
+    """Return Entry/Current timezone name (travel-aware)."""
+    settings = _resolve_settings(settings)
+    travel_enabled = bool(_get_settings_value(settings, "travel_mode_enabled", False))
+    if travel_enabled:
+        current_tz = _get_settings_value(settings, "current_time_zone", None)
+        if current_tz:
+            return str(current_tz)
+    return get_accounting_timezone_name(settings)
+
+
+def get_configured_timezone_name(settings: Optional[object] = None) -> str:
+    """Backward-compatible alias for Accounting timezone."""
+    return get_accounting_timezone_name(settings)
 
 
 def get_timezone(tz_name: Optional[str] = None) -> ZoneInfo:
@@ -82,6 +123,16 @@ def local_date_time_to_utc(
     return utc_dt.date().isoformat(), utc_dt.strftime("%H:%M:%S")
 
 
+def local_date_time_to_utc_entry(
+    local_date: date | str,
+    local_time: Optional[str],
+    settings: Optional[object] = None,
+) -> Tuple[str, str]:
+    """Convert Entry-local date/time to UTC using current Entry TZ."""
+    tz_name = get_entry_timezone_name(settings)
+    return local_date_time_to_utc(local_date, local_time, tz_name)
+
+
 def utc_date_time_to_local(
     utc_date: date | str,
     utc_time: Optional[str],
@@ -106,6 +157,47 @@ def local_date_range_to_utc_bounds(
     start_dt = local_date_time_to_utc(start_date, "00:00:00", tz_name)
     end_dt = local_date_time_to_utc(end_date, "23:59:59", tz_name)
     return start_dt, end_dt
+
+
+def get_accounting_timezone_for_utc(
+    db,
+    utc_date: date | str,
+    utc_time: Optional[str],
+    settings: Optional[object] = None,
+) -> str:
+    """Return Accounting TZ in effect at a given UTC date/time."""
+    if db is None:
+        return get_accounting_timezone_name(settings)
+    try:
+        utc_date_str = _parse_date(utc_date).isoformat()
+        time_str = _normalize_time_value(utc_time)
+        utc_timestamp = f"{utc_date_str} {time_str}"
+        row = db.fetch_one(
+            """
+            SELECT accounting_time_zone
+            FROM accounting_time_zone_history
+            WHERE effective_utc_timestamp <= ?
+            ORDER BY effective_utc_timestamp DESC
+            LIMIT 1
+            """,
+            (utc_timestamp,),
+        )
+        if row and row.get("accounting_time_zone"):
+            return str(row["accounting_time_zone"])
+    except Exception:
+        pass
+    return get_accounting_timezone_name(settings)
+
+
+def utc_date_time_to_accounting_local(
+    db,
+    utc_date: date | str,
+    utc_time: Optional[str],
+    settings: Optional[object] = None,
+) -> Tuple[date, str]:
+    """Convert UTC date/time to Accounting-local date/time using history."""
+    tz_name = get_accounting_timezone_for_utc(db, utc_date, utc_time, settings)
+    return utc_date_time_to_local(utc_date, utc_time, tz_name)
 
 
 def utc_timestamp_to_local(timestamp: str, tz_name: Optional[str] = None) -> datetime:

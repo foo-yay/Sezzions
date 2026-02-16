@@ -18,6 +18,7 @@ class Expense:
     user_id: Optional[int] = None
     user_name: Optional[str] = None
     expense_time: Optional[str] = None
+    expense_entry_time_zone: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

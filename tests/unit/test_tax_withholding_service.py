@@ -236,7 +236,11 @@ def test_apply_to_date_uses_local_end_date(service, test_db, sample_user, sample
     """Tax rollups should follow local end date, not UTC date boundary."""
     from tools import timezone_utils
 
-    monkeypatch.setattr(timezone_utils, "get_configured_timezone_name", lambda *_: "America/New_York")
+    monkeypatch.setattr(timezone_utils, "get_accounting_timezone_name", lambda *_: "America/New_York")
+    monkeypatch.setattr(
+        "services.accounting_time_zone_service.get_accounting_timezone_name",
+        lambda *_: "America/New_York",
+    )
 
     _insert_closed_game_session(
         test_db,

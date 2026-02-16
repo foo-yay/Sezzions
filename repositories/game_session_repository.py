@@ -6,7 +6,8 @@ from datetime import datetime
 from decimal import Decimal
 from models.game_session import GameSession
 from tools.timezone_utils import (
-    get_configured_timezone_name,
+    get_accounting_timezone_name,
+    get_entry_timezone_name,
     local_date_time_to_utc,
     utc_date_time_to_local,
 )
@@ -37,20 +38,21 @@ class GameSessionRepository:
         if isinstance(end_date, str):
             end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
 
-        tz_name = get_configured_timezone_name()
+        start_entry_tz = row.get("start_entry_time_zone") or get_accounting_timezone_name()
         session_date, session_time = utc_date_time_to_local(
             session_date,
             row["session_time"] or "00:00:00",
-            tz_name,
+            start_entry_tz,
         )
         end_time_value = row_value("end_time")
         end_date_local = None
         end_time_local = None
         if end_date:
+            end_entry_tz = row.get("end_entry_time_zone") or start_entry_tz
             end_date_local, end_time_local = utc_date_time_to_local(
                 end_date,
                 end_time_value or "00:00:00",
-                tz_name,
+                end_entry_tz,
             )
 
         return GameSession(
@@ -63,6 +65,8 @@ class GameSessionRepository:
             end_date=end_date_local,
             end_time=end_time_local,
             session_time=session_time or "00:00:00",
+            start_entry_time_zone=row.get("start_entry_time_zone") or start_entry_tz,
+            end_entry_time_zone=row.get("end_entry_time_zone") or start_entry_tz,
             starting_balance=Decimal(row["starting_balance"]),
             ending_balance=safe_decimal(row_value("ending_balance"), "0.00"),
             starting_redeemable=safe_decimal(row_value("starting_redeemable"), "0.00"),
@@ -160,30 +164,32 @@ class GameSessionRepository:
     
     def create(self, session: GameSession) -> GameSession:
         """Create a new session"""
-        tz_name = get_configured_timezone_name()
+        start_entry_tz = session.start_entry_time_zone or get_entry_timezone_name()
         utc_session_date, utc_session_time = local_date_time_to_utc(
             session.session_date,
             session.session_time,
-            tz_name,
+            start_entry_tz,
         )
         utc_end_date = None
         utc_end_time = None
+        end_entry_tz = session.end_entry_time_zone or start_entry_tz
         if session.end_date:
             utc_end_date, utc_end_time = local_date_time_to_utc(
                 session.end_date,
                 session.end_time,
-                tz_name,
+                end_entry_tz,
             )
         query = """
             INSERT INTO game_sessions (
-                user_id, site_id, game_id, game_type_id, session_date, session_time, end_date, end_time,
+                user_id, site_id, game_id, game_type_id, session_date, session_time, start_entry_time_zone,
+                end_date, end_time, end_entry_time_zone,
                 starting_balance, ending_balance, starting_redeemable, ending_redeemable,
                 purchases_during, redemptions_during, wager_amount, rtp,
                 expected_start_total, expected_start_redeemable,
                 discoverable_sc, delta_total, delta_redeem,
                 session_basis, basis_consumed, net_taxable_pl,
                 status, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         def str_or_none(val):
             return str(val) if val is not None else None
@@ -193,8 +199,10 @@ class GameSessionRepository:
             (
                 session.user_id, session.site_id, session.game_id, session.game_type_id,
                 utc_session_date, utc_session_time,
+                start_entry_tz,
                 utc_end_date,
                 utc_end_time,
+                end_entry_tz,
                 str(session.starting_balance), str(session.ending_balance),
                 str(session.starting_redeemable), str(session.ending_redeemable),
                 str(session.purchases_during), str(session.redemptions_during),
@@ -211,27 +219,31 @@ class GameSessionRepository:
             )
         )
         session.id = session_id
+        session.start_entry_time_zone = start_entry_tz
+        session.end_entry_time_zone = end_entry_tz
         return session
     
     def update(self, session: GameSession) -> GameSession:
         """Update an existing session"""
-        tz_name = get_configured_timezone_name()
+        start_entry_tz = session.start_entry_time_zone or get_entry_timezone_name()
         utc_session_date, utc_session_time = local_date_time_to_utc(
             session.session_date,
             session.session_time,
-            tz_name,
+            start_entry_tz,
         )
         utc_end_date = None
         utc_end_time = None
+        end_entry_tz = session.end_entry_time_zone or start_entry_tz
         if session.end_date:
             utc_end_date, utc_end_time = local_date_time_to_utc(
                 session.end_date,
                 session.end_time,
-                tz_name,
+                end_entry_tz,
             )
         query = """
             UPDATE game_sessions SET
-                user_id = ?, site_id = ?, game_id = ?, game_type_id = ?, session_date = ?, session_time = ?, end_date = ?, end_time = ?,
+                user_id = ?, site_id = ?, game_id = ?, game_type_id = ?, session_date = ?, session_time = ?,
+                start_entry_time_zone = ?, end_date = ?, end_time = ?, end_entry_time_zone = ?,
                 starting_balance = ?, ending_balance = ?, starting_redeemable = ?, ending_redeemable = ?,
                 purchases_during = ?, redemptions_during = ?, wager_amount = ?, rtp = ?,
                 expected_start_total = ?, expected_start_redeemable = ?,
@@ -248,8 +260,10 @@ class GameSessionRepository:
             (
                 session.user_id, session.site_id, session.game_id, session.game_type_id,
                 utc_session_date, utc_session_time,
+                start_entry_tz,
                 utc_end_date,
                 utc_end_time,
+                end_entry_tz,
                 str(session.starting_balance), str(session.ending_balance),
                 str(session.starting_redeemable), str(session.ending_redeemable),
                 str(session.purchases_during), str(session.redemptions_during),
@@ -265,6 +279,8 @@ class GameSessionRepository:
                 session.status, session.notes, session.id
             )
         )
+        session.start_entry_time_zone = start_entry_tz
+        session.end_entry_time_zone = end_entry_tz
         return session
     
     def delete(self, session_id: int) -> None:

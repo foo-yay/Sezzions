@@ -213,7 +213,7 @@ def test_find_containing_session_start_uses_local_bounds(monkeypatch, game_sessi
     from tools.timezone_utils import local_date_time_to_utc
 
     monkeypatch.setattr(
-        "services.game_session_service.get_configured_timezone_name",
+        "services.game_session_service.get_entry_timezone_name",
         lambda: "America/New_York",
     )
 

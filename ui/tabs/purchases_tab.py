@@ -19,6 +19,7 @@ from tools.time_utils import (
     format_time_display,
     time_to_db_string,
 )
+from tools.timezone_utils import get_accounting_timezone_name, get_entry_timezone_name
 
 
 class PurchasesTab(QtWidgets.QWidget):
@@ -222,8 +223,16 @@ class PurchasesTab(QtWidgets.QWidget):
                 time_val = purchase.purchase_time or ""
                 # Display full HH:MM:SS format (Issue #90)
                 date_time = f"{purchase.purchase_date} {time_val}".strip()
+                entry_tz = getattr(purchase, "purchase_entry_time_zone", None)
+                accounting_tz = get_accounting_timezone_name()
+                if entry_tz and entry_tz != accounting_tz:
+                    date_time = f"{date_time} 🌐"
                 date_item = QtWidgets.QTableWidgetItem(date_time)
                 date_item.setData(QtCore.Qt.UserRole, purchase.id)
+                if entry_tz and entry_tz != accounting_tz:
+                    date_item.setToolTip(
+                        f"Entered in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}."
+                    )
                 self.table.setItem(row, 0, date_item)
 
                 # User
@@ -766,20 +775,38 @@ class PurchasesTab(QtWidgets.QWidget):
                         if response != QtWidgets.QMessageBox.Yes:
                             break  # Exit the loop
 
-                updated = self.facade.update_purchase(
-                    purchase_id,
-                    force_site_user_change=force_site_user_change,
-                    user_id=dialog.user_id,
-                    site_id=dialog.site_id,
-                    amount=dialog.get_amount(),
-                    sc_received=dialog.get_sc_received(),
-                    starting_sc_balance=starting_sc,
-                    cashback_earned=dialog.get_cashback_earned(),
-                    purchase_date=purchase_date,
-                    card_id=dialog.card_id,
-                    purchase_time=purchase_time,
-                    notes=dialog.notes_edit.toPlainText() or None
-                )
+                update_kwargs = {
+                    "force_site_user_change": force_site_user_change,
+                    "user_id": dialog.user_id,
+                    "site_id": dialog.site_id,
+                    "amount": dialog.get_amount(),
+                    "sc_received": dialog.get_sc_received(),
+                    "starting_sc_balance": starting_sc,
+                    "cashback_earned": dialog.get_cashback_earned(),
+                    "purchase_date": purchase_date,
+                    "card_id": dialog.card_id,
+                    "purchase_time": purchase_time,
+                    "notes": dialog.notes_edit.toPlainText() or None,
+                }
+
+                original_tz = old_purchase.purchase_entry_time_zone or get_accounting_timezone_name()
+                current_tz = get_entry_timezone_name() or get_accounting_timezone_name()
+                if current_tz != original_tz:
+                    reply = QtWidgets.QMessageBox.question(
+                        self,
+                        "Update Entry Time Zone?",
+                        f"This purchase was originally entered in {original_tz}.\n"
+                        f"Current entry mode is {current_tz}.\n\n"
+                        "Update the entry time zone to current?",
+                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel,
+                        QtWidgets.QMessageBox.No,
+                    )
+                    if reply == QtWidgets.QMessageBox.Cancel:
+                        break
+                    if reply == QtWidgets.QMessageBox.Yes:
+                        update_kwargs["purchase_entry_time_zone"] = current_tz
+
+                updated = self.facade.update_purchase(purchase_id, **update_kwargs)
                 
                 # If there was an active session, create explicit link
                 if active_session_id:
@@ -1323,6 +1350,7 @@ class PurchaseDialog(QtWidgets.QDialog):
         self.timestamp_info_label.setWordWrap(True)
         self.timestamp_info_label.setVisible(False)
         datetime_section_layout.addWidget(self.timestamp_info_label)
+
         
         form.addWidget(datetime_section)
 
@@ -1496,6 +1524,7 @@ class PurchaseDialog(QtWidgets.QDialog):
             self._load_purchase()
         else:
             self._clear_form()
+
 
         self._update_completers()
         self._validate_inline()
@@ -2273,6 +2302,7 @@ class PurchaseDialog(QtWidgets.QDialog):
 
         if self.purchase.notes:
             self.notes_edit.setPlainText(self.purchase.notes)
+
 
 
 class PurchaseViewDialog(QtWidgets.QDialog):

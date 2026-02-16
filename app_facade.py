@@ -1649,7 +1649,8 @@ class AppFacade:
 
     def compute_expected_balances(self, user_id: int, site_id: int,
                                  session_date: date, session_time: str,
-                                 exclude_purchase_id: Optional[int] = None) -> Tuple[Decimal, Decimal]:
+                                 exclude_purchase_id: Optional[int] = None,
+                                 entry_time_zone: Optional[str] = None) -> Tuple[Decimal, Decimal]:
         """Compute expected starting balances for a new session.
         
         Args:
@@ -1661,7 +1662,8 @@ class AppFacade:
             site_id=site_id,
             session_date=session_date,
             session_time=session_time,
-            exclude_purchase_id=exclude_purchase_id
+            exclude_purchase_id=exclude_purchase_id,
+            entry_time_zone=entry_time_zone,
         )
     
     def get_game_session(self, session_id: int) -> Optional[GameSession]:
@@ -2078,7 +2080,8 @@ class AppFacade:
         basis is now $0. We therefore scope to the position timeframe when available.
         """
         query = """
-            SELECT id, purchase_date, purchase_time, amount, sc_received, remaining_amount
+            SELECT id, purchase_date, purchase_time, amount, sc_received, remaining_amount,
+               purchase_entry_time_zone
             FROM purchases
             WHERE site_id = ? AND user_id = ?
               AND deleted_at IS NULL
@@ -2115,7 +2118,8 @@ class AppFacade:
         # Profit-only: prefer FIFO-attributed purchases linked to redemptions in the related window.
         allocations_since_query = """
             SELECT DISTINCT
-                p.id, p.purchase_date, p.purchase_time, p.amount, p.sc_received, p.remaining_amount
+                p.id, p.purchase_date, p.purchase_time, p.amount, p.sc_received, p.remaining_amount,
+                p.purchase_entry_time_zone
             FROM redemptions r
             JOIN redemption_allocations ra ON ra.redemption_id = r.id
             JOIN purchases p ON p.id = ra.purchase_id
@@ -2166,7 +2170,8 @@ class AppFacade:
             redemption_id = row["id"]
             latest_allocations_query = """
                 SELECT DISTINCT
-                    p.id, p.purchase_date, p.purchase_time, p.amount, p.sc_received, p.remaining_amount
+                    p.id, p.purchase_date, p.purchase_time, p.amount, p.sc_received, p.remaining_amount,
+                    p.purchase_entry_time_zone
                 FROM redemption_allocations ra
                 JOIN purchases p ON p.id = ra.purchase_id
                 WHERE ra.redemption_id = ?
@@ -2206,16 +2211,17 @@ class AppFacade:
         """Sessions to show in the Unrealized "View Position" dialog."""
         query = """
             SELECT gs.id, gs.session_date, gs.session_time, gs.end_date, gs.end_time,
+                   gs.start_entry_time_zone, gs.end_entry_time_zone,
                    gs.ending_balance, gs.ending_redeemable, gs.status,
                    g.name as game_name
             FROM game_sessions gs
             LEFT JOIN games g ON gs.game_id = g.id
             WHERE gs.site_id = ? AND gs.user_id = ?
               AND gs.deleted_at IS NULL
-                            AND (? IS NULL OR (COALESCE(gs.end_date, gs.session_date) > ? OR (COALESCE(gs.end_date, gs.session_date) = ? AND COALESCE(gs.end_time, gs.session_time, '00:00:00') >= ?)))
-                        ORDER BY COALESCE(gs.end_date, gs.session_date) DESC,
-                                         COALESCE(gs.end_time, gs.session_time, '00:00:00') DESC,
-                                         gs.id DESC
+              AND (? IS NULL OR (COALESCE(gs.end_date, gs.session_date) > ? OR (COALESCE(gs.end_date, gs.session_date) = ? AND COALESCE(gs.end_time, gs.session_time, '00:00:00') >= ?)))
+            ORDER BY COALESCE(gs.end_date, gs.session_date) DESC,
+                     COALESCE(gs.end_time, gs.session_time, '00:00:00') DESC,
+                     gs.id DESC
         """
         if start_date:
             from tools.timezone_utils import get_configured_timezone_name, local_date_time_to_utc

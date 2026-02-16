@@ -5,9 +5,11 @@ from typing import Optional, List
 from decimal import Decimal
 from datetime import date, datetime
 from tools.timezone_utils import (
+    get_accounting_timezone_name,
     get_configured_timezone_name,
-    local_date_time_to_utc,
+    get_entry_timezone_name,
     local_date_range_to_utc_bounds,
+    local_date_time_to_utc,
     utc_date_time_to_local,
 )
 from models.purchase import Purchase
@@ -39,7 +41,7 @@ class PurchaseRepository:
             WHERE p.deleted_at IS NULL
         """
         params = []
-        tz_name = get_configured_timezone_name()
+        tz_name = get_accounting_timezone_name()
         
         if start_date:
             start_utc, end_utc = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
@@ -104,12 +106,13 @@ class PurchaseRepository:
         site_id: int,
         redemption_date: str,
         redemption_time: Optional[str] = None,
+        entry_time_zone: Optional[str] = None,
     ) -> List[Purchase]:
         """Get purchases with remaining balance up to a redemption timestamp (excludes soft-deleted)."""
         if not redemption_time:
             redemption_time = "23:59:59"
 
-        tz_name = get_configured_timezone_name()
+        tz_name = entry_time_zone or get_entry_timezone_name()
         redemption_date, redemption_time = local_date_time_to_utc(redemption_date, redemption_time, tz_name)
 
         query = """
@@ -131,17 +134,18 @@ class PurchaseRepository:
     
     def create(self, purchase: Purchase) -> Purchase:
         """Create new purchase"""
-        tz_name = get_configured_timezone_name()
+        entry_tz = purchase.purchase_entry_time_zone or get_entry_timezone_name()
         utc_date, utc_time = local_date_time_to_utc(
             purchase.purchase_date,
             purchase.purchase_time,
-            tz_name,
+            entry_tz,
         )
         query = """
             INSERT INTO purchases 
             (user_id, site_id, amount, sc_received, starting_sc_balance, cashback_earned,
-             cashback_is_manual, purchase_date, purchase_time, card_id, remaining_amount, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             cashback_is_manual, purchase_date, purchase_time, purchase_entry_time_zone,
+             card_id, remaining_amount, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         purchase_id = self.db.execute(query, (
             purchase.user_id,
@@ -153,11 +157,13 @@ class PurchaseRepository:
             1 if purchase.cashback_is_manual else 0,
             utc_date,
             utc_time,
+            entry_tz,
             purchase.card_id,
             str(purchase.remaining_amount),
             purchase.notes
         ))
         purchase.id = purchase_id
+        purchase.purchase_entry_time_zone = entry_tz
         return purchase
     
     def update(self, purchase: Purchase) -> Purchase:
@@ -165,18 +171,19 @@ class PurchaseRepository:
         if not purchase.id:
             raise ValueError("Cannot update purchase without ID")
 
-        tz_name = get_configured_timezone_name()
+        entry_tz = purchase.purchase_entry_time_zone or get_entry_timezone_name()
         utc_date, utc_time = local_date_time_to_utc(
             purchase.purchase_date,
             purchase.purchase_time,
-            tz_name,
+            entry_tz,
         )
         
         query = """
             UPDATE purchases
             SET user_id = ?, site_id = ?, amount = ?, sc_received = ?, starting_sc_balance = ?,
-                cashback_earned = ?, cashback_is_manual = ?, purchase_date = ?, purchase_time = ?, card_id = ?,
-                remaining_amount = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+                cashback_earned = ?, cashback_is_manual = ?, purchase_date = ?, purchase_time = ?,
+                purchase_entry_time_zone = ?, card_id = ?, remaining_amount = ?, notes = ?,
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """
         self.db.execute(query, (
@@ -189,11 +196,13 @@ class PurchaseRepository:
             1 if purchase.cashback_is_manual else 0,
             utc_date,
             utc_time,
+            entry_tz,
             purchase.card_id,
             str(purchase.remaining_amount),
             purchase.notes,
             purchase.id
         ))
+        purchase.purchase_entry_time_zone = entry_tz
         return purchase
     
     def delete(self, purchase_id: int) -> None:
@@ -213,11 +222,11 @@ class PurchaseRepository:
         if isinstance(purchase_date, str):
             purchase_date = datetime.strptime(purchase_date, "%Y-%m-%d").date()
 
-        tz_name = get_configured_timezone_name()
+        entry_tz = row.get('purchase_entry_time_zone') or get_accounting_timezone_name()
         purchase_date, purchase_time = utc_date_time_to_local(
             purchase_date,
             row.get('purchase_time'),
-            tz_name,
+            entry_tz,
         )
         
         purchase = Purchase(
@@ -231,6 +240,7 @@ class PurchaseRepository:
             cashback_is_manual=bool(row.get('cashback_is_manual', 0)),
             purchase_date=purchase_date,
             purchase_time=purchase_time,
+            purchase_entry_time_zone=row.get('purchase_entry_time_zone') or entry_tz,
             card_id=row.get('card_id'),
             remaining_amount=Decimal(str(row['remaining_amount'])),
             status=row.get('status'),  # 'active', 'dormant', or NULL

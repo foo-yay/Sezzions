@@ -14,8 +14,10 @@ from repositories.site_repository import SiteRepository
 from models.game_session import GameSession
 from services.fifo_service import FIFOService
 from tools.timezone_utils import (
-    get_configured_timezone_name,
+    get_accounting_timezone_name,
+    get_entry_timezone_name,
     local_date_time_to_utc,
+    utc_date_time_to_accounting_local,
     utc_date_time_to_local,
 )
 
@@ -281,11 +283,12 @@ class GameSessionService:
                         tax_service = self.tax_withholding_service
                         config = tax_service.get_config()
                         if config.enabled:
-                            from tools.timezone_utils import get_configured_timezone_name, utc_date_time_to_local
-
-                            tz_name = get_configured_timezone_name()
                             accounting_time = session.end_time or session.session_time or "00:00:00"
-                            local_accounting_date, _ = utc_date_time_to_local(accounting_date, accounting_time, tz_name)
+                            local_accounting_date, _ = utc_date_time_to_accounting_local(
+                                self.session_repo.db,
+                                accounting_date,
+                                accounting_time,
+                            )
 
                             # Recalculate tax for current local date
                             tax_service.apply_to_date(session_date=local_accounting_date.isoformat())
@@ -293,7 +296,11 @@ class GameSessionService:
                             # If session moved to different date, recalculate old date too
                             if old_status == "Closed" and old_end_date != accounting_date:
                                 old_end_time = old_data.get("end_time") or old_session_time or "00:00:00"
-                                old_local_date, _ = utc_date_time_to_local(old_end_date, old_end_time, tz_name)
+                                old_local_date, _ = utc_date_time_to_accounting_local(
+                                    self.session_repo.db,
+                                    old_end_date,
+                                    old_end_time,
+                                )
                                 tax_service.apply_to_date(session_date=old_local_date.isoformat())
                     except Exception:
                         pass  # Don't fail the update if tax calculation fails
@@ -434,7 +441,8 @@ class GameSessionService:
         site_id: int,
         session_date: date,
         session_time: str,
-        exclude_purchase_id: Optional[int] = None
+        exclude_purchase_id: Optional[int] = None,
+        entry_time_zone: Optional[str] = None,
     ) -> Tuple[Decimal, Decimal]:
         """Compute expected total/redeemable balances at a cutoff timestamp.
 
@@ -455,13 +463,15 @@ class GameSessionService:
         expected_total = Decimal("0.00")
         expected_redeemable = Decimal("0.00")
 
-        def to_dt(d: date, t: Optional[str]) -> datetime:
+        def to_utc_dt(d: date, t: Optional[str], tz_name: Optional[str]) -> datetime:
             time_str = t or "00:00:00"
             if len(time_str) == 5:
                 time_str = f"{time_str}:00"
-            return datetime.combine(d, datetime.strptime(time_str, "%H:%M:%S").time())
+            utc_date, utc_time = local_date_time_to_utc(d, time_str, tz_name)
+            return datetime.strptime(f"{utc_date} {utc_time}", "%Y-%m-%d %H:%M:%S")
 
-        cutoff = to_dt(session_date, session_time)
+        cutoff_tz = entry_time_zone or get_entry_timezone_name() or get_accounting_timezone_name()
+        cutoff = to_utc_dt(session_date, session_time, cutoff_tz)
         anchor_dt: Optional[datetime] = None
 
         # Priority 1: explicit checkpoint
@@ -473,7 +483,11 @@ class GameSessionService:
                 session_time,
             )
             if latest_checkpoint:
-                anchor_dt = to_dt(latest_checkpoint.effective_date, latest_checkpoint.effective_time)
+                anchor_dt = to_utc_dt(
+                    latest_checkpoint.effective_date,
+                    latest_checkpoint.effective_time,
+                    latest_checkpoint.effective_entry_time_zone or get_accounting_timezone_name(),
+                )
                 expected_total = Decimal(str(latest_checkpoint.checkpoint_total_sc))
                 expected_redeemable = Decimal(str(latest_checkpoint.checkpoint_redeemable_sc))
 
@@ -485,7 +499,11 @@ class GameSessionService:
                     continue
                 sess_end_date = sess.end_date or sess.session_date
                 sess_end_time = sess.end_time or sess.session_time
-                sess_dt = to_dt(sess_end_date, sess_end_time)
+                sess_dt = to_utc_dt(
+                    sess_end_date,
+                    sess_end_time,
+                    sess.end_entry_time_zone or sess.start_entry_time_zone or get_accounting_timezone_name(),
+                )
                 if sess_dt < cutoff and (anchor_dt is None or sess_dt > anchor_dt):
                     anchor_dt = sess_dt
                     expected_total = Decimal(str(sess.ending_balance))
@@ -498,17 +516,35 @@ class GameSessionService:
         # Sort deterministically (datetime then id)
         purchases_sorted = sorted(
             purchases,
-            key=lambda p: (to_dt(p.purchase_date, p.purchase_time), int(p.id or 0)),
+            key=lambda p: (
+                to_utc_dt(
+                    p.purchase_date,
+                    p.purchase_time,
+                    p.purchase_entry_time_zone or get_accounting_timezone_name(),
+                ),
+                int(p.id or 0),
+            ),
         )
         redemptions_sorted = sorted(
             redemptions,
-            key=lambda r: (to_dt(r.redemption_date, r.redemption_time), int(r.id or 0)),
+            key=lambda r: (
+                to_utc_dt(
+                    r.redemption_date,
+                    r.redemption_time,
+                    r.redemption_entry_time_zone or get_accounting_timezone_name(),
+                ),
+                int(r.id or 0),
+            ),
         )
 
         # Apply redemptions (delta-based) first by walking time; purchases will overwrite total.
         # This is safe because purchase.starting_sc_balance is authoritative post-purchase.
         for r in redemptions_sorted:
-            r_dt = to_dt(r.redemption_date, r.redemption_time)
+            r_dt = to_utc_dt(
+                r.redemption_date,
+                r.redemption_time,
+                r.redemption_entry_time_zone or get_accounting_timezone_name(),
+            )
             if anchor_dt is not None and r_dt <= anchor_dt:
                 continue
             if not (r_dt < cutoff):
@@ -518,7 +554,11 @@ class GameSessionService:
             expected_redeemable -= amount
 
         for p in purchases_sorted:
-            p_dt = to_dt(p.purchase_date, p.purchase_time)
+            p_dt = to_utc_dt(
+                p.purchase_date,
+                p.purchase_time,
+                p.purchase_entry_time_zone or get_accounting_timezone_name(),
+            )
             if anchor_dt is not None and p_dt <= anchor_dt:
                 continue
 
@@ -710,12 +750,12 @@ class GameSessionService:
         if not hasattr(self.session_repo, "db"):
             return None
         ts_time = self._normalize_time(session_time)
-        tz_name = get_configured_timezone_name()
+        tz_name = get_entry_timezone_name()
         utc_date, utc_time = local_date_time_to_utc(session_date, ts_time, tz_name)
         date_str = utc_date
         row = self.session_repo.db.fetch_one(
             """
-            SELECT session_date, COALESCE(session_time,'00:00:00') as start_time
+            SELECT session_date, COALESCE(session_time,'00:00:00') as start_time, start_entry_time_zone
             FROM game_sessions
             WHERE site_id = ? AND user_id = ?
               AND (session_date < ? OR (session_date = ? AND COALESCE(session_time,'00:00:00') <= ?))
@@ -732,10 +772,11 @@ class GameSessionService:
         start_date = row["session_date"]
         if isinstance(start_date, str):
             start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+        entry_tz = row.get("start_entry_time_zone") or tz_name
         start_date_local, start_time_local = utc_date_time_to_local(
             start_date,
             row["start_time"],
-            tz_name,
+            entry_tz,
         )
         return start_date_local, start_time_local
 
@@ -1123,9 +1164,6 @@ class GameSessionService:
             (user_id, site_id, boundary_str)
         )
 
-        from tools.timezone_utils import get_configured_timezone_name, utc_date_time_to_local
-
-        tz_name = get_configured_timezone_name()
         local_dates = set()
 
         # Sync daily_sessions and collect affected local dates
@@ -1133,7 +1171,11 @@ class GameSessionService:
             end_date = row["end_date"]
             end_time = row["end_time"] or "00:00:00"
             self._sync_daily_sessions_for_pair(user_id, site_id, end_date)
-            local_date, _ = utc_date_time_to_local(end_date, end_time, tz_name)
+            local_date, _ = utc_date_time_to_accounting_local(
+                self.session_repo.db,
+                end_date,
+                end_time,
+            )
             local_dates.add(local_date)
 
         # Recalculate tax if enabled

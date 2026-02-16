@@ -20,6 +20,7 @@ from tools.time_utils import (
     time_to_db_string,
 )
 from ui.adjustment_dialogs import ViewAdjustmentsDialog
+from tools.timezone_utils import get_accounting_timezone_name, get_entry_timezone_name
 
 
 class RedemptionsTab(QtWidgets.QWidget):
@@ -199,6 +200,10 @@ class RedemptionsTab(QtWidgets.QWidget):
                 if time_val and len(time_val) > 5:
                     time_val = time_val
                 date_time = f"{redemption.redemption_date} {time_val}".strip()
+                entry_tz = getattr(redemption, "redemption_entry_time_zone", None)
+                accounting_tz = get_accounting_timezone_name()
+                if entry_tz and entry_tz != accounting_tz:
+                    date_time = f"{date_time} 🌐"
 
                 is_total_loss = float(redemption.amount) == 0
                 receipt_date = redemption.receipt_date.isoformat() if redemption.receipt_date else ""
@@ -217,6 +222,10 @@ class RedemptionsTab(QtWidgets.QWidget):
                 # Date/Time
                 date_item = QtWidgets.QTableWidgetItem(date_time)
                 date_item.setData(QtCore.Qt.UserRole, redemption.id)
+                if entry_tz and entry_tz != accounting_tz:
+                    date_item.setToolTip(
+                        f"Entered in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}."
+                    )
                 self.table.setItem(row, 0, date_item)
 
                 # User
@@ -644,6 +653,23 @@ class RedemptionsTab(QtWidgets.QWidget):
                 logger.info(f"  processed: {redemption.processed} -> {dialog.processed_check.isChecked()} (changed: {redemption.processed != dialog.processed_check.isChecked()})")
                 logger.info(f"  notes: {redemption.notes} -> {dialog.notes_edit.toPlainText() or None}")
                 
+                entry_tz_override = None
+                original_tz = redemption.redemption_entry_time_zone or get_accounting_timezone_name()
+                current_tz = get_entry_timezone_name() or get_accounting_timezone_name()
+                if current_tz != original_tz:
+                    reply = QtWidgets.QMessageBox.question(
+                        self,
+                        "Update Entry Time Zone?",
+                        f"This redemption was originally entered in {original_tz}.\n"
+                        f"Current entry mode is {current_tz}.\n\n"
+                        "Update the entry time zone to current?",
+                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel,
+                        QtWidgets.QMessageBox.No,
+                    )
+                    if reply == QtWidgets.QMessageBox.Cancel:
+                        return
+                    if reply == QtWidgets.QMessageBox.Yes:
+                        entry_tz_override = current_tz
                 accounting_fields_changed = (
                     redemption.user_id != dialog.user_id or
                     redemption.site_id != dialog.site_id or
@@ -652,7 +678,8 @@ class RedemptionsTab(QtWidgets.QWidget):
                     old_time != new_time or
                     redemption.more_remaining != dialog.is_partial_selected() or
                     redemption.fees != dialog.get_fees() or
-                    redemption.redemption_method_id != dialog.method_id
+                    redemption.redemption_method_id != dialog.method_id or
+                    entry_tz_override is not None
                 )
                 
                 logger.info(f"accounting_fields_changed: {accounting_fields_changed}")
@@ -692,28 +719,36 @@ class RedemptionsTab(QtWidgets.QWidget):
                     ):
                         return
 
+                    update_kwargs = {
+                        "user_id": dialog.user_id,
+                        "site_id": dialog.site_id,
+                        "amount": amount,
+                        "fees": dialog.get_fees(),
+                        "redemption_date": redemption_date,
+                        "redemption_method_id": dialog.method_id,
+                        "redemption_time": redemption_time,
+                        "receipt_date": dialog.get_receipt_date(),
+                        "processed": dialog.processed_check.isChecked(),
+                        "more_remaining": dialog.is_partial_selected(),
+                        "notes": dialog.notes_edit.toPlainText() or None,
+                    }
+                    if entry_tz_override:
+                        update_kwargs["redemption_entry_time_zone"] = entry_tz_override
+
                     self.facade.update_redemption_reprocess(
                         redemption_id,
-                        user_id=dialog.user_id,
-                        site_id=dialog.site_id,
-                        amount=amount,
-                        fees=dialog.get_fees(),
-                        redemption_date=redemption_date,
-                        redemption_method_id=dialog.method_id,
-                        redemption_time=redemption_time,
-                        receipt_date=dialog.get_receipt_date(),
-                        processed=dialog.processed_check.isChecked(),
-                        more_remaining=dialog.is_partial_selected(),
-                        notes=dialog.notes_edit.toPlainText() or None,
+                        **update_kwargs,
                     )
                 else:
                     # Metadata-only edit - use lightweight update path (no validation, no rebuild)
-                    self.facade.update_redemption(
-                        redemption_id,
-                        receipt_date=dialog.get_receipt_date(),
-                        processed=dialog.processed_check.isChecked(),
-                        notes=dialog.notes_edit.toPlainText() or None,
-                    )
+                    update_kwargs = {
+                        "receipt_date": dialog.get_receipt_date(),
+                        "processed": dialog.processed_check.isChecked(),
+                        "notes": dialog.notes_edit.toPlainText() or None,
+                    }
+                    if entry_tz_override:
+                        update_kwargs["redemption_entry_time_zone"] = entry_tz_override
+                    self.facade.update_redemption(redemption_id, **update_kwargs)
                 
                 self.refresh_data()
                 if hasattr(self, "main_window") and self.main_window is not None:
@@ -1095,6 +1130,7 @@ class RedemptionDialog(QtWidgets.QDialog):
         self.timestamp_info_label.setWordWrap(True)
         self.timestamp_info_label.setVisible(False)
         datetime_section_layout.addWidget(self.timestamp_info_label)
+
         
         form.addWidget(self.datetime_section)
 
@@ -1291,6 +1327,7 @@ class RedemptionDialog(QtWidgets.QDialog):
             self._load_redemption()
         else:
             self._clear_form()
+
 
         self._validate_inline()
         self._update_timestamp_info()
@@ -2075,6 +2112,7 @@ class RedemptionDialog(QtWidgets.QDialog):
             self.full_radio.setChecked(True)
         if self.redemption.notes:
             self.notes_edit.setPlainText(self.redemption.notes)
+
 
     def _update_timestamp_info(self):
         """Check for timestamp conflicts and show info banner if adjustment needed"""

@@ -6,9 +6,10 @@ from decimal import Decimal
 from datetime import date, datetime
 from models.adjustment import Adjustment, AdjustmentType
 from tools.timezone_utils import (
-    get_configured_timezone_name,
-    local_date_time_to_utc,
+    get_accounting_timezone_name,
+    get_entry_timezone_name,
     local_date_range_to_utc_bounds,
+    local_date_time_to_utc,
     utc_date_time_to_local,
 )
 
@@ -45,7 +46,7 @@ class AdjustmentRepository:
             WHERE 1=1
         """
         params = []
-        tz_name = get_configured_timezone_name()
+        tz_name = get_accounting_timezone_name()
         
         if not include_deleted:
             query += " AND a.deleted_at IS NULL"
@@ -124,7 +125,7 @@ class AdjustmentRepository:
         cutoff_time: str = "23:59:59"
     ) -> List[Adjustment]:
         """Get active balance checkpoint adjustments before a cutoff datetime"""
-        tz_name = get_configured_timezone_name()
+        tz_name = get_entry_timezone_name()
         cutoff_date_str, cutoff_time_str = local_date_time_to_utc(
             cutoff_date,
             cutoff_time,
@@ -178,7 +179,7 @@ class AdjustmentRepository:
               )
             ORDER BY effective_date ASC, effective_time ASC
         """
-        tz_name = get_configured_timezone_name()
+        tz_name = get_entry_timezone_name()
         cutoff_date_str, cutoff_time_str = local_date_time_to_utc(
             cutoff_date,
             cutoff_time,
@@ -221,7 +222,7 @@ class AdjustmentRepository:
               AND deleted_at IS NULL
         """
         params: list = [user_id, site_id]
-        tz_name = get_configured_timezone_name()
+        tz_name = get_entry_timezone_name()
 
         if start_date is not None:
             start_date_str, start_time_str = local_date_time_to_utc(
@@ -268,24 +269,25 @@ class AdjustmentRepository:
     
     def create(self, adjustment: Adjustment, *, auto_commit: bool = True) -> Adjustment:
         """Create a new adjustment"""
-        tz_name = get_configured_timezone_name()
+        entry_tz = adjustment.effective_entry_time_zone or get_entry_timezone_name()
         utc_date, utc_time = local_date_time_to_utc(
             adjustment.effective_date,
             adjustment.effective_time or "00:00:00",
-            tz_name,
+            entry_tz,
         )
         query = """
             INSERT INTO account_adjustments (
-                user_id, site_id, effective_date, effective_time, type,
+                user_id, site_id, effective_date, effective_time, effective_entry_time_zone, type,
                 delta_basis_usd, checkpoint_total_sc, checkpoint_redeemable_sc,
                 reason, notes, related_table, related_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         params = (
             adjustment.user_id,
             adjustment.site_id,
             utc_date,
             utc_time,
+            entry_tz,
             adjustment.type.value if isinstance(adjustment.type, AdjustmentType) else adjustment.type,
             str(adjustment.delta_basis_usd),
             str(adjustment.checkpoint_total_sc),
@@ -300,6 +302,7 @@ class AdjustmentRepository:
             adjustment.id = self.db.execute(query, params)
         else:
             adjustment.id = self.db.execute_no_commit(query, params)
+        adjustment.effective_entry_time_zone = entry_tz
         return adjustment
     
     def update(self, adjustment: Adjustment) -> bool:
@@ -353,7 +356,7 @@ class AdjustmentRepository:
         - Only counts non-deleted rows.
         - Uses each table's primary timestamp fields.
         """
-        tz_name = get_configured_timezone_name()
+        tz_name = get_entry_timezone_name()
         date_str, time_str = local_date_time_to_utc(
             effective_date,
             effective_time or "00:00:00",
@@ -492,11 +495,11 @@ class AdjustmentRepository:
         if isinstance(effective_date, str):
             effective_date = date.fromisoformat(effective_date)
 
-        tz_name = get_configured_timezone_name()
+        entry_tz = row.get('effective_entry_time_zone') or get_accounting_timezone_name()
         effective_date, effective_time = utc_date_time_to_local(
             effective_date,
             row['effective_time'] or "00:00:00",
-            tz_name,
+            entry_tz,
         )
         
         return Adjustment(
@@ -505,6 +508,7 @@ class AdjustmentRepository:
             site_id=row['site_id'],
             effective_date=effective_date,
             effective_time=effective_time or "00:00:00",
+            effective_entry_time_zone=row.get('effective_entry_time_zone') or entry_tz,
             type=AdjustmentType(row['type']),
             delta_basis_usd=Decimal(row['delta_basis_usd']),
             checkpoint_total_sc=Decimal(row['checkpoint_total_sc']),

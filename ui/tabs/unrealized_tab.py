@@ -11,6 +11,7 @@ from ui.date_filter_widget import DateFilterWidget
 from ui.table_header_filters import TableHeaderFilter
 from ui.spreadsheet_ux import SpreadsheetUXController
 from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from tools.timezone_utils import get_accounting_timezone_name
 
 
 class UnrealizedTab(QtWidgets.QWidget):
@@ -935,6 +936,10 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         table.setRowCount(len(self.purchases))
         for row_idx, row in enumerate(self.purchases):
             date_display = self._format_date_time(row.get("purchase_date"), row.get("purchase_time"))
+            entry_tz = row.get("purchase_entry_time_zone")
+            accounting_tz = get_accounting_timezone_name()
+            if entry_tz and entry_tz != accounting_tz:
+                date_display = f"{date_display} 🌐"
             amount = self._format_currency(row.get("amount", 0))
             sc_received = f"{float(row.get('sc_received') or 0.0):.2f}"
             remaining = self._format_currency(row.get("remaining_amount", 0))
@@ -944,6 +949,10 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
                 item = QtWidgets.QTableWidgetItem(str(value))
                 if col_idx in (1, 2, 3):
                     item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                if col_idx == 0 and entry_tz and entry_tz != accounting_tz:
+                    item.setToolTip(
+                        f"Entered in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}."
+                    )
                 table.setItem(row_idx, col_idx, item)
 
             view_btn = QtWidgets.QPushButton("👁️ View Purchase")
@@ -991,6 +1000,10 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
         table.setRowCount(len(self.sessions))
         for row_idx, row in enumerate(self.sessions):
             date_display = self._format_date_time(row.get("session_date"), row.get("session_time"))
+            entry_tz = row.get("start_entry_time_zone") or row.get("end_entry_time_zone")
+            accounting_tz = get_accounting_timezone_name()
+            if entry_tz and entry_tz != accounting_tz:
+                date_display = f"{date_display} 🌐"
             game_name = row.get("game_name") or ""
             ending_sc = row.get("ending_redeemable") or row.get("ending_balance") or 0
             ending_sc_text = f"{float(ending_sc):.2f}"
@@ -1001,6 +1014,10 @@ class UnrealizedPositionDialog(QtWidgets.QDialog):
                 item = QtWidgets.QTableWidgetItem(str(value))
                 if col_idx == 2:
                     item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                if col_idx == 0 and entry_tz and entry_tz != accounting_tz:
+                    item.setToolTip(
+                        f"Entered in travel mode ({entry_tz}). Accounting TZ: {accounting_tz}."
+                    )
                 table.setItem(row_idx, col_idx, item)
 
             view_btn = QtWidgets.QPushButton("👁️ View Session")

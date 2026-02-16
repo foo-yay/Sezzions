@@ -16,7 +16,7 @@ def test_get_all_uses_local_redemption_dates(
     from tools.timezone_utils import local_date_time_to_utc
 
     monkeypatch.setattr(
-        "repositories.redemption_repository.get_configured_timezone_name",
+        "repositories.redemption_repository.get_accounting_timezone_name",
         lambda: "America/New_York",
     )
     monkeypatch.setattr(

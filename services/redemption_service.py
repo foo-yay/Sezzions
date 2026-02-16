@@ -7,6 +7,7 @@ from typing import List, Optional, Tuple, TYPE_CHECKING
 from decimal import Decimal
 from datetime import date
 from models.redemption import Redemption
+from tools.timezone_utils import get_entry_timezone_name
 from repositories.redemption_repository import RedemptionRepository
 from services.fifo_service import FIFOService
 
@@ -59,6 +60,7 @@ class RedemptionService:
             redemption_date=redemption_date,
             redemption_method_id=redemption_method_id,
             redemption_time=redemption_time,
+            redemption_entry_time_zone=get_entry_timezone_name(),
             receipt_date=receipt_date,
             processed=processed,
             more_remaining=more_remaining,
@@ -91,6 +93,7 @@ class RedemptionService:
                     total_remaining,  # Consume ALL remaining
                     redemption_date,
                     redemption_time or "23:59:59",
+                    redemption_entry_time_zone=redemption.redemption_entry_time_zone,
                 )
                 
                 # Recalculate profit: payout - cost_basis (may be negative for loss)
@@ -103,6 +106,7 @@ class RedemptionService:
                     amount,
                     redemption_date,
                     redemption_time or "23:59:59",
+                    redemption_entry_time_zone=redemption.redemption_entry_time_zone,
                 )
 
             redemption.cost_basis = cost_basis

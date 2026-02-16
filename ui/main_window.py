@@ -18,6 +18,7 @@ from ui.settings_dialog import SettingsDialog
 from ui.maintenance_mode_dialog import MaintenanceModeDialog
 from services.data_integrity_service import DataIntegrityService
 from services.repair_mode_service import RepairModeService
+from tools.timezone_utils import set_active_settings
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -27,6 +28,7 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.facade = facade
         self.settings = Settings()
+        set_active_settings(self.settings)
         
         # Wire Repair Mode service to facade with settings and db_manager
         from services.repair_mode_service import RepairModeService
@@ -49,6 +51,13 @@ class MainWindow(QtWidgets.QMainWindow):
             TimezoneMigrationService(self.facade.db, self.settings).migrate_local_timestamps_to_utc()
         except Exception as e:
             print(f"Warning: Could not migrate timestamps to UTC: {e}")
+
+        # Seed accounting time zone history
+        try:
+            from services.accounting_time_zone_service import AccountingTimeZoneService
+            AccountingTimeZoneService(self.facade.db, self.settings).ensure_history_seeded()
+        except Exception as e:
+            print(f"Warning: Could not seed accounting time zone history: {e}")
         
         # Restore window size
         width = self.settings.get('window_width', 1400)
@@ -113,6 +122,23 @@ class MainWindow(QtWidgets.QMainWindow):
         reserved_height = max(self._notification_bell.height(), self._settings_gear.height())
         self._notification_reserved_top = int(self._notification_bell_margin_top + reserved_height + main_layout.spacing())
         main_layout.setContentsMargins(0, self._notification_reserved_top, 0, 0)
+
+        # Travel mode banner (Entry vs Accounting TZ indicator)
+        self._travel_mode_banner = QtWidgets.QFrame()
+        self._travel_mode_banner.setObjectName("TravelModeBanner")
+        self._travel_mode_banner.setFrameShape(QtWidgets.QFrame.Shape.StyledPanel)
+        self._travel_mode_banner.setStyleSheet(
+            "QFrame#TravelModeBanner { background: #1f6f5a; color: white; border-radius: 6px; }"
+        )
+        self._travel_mode_banner.setVisible(False)
+        banner_layout = QtWidgets.QHBoxLayout(self._travel_mode_banner)
+        banner_layout.setContentsMargins(self._content_inset, 6, self._content_inset, 6)
+        banner_layout.setSpacing(6)
+        self._travel_mode_label = QtWidgets.QLabel("")
+        self._travel_mode_label.setObjectName("TravelModeLabel")
+        banner_layout.addWidget(self._travel_mode_label)
+        banner_layout.addStretch(1)
+        main_layout.addWidget(self._travel_mode_banner)
 
         # Create main tab bar + stacked content (centered tabs)
         self.tab_bar = QtWidgets.QTabBar()
@@ -183,6 +209,9 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Apply saved theme
         self._apply_theme(self.settings.get_theme())
+
+        # Travel mode banner
+        self._update_travel_mode_banner()
         
         # Restore last tab
         last_tab = self.settings.get('last_tab', 0)
@@ -372,6 +401,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Backward-compat convenience: Tools now lives under Setup.
         self.tools_tab = self.setup_tab.tools_tab
+
+    def switch_to_tab(self, tab_name: str):
+        """Switch to a top-level tab or setup sub-tab by name."""
+        target = (tab_name or "").strip().lower()
+        if target == "tools":
+            setup_idx = self._tab_index.get("setup")
+            if setup_idx is not None:
+                self.tab_bar.setCurrentIndex(setup_idx)
+            if hasattr(self, "setup_tab") and hasattr(self.setup_tab, "sub_tabs"):
+                for i in range(self.setup_tab.sub_tabs.count()):
+                    if "Tools" in self.setup_tab.sub_tabs.tabText(i):
+                        self.setup_tab.sub_tabs.setCurrentIndex(i)
+                        break
+            return
 
     def open_purchase(self, purchase_id: int):
         self.tab_bar.setCurrentIndex(self._tab_index.get("purchases", 0))
@@ -847,6 +890,19 @@ class MainWindow(QtWidgets.QMainWindow):
             self.redo_action.setText(f"&Redo {desc}" if desc else "&Redo")
         else:
             self.redo_action.setText("&Redo")
+
+    def _update_travel_mode_banner(self):
+        travel_mode_enabled = self.settings.get("travel_mode_enabled", False)
+        accounting_tz = self.settings.get("accounting_time_zone") or self.settings.get("time_zone")
+        entry_tz = self.settings.get("current_time_zone") or accounting_tz
+
+        if travel_mode_enabled and entry_tz and accounting_tz:
+            self._travel_mode_label.setText(
+                f"Travel Mode ON — Entry TZ: {entry_tz} · Accounting TZ: {accounting_tz}"
+            )
+            self._travel_mode_banner.setVisible(True)
+        else:
+            self._travel_mode_banner.setVisible(False)
     
     def _apply_theme(self, theme_name: str):
         """Apply theme to application"""
@@ -927,6 +983,9 @@ class MainWindow(QtWidgets.QMainWindow):
             # Settings were saved; optionally trigger re-evaluation of notification rules
             # if threshold changed
             self._evaluate_notifications()
+
+            # Update travel mode banner if time zone settings changed
+            self._update_travel_mode_banner()
             
             # Rebuild Daily Sessions columns if tax withholding settings changed
             if hasattr(self, 'daily_sessions_tab') and hasattr(self.daily_sessions_tab, 'rebuild_columns'):

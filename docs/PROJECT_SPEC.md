@@ -762,10 +762,14 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
   - Example: `ToolsTab._load_automatic_backup_settings()` blocks spinbox/checkbox signals during load to prevent premature saves
 - **Disk Sync**: Settings.save() uses `flush()` and `fsync()` to force OS buffer writes, preventing data loss on crash
 
-**Time Zone & UTC Storage (Issue #107):**
-- `settings.json` stores `time_zone` (IANA name) and `timezone_storage_migrated` flag.
+**Time Zone & UTC Storage (Issue #107 / #117):**
+- `settings.json` stores `accounting_time_zone`, `current_time_zone`, `travel_mode_enabled`, plus legacy `time_zone` (IANA names).
 - All user-entered timestamps are stored in UTC in the database (purchases, redemptions, sessions, adjustments, expenses, audit log).
-- Repository/services convert UTC → local for display and business logic using the selected `time_zone`.
+- Repository/services convert UTC → local for display and business logic.
+- **Accounting Time Zone** controls daily bucketing/reporting; stored in `accounting_time_zone_history` for effective-dated changes.
+- **Entry Time Zone** controls how new timestamps are interpreted; Travel Mode allows Entry TZ to differ from Accounting TZ.
+  - On edit/save, if the stored entry TZ differs from current mode, the user is prompted to optionally re-stamp the entry TZ.
+- Accounting TZ changes recompute derived daily tables from the effective UTC timestamp.
 - Audit log date filters convert local date ranges to UTC bounds before querying.
 - Unrealized positions convert UTC timestamps to local dates for start/last-activity filtering in the UI.
 - Daily Sessions merges `daily_date_tax` by local session dates so Tax Set-Aside aligns with displayed rows.
@@ -773,6 +777,8 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - Tax and session P/L reports (and realized transaction filters) convert local date ranges to UTC bounds using stored timestamps.
 - Realized tab groups transactions by local day using redemption timestamps; view-position dialogs display related purchase/session times in local time.
 - Game session recalculation uses local timestamps converted to UTC when finding containing sessions.
+- Expected balance checks compare UTC instants across entry time zones to avoid out-of-order inclusion.
+- Session close validation blocks saves when end time is before start time after UTC conversion.
 - One-time migration converts existing local timestamps to UTC using the currently selected time zone.
 
 **UI Integration:**

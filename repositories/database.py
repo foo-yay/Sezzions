@@ -184,6 +184,7 @@ class DatabaseManager:
                 cashback_is_manual INTEGER DEFAULT 0,
                 purchase_date TEXT NOT NULL,
                 purchase_time TEXT,
+                purchase_entry_time_zone TEXT,
                 card_id INTEGER,
                 remaining_amount TEXT NOT NULL,
                 status TEXT DEFAULT 'active',
@@ -225,6 +226,7 @@ class DatabaseManager:
                 fees TEXT DEFAULT '0.00',
                 redemption_date TEXT NOT NULL,
                 redemption_time TEXT DEFAULT '00:00:00',
+                redemption_entry_time_zone TEXT,
                 redemption_method_id INTEGER,
                 is_free_sc INTEGER DEFAULT 0,
                 receipt_date TEXT,
@@ -252,8 +254,10 @@ class DatabaseManager:
                 game_type_id INTEGER,
                 session_date TEXT NOT NULL,
                 session_time TEXT DEFAULT '00:00:00',
+                start_entry_time_zone TEXT,
                 end_date TEXT,
                 end_time TEXT,
+                end_entry_time_zone TEXT,
                 starting_balance TEXT DEFAULT '0.00',
                 ending_balance TEXT DEFAULT '0.00',
                 starting_redeemable TEXT DEFAULT '0.00',
@@ -279,8 +283,7 @@ class DatabaseManager:
                 FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
                 FOREIGN KEY (game_type_id) REFERENCES game_types(id) ON DELETE SET NULL
             )
-        ''')
-
+            ''')
         # Game session event links (legacy parity)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS game_session_event_links (
@@ -361,6 +364,7 @@ class DatabaseManager:
                 description TEXT,
                 category TEXT DEFAULT 'Other Expenses',
                 user_id INTEGER,
+                expense_entry_time_zone TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -406,6 +410,7 @@ class DatabaseManager:
                 description TEXT,
                 category TEXT,
                 user_id INTEGER,
+                expense_entry_time_zone TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -437,6 +442,7 @@ class DatabaseManager:
                 site_id INTEGER NOT NULL,
                 effective_date TEXT NOT NULL,
                 effective_time TEXT DEFAULT '00:00:00',
+                effective_entry_time_zone TEXT,
                 type TEXT NOT NULL CHECK(type IN ('BASIS_USD_CORRECTION', 'BALANCE_CHECKPOINT_CORRECTION')),
                 delta_basis_usd TEXT DEFAULT '0.00',
                 checkpoint_total_sc TEXT DEFAULT '0.00',
@@ -453,6 +459,7 @@ class DatabaseManager:
                 FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
             )
         ''')
+        self._migrate_account_adjustments_table()
         
         # Audit log table (compliance trail)
         # Reference: DATABASE_DESIGN.md §12
@@ -477,6 +484,17 @@ class DatabaseManager:
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT
+            )
+        ''')
+
+        # Accounting time zone history (effective-dated)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS accounting_time_zone_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                effective_utc_timestamp TEXT NOT NULL,
+                accounting_time_zone TEXT NOT NULL,
+                reason TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
@@ -522,6 +540,16 @@ class DatabaseManager:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_table ON audit_log(table_name)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_audit_group ON audit_log(group_id)')
+
+        # Accounting TZ history index
+        cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_accounting_tz_effective ON accounting_time_zone_history(effective_utc_timestamp)'
+        )
+
+        # Accounting TZ history index
+        cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_accounting_tz_effective ON accounting_time_zone_history(effective_utc_timestamp)'
+        )
         
         # Users indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active)')
@@ -561,8 +589,10 @@ class DatabaseManager:
                         game_type_id INTEGER,
                         session_date TEXT NOT NULL,
                         session_time TEXT DEFAULT '00:00:00',
+                        start_entry_time_zone TEXT,
                         end_date TEXT,
                         end_time TEXT,
+                        end_entry_time_zone TEXT,
                         starting_balance TEXT DEFAULT '0.00',
                         ending_balance TEXT DEFAULT '0.00',
                         starting_redeemable TEXT DEFAULT '0.00',
@@ -599,8 +629,10 @@ class DatabaseManager:
                     "game_type_id",
                     "session_date",
                     "session_time",
+                    "start_entry_time_zone",
                     "end_date",
                     "end_time",
+                    "end_entry_time_zone",
                     "starting_balance",
                     "ending_balance",
                     "starting_redeemable",
@@ -654,6 +686,8 @@ class DatabaseManager:
             ("session_basis", "TEXT"),
             ("basis_consumed", "TEXT"),
             ("net_taxable_pl", "TEXT"),
+            ("start_entry_time_zone", "TEXT"),
+            ("end_entry_time_zone", "TEXT"),
             ("status", "TEXT DEFAULT 'Active'"),
             ("deleted_at", "TIMESTAMP NULL"),
         ]
@@ -706,6 +740,7 @@ class DatabaseManager:
             ("processed", "INTEGER DEFAULT 0"),
             ("more_remaining", "INTEGER DEFAULT 0"),
             ("deleted_at", "TIMESTAMP NULL"),
+            ("redemption_entry_time_zone", "TEXT"),
         ]
 
         for column_name, column_def in migrations:
@@ -830,6 +865,7 @@ class DatabaseManager:
             ("category", "TEXT"),
             ("user_id", "INTEGER"),
             ("expense_time", "TEXT"),
+            ("expense_entry_time_zone", "TEXT"),
             ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
             ("updated_at", "TIMESTAMP"),
         ]
@@ -889,6 +925,7 @@ class DatabaseManager:
             ("cashback_is_manual", "INTEGER DEFAULT 0"),
             ("deleted_at", "TIMESTAMP NULL"),
             ("status", "TEXT DEFAULT 'active'"),
+            ("purchase_entry_time_zone", "TEXT"),
         ]
 
         for column_name, column_def in migrations:
@@ -912,6 +949,21 @@ class DatabaseManager:
             if column_name not in existing_columns:
                 try:
                     cursor.execute(f"ALTER TABLE unrealized_positions ADD COLUMN {column_name} {column_def}")
+                except Exception:
+                    pass
+
+    def _migrate_account_adjustments_table(self):
+        """Add new columns to account_adjustments if they don't exist"""
+        cursor = self._connection.cursor()
+        cursor.execute("PRAGMA table_info(account_adjustments)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        migrations = [
+            ("effective_entry_time_zone", "TEXT"),
+        ]
+        for column_name, column_def in migrations:
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE account_adjustments ADD COLUMN {column_name} {column_def}")
                 except Exception:
                     pass
 

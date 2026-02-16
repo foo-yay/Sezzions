@@ -46,7 +46,7 @@ def test_settings_dialog_has_data_section(main_window):
     dialog = SettingsDialog(main_window.settings, main_window)
     
     # Check navigation list has Data section
-    assert dialog.nav_list.count() == 4
+    assert dialog.nav_list.count() == 5
     items = [dialog.nav_list.item(i).text() for i in range(dialog.nav_list.count())]
     assert "Data" in items
     
@@ -57,8 +57,8 @@ def test_settings_dialog_data_section_has_max_undo_control(main_window):
     """Test that Data section contains max undo operations spinbox"""
     dialog = SettingsDialog(main_window.settings, main_window)
     
-    # Switch to Data section (index 3)
-    dialog.nav_list.setCurrentRow(3)
+    # Switch to Data section (index 4)
+    dialog.nav_list.setCurrentRow(4)
     
     # Verify max_undo_spin exists
     assert hasattr(dialog, 'max_undo_spin')
