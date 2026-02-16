@@ -12,6 +12,29 @@ Rules:
 ## 2026-02-16
 
 ```yaml
+id: 2026-02-16-03
+type: enhancement
+areas: [ui, purchases, redemptions, sessions]
+summary: "Add persistent quick filter toggles on primary tabs"
+files_changed:
+  - ui/tabs/purchases_tab.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/game_sessions_tab.py
+  - tests/integration/test_issue_121_quick_filters.py
+  - docs/PROJECT_SPEC.md
+```
+
+**Enhancement: Quick Filters on Purchases / Redemptions / Sessions**
+
+- Added persistent quick toggles near Export buttons:
+  - Purchases: `Basis Remaining`
+  - Redemptions: `Pending`, `Unprocessed`
+  - Game Sessions: `Active Only`
+- Toggled states now persist across app restarts and are cleared by existing per-tab “Clear All Filters” actions.
+
+---
+
+```yaml
 id: 2026-02-16-01
 type: bugfix
 areas: [ui, redemptions, balances]

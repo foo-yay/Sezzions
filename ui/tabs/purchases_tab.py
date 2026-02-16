@@ -97,6 +97,11 @@ class PurchasesTab(QtWidgets.QWidget):
         
         toolbar.addStretch()
 
+        self.basis_remaining_filter_check = QtWidgets.QCheckBox("Basis Remaining")
+        self.basis_remaining_filter_check.setToolTip("Show only purchases with remaining basis > 0")
+        self.basis_remaining_filter_check.toggled.connect(self._on_basis_remaining_filter_toggled)
+        toolbar.addWidget(self.basis_remaining_filter_check)
+
         export_btn = QtWidgets.QPushButton("📤 Export CSV")
         export_btn.clicked.connect(self._export_csv)
         toolbar.addWidget(export_btn)
@@ -141,9 +146,46 @@ class PurchasesTab(QtWidgets.QWidget):
         # Set up keyboard shortcuts for spreadsheet UX
         copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self.table)
         copy_shortcut.activated.connect(self._copy_selection)
+
+        self._load_quick_filter_state()
         
         # Load data
         self.refresh_data()
+
+    def _get_settings_object(self):
+        """Get settings object for reading/writing persistent UI preferences."""
+        if self.main_window is not None and hasattr(self.main_window, "settings"):
+            settings = getattr(self.main_window, "settings")
+            if hasattr(settings, "get") and hasattr(settings, "set"):
+                return settings
+
+        widget = self.parentWidget()
+        while widget:
+            if hasattr(widget, "settings"):
+                settings = getattr(widget, "settings")
+                if hasattr(settings, "get") and hasattr(settings, "set"):
+                    return settings
+            widget = widget.parentWidget()
+        return None
+
+    def _load_quick_filter_state(self):
+        settings = self._get_settings_object()
+        if settings is None:
+            return
+        checked = bool(settings.get("quick_filter_purchases_basis_remaining", False))
+        self.basis_remaining_filter_check.blockSignals(True)
+        self.basis_remaining_filter_check.setChecked(checked)
+        self.basis_remaining_filter_check.blockSignals(False)
+
+    def _save_quick_filter_state(self):
+        settings = self._get_settings_object()
+        if settings is None:
+            return
+        settings.set("quick_filter_purchases_basis_remaining", self.basis_remaining_filter_check.isChecked())
+
+    def _on_basis_remaining_filter_toggled(self, _checked: bool):
+        self._save_quick_filter_state()
+        self._populate_table()
     
     def focus_search(self):
         """Focus the search bar (for Cmd+F/Ctrl+F shortcut - Issue #99)"""
@@ -161,9 +203,16 @@ class PurchasesTab(QtWidgets.QWidget):
         search_text = self.search_edit.text().lower()
         
         # Filter purchases
-        if search_text:
-            filtered = []
-            for p in self.purchases:
+        filtered = []
+        only_with_basis_remaining = self.basis_remaining_filter_check.isChecked()
+
+        for p in self.purchases:
+            if only_with_basis_remaining:
+                remaining_value = Decimal(str(getattr(p, "remaining_amount", 0) or 0))
+                if remaining_value <= Decimal("0"):
+                    continue
+
+            if search_text:
                 parts = [
                     str(p.purchase_date),
                     getattr(p, 'user_name', '') or '',
@@ -177,10 +226,10 @@ class PurchasesTab(QtWidgets.QWidget):
                     p.notes or '',
                 ]
                 haystack = " ".join(parts).lower()
-                if search_text in haystack:
-                    filtered.append(p)
-        else:
-            filtered = self.purchases
+                if search_text not in haystack:
+                    continue
+
+            filtered.append(p)
         
         # Sort by date/time descending
         filtered.sort(key=lambda p: p.datetime_str, reverse=True)
@@ -1154,6 +1203,7 @@ class PurchasesTab(QtWidgets.QWidget):
         """Clear search and reset date filter"""
         self.search_edit.clear()
         self.date_filter.set_all_time()
+        self.basis_remaining_filter_check.setChecked(False)
         self.table.clearSelection()
         self._on_selection_changed()
         if hasattr(self, "table_filter"):

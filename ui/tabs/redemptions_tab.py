@@ -143,6 +143,16 @@ class RedemptionsTab(QtWidgets.QWidget):
         
         toolbar.addStretch()
 
+        self.pending_filter_check = QtWidgets.QCheckBox("Pending")
+        self.pending_filter_check.setToolTip("Show only redemptions with no receipt date")
+        self.pending_filter_check.toggled.connect(self._on_quick_filter_toggled)
+        toolbar.addWidget(self.pending_filter_check)
+
+        self.unprocessed_filter_check = QtWidgets.QCheckBox("Unprocessed")
+        self.unprocessed_filter_check.setToolTip("Show only redemptions that are not processed")
+        self.unprocessed_filter_check.toggled.connect(self._on_quick_filter_toggled)
+        toolbar.addWidget(self.unprocessed_filter_check)
+
         export_btn = QtWidgets.QPushButton("📤 Export CSV")
         export_btn.clicked.connect(self._export_csv)
         toolbar.addWidget(export_btn)
@@ -185,9 +195,51 @@ class RedemptionsTab(QtWidgets.QWidget):
         
         copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self.table)
         copy_shortcut.activated.connect(self._copy_selection)
+
+        self._load_quick_filter_state()
         
         # Load data
         self.refresh_data()
+
+    def _get_settings_object(self):
+        """Get settings object for reading/writing persistent UI preferences."""
+        if self.main_window is not None and hasattr(self.main_window, "settings"):
+            settings = getattr(self.main_window, "settings")
+            if hasattr(settings, "get") and hasattr(settings, "set"):
+                return settings
+
+        widget = self.parentWidget()
+        while widget:
+            if hasattr(widget, "settings"):
+                settings = getattr(widget, "settings")
+                if hasattr(settings, "get") and hasattr(settings, "set"):
+                    return settings
+            widget = widget.parentWidget()
+        return None
+
+    def _load_quick_filter_state(self):
+        settings = self._get_settings_object()
+        if settings is None:
+            return
+        pending_checked = bool(settings.get("quick_filter_redemptions_pending", False))
+        unprocessed_checked = bool(settings.get("quick_filter_redemptions_unprocessed", False))
+        self.pending_filter_check.blockSignals(True)
+        self.unprocessed_filter_check.blockSignals(True)
+        self.pending_filter_check.setChecked(pending_checked)
+        self.unprocessed_filter_check.setChecked(unprocessed_checked)
+        self.pending_filter_check.blockSignals(False)
+        self.unprocessed_filter_check.blockSignals(False)
+
+    def _save_quick_filter_state(self):
+        settings = self._get_settings_object()
+        if settings is None:
+            return
+        settings.set("quick_filter_redemptions_pending", self.pending_filter_check.isChecked())
+        settings.set("quick_filter_redemptions_unprocessed", self.unprocessed_filter_check.isChecked())
+
+    def _on_quick_filter_toggled(self, _checked: bool):
+        self._save_quick_filter_state()
+        self._populate_table()
     
     def focus_search(self):
         """Focus the search bar (for Cmd+F/Ctrl+F shortcut - Issue #99)"""
@@ -412,10 +464,20 @@ class RedemptionsTab(QtWidgets.QWidget):
 
     def _get_filtered_redemptions(self):
         search_text = self.search_edit.text().lower()
+        pending_only = self.pending_filter_check.isChecked()
+        unprocessed_only = self.unprocessed_filter_check.isChecked()
+
+        quick_filtered = []
+        for r in self.redemptions:
+            if pending_only and bool(r.receipt_date):
+                continue
+            if unprocessed_only and bool(r.processed):
+                continue
+            quick_filtered.append(r)
 
         if search_text:
             filtered = []
-            for r in self.redemptions:
+            for r in quick_filtered:
                 receipt_status = "pending" if not r.receipt_date else "received"
                 processed_status = "processed" if r.processed else "unprocessed"
                 amount_value = Decimal(str(r.amount))
@@ -461,7 +523,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                 if search_text in haystack:
                     filtered.append(r)
         else:
-            filtered = self.redemptions
+            filtered = quick_filtered
 
         filtered.sort(key=lambda r: r.datetime_str, reverse=True)
         return filtered
@@ -962,6 +1024,8 @@ class RedemptionsTab(QtWidgets.QWidget):
         """Clear search and reset date filter"""
         self.search_edit.clear()
         self.date_filter.set_all_time()
+        self.pending_filter_check.setChecked(False)
+        self.unprocessed_filter_check.setChecked(False)
         self.table.clearSelection()
         self._on_selection_changed()
         self.refresh_data()
