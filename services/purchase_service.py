@@ -13,16 +13,18 @@ from repositories.card_repository import CardRepository
 if TYPE_CHECKING:
     from services.audit_service import AuditService
     from services.undo_redo_service import UndoRedoService
+    from services.game_session_service import GameSessionService
 
 
 class PurchaseService:
     """Business logic for Purchase operations"""
     
-    def __init__(self, purchase_repo: PurchaseRepository, card_repo: Optional[CardRepository] = None, audit_service: Optional['AuditService'] = None, undo_redo_service: Optional['UndoRedoService'] = None):
+    def __init__(self, purchase_repo: PurchaseRepository, card_repo: Optional[CardRepository] = None, audit_service: Optional['AuditService'] = None, undo_redo_service: Optional['UndoRedoService'] = None, game_session_service: Optional['GameSessionService'] = None):
         self.purchase_repo = purchase_repo
         self.card_repo = card_repo
         self.audit_service = audit_service
         self.undo_redo_service = undo_redo_service
+        self.game_session_service = game_session_service
     
     def _calculate_cashback(self, amount: Decimal, card_id: Optional[int]) -> Decimal:
         """Calculate cashback based on card rate.
@@ -72,6 +74,21 @@ class PurchaseService:
         else:
             cashback_is_manual = True  # User explicitly provided
         
+        # Auto-calculate starting_redeemable_balance from most recent checkpoint
+        starting_redeemable_balance = Decimal("0.00")
+        if self.game_session_service:
+            try:
+                _, expected_redeemable = self.game_session_service.compute_expected_balances(
+                    user_id=user_id,
+                    site_id=site_id,
+                    session_date=purchase_date,
+                    session_time=purchase_time or "00:00:00",
+                )
+                starting_redeemable_balance = expected_redeemable
+            except Exception:
+                # If computation fails, default to 0.00
+                starting_redeemable_balance = Decimal("0.00")
+        
         # Create purchase model (validates in __post_init__)
         purchase = Purchase(
             user_id=user_id,
@@ -79,6 +96,7 @@ class PurchaseService:
             amount=amount,
             sc_received=sc_received,
             starting_sc_balance=starting_sc_balance,
+            starting_redeemable_balance=starting_redeemable_balance,
             cashback_earned=cashback_earned,
             cashback_is_manual=cashback_is_manual,
             purchase_date=purchase_date,

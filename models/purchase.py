@@ -16,6 +16,7 @@ class Purchase:
     purchase_date: date
     sc_received: Decimal = Decimal("0.00")
     starting_sc_balance: Decimal = Decimal("0.00")
+    starting_redeemable_balance: Decimal = Decimal("0.00")
     cashback_earned: Decimal = Decimal("0.00")
     cashback_is_manual: bool = False
     card_id: Optional[int] = None
@@ -48,7 +49,7 @@ class Purchase:
             raise ValueError("Purchase amount must be positive")
 
         # Convert and validate SC/cashback fields
-        for field_name in ["sc_received", "starting_sc_balance", "cashback_earned"]:
+        for field_name in ["sc_received", "starting_sc_balance", "starting_redeemable_balance", "cashback_earned"]:
             value = getattr(self, field_name)
             if isinstance(value, (int, float)):
                 setattr(self, field_name, Decimal(str(value)))

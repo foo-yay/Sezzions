@@ -116,7 +116,7 @@ When editing a purchase or creating/editing a game session, the system computes 
 - Unrealized positions represent sites with remaining SC (position still open).
 - **Issue #44 (2026-02-02):** Unrealized tab estimates current balances by incorporating purchases/redemptions after the most recent checkpoint.
 - **Issue #61 (2026-02-05):** Unrealized now uses **the most recent checkpoint** among:
-  1. **Purchase snapshots** (`starting_sc_balance` when recorded) — captures site SC including dailies/bonuses at purchase time
+  1. **Purchase snapshots** (`starting_sc_balance` + `starting_redeemable_balance` when recorded) — captures site SC including dailies/bonuses at purchase time
   2. **Session starts** (`starting_balance` + `starting_redeemable`) — both Active and Closed sessions
   3. **Session ends** (`ending_balance` + `ending_redeemable`) — Closed sessions only
   4. **Balance checkpoints** (`account_adjustments` of type `BALANCE_CHECKPOINT_CORRECTION`) — explicit known balances captured in Setup → Tools

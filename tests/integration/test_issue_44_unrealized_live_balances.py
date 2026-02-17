@@ -300,7 +300,7 @@ class TestIssue61UnrealizedCheckpoints:
     """Test Issue #61: Unrealized uses purchase/session-start checkpoints for Total SC (Est.)"""
     
     def test_purchase_snapshot_overrides_sc_received_sum(self, db, repo):
-        """When purchase has starting_sc_balance snapshot, use it as baseline (includes dailies)."""
+        """When purchase has starting_sc_balance snapshot, use it as baseline (post-purchase SC)."""
         db.execute("""
             INSERT INTO purchases
             (user_id, site_id, purchase_date, purchase_time, amount, sc_received, starting_sc_balance, remaining_amount)
@@ -312,7 +312,8 @@ class TestIssue61UnrealizedCheckpoints:
         assert len(positions) == 1
         pos = positions[0]
         
-        # Total SC should use the snapshot (105.00), not just sc_received (100.00)
+        # Total SC = starting_sc_balance (105 is POST-purchase, includes dailies/bonuses)
+        # Purchase is excluded from deltas to avoid double-counting
         assert pos.total_sc == Decimal("105.00"), "Should use purchase snapshot as baseline"
         assert pos.purchase_basis == Decimal("100.00")
         assert pos.unrealized_pl == Decimal("5.00")  # 105 - 100
