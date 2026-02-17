@@ -797,6 +797,7 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
   - Session tables: Single globe in date/time column if either start OR end was entered in travel mode; tooltip shows which timezone(s) differ
   - Edit dialogs: Badge appears after NOW button when in travel mode
   - Timezone update validation: When editing sessions, timezone update prompt occurs BEFORE UTC validation to prevent false "end earlier than start" errors
+- **Multi-Day Session Indicators (Issue #132)**: Game Sessions tab displays `(+Nd)` suffix when a session spans multiple days, where N is the actual number of days between session start and end dates (e.g., `(+2d)` for a session from Feb 1 → Feb 3). This helps identify overnight sessions at a glance. Daily Sessions and Realized tabs use full date range displays instead.
 - Accounting TZ changes recompute derived daily tables from the effective UTC timestamp.
 - Audit log date filters convert local date ranges to UTC bounds before querying.
 - Unrealized positions convert UTC timestamps to local dates for start/last-activity filtering in the UI.
