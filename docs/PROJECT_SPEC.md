@@ -1,8 +1,48 @@
 # Sezzions — Master Product & Implementation Spec
 
-Version: 2026-01-29
+Version: 2026-02-17
 
 This document is intended to be the **single consolidated project file** describing Sezzions end-to-end. It should be usable by a developer team (or an AI) to recreate Sezzions with high functional parity.
+
+## Reconstruction Contract
+
+Target state: if the repo was lost and only this file plus `docs/status/CHANGELOG.md` survived, an engineer (or AI) should be able to reconstruct Sezzions with only minor corrections.
+
+Corollaries:
+- This spec must not rely on other markdown files for required behavior.
+- The changelog is the chronological “why/when”; this spec is the canonical “what/how”.
+
+## Quick Start (Developer Bootstrap)
+
+### Requirements
+- Python 3.x
+- Install dependencies from `requirements.txt`
+
+### Setup
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### Run
+```bash
+python3 sezzions.py
+```
+
+Database path rules:
+- Default: `./sezzions.db` (repo root)
+- Override: `SEZZIONS_DB_PATH=/path/to/your.db python3 sezzions.py`
+
+### Test
+```bash
+pytest
+```
+
+Notes:
+- Most tests use SQLite `:memory:` databases; some integration tests create temporary `test.db` files under pytest’s temp directory.
 
 ## 1) Product Overview
 
@@ -41,7 +81,7 @@ Key rules:
 - **Startup Safety**: If data integrity violations or loading errors occur during startup, the app automatically enters maintenance mode (Setup tab only) to allow database repair via Tools without crashing.
 
 ### Repo Workflow (Source of Truth)
-The development workflow (including PR expectations and the "Ready for Review" handoff) is defined in `AGENTS.md` and should be treated as the canonical process.
+This spec defines the canonical workflow expectations and documentation policy (see §8). Keep the repo lean: update this spec + changelog rather than creating new one-off docs.
 
 ## 3) Data Model (High-Level)
 
@@ -679,6 +719,22 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - Progress dialogs provide user feedback during long-running operations
 - Data-changed signal emitted after operations for future cross-tab refresh support
 
+**Service Surface (Core APIs):**
+- `BackupService.backup_database(dest_path, include_audit_log=...)`
+- `BackupService.backup_with_timestamp(dest_dir, prefix=...)`
+- `BackupService.list_backups(dir, prefix=...)`
+- `BackupService.delete_old_backups(dir, keep_count, prefix=...)`
+- `BackupService.verify_backup(path)`
+- `RestoreService.restore_database(backup_path, mode, tables=...)` where mode is Replace / Merge All / Merge Selected
+- `ResetService.preview_reset(keep_setup_data, keep_audit_log)`
+- `ResetService.reset_database(keep_setup_data, keep_audit_log)`
+- `ResetService.reset_table(table_name)`
+- `ResetService.get_table_counts()`
+
+**Testing (Expectation):**
+- Unit coverage for service error paths (missing file, bad args) and core behaviors.
+- Integration coverage for end-to-end flows (backup → restore replace/merge → reset), including audit log assertions.
+
 **Worker-Based Execution:**
 - `DatabaseBackupWorker`: Creates backup in background thread with own DB connection
 - `DatabaseRestoreWorker`: Restores database in background thread with own DB connection
@@ -826,7 +882,7 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - Reset: dialog with table counts, preserve setup data checkbox, typed confirmation
 - Automatic backup: enable toggle, directory selection, frequency spinner (1-168 hrs), status label (color-coded), test button, last backup timestamp display
 
-### 6.2 CSV Import/Export
+### 6.3 CSV Import/Export
 
 **Architecture:**
 - Schema-driven import/export using `EntitySchema` definitions
@@ -879,7 +935,27 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
   - Solution: Run "Recalculate Everything" after completing all imports
   - **Maintenance Mode (Issue #38)**: Automatically detects integrity violations at startup and restricts UI access
 
-### 6.3 Data Integrity & Maintenance Mode (Issue #38)
+### 6.4 Recalculation Engine (Derived Data Rebuild)
+
+**Purpose:**
+Rebuild derived accounting data (FIFO allocations, realized transactions, session-event links, daily aggregates) from authoritative records when the system becomes inconsistent (imports, edits, repairs).
+
+**Core Service (`services/recalculation_service.py`):**
+- `rebuild_fifo_for_pair(user_id, site_id, progress_callback=None)`: rebuild one (user, site) pair end-to-end.
+- `rebuild_fifo_for_pair_from(user_id, site_id, from_date, from_time)`: scoped rebuild from a boundary forward.
+- `rebuild_fifo_all(progress_callback=None)`: rebuild all active pairs.
+- `rebuild_after_import(entity_type, user_ids, site_ids, progress_callback=None)`: targeted rebuild after CSV imports.
+
+**Behavioral Notes:**
+- Clears and rebuilds `redemption_allocations` and `realized_transactions` deterministically from purchases/redemptions.
+- Resets purchase `remaining_amount` to its starting state, then replays redemptions chronologically.
+- Handles special redemptions (free SC, zero-payout, partial vs closeout via `more_remaining`).
+
+**Testing (Expectation):**
+- Unit tests for boundary conditions and deterministic outputs.
+- Integration tests for end-to-end rebuilds and post-import targeted rebuild correctness.
+
+### 6.5 Data Integrity & Maintenance Mode (Issue #38)
 
 **Purpose:**
 Prevent app crashes from data integrity violations (common during multi-session CSV imports) by detecting issues at startup and restricting access until resolved.
@@ -911,11 +987,7 @@ Prevent app crashes from data integrity violations (common during multi-session 
 Helpful maintenance scripts:
 - Validate schema vs spec: `python3 tools/validate_schema.py`
 
-Status snapshots:
-- [docs/status/TOOLS_DATABASE_PHASE_3_STATUS.md](status/TOOLS_DATABASE_PHASE_3_STATUS.md)
-- [docs/status/TOOLS_RECALCULATION_PHASE_4_STATUS.md](status/TOOLS_RECALCULATION_PHASE_4_STATUS.md)
-
-### 6.4 Notification System (Issue #28)
+### 6.6 Notification System (Issue #28)
 
 **Purpose:**
 Provide passive, persistent notifications for important app events without interrupting user workflow:
@@ -1017,7 +1089,7 @@ Provide passive, persistent notifications for important app events without inter
   - Multiple notifications with independent cooldowns
 - No headless UI smoke test yet (future: boot MainWindow, assert bell exists, open center)
 
-### 6.5 Tax Withholding Estimates (Issue #29)
+### 6.7 Tax Withholding Estimates (Issue #29)
 
 **Purpose:**
 Store and compute date-level tax withholding estimates for informational tax planning. Tax is calculated on the NET P/L of ALL users for each date (winners netted against losers). This is not legal/tax advice; user must consult a tax professional.
@@ -1110,7 +1182,7 @@ Date: 2026-01-09
 - ✅ Date-level netting architecture implemented
 - ✅ Auto-recalc on session close/edit and cascade scenarios
 
-### 6.6 Settings UI Entry Point (Issue #31)
+### 6.8 Settings UI Entry Point (Issue #31)
 
 **Purpose:**
 Provide a first-class, always-available Settings entry point for managing notifications, taxes, and future cross-cutting preferences.
@@ -1173,23 +1245,30 @@ Recommended additions:
 
 ## 8) Development Workflow (Team + AI)
 
-### Canonical docs
-See [docs/INDEX.md](INDEX.md) and ADR [docs/adr/0001-docs-governance.md](adr/0001-docs-governance.md).
+### Documentation policy
+
+Goal: reduce documentation sprawl and keep the app reconstructable.
+
+- Required docs:
+  - This spec (`docs/PROJECT_SPEC.md`)
+  - Changelog (`docs/status/CHANGELOG.md`)
+- Prefer updating this spec over creating new markdown.
+- Historical/superseded docs belong in `docs/archive/`.
+- Work tracking is primarily GitHub Issues.
 
 ### Change control
 - For non-trivial accounting changes: add/modify a golden scenario test first.
-- For architectural decisions: record an ADR.
-- For progress tracking: update `docs/status/STATUS.md`.
+- For architectural decisions: record the decision directly in this spec (and note it in the changelog).
 
 ### Required Workflow (Do Not Deviate)
 
-1. Pick work from a GitHub Issue (preferred) or from `docs/TODO.md` (offline mirror).
+1. Pick work from a GitHub Issue.
 2. Implement changes with minimal, surgical edits.
 3. Update/add tests to match intended semantics.
 4. Update this spec (`docs/PROJECT_SPEC.md`) when behavior/architecture/workflows change.
 5. Add a changelog entry to `docs/status/CHANGELOG.md` for noteworthy changes.
 6. Open a Pull Request and request owner review.
-7. After approval/merge, close the Issue (and only then update any related TODO mirror item).
+7. After approval/merge, close the Issue.
 
 ### Branching & PR Policy
 
@@ -1213,3 +1292,434 @@ Legacy code is quarantined in `.LEGACY/`.
   - FIFO basis/cashflow P&L (redemptions/realized/unrealized)
   - Taxable P&L (gameplay sessions)
 - Lock down a minimal set of golden scenarios that “prove” correctness.
+
+## Appendix A) SQLite Schema (Authoritative DDL)
+
+This appendix is the authoritative schema for a fresh Sezzions database as of this spec version.
+
+```sql
+-- Sezzions SQLite Schema (generated)
+-- Generated from repositories/database.py via DatabaseManager(':memory:')
+-- NOTE: This is schema-only (no data).
+
+PRAGMA foreign_keys = ON;
+
+-- TABLE: account_adjustments (table=account_adjustments)
+CREATE TABLE account_adjustments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        site_id INTEGER NOT NULL,
+        effective_date TEXT NOT NULL,
+        effective_time TEXT DEFAULT '00:00:00',
+        effective_entry_time_zone TEXT,
+        type TEXT NOT NULL CHECK(type IN ('BASIS_USD_CORRECTION', 'BALANCE_CHECKPOINT_CORRECTION')),
+        delta_basis_usd TEXT DEFAULT '0.00',
+        checkpoint_total_sc TEXT DEFAULT '0.00',
+        checkpoint_redeemable_sc TEXT DEFAULT '0.00',
+        reason TEXT NOT NULL,
+        notes TEXT,
+        related_table TEXT,
+        related_id INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP,
+        deleted_at TIMESTAMP,
+        deleted_reason TEXT,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
+      );
+
+-- TABLE: accounting_time_zone_history (table=accounting_time_zone_history)
+CREATE TABLE accounting_time_zone_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        effective_utc_timestamp TEXT NOT NULL,
+        accounting_time_zone TEXT NOT NULL,
+        reason TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+-- TABLE: audit_log (table=audit_log)
+CREATE TABLE audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action TEXT NOT NULL,
+        table_name TEXT NOT NULL,
+        record_id INTEGER,
+        details TEXT,
+        user_name TEXT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      , old_data TEXT NULL, new_data TEXT NULL, group_id TEXT NULL, summary_data TEXT NULL);
+
+-- TABLE: cards (table=cards)
+CREATE TABLE cards (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        last_four TEXT,
+        cashback_rate REAL DEFAULT 0.0,
+        is_active INTEGER DEFAULT 1,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+-- TABLE: daily_date_tax (table=daily_date_tax)
+CREATE TABLE daily_date_tax (
+        session_date TEXT PRIMARY KEY,
+        net_daily_pnl REAL DEFAULT 0.0,
+        tax_withholding_rate_pct REAL,
+        tax_withholding_is_custom INTEGER DEFAULT 0,
+        tax_withholding_amount REAL,
+        notes TEXT
+      );
+
+-- TABLE: daily_sessions (table=daily_sessions)
+CREATE TABLE daily_sessions (
+        session_date TEXT NOT NULL,
+        user_id INTEGER NOT NULL,
+        total_other_income REAL DEFAULT 0.0,
+        total_session_pnl REAL DEFAULT 0.0,
+        net_daily_pnl REAL DEFAULT 0.0,
+        status TEXT,
+        num_game_sessions INTEGER DEFAULT 0,
+        num_other_income_items INTEGER DEFAULT 0,
+        PRIMARY KEY (session_date, user_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+      );
+
+-- TABLE: expenses (table=expenses)
+CREATE TABLE "expenses" (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          expense_date TEXT NOT NULL,
+          expense_time TEXT,
+          amount TEXT NOT NULL,
+          vendor TEXT NOT NULL,
+          description TEXT,
+          category TEXT,
+          user_id INTEGER,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        );
+
+-- TABLE: game_rtp_aggregates (table=game_rtp_aggregates)
+CREATE TABLE "game_rtp_aggregates" (
+            game_id INTEGER PRIMARY KEY REFERENCES games(id) ON DELETE CASCADE,
+            total_wager REAL DEFAULT 0,
+            total_delta REAL DEFAULT 0,
+            session_count INTEGER DEFAULT 0,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          );
+
+-- TABLE: game_session_event_links (table=game_session_event_links)
+CREATE TABLE game_session_event_links (
+        id INTEGER PRIMARY KEY,
+        game_session_id INTEGER NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
+        event_type TEXT NOT NULL CHECK(event_type IN ('purchase','redemption')),
+        event_id INTEGER NOT NULL,
+        relation TEXT NOT NULL CHECK(relation IN ('BEFORE','DURING','AFTER','MANUAL')),
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(game_session_id, event_type, event_id, relation)
+      );
+
+-- TABLE: game_sessions (table=game_sessions)
+CREATE TABLE game_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        site_id INTEGER NOT NULL,
+        game_id INTEGER,
+        game_type_id INTEGER,
+        session_date TEXT NOT NULL,
+        session_time TEXT DEFAULT '00:00:00',
+        start_entry_time_zone TEXT,
+        end_date TEXT,
+        end_time TEXT,
+        end_entry_time_zone TEXT,
+        starting_balance TEXT DEFAULT '0.00',
+        ending_balance TEXT DEFAULT '0.00',
+        starting_redeemable TEXT DEFAULT '0.00',
+        ending_redeemable TEXT DEFAULT '0.00',
+        wager_amount TEXT DEFAULT '0.00',
+        rtp REAL,
+        purchases_during TEXT DEFAULT '0.00',
+        redemptions_during TEXT DEFAULT '0.00',
+        expected_start_total TEXT,
+        expected_start_redeemable TEXT,
+        discoverable_sc TEXT,
+        delta_total TEXT,
+        delta_redeem TEXT,
+        session_basis TEXT,
+        basis_consumed TEXT,
+        net_taxable_pl TEXT,
+        status TEXT DEFAULT 'Active',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP, deleted_at TIMESTAMP NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+        FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
+        FOREIGN KEY (game_type_id) REFERENCES game_types(id) ON DELETE SET NULL
+      );
+
+-- TABLE: game_types (table=game_types)
+CREATE TABLE game_types (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        is_active INTEGER DEFAULT 1,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP
+      );
+
+-- TABLE: games (table=games)
+CREATE TABLE games (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        game_type_id INTEGER NOT NULL,
+        rtp REAL,
+        actual_rtp REAL DEFAULT 0,
+        is_active INTEGER DEFAULT 1,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP,
+        FOREIGN KEY (game_type_id) REFERENCES game_types(id) ON DELETE CASCADE
+      );
+
+-- TABLE: purchases (table=purchases)
+CREATE TABLE purchases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        site_id INTEGER NOT NULL,
+        amount TEXT NOT NULL,
+        sc_received TEXT DEFAULT '0.00',
+        starting_sc_balance TEXT DEFAULT '0.00',
+        cashback_earned TEXT DEFAULT '0.00',
+        cashback_is_manual INTEGER DEFAULT 0,
+        purchase_date TEXT NOT NULL,
+        purchase_time TEXT,
+        purchase_entry_time_zone TEXT,
+        card_id INTEGER,
+        remaining_amount TEXT NOT NULL,
+        status TEXT DEFAULT 'active',
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP, starting_redeemable_balance TEXT DEFAULT '0.00', deleted_at TIMESTAMP NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+        FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE SET NULL
+      );
+
+-- TABLE: realized_daily_notes (table=realized_daily_notes)
+CREATE TABLE realized_daily_notes (
+        session_date TEXT PRIMARY KEY,
+        notes TEXT
+      );
+
+-- TABLE: realized_transactions (table=realized_transactions)
+CREATE TABLE realized_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        redemption_date TEXT NOT NULL,
+        site_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        redemption_id INTEGER NOT NULL,
+        cost_basis TEXT NOT NULL,
+        payout TEXT NOT NULL,
+        net_pl TEXT NOT NULL,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE RESTRICT,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+        FOREIGN KEY (redemption_id) REFERENCES redemptions(id) ON DELETE CASCADE
+      );
+
+-- TABLE: redemption_allocations (table=redemption_allocations)
+CREATE TABLE redemption_allocations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        redemption_id INTEGER NOT NULL,
+        purchase_id INTEGER NOT NULL,
+        allocated_amount TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (redemption_id) REFERENCES redemptions(id) ON DELETE CASCADE,
+        FOREIGN KEY (purchase_id) REFERENCES purchases(id) ON DELETE CASCADE
+      );
+
+-- TABLE: redemption_method_types (table=redemption_method_types)
+CREATE TABLE redemption_method_types (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        is_active INTEGER DEFAULT 1,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP
+      );
+
+-- TABLE: redemption_methods (table=redemption_methods)
+CREATE TABLE redemption_methods (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        method_type TEXT,
+        user_id INTEGER,
+        is_active INTEGER DEFAULT 1,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+      );
+
+-- TABLE: redemptions (table=redemptions)
+CREATE TABLE redemptions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        site_id INTEGER NOT NULL,
+        amount TEXT NOT NULL,
+        fees TEXT DEFAULT '0.00',
+        redemption_date TEXT NOT NULL,
+        redemption_time TEXT DEFAULT '00:00:00',
+        redemption_entry_time_zone TEXT,
+        redemption_method_id INTEGER,
+        is_free_sc INTEGER DEFAULT 0,
+        receipt_date TEXT,
+        processed INTEGER DEFAULT 0,
+        more_remaining INTEGER DEFAULT 0,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP, deleted_at TIMESTAMP NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+        FOREIGN KEY (redemption_method_id) REFERENCES redemption_methods(id) ON DELETE SET NULL
+      );
+
+-- TABLE: schema_version (table=schema_version)
+CREATE TABLE schema_version (
+        version INTEGER PRIMARY KEY,
+        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+-- TABLE: settings (table=settings)
+CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      );
+
+-- TABLE: sites (table=sites)
+CREATE TABLE sites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        url TEXT,
+        sc_rate REAL DEFAULT 1.0,
+        is_active INTEGER DEFAULT 1,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP
+      );
+
+-- TABLE: unrealized_positions (table=unrealized_positions)
+CREATE TABLE unrealized_positions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        site_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP,
+        UNIQUE(site_id, user_id),
+        FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+-- TABLE: users (table=users)
+CREATE TABLE users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        email TEXT,
+        is_active INTEGER DEFAULT 1,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP
+      );
+
+-- INDEX: idx_accounting_tz_effective (table=accounting_time_zone_history)
+CREATE INDEX idx_accounting_tz_effective ON accounting_time_zone_history(effective_utc_timestamp);
+
+-- INDEX: idx_adjustments_date (table=account_adjustments)
+CREATE INDEX idx_adjustments_date ON account_adjustments(effective_date, effective_time);
+
+-- INDEX: idx_adjustments_deleted (table=account_adjustments)
+CREATE INDEX idx_adjustments_deleted ON account_adjustments(deleted_at);
+
+-- INDEX: idx_adjustments_type (table=account_adjustments)
+CREATE INDEX idx_adjustments_type ON account_adjustments(type);
+
+-- INDEX: idx_adjustments_user_site (table=account_adjustments)
+CREATE INDEX idx_adjustments_user_site ON account_adjustments(user_id, site_id);
+
+-- INDEX: idx_allocations_purchase (table=redemption_allocations)
+CREATE INDEX idx_allocations_purchase ON redemption_allocations(purchase_id);
+
+-- INDEX: idx_allocations_redemption (table=redemption_allocations)
+CREATE INDEX idx_allocations_redemption ON redemption_allocations(redemption_id);
+
+-- INDEX: idx_audit_group (table=audit_log)
+CREATE INDEX idx_audit_group ON audit_log(group_id);
+
+-- INDEX: idx_audit_table (table=audit_log)
+CREATE INDEX idx_audit_table ON audit_log(table_name);
+
+-- INDEX: idx_audit_timestamp (table=audit_log)
+CREATE INDEX idx_audit_timestamp ON audit_log(timestamp);
+
+-- INDEX: idx_cards_active (table=cards)
+CREATE INDEX idx_cards_active ON cards(is_active);
+
+-- INDEX: idx_cards_user (table=cards)
+CREATE INDEX idx_cards_user ON cards(user_id);
+
+-- INDEX: idx_gsel_event (table=game_session_event_links)
+CREATE INDEX idx_gsel_event ON game_session_event_links(event_type, event_id);
+
+-- INDEX: idx_gsel_session (table=game_session_event_links)
+CREATE INDEX idx_gsel_session ON game_session_event_links(game_session_id);
+
+-- INDEX: idx_purchases_date (table=purchases)
+CREATE INDEX idx_purchases_date ON purchases(purchase_date, purchase_time);
+
+-- INDEX: idx_purchases_deleted (table=purchases)
+CREATE INDEX idx_purchases_deleted ON purchases(deleted_at);
+
+-- INDEX: idx_purchases_remaining (table=purchases)
+CREATE INDEX idx_purchases_remaining ON purchases(remaining_amount);
+
+-- INDEX: idx_purchases_site_user (table=purchases)
+CREATE INDEX idx_purchases_site_user ON purchases(site_id, user_id);
+
+-- INDEX: idx_realized_date (table=realized_transactions)
+CREATE INDEX idx_realized_date ON realized_transactions(redemption_date);
+
+-- INDEX: idx_realized_redemption (table=realized_transactions)
+CREATE INDEX idx_realized_redemption ON realized_transactions(redemption_id);
+
+-- INDEX: idx_realized_site_user (table=realized_transactions)
+CREATE INDEX idx_realized_site_user ON realized_transactions(site_id, user_id);
+
+-- INDEX: idx_redemptions_date (table=redemptions)
+CREATE INDEX idx_redemptions_date ON redemptions(redemption_date, redemption_time);
+
+-- INDEX: idx_redemptions_deleted (table=redemptions)
+CREATE INDEX idx_redemptions_deleted ON redemptions(deleted_at);
+
+-- INDEX: idx_redemptions_site_user (table=redemptions)
+CREATE INDEX idx_redemptions_site_user ON redemptions(site_id, user_id);
+
+-- INDEX: idx_sessions_date (table=game_sessions)
+CREATE INDEX idx_sessions_date ON game_sessions(session_date, session_time);
+
+-- INDEX: idx_sessions_deleted (table=game_sessions)
+CREATE INDEX idx_sessions_deleted ON game_sessions(deleted_at);
+
+-- INDEX: idx_sessions_site_user (table=game_sessions)
+CREATE INDEX idx_sessions_site_user ON game_sessions(site_id, user_id);
+
+-- INDEX: idx_sites_active (table=sites)
+CREATE INDEX idx_sites_active ON sites(is_active);
+
+-- INDEX: idx_users_active (table=users)
+CREATE INDEX idx_users_active ON users(is_active);
+```

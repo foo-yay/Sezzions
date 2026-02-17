@@ -54,11 +54,9 @@ open htmlcov/index.html
 
 ## Documentation
 
-- [GETTING_STARTED.md](GETTING_STARTED.md)
-- [docs/INDEX.md](docs/INDEX.md)
-- [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md)
-- [docs/status/STATUS.md](docs/status/STATUS.md)
-- [docs/status/CHANGELOG.md](docs/status/CHANGELOG.md)
+- [docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md) (canonical “what/how”)
+- [docs/status/CHANGELOG.md](docs/status/CHANGELOG.md) (chronological “why/when”)
+- Historical/superseded docs live in `docs/archive/`.
 
 ## Contribution Workflow (Humans + AI)
 
@@ -66,18 +64,15 @@ This repo uses a strict workflow to prevent documentation sprawl and keep change
 
 If you are the “project owner” assigning work:
 - Prefer **GitHub Issues** for tracking work (bugs, features, chores).
-- If you’re working offline or want a lightweight queue, you can use **[docs/TODO.md](docs/TODO.md)** as an optional mirror.
 
 If you are implementing work (human or AI):
-1. Start from a GitHub Issue (preferred) or **[docs/TODO.md](docs/TODO.md)** (offline mirror).
+1. Start from a GitHub Issue.
 2. Implement in code following layering rules (UI → services → repositories).
 3. Update/add tests to match intended semantics.
 4. Update **[docs/PROJECT_SPEC.md](docs/PROJECT_SPEC.md)** when behavior/architecture/workflows change.
 5. Add a noteworthy entry to **[docs/status/CHANGELOG.md](docs/status/CHANGELOG.md)**.
 6. Open a Pull Request and request owner review.
-7. After approval/merge, close the Issue (and only then mark/remove any related TODO item).
-
-Governance reference: **[docs/adr/0001-docs-governance.md](docs/adr/0001-docs-governance.md)**.
+7. After approval/merge, close the Issue.
 
 ### Branching & PR Policy
 

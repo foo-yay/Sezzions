@@ -1,14 +1,15 @@
-"""
-Timestamp uniqueness enforcement service.
+"""Timestamp uniqueness enforcement service.
 
 Ensures no two events (purchases, redemptions, sessions) for a given user/site
 share the exact same timestamp. Auto-increments by 1 second until a unique
 timestamp is found.
 """
+
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
+
 from repositories.database import DatabaseManager
-from tools.timezone_utils import get_entry_timezone_name, local_date_time_to_utc, utc_date_time_to_local
+from tools import timezone_utils
 
 
 class TimestampService:
@@ -57,8 +58,8 @@ class TimestampService:
 
         # Use ENTRY timezone (same as repositories use for storage) not ACCOUNTING timezone
         # This ensures conflict checks happen in the same timezone that will be used for storage
-        tz_name = get_entry_timezone_name()
-        utc_date_str, utc_time_str = local_date_time_to_utc(date_str, time_str, tz_name)
+        tz_name = timezone_utils.get_entry_timezone_name()
+        utc_date_str, utc_time_str = timezone_utils.local_date_time_to_utc(date_str, time_str, tz_name)
         utc_dt = datetime.strptime(f"{utc_date_str} {utc_time_str}", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
         original_utc_dt = utc_dt
         max_attempts = 3600  # Maximum 1 hour of incrementing
@@ -75,7 +76,9 @@ class TimestampService:
 
             if not has_conflict:
                 # Found a unique UTC timestamp; return local time for UI/storage conversion
-                local_date, local_time = utc_date_time_to_local(current_date_str, current_time_str, tz_name)
+                local_date, local_time = timezone_utils.utc_date_time_to_local(
+                    current_date_str, current_time_str, tz_name
+                )
                 was_adjusted = (utc_dt != original_utc_dt)
                 return (local_date.isoformat(), local_time, was_adjusted)
 

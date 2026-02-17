@@ -2,6 +2,8 @@
 
 Utilities for maintenance, validation, and testing that run outside the main application.
 
+Note: These scripts live in `tools/`. The in-app Tools functionality is implemented under `services/tools/` and is invoked by the UI.
+
 ## Supported Utilities
 
 ### Schema Validation
@@ -15,6 +17,14 @@ Validates the database schema against the specification in `docs/PROJECT_SPEC.md
 python3 tools/run_crud_scenario_matrix.py
 ```
 Runs comprehensive CRUD operation tests across all entity types to validate repository layer behavior.
+
+### One-off Backfills
+
+#### Purchase starting redeemable balance backfill
+```bash
+python3 tools/backfill_purchase_redeemable.py --db /path/to/sezzions.db
+```
+One-time maintenance script used to backfill `starting_redeemable_balance` onto historical purchases.
 
 ## Archive
 

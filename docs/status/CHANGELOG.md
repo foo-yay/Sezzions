@@ -12,6 +12,107 @@ Rules:
 ## 2026-02-17
 
 ```yaml
+id: 2026-02-17-06
+type: docs
+areas: [docs, repo, tools]
+summary: "Make PROJECT_SPEC + CHANGELOG the canonical docs; embed authoritative schema DDL"
+files_changed:
+  - docs/PROJECT_SPEC.md
+  - docs/archive/2026-02-17-docs-root-cleanup/sezzions_schema.sql
+  - docs/archive/2026-02-17-docs-root-cleanup/GETTING_STARTED.md
+  - docs/archive/2026-02-17-docs-root-cleanup/INDEX.md
+  - docs/archive/2026-02-17-docs-root-cleanup/STATUS.md
+  - docs/archive/2026-02-17-docs-root-cleanup/TODO.md
+  - docs/archive/2026-02-17-docs-root-cleanup/0001-docs-governance.md
+  - docs/archive/2026-02-17-docs-root-cleanup/TOOLS_DATABASE_PHASE_3_STATUS.md
+  - docs/archive/2026-02-17-docs-root-cleanup/TOOLS_RECALCULATION_PHASE_4_STATUS.md
+  - README.md
+  - .github/copilot-instructions.md
+  - AGENTS.md
+  - tools/validate_schema.py
+issue: null
+pr: null
+```
+
+**Docs: consolidate to spec + changelog (self-contained)**
+
+- Embedded the authoritative SQLite schema DDL (generated from the live schema builder) into `docs/PROJECT_SPEC.md` as Appendix A, so the spec is self-contained.
+- Archived redundant/rolling docs (Getting Started, docs index, status, TODO mirror, docs governance ADR, and Tools phase snapshots) into `docs/archive/2026-02-17-docs-root-cleanup/`.
+- Updated repo entrypoints (`README.md`, `AGENTS.md`, and `.github/copilot-instructions.md`) to point at `docs/PROJECT_SPEC.md` + `docs/status/CHANGELOG.md` as the canonical sources of truth.
+- Updated `tools/validate_schema.py` to validate against the Appendix A DDL instead of a hard-coded table list.
+
+---
+
+```yaml
+id: 2026-02-17-05
+type: docs
+areas: [docs]
+summary: "Remove deprecated HTML operator guide"
+files_changed:
+  - docs/INDEX.md
+  - docs/Readme/
+issue: null
+pr: null
+```
+
+**Docs: remove legacy operator guide**
+
+- Removed `docs/Readme/` (HTML operator guide) per current docs cleanup direction.
+- Updated `docs/INDEX.md` to stop linking to the removed guide.
+
+---
+
+```yaml
+id: 2026-02-17-04
+type: docs
+areas: [docs, repo]
+summary: "Remove obsolete root artifacts and refresh Getting Started"
+files_changed:
+  - GETTING_STARTED.md
+  - demo.py
+  - demo.db
+  - =4.2.0
+  - data.db
+issue: null
+pr: null
+```
+
+**Docs/Repo: root cleanup + current onboarding**
+
+- Updated `GETTING_STARTED.md` to reflect current usage (`python3 sezzions.py`, `SEZZIONS_DB_PATH`, tests) and removed the old Phase-1 demo/phase tracking.
+- Removed obsolete root artifacts (`demo.py`, `demo.db`, and a stray `=4.2.0` pip log) that are not part of the current app.
+- Deleted `data.db` from repo root (obsolete local artifact).
+
+---
+
+```yaml
+id: 2026-02-17-03
+type: docs
+areas: [docs]
+summary: "Archive obsolete root docs and normalize TODO filename"
+files_changed:
+  - docs/TODO.md
+  - docs/archive/2026-02-17-docs-root-cleanup/DATABASE_DESIGN.md
+  - docs/BULK_TOOLS_REPOSITORY_COMPLETE.md
+  - docs/DATABASE_IMPLEMENTATION_CHECKLIST.md
+  - docs/DEPENDENCIES.md
+  - docs/GAME_SESSION_IMPLEMENTATION_SUMMARY.md
+  - docs/GAME_SESSION_PL_FIX_CHANGELOG.md
+  - docs/PHASE4_SESSION_SUMMARY.md
+  - docs/TESTING_STRATEGY.md
+issue: null
+pr: null
+```
+
+**Docs: archive + prune old top-level markdown**
+
+- Removed several obsolete top-level `docs/*.md` writeups that reference the old `sezzions/` package layout and already have archived copies.
+- Moved `docs/DATABASE_DESIGN.md` into the archive (`docs/archive/2026-02-17-docs-root-cleanup/`) to reduce top-level clutter and avoid stale guidance.
+- Normalized `docs/TODO.md` filename casing to match the canonical link in `docs/INDEX.md`.
+
+---
+
+```yaml
 id: 2026-02-17-02
 type: enhancement
 areas: [notifications, backup, ui]
@@ -1024,7 +1125,7 @@ files_changed:
   - tests/unit/test_soft_delete.py
   - tests/unit/test_audit_service.py
   - tests/ui/test_issue_92_ui_smoke.py
-  - docs/DATABASE_DESIGN.md
+  - docs/archive/2026-02-17-docs-root-cleanup/DATABASE_DESIGN.md
 issue: 92
 branch: feature/issue-92-audit-undo-soft-delete
 ```
@@ -1058,7 +1159,7 @@ branch: feature/issue-92-audit-undo-soft-delete
 - **Headless UI smoke tests**: 8 tests in `test_issue_92_ui_smoke.py` verifying menu actions exist, handlers are wired, and MainWindow instantiates cleanly without displaying GUI.
 
 **Documentation:**
-- **DATABASE_DESIGN.md**: Updated `audit_log` schema docs, added soft delete behavior notes to `purchases`, `redemptions`, `game_sessions`.
+- **DATABASE_DESIGN.md (archived)**: Updated `audit_log` schema docs, added soft delete behavior notes to `purchases`, `redemptions`, `game_sessions`.
 
 **Commits:**
 1. `59b2502`: Schema layer (deleted_at + indexes)
