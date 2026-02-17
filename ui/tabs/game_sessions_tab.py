@@ -393,7 +393,11 @@ class GameSessionsTab(QWidget):
                     
                     # Add multi-day indicator if session spans multiple days
                     if session.end_date and session.end_date != session.session_date:
-                        date_time += " (+1d)"
+                        start = datetime.strptime(session.session_date, "%Y-%m-%d")
+                        end = datetime.strptime(session.end_date, "%Y-%m-%d")
+                        day_diff = (end - start).days
+                        if day_diff > 0:
+                            date_time += f" (+{day_diff}d)"
 
                     game = games.get(session.game_id)
                     game_name = game.name if game else "—"

@@ -9,6 +9,29 @@ Rules:
 
 ---
 
+## 2026-02-17
+
+```yaml
+id: 2026-02-17-01
+type: bugfix
+areas: [ui, game-sessions]
+summary: "Fix multi-day session indicator to show actual day span"
+files_changed:
+  - ui/tabs/game_sessions_tab.py
+issue: 132
+pr: null
+```
+
+**Bugfix: Multi-day session indicator now shows actual day span**
+
+- **Problem**: Game Sessions tab displayed `(+1d)` for all multi-day sessions regardless of actual duration. A 3-day session (Feb 1 → Feb 4) incorrectly showed `(+1d)` instead of `(+3d)`.
+- **Root cause**: Code only checked if `end_date != session_date` (boolean), not the actual day difference.
+- **Fix**: Calculate day difference using `(end_date - session_date).days` and display the correct value (e.g., `+2d`, `+3d`).
+- **Scope**: Only affects Game Sessions tab. Daily Sessions and Realized tabs already display full date ranges and don't use day indicators.
+- **Testing**: All 897 tests passing. Manual verification recommended for multi-day sessions.
+
+---
+
 ## 2026-02-16
 
 ```yaml
