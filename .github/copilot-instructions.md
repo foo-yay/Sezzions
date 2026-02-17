@@ -22,18 +22,18 @@ You are assisting with **Sezzions**, the standalone desktop app in this reposito
 6. Avoid documentation sprawl:
    - Prefer updating `docs/PROJECT_SPEC.md` over creating new docs
    - Add a changelog entry to `docs/status/CHANGELOG.md` for noteworthy changes
-   - Prefer GitHub Issues for new work items; optionally mirror to `docs/TODO.md` for offline work
+   - Prefer GitHub Issues for new work items
 
 ## Required Workflow (Humans + AI)
 
-1. Start from a GitHub Issue (preferred) or `docs/TODO.md` (offline mirror).
+1. Start from a GitHub Issue.
 2. Implement changes with minimal, surgical edits.
 3. Update/add tests to match intended semantics.
 4. Update `docs/PROJECT_SPEC.md` when behavior/architecture/workflows change.
 5. Add a changelog entry to `docs/status/CHANGELOG.md` for noteworthy changes.
 6. Commit changes to a feature branch, push, and open a PR (Draft by default unless the owner requests otherwise).
 7. Move the item to "Ready for Review" and wait for owner approval.
-8. After approval/merge, close the Issue (and only then update/remove any related TODO mirror item).
+8. After approval/merge, close the Issue.
 
 ## Agent Quality Bar (Test-First + Headless Smoke + Pitfalls)
 
@@ -79,7 +79,7 @@ After tests pass and before requesting review:
 - Identify risks or likely next fixes discovered during implementation (performance, UX confusion, concurrency, data integrity).
 - Do **not** implement follow-ups outside the Issue scope; instead propose them as:
    - a new GitHub Issue, and/or
-   - an item to mirror into `docs/TODO.md`.
+   - a brief note in the PR description.
 
 ### 5) “No Surprise Regressions” Checklist
 
@@ -108,21 +108,17 @@ Preferred pattern:
 
 ## Approval Gate
 
-- Do not mark/remove TODO items as done without explicit project owner approval.
-- Use the `docs/TODO.md` "Ready for Review" section as the handoff point.
 - "Ready for Review" means: PR is open (or changeset is otherwise shareable), relevant checks/tests have been run, and it's awaiting owner review.
 
 ## Ad-hoc Requests + Rollbacks
 
 - Direct verbal requests are allowed, but must still be recorded.
-- For non-trivial work: add a TODO item in `docs/TODO.md` first.
-- Prefer: create a GitHub Issue first, then optionally mirror to `docs/TODO.md`.
+- For non-trivial work: create a GitHub Issue first.
 - For small/urgent work: proceed, but still update `docs/status/CHANGELOG.md` and update `docs/PROJECT_SPEC.md` if semantics/workflows changed.
 - For rollbacks: do not delete old changelog entries; add a new changelog entry describing the rollback.
 
 ## Start Here
 
-- Docs index: `docs/INDEX.md`
 - Master spec: `docs/PROJECT_SPEC.md`
 - Changelog: `docs/status/CHANGELOG.md`
-- TODO: `docs/TODO.md`
+

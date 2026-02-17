@@ -39,9 +39,9 @@ This plan is split into focused documents for manageability:
 | **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** | Domain models, repositories, services design | Reference when building classes |
 | **[DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md)** | Schema for dual-database support | Reference for migrations & queries |
 | **[ACCOUNTING_LOGIC.md](docs/ACCOUNTING_LOGIC.md)** | FIFO & SessionManager algorithms | **CRITICAL** - Must implement exactly |
-| **[TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md)** | pytest approach, verification tests | Follow for test-driven development |
+| **[TESTING_STRATEGY.md](archive/2026-01-28-docs-root-cleanup/TESTING_STRATEGY.md)** | pytest approach, verification tests | Follow for test-driven development |
 | **[MIGRATION_PHASES.md](docs/MIGRATION_PHASES.md)** | Phase-by-phase timeline | Track progress, know what's next |
-| **[DEPENDENCIES.md](docs/DEPENDENCIES.md)** | Libraries, tools, rationale | Install and configure these first |
+| **[DEPENDENCIES.md](archive/2026-01-28-docs-root-cleanup/DEPENDENCIES.md)** | Libraries, tools, rationale | Install and configure these first |
 
 ---
 

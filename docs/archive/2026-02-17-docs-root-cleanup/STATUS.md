@@ -1,6 +1,6 @@
 # Status (Rolling)
 
-Last updated: 2026-01-28
+Last updated: 2026-02-17
 
 ## Product Goal
 
