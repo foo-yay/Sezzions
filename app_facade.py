@@ -151,6 +151,9 @@ class AppFacade:
             adjustment_service=self.adjustment_service,
         )
         
+        # Inject game_session_service into purchase_service for redeemable balance computation
+        self.purchase_service.game_session_service = self.game_session_service
+        
         self.report_service = ReportService(self.db)
         self.validation_service = ValidationService(self.db)
         self.report_service = ReportService(self.db)

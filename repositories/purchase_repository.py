@@ -142,10 +142,10 @@ class PurchaseRepository:
         )
         query = """
             INSERT INTO purchases 
-            (user_id, site_id, amount, sc_received, starting_sc_balance, cashback_earned,
+            (user_id, site_id, amount, sc_received, starting_sc_balance, starting_redeemable_balance, cashback_earned,
              cashback_is_manual, purchase_date, purchase_time, purchase_entry_time_zone,
              card_id, remaining_amount, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         purchase_id = self.db.execute(query, (
             purchase.user_id,
@@ -153,6 +153,7 @@ class PurchaseRepository:
             str(purchase.amount),
             str(purchase.sc_received),
             str(purchase.starting_sc_balance),
+            str(purchase.starting_redeemable_balance),
             str(purchase.cashback_earned),
             1 if purchase.cashback_is_manual else 0,
             utc_date,
@@ -181,7 +182,7 @@ class PurchaseRepository:
         query = """
             UPDATE purchases
             SET user_id = ?, site_id = ?, amount = ?, sc_received = ?, starting_sc_balance = ?,
-                cashback_earned = ?, cashback_is_manual = ?, purchase_date = ?, purchase_time = ?,
+                starting_redeemable_balance = ?, cashback_earned = ?, cashback_is_manual = ?, purchase_date = ?, purchase_time = ?,
                 purchase_entry_time_zone = ?, card_id = ?, remaining_amount = ?, notes = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -192,6 +193,7 @@ class PurchaseRepository:
             str(purchase.amount),
             str(purchase.sc_received),
             str(purchase.starting_sc_balance),
+            str(purchase.starting_redeemable_balance),
             str(purchase.cashback_earned),
             1 if purchase.cashback_is_manual else 0,
             utc_date,
@@ -236,6 +238,7 @@ class PurchaseRepository:
             amount=Decimal(str(row['amount'])),
             sc_received=Decimal(str(row.get('sc_received', '0.00'))),
             starting_sc_balance=Decimal(str(row.get('starting_sc_balance', '0.00'))),
+            starting_redeemable_balance=Decimal(str(row.get('starting_redeemable_balance', '0.00'))),
             cashback_earned=Decimal(str(row.get('cashback_earned', '0.00'))),
             cashback_is_manual=bool(row.get('cashback_is_manual', 0)),
             purchase_date=purchase_date,

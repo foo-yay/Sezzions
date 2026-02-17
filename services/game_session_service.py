@@ -575,7 +575,10 @@ class GameSessionService:
                 continue
 
             expected_total = Decimal(str(p.starting_sc_balance))
-            # Purchases do not increase expected redeemable; redeemable is earned via play-through
+            # Use stored redeemable snapshot from purchase if available (Issue #130)
+            if hasattr(p, 'starting_redeemable_balance') and p.starting_redeemable_balance is not None:
+                expected_redeemable = Decimal(str(p.starting_redeemable_balance))
+            # Otherwise purchases do not increase expected redeemable; redeemable is earned via play-through
             # captured in sessions/checkpoints.
 
         expected_total = max(Decimal("0.00"), expected_total)

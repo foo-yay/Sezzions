@@ -304,6 +304,8 @@ class UnrealizedPositionRepository:
                 redeemable_redemptions_since = Decimal(str(redeemable_redemptions_after['redeemable_redeemed'] or 0))
                 
                 # Compute estimated SC
+                # baseline_total from purchase checkpoint is starting_sc_balance (POST-purchase balance)
+                # The checkpoint purchase is excluded from purchases_since (id != ?) to avoid double-counting
                 total_sc = baseline_total + purchases_since - redemptions_since
                 
                 # Redeemable: use checkpoint redeemable minus redemptions if checkpoint is within current position
@@ -590,7 +592,7 @@ class UnrealizedPositionRepository:
                 purchase_date, 
                 COALESCE(purchase_time, '00:00:00') as purchase_time,
                 starting_sc_balance,
-                0.0 as redeemable_sc
+                COALESCE(starting_redeemable_balance, 0.0) as starting_redeemable_balance
             FROM purchases
             WHERE site_id = ? AND user_id = ?
                             AND deleted_at IS NULL
@@ -606,7 +608,7 @@ class UnrealizedPositionRepository:
                 checkpoints.append({
                     'checkpoint_dt': dt,
                     'total_sc': Decimal(str(purchase_snap['starting_sc_balance'])),
-                    'redeemable_sc': Decimal("0.00"),  # Purchase snapshots don't track redeemable split
+                    'redeemable_sc': Decimal(str(purchase_snap['starting_redeemable_balance'] or 0)),
                     'checkpoint_purchase_id': purchase_snap['purchase_id'],
                     'priority': 0,
                 })

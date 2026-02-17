@@ -12,6 +12,35 @@ Rules:
 ## 2026-02-16
 
 ```yaml
+id: 2026-02-16-06
+type: bugfix
+areas: [data-model, accounting, unrealized, purchases]
+summary: "Fix purchase checkpoints to preserve redeemable balance"
+files_changed:
+  - models/purchase.py
+  - repositories/database.py
+  - repositories/purchase_repository.py
+  - services/purchase_service.py
+  - app_facade.py
+  - tools/backfill_purchase_redeemable.py
+  - tests/integration/test_issue_130_purchase_redeemable_checkpoint.py
+issue: 130
+pr: null
+```
+
+**Bugfix: Purchase checkpoints now preserve redeemable balance**
+
+- **Problem**: When making a purchase after playing sessions, the Unrealized tab showed redeemable balance reset to $0.00 instead of preserving the redeemable earned from play.
+- **Root cause**: Purchase checkpoint snapshots (`starting_sc_balance`) tracked total SC but not redeemable SC. The `unrealized_position_repository` hardcoded `redeemable_sc = 0` for purchase checkpoints.
+- **Fix**: Added `starting_redeemable_balance` field to purchases table (with migration), auto-populated at purchase creation time using `compute_expected_balances()` to capture the redeemable balance at that moment. Purchase checkpoints now use this stored value instead of hardcoded 0.
+- **Semantics clarification**: `starting_sc_balance` is the POST-purchase SC balance (the balance after the purchase completes, including dailies/bonuses). Similarly, `starting_redeemable_balance` is the redeemable balance at that same point in time. Purchases don't generate redeemable SC, so this preserves the pre-purchase redeemable value.
+- **Backfill tool**: `tools/backfill_purchase_redeemable.py` migrates existing data (with `--dry-run` support).
+- **Testing**: 5 new integration tests covering purchase-after-session, redemptions between purchases, first purchase (baseline), multiple sequential purchases, and balance checkpoint priority scenarios.
+- **Result**: Unrealized positions now correctly show redeemable balance when purchases occur after play sessions, instead of incorrectly resetting to $0.
+
+---
+
+```yaml
 id: 2026-02-16-05
 type: enhancement
 areas: [ui, timezone, travel-mode, sessions, purchases, redemptions, expenses, adjustments]

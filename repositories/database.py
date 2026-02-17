@@ -921,6 +921,7 @@ class DatabaseManager:
         migrations = [
             ("sc_received", "TEXT DEFAULT '0.00'"),
             ("starting_sc_balance", "TEXT DEFAULT '0.00'"),
+            ("starting_redeemable_balance", "TEXT DEFAULT '0.00'"),
             ("cashback_earned", "TEXT DEFAULT '0.00'"),
             ("cashback_is_manual", "INTEGER DEFAULT 0"),
             ("deleted_at", "TIMESTAMP NULL"),
