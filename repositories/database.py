@@ -580,6 +580,13 @@ class DatabaseManager:
         existing_columns = {row[1] for row in columns_info}
 
         game_id_col = next((row for row in columns_info if row[1] == "game_id"), None)
+        # DEAD CODE PATH — verified 2026-02-17:
+        # This full table rebuild only triggers when game_id has a NOT NULL constraint
+        # (game_id_col[3] == 1). The production sezzions.db has game_id nullable (notnull=0),
+        # so this branch has never fired and will never fire on the current database.
+        # It predates the single-user era of this app. Safe to ignore in all future audits.
+        # Do NOT remove it (belt-and-suspenders for theoretical legacy DBs), but do NOT
+        # add new business logic here — use the ALTER TABLE migrations list below instead.
         if game_id_col and game_id_col[3] == 1:
             try:
                 cursor.execute("PRAGMA foreign_keys=OFF")
