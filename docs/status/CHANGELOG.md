@@ -12,6 +12,34 @@ Rules:
 ## 2026-02-17
 
 ```yaml
+id: 2026-02-17-02
+type: enhancement
+areas: [notifications, backup, ui]
+summary: "Add backup directory configuration reminder notification"
+files_changed:
+  - services/notification_rules_service.py
+  - ui/notification_widgets.py
+issue: 134
+pr: null
+```
+
+**Enhancement: Backup directory configuration reminder**
+
+- **Problem**: Users may not realize they should configure a backup directory, especially on first use or after settings reset. The existing `backup_directory_missing` notification only appears when automatic backups are enabled.
+- **Solution**: Added new `backup_directory_not_configured` notification that appears for all users regardless of automatic backup state.
+- **Behavior**:
+  - Fires when backup directory is not set (empty/missing)
+  - Severity: INFO (gentle reminder, not urgent)
+  - Action: Opens Tools → Database Tools
+  - Cooldown: 7 days when user deletes or marks as read
+  - Resurfaces indefinitely until directory is configured
+- **Distinction**: INFO notification for all users vs WARNING `backup_directory_missing` which only fires when automatic backups are enabled
+- **User control**: Delete, dismiss, snooze, or mark read all apply 7-day cooldown before resurfacing
+- **Auto-dismissal**: Notification auto-dismisses when user configures a backup directory
+
+---
+
+```yaml
 id: 2026-02-17-01
 type: bugfix
 areas: [ui, game-sessions]

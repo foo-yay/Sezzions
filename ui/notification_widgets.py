@@ -607,6 +607,10 @@ class NotificationCenterDialog(QDialog):
             threshold_days = settings_data.get('redemption_pending_receipt_threshold_days', 7)
             return threshold_days
         
+        # For backup directory not configured (gentle reminder), use 7 days
+        if notification.type == 'backup_directory_not_configured':
+            return 7
+        
         # For backup notifications, use backup interval or default 1 day
         if notification.type in ['backup_due', 'backup_failed', 'backup_directory_missing']:
             backup_config = settings.get_automatic_backup_config()

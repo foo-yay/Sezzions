@@ -29,16 +29,33 @@ class NotificationRulesService:
         """Evaluate backup-related notification rules"""
         backup_config = self.settings.get_automatic_backup_config()
         
+        # First, check if backup directory is configured (regardless of auto-backup state)
+        # This is a gentle reminder for all users to configure data protection
+        backup_dir = backup_config.get('directory', '').strip()
+        if not backup_dir:
+            # Directory not configured - show INFO notification
+            self.notification_service.create_or_update(
+                type='backup_directory_not_configured',
+                title='Backup Directory Not Configured',
+                body='No backup directory has been set. Consider configuring a backup directory in Tools → Database to protect your data.',
+                severity=NotificationSeverity.INFO,
+                action_key='open_tools',
+                action_payload={'tab': 'database_tools'}
+            )
+        else:
+            # Directory configured, dismiss the reminder
+            self.notification_service.dismiss_by_type('backup_directory_not_configured')
+        
+        # Now evaluate automatic backup-specific rules
         if not backup_config.get('enabled', False):
-            # Backup disabled, no notifications needed
-            # Dismiss any existing backup notifications
+            # Backup disabled, no automatic backup notifications needed
+            # Dismiss any existing automatic backup notifications
             self.notification_service.dismiss_by_type('backup_directory_missing')
             self.notification_service.dismiss_by_type('backup_due')
             self.notification_service.dismiss_by_type('backup_failed')
             return
         
-        # Check if backup directory is configured
-        backup_dir = backup_config.get('directory', '').strip()
+        # Check if backup directory is configured (for automatic backups)
         if not backup_dir:
             # Directory not configured
             self.notification_service.create_or_update(

@@ -957,8 +957,15 @@ Provide passive, persistent notifications for important app events without inter
 
 **Notification Rules Service:**
 - `evaluate_all_rules()`: Entry point called by QTimer (hourly) and on app startup
-- **Backup rules** (Issue #35):
-  - `backup_directory_missing`: automatic_backup enabled but directory not configured
+- **Backup rules** (Issue #35, Issue #134):
+  - `backup_directory_not_configured`: backup directory not set (INFO severity, 7-day cooldown)
+    - Fires for all users regardless of automatic backup state
+    - Gentle reminder to configure data protection
+    - Auto-dismisses when directory is configured
+    - Resurfaces after 7-day cooldown if still not set
+  - `backup_directory_missing`: automatic_backup enabled but directory not configured (WARNING severity)
+    - Only fires when automatic backups are enabled
+    - Takes precedence over `backup_directory_not_configured` when both conditions true
   - `backup_due`: last backup > frequency + overdue_threshold (warning severity)
     - Respects user settings: only shown if `notify_when_overdue` enabled
     - Threshold configurable: `overdue_threshold_days` (default: 1 day)
