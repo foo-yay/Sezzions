@@ -29,16 +29,38 @@ class NotificationRulesService:
         """Evaluate backup-related notification rules"""
         backup_config = self.settings.get_automatic_backup_config()
         
+        # First, check if automatic backups are enabled
+        # This is a gentle reminder for all users to enable data protection
         if not backup_config.get('enabled', False):
-            # Backup disabled, no notifications needed
-            # Dismiss any existing backup notifications
+            # Auto-backup not enabled - show INFO notification
+            self.notification_service.create_or_update(
+                type='backup_not_enabled',
+                title='Automatic Backups Not Enabled',
+                body='Automatic backups are not enabled. Consider enabling automatic backups in Tools → Database to protect your data.',
+                severity=NotificationSeverity.INFO,
+                action_key='open_tools',
+                action_payload={'tab': 'database_tools'}
+            )
+            # Dismiss automatic backup-specific notifications
+            self.notification_service.dismiss_by_type('backup_directory_missing')
+            self.notification_service.dismiss_by_type('backup_due')
+            self.notification_service.dismiss_by_type('backup_failed')
+            return
+        else:
+            # Auto-backup enabled, dismiss the reminder
+            self.notification_service.dismiss_by_type('backup_not_enabled')
+        
+        # Now evaluate automatic backup-specific rules (directory, overdue, failed)
+        backup_dir = backup_config.get('directory', '').strip()
+        if False:
+            # Backup disabled, no automatic backup notifications needed
+            # Dismiss any existing automatic backup notifications
             self.notification_service.dismiss_by_type('backup_directory_missing')
             self.notification_service.dismiss_by_type('backup_due')
             self.notification_service.dismiss_by_type('backup_failed')
             return
         
-        # Check if backup directory is configured
-        backup_dir = backup_config.get('directory', '').strip()
+        # Check if backup directory is configured (for automatic backups)
         if not backup_dir:
             # Directory not configured
             self.notification_service.create_or_update(

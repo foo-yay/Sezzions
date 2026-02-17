@@ -12,6 +12,34 @@ Rules:
 ## 2026-02-17
 
 ```yaml
+id: 2026-02-17-02
+type: enhancement
+areas: [notifications, backup, ui]
+summary: "Add automatic backup enablement reminder notification"
+files_changed:
+  - services/notification_rules_service.py
+  - ui/notification_widgets.py
+issue: 134
+pr: null
+```
+
+**Enhancement: Automatic backup enablement reminder**
+
+- **Problem**: Users may not realize they should enable automatic backups, especially on first use or after settings reset. The existing `backup_directory_missing` notification only appears when automatic backups are already enabled but directory is missing.
+- **Solution**: Added new `backup_not_enabled` notification that appears for all users when automatic backups are disabled.
+- **Behavior**:
+  - Fires when automatic backups are disabled (`automatic_backup.enabled = False`)
+  - Severity: INFO (gentle reminder, not urgent)
+  - Action: Opens Tools → Database Tools
+  - Cooldown: 7 days when user deletes or marks as read
+  - Resurfaces indefinitely until automatic backups are enabled
+- **Distinction**: INFO notification when auto-backup disabled vs WARNING `backup_directory_missing` which fires when auto-backup is enabled but directory is missing
+- **User control**: Delete, dismiss, snooze, or mark read all apply 7-day cooldown before resurfacing
+- **Auto-dismissal**: Notification auto-dismisses when user enables automatic backups
+
+---
+
+```yaml
 id: 2026-02-17-01
 type: bugfix
 areas: [ui, game-sessions]
