@@ -1382,6 +1382,7 @@ CREATE TABLE daily_sessions (
         status TEXT,
         num_game_sessions INTEGER DEFAULT 0,
         num_other_income_items INTEGER DEFAULT 0,
+        notes TEXT,
         PRIMARY KEY (session_date, user_id),
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
       );
@@ -1396,6 +1397,7 @@ CREATE TABLE "expenses" (
           description TEXT,
           category TEXT,
           user_id INTEGER,
+          expense_entry_time_zone TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP,
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -1450,6 +1452,9 @@ CREATE TABLE game_sessions (
         session_basis TEXT,
         basis_consumed TEXT,
         net_taxable_pl TEXT,
+        tax_withholding_rate_pct REAL,
+        tax_withholding_is_custom INTEGER DEFAULT 0,
+        tax_withholding_amount REAL,
         status TEXT DEFAULT 'Active',
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

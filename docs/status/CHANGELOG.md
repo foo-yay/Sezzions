@@ -12,6 +12,31 @@ Rules:
 ## 2026-02-17
 
 ```yaml
+id: 2026-02-17-07
+type: fix
+areas: [database, schema, tests]
+issue: 136
+summary: "Schema/spec alignment — add missing canonical columns to fresh DB schema and Appendix A"
+details: >
+  Three tables were missing columns in the CREATE TABLE statements (fresh DB path), causing
+  divergence between upgraded real databases and freshly-created databases.
+  - daily_sessions: added `notes TEXT` to CREATE TABLE; updated _migrate_daily_sessions_table
+    to ALTER TABLE existing DBs.
+  - game_sessions: added `tax_withholding_rate_pct REAL`, `tax_withholding_is_custom INTEGER DEFAULT 0`,
+    `tax_withholding_amount REAL` to CREATE TABLE and to the ALTER TABLE migrations list.
+  - expenses migration rebuild: fixed `expenses_new` CREATE TABLE and INSERT…SELECT to preserve
+    `expense_entry_time_zone` (data-loss bug when DEFAULT constraint migration ran).
+  Appendix A DDL in PROJECT_SPEC.md updated to match corrected fresh schema.
+  11 integration tests added covering happy path, edge cases, and failure injection.
+files_changed:
+  - repositories/database.py
+  - docs/PROJECT_SPEC.md
+  - tests/integration/test_schema_alignment.py
+pr: 138
+```
+
+
+```yaml
 id: 2026-02-17-06
 type: docs
 areas: [docs, repo, tools]
