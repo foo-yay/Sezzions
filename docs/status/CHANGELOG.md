@@ -15,7 +15,7 @@ Rules:
 id: 2026-02-17-02
 type: enhancement
 areas: [notifications, backup, ui]
-summary: "Add backup directory configuration reminder notification"
+summary: "Add automatic backup enablement reminder notification"
 files_changed:
   - services/notification_rules_service.py
   - ui/notification_widgets.py
@@ -23,19 +23,19 @@ issue: 134
 pr: null
 ```
 
-**Enhancement: Backup directory configuration reminder**
+**Enhancement: Automatic backup enablement reminder**
 
-- **Problem**: Users may not realize they should configure a backup directory, especially on first use or after settings reset. The existing `backup_directory_missing` notification only appears when automatic backups are enabled.
-- **Solution**: Added new `backup_directory_not_configured` notification that appears for all users regardless of automatic backup state.
+- **Problem**: Users may not realize they should enable automatic backups, especially on first use or after settings reset. The existing `backup_directory_missing` notification only appears when automatic backups are already enabled but directory is missing.
+- **Solution**: Added new `backup_not_enabled` notification that appears for all users when automatic backups are disabled.
 - **Behavior**:
-  - Fires when backup directory is not set (empty/missing)
+  - Fires when automatic backups are disabled (`automatic_backup.enabled = False`)
   - Severity: INFO (gentle reminder, not urgent)
   - Action: Opens Tools → Database Tools
   - Cooldown: 7 days when user deletes or marks as read
-  - Resurfaces indefinitely until directory is configured
-- **Distinction**: INFO notification for all users vs WARNING `backup_directory_missing` which only fires when automatic backups are enabled
+  - Resurfaces indefinitely until automatic backups are enabled
+- **Distinction**: INFO notification when auto-backup disabled vs WARNING `backup_directory_missing` which fires when auto-backup is enabled but directory is missing
 - **User control**: Delete, dismiss, snooze, or mark read all apply 7-day cooldown before resurfacing
-- **Auto-dismissal**: Notification auto-dismisses when user configures a backup directory
+- **Auto-dismissal**: Notification auto-dismisses when user enables automatic backups
 
 ---
 

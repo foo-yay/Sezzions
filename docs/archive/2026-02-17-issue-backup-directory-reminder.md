@@ -1,26 +1,26 @@
-# Feature: Add backup directory configuration reminder notification
+# Feature: Add automatic backup enablement reminder notification
 
 ## Problem
 
-Users may not realize they should configure a backup directory, especially on first use or after settings reset. The existing `backup_directory_missing` notification only appears when automatic backups are enabled, leaving users without a gentle reminder to set up data protection.
+Users may not realize they should enable automatic backups, especially on first use or after settings reset. The existing `backup_directory_missing` notification only appears when automatic backups are already enabled but directory is missing, leaving users without a gentle reminder to enable data protection.
 
 ## Proposed Solution
 
-Add a new `backup_directory_not_configured` notification that:
-- Appears when backup directory is not set, **regardless** of whether automatic backups are enabled
+Add a new `backup_not_enabled` notification that:
+- Appears when automatic backups are disabled
 - Severity: INFO (gentle reminder, not urgent)
 - Action: Opens Tools → Database Tools
 - Cooldown: 7 days when dismissed/deleted
-- Resurfaces indefinitely until directory is configured
+- Resurfaces indefinitely until automatic backups are enabled
 
 ## Behavior
 
 **When to show:**
-- Backup directory is empty/not configured
+- Automatic backups are disabled (`automatic_backup.enabled = False`)
 - No active cooldown from previous dismiss/delete
 
 **When to dismiss:**
-- User configures a backup directory (non-empty)
+- User enables automatic backups
 
 **User control:**
 - Mark read: Moves to "Read" group, 7-day cooldown before resurfacing
@@ -30,10 +30,10 @@ Add a new `backup_directory_not_configured` notification that:
 
 ## Distinction from Existing Notification
 
-- **`backup_directory_not_configured`** (NEW): INFO severity, fires for all users regardless of auto-backup state
-- **`backup_directory_missing`** (EXISTING): WARNING severity, only fires when automatic backups are enabled but directory is missing
+- **`backup_not_enabled`** (NEW): INFO severity, fires when automatic backups are disabled
+- **`backup_directory_missing`** (EXISTING): WARNING severity, fires when automatic backups are enabled but directory is missing
 
-When both conditions are true (auto-backup enabled + directory missing), the WARNING takes precedence as it's more urgent.
+These notifications are mutually exclusive: INFO shows when auto-backup is off, WARNING shows when auto-backup is on but misconfigured.
 
 ## Implementation
 
@@ -43,18 +43,18 @@ When both conditions are true (auto-backup enabled + directory missing), the WAR
 - `docs/PROJECT_SPEC.md`: Update notification system section
 
 **Test plan:**
-- Launch app with no backup directory configured → notification appears
-- Configure backup directory → notification dismissed
-- Clear directory → notification reappears
+- Launch app with automatic backups disabled → notification appears
+- Enable automatic backups → notification dismissed
+- Disable automatic backups → notification reappears after cooldown expires
 - Delete notification → verify 7-day cooldown suppression
-- Enable automatic backups with no directory → WARNING notification takes precedence
+- Enable automatic backups with no directory set → WARNING notification appears instead
 
 ## Acceptance Criteria
 
-- [ ] Notification appears on startup when backup directory is not configured
-- [ ] Notification auto-dismisses when directory is configured
+- [ ] Notification appears on startup when automatic backups are disabled
+- [ ] Notification auto-dismisses when automatic backups are enabled
 - [ ] Delete/mark read applies 7-day cooldown suppression
-- [ ] Notification resurfaces after cooldown expires if directory still not set
-- [ ] WARNING notification takes precedence when auto-backup enabled
+- [ ] Notification resurfaces after cooldown expires if auto-backup still disabled
+- [ ] WARNING notification appears when auto-backup enabled but directory missing
 - [ ] All existing tests pass
 - [ ] Manual verification with fresh settings
