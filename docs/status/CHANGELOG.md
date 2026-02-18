@@ -9,6 +9,29 @@ Rules:
 
 ---
 
+## 2026-02-18
+
+```yaml
+id: 2026-02-18-01
+type: enhancement
+areas: [ui, expenses]
+issue: 139
+summary: "Add autocomplete suggestions for Expense Vendor and Notes fields"
+details: >
+  Expense Add/Edit dialogs now provide case-insensitive autocomplete for Vendor and
+  Notes based on distinct existing expense values, with inline real-time prediction
+  and Tab-to-accept behavior to match existing editable-field completion patterns.
+  Accepted completions preserve canonical casing from suggestions and users can
+  continue normal editing (including Backspace/Delete) after a prediction appears.
+  This remains UX-only help (no new validation rules; free text still allowed).
+files_changed:
+  - ui/tabs/expenses_tab.py
+  - tests/ui/test_expenses_autocomplete.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+pr: 140
+```
+
 ## 2026-02-17
 
 ```yaml

@@ -57,6 +57,122 @@ def validate_currency(value_str: str, allow_zero: bool = True):
         return False, "Please enter a valid number"
 
 
+class PredictiveLineEdit(QtWidgets.QLineEdit):
+    """Single-line inline predictive completion with tab acceptance."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._suggestions = []
+        self.editingFinished.connect(self._normalize_case_to_suggestion)
+
+    def set_suggestions(self, values):
+        self._suggestions = list(values or [])
+        completer = QtWidgets.QCompleter(self._suggestions, self)
+        completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        completer.setFilterMode(QtCore.Qt.MatchStartsWith)
+        completer.setCompletionMode(QtWidgets.QCompleter.InlineCompletion)
+        self.setCompleter(completer)
+
+    def _match_for_prefix(self, prefix: str):
+        lower_prefix = prefix.casefold()
+        for value in self._suggestions:
+            if value.casefold().startswith(lower_prefix):
+                return value
+        return None
+
+    def _normalize_case_to_suggestion(self):
+        text = self.text().strip()
+        if not text:
+            return
+        text_lower = text.casefold()
+        for value in self._suggestions:
+            if value.casefold() == text_lower:
+                if value != text:
+                    self.setText(value)
+                return
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key in (QtCore.Qt.Key_Tab, QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            prefix = self.text()
+            match = self._match_for_prefix(prefix)
+            if match:
+                self.setText(match)
+                self.setCursorPosition(len(match))
+
+            if key == QtCore.Qt.Key_Tab:
+                self.focusNextPrevChild(not bool(event.modifiers() & QtCore.Qt.ShiftModifier))
+                event.accept()
+                return
+
+        super().keyPressEvent(event)
+
+
+class PredictivePlainTextEdit(QtWidgets.QPlainTextEdit):
+    """Whole-field inline predictive completion with tab acceptance."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._suggestions = []
+        self._in_prediction_update = False
+
+    def set_suggestions(self, values):
+        self._suggestions = list(values or [])
+
+    def _match_for_prefix(self, prefix: str):
+        lower_prefix = prefix.casefold()
+        for value in self._suggestions:
+            if value.casefold().startswith(lower_prefix):
+                return value
+        return None
+
+    def _accept_prediction(self):
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            cursor.setPosition(cursor.selectionEnd())
+            self.setTextCursor(cursor)
+
+    def _apply_inline_prediction(self):
+        if self._in_prediction_update:
+            return
+
+        prefix = self.toPlainText()
+        if not prefix or "\n" in prefix:
+            return
+
+        cursor = self.textCursor()
+        if cursor.position() != len(prefix):
+            return
+
+        match = self._match_for_prefix(prefix)
+        if not match:
+            return
+        if match.casefold() == prefix.casefold():
+            return
+
+        self._in_prediction_update = True
+        self.setPlainText(match)
+        cursor = self.textCursor()
+        cursor.setPosition(len(prefix))
+        cursor.setPosition(len(match), QtGui.QTextCursor.KeepAnchor)
+        self.setTextCursor(cursor)
+        self._in_prediction_update = False
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key in (QtCore.Qt.Key_Tab, QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            self._accept_prediction()
+            if key == QtCore.Qt.Key_Tab:
+                self.focusNextPrevChild(not bool(event.modifiers() & QtCore.Qt.ShiftModifier))
+                event.accept()
+                return
+
+        super().keyPressEvent(event)
+
+        if event.text() and event.text().isprintable() and key not in (QtCore.Qt.Key_Backspace, QtCore.Qt.Key_Delete):
+            self._apply_inline_prediction()
+
+
 class ExpensesTab(QtWidgets.QWidget):
     def __init__(self, facade: AppFacade):
         super().__init__()
@@ -285,7 +401,13 @@ class ExpensesTab(QtWidgets.QWidget):
 
     def _add_expense(self):
         users = self.facade.get_all_users(active_only=True)
-        dialog = ExpenseDialog(users, parent=self)
+        vendor_suggestions, notes_suggestions = self._build_expense_autocomplete_lists()
+        dialog = ExpenseDialog(
+            users,
+            vendor_suggestions=vendor_suggestions,
+            notes_suggestions=notes_suggestions,
+            parent=self,
+        )
         if dialog.exec():
             data, error = dialog.collect_data()
             if error:
@@ -306,7 +428,14 @@ class ExpensesTab(QtWidgets.QWidget):
         if not expense:
             return
         users = self.facade.get_all_users(active_only=True)
-        dialog = ExpenseDialog(users, expense=expense, parent=self)
+        vendor_suggestions, notes_suggestions = self._build_expense_autocomplete_lists()
+        dialog = ExpenseDialog(
+            users,
+            expense=expense,
+            vendor_suggestions=vendor_suggestions,
+            notes_suggestions=notes_suggestions,
+            parent=self,
+        )
         if dialog.exec():
             data, error = dialog.collect_data()
             if error:
@@ -360,6 +489,29 @@ class ExpensesTab(QtWidgets.QWidget):
             return
         self.facade.delete_expense(expense_id)
         self.refresh_data()
+
+    @staticmethod
+    def _distinct_non_empty(values):
+        deduped = {}
+        for raw_value in values:
+            cleaned = (raw_value or "").strip()
+            if not cleaned:
+                continue
+            key = cleaned.casefold()
+            if key not in deduped:
+                deduped[key] = cleaned
+                continue
+
+            existing = deduped[key]
+            if existing.islower() and not cleaned.islower():
+                deduped[key] = cleaned
+        return sorted(deduped.values(), key=str.casefold)
+
+    def _build_expense_autocomplete_lists(self):
+        existing_expenses = self.facade.get_expenses()
+        vendors = self._distinct_non_empty([expense.vendor for expense in existing_expenses])
+        notes = self._distinct_non_empty([expense.description for expense in existing_expenses])
+        return vendors, notes
 
     def _export_csv(self):
         if self.table.rowCount() == 0:
@@ -420,10 +572,19 @@ class ExpensesTab(QtWidgets.QWidget):
 class ExpenseDialog(QtWidgets.QDialog):
     """Modern expense dialog with streamlined layout"""
     
-    def __init__(self, users, expense: Expense = None, parent=None):
+    def __init__(
+        self,
+        users,
+        expense: Expense = None,
+        vendor_suggestions=None,
+        notes_suggestions=None,
+        parent=None,
+    ):
         super().__init__(parent)
         self.users = users
         self.expense = expense
+        self.vendor_suggestions = vendor_suggestions or []
+        self.notes_suggestions = notes_suggestions or []
         self.setWindowTitle("Edit Expense" if expense else "Add Expense")
         self.setMinimumWidth(700)
         self.setMinimumHeight(420)
@@ -450,8 +611,9 @@ class ExpenseDialog(QtWidgets.QDialog):
         self.amount_edit = QtWidgets.QLineEdit()
         self.amount_edit.setPlaceholderText("0.00")
 
-        self.vendor_edit = QtWidgets.QLineEdit()
+        self.vendor_edit = PredictiveLineEdit()
         self.vendor_edit.setPlaceholderText("Vendor name...")
+        self.vendor_edit.set_suggestions(self.vendor_suggestions)
 
         self.category_combo = QtWidgets.QComboBox()
         self.category_combo.setEditable(True)
@@ -466,10 +628,11 @@ class ExpenseDialog(QtWidgets.QDialog):
         for user in users:
             self.user_combo.addItem(user.name, user.id)
 
-        self.description_edit = QtWidgets.QPlainTextEdit()
+        self.description_edit = PredictivePlainTextEdit()
         self.description_edit.setPlaceholderText("Optional...")
         self.description_edit.setFixedHeight(80)
         self.description_edit.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.description_edit.set_suggestions(self.notes_suggestions)
 
         # Build form
         form = QtWidgets.QVBoxLayout()
