@@ -20,6 +20,9 @@ Corollaries:
 - Python 3.x
 - Install dependencies from `requirements.txt`
 
+Notes:
+- Sezzions is a **SQLite-only** desktop app. Older archived planning docs mention PostgreSQL / SQLAlchemy / pydantic as part of a potential future web path; those are not required for the current product and are treated as deprecated historical context.
+
 ### Setup
 ```bash
 python3 -m venv .venv
@@ -84,6 +87,33 @@ Key rules:
 
 ### Repo Workflow (Source of Truth)
 This spec defines the canonical workflow expectations and documentation policy (see §8). Keep the repo lean: update this spec + changelog rather than creating new one-off docs.
+
+### Portability / Web Porting Contract (Doctrinal)
+
+Even though “web deployment” is a current non-goal, this section defines the **canonical intent** required to port Sezzions (e.g., to a web app) while keeping the results predominantly faithful.
+
+**What must remain invariant (behavioral contract):**
+- **Accounting semantics are canonical**: FIFO basis, redemption semantics (`more_remaining` closeout vs partial), taxable session P/L definitions (discoverable SC, delta redeemable, basis consumed), and derived-table rebuild behavior.
+- **Derived data is rebuildable**: `realized_transactions`, `redemption_allocations`, `game_sessions` derived fields must be treated as rebuild outputs from authoritative inputs (purchases/redemptions/sessions/adjustments), not as hand-edited truth.
+- **Atomicity**: multi-step operations (save + cascading recalculation + audit logging) must be transactional and either fully commit or fully roll back.
+- **Time handling**:
+  - Persist timestamps in UTC.
+  - Preserve the distinction between **entry timezone** (how user entered it) and **accounting timezone** (how reports roll up).
+  - Preserve cross-event timestamp uniqueness rules (per user/site) and any downstream effects on linking/validation.
+- **Undo/redo + audit log**:
+  - Audit log is an append-only record of CRUD intent with enough detail to support undo/redo.
+  - Audit logging is atomic with the mutation it describes.
+  - Undo/redo is in-order and must preserve the same invariants as direct edits.
+- **Layering remains**: presentation layer calls business services; business rules do not live in controllers/views/route handlers.
+
+**What is intentionally flexible (non-goals for fidelity):**
+- UI layout, styling, and widget-level interactions (Qt dialogs vs web forms) can change.
+- Replacing the desktop “Tools tab” with web admin pages/APIs is allowed so long as behavior and safety invariants remain.
+
+**Minimum web-port architecture expectations:**
+- Model the core domain as a service layer with pure functions/transactions where possible.
+- Run heavy recalculations asynchronously (job queue/worker) but keep the operation semantics identical (scope, progress reporting, idempotency, rollback behavior).
+- Preserve rounding/precision rules used by the desktop app (use decimal, not floats, for money/SC accounting fields).
 
 ## 3) Data Model (High-Level)
 
@@ -507,6 +537,23 @@ UI rules:
 - Dialog secondary labels use theme-managed `MutedLabel` styling for dark-theme readability.
 - Global Qt stylesheet is maintained in `resources/theme.qss` with theme variables substituted at runtime by `ui/themes.py`.
 
+### Dialog UI Standards
+
+These are the required, cross-app dialog UX conventions (consolidated from earlier “dialog paradigm” docs so this spec remains self-contained). Pixel-level sizing targets are *not* normative; the behavioral and wiring patterns are.
+
+- **Dialog types**: Add, Edit, View.
+  - Add: starts empty/default; default focus on first required field; Save may be disabled until valid.
+  - Edit: pre-populated; handles NULLs gracefully; Save enabled only when changes are valid.
+  - View: read-only; all displayed text is selectable/copyable; may expose Edit/Delete actions.
+- **Structure** (typical Add/Edit): Date/Time row first → section header(s) → grouped fields → Notes → stretch → bottom button row.
+- **Visual grouping via object names** (theme/QSS-driven):
+  - Section containers use `ObjectName="SectionBackground"`.
+  - Section titles use `ObjectName="SectionHeader"`.
+  - Field labels use `ObjectName="FieldLabel"`.
+  - Helper/inline guidance uses `ObjectName="HelperText"` and optional `status` property.
+  - Primary action buttons (Save/Confirm) use `ObjectName="PrimaryButton"`.
+- **Validation feedback**: invalid inputs set `invalid=True` property so global QSS can render an error state; dialogs should avoid silent failure.
+
 Window Constraints (Issue #76):
 - Tools tab wrapped in QScrollArea to prevent off-screen expansion
 - Collapsible sections can be expanded without resizing window beyond screen bounds
@@ -571,6 +618,11 @@ Provide Excel-like usability across all table/tree views in the application:
   - Updates dynamically on selection change via `_on_selection_changed()` handlers
 
 **Widget Support:**
+
+**QTableView migration is intentionally rejected (ADR 0002):**
+- Sezzions uses `QTableWidget` for the primary grid tabs.
+- A prior pilot migration to `QTableView` was rejected because it broke the existing per-column header filtering UX (`TableHeaderFilter`) and increased complexity without user-facing benefit after inline editing was removed from scope.
+- Do not migrate to `QTableView` unless the column filtering UX is preserved and there is a concrete feature need (not speculative refactoring).
 
 *QTableWidget (11 tabs):*
 - Purchases, Redemptions, Games, Game Types, Sites, Users, Cards, Redemption Methods, Redemption Method Types, Unrealized, Game Sessions, Expenses
@@ -930,6 +982,10 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - Color-coded validation errors (red for errors, orange for warnings)
 - Conflict resolution: skip, overwrite, or cancel modes
 - Template generation: Creates empty CSV with correct headers for each entity type
+- **Post-import recalculation prompt**: After a successful import, the user is prompted to optionally recalculate derived data for only the affected (user, site) pairs.
+  - Buttons: **Recalculate Now** (default) and **Later**.
+  - Prompt includes an “Affected: X users, Y sites” summary when available.
+  - If accepted, Tools runs an `after_import` recalculation in a background worker with a progress dialog, then triggers the standard data-changed refresh.
 
 **Edge Cases:**
 - CSV imports without recalculation: May create temporary data inconsistencies (e.g., `remaining_amount > amount`)

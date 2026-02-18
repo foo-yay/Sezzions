@@ -1,10 +1,14 @@
-# CRITICAL: Game Session P/L Calculation is WRONG
+# CRITICAL (Historical): Game Session Taxable P/L Concern
 
-## Problem
-The current GameSession implementation uses a **simplified, incorrect** P/L formula:
+Status: **Resolved**. The correct taxable session P/L model + calculation is implemented in code and is documented in `docs/PROJECT_SPEC.md` (see Taxable P/L / Game Sessions).
+
+This incident is preserved as historical context because it describes a high-risk accounting correctness failure mode and the required algorithm.
+
+## Problem (At the Time)
+At the time this was written, GameSession taxable P/L used a **simplified, incorrect** formula:
 
 ```python
-# CURRENT (WRONG):
+# OLD (WRONG):
 profit_loss = (redemptions + ending) - (starting + purchases)
 ```
 
@@ -49,7 +53,7 @@ The simple formula **completely ignores**:
 
 Tax calculations will be completely incorrect.
 
-## Required Fix
+## Required Fix (Completed)
 
 1. Add missing fields to GameSession model
 2. Update database schema (migration)
@@ -62,8 +66,7 @@ Tax calculations will be completely incorrect.
 See `business_logic.py` lines 1100-1159 for the correct algorithm.
 See `sezzions/docs/ACCOUNTING_LOGIC.md` for detailed documentation.
 
-## DO NOT PROCEED
+## Notes
 
-**Do not use the Game Sessions tab for any real data until this is fixed.**
-
-The P/L values it displays are meaningless and will lead to incorrect tax reporting.
+- The correct calculation is based on redeemable checkpoints, discoverable SC, and locked-SC basis processing.
+- If future changes touch session accounting, add explicit scenario tests before modifying the algorithm.

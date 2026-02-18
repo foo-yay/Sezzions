@@ -12,6 +12,40 @@ Rules:
 ## 2026-02-17
 
 ```yaml
+id: 2026-02-17-10
+type: docs
+areas: [docs]
+summary: "Add Web Porting Contract to PROJECT_SPEC"
+details: >
+  Added a doctrinal portability section describing which invariants must remain true for a
+  faithful recreation or web port (accounting semantics, derived rebuildability, atomicity,
+  timezone/timestamp handling, audit/undo, and layering boundaries).
+files_changed:
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+pr: 138
+```
+
+```yaml
+id: 2026-02-17-09
+type: docs
+areas: [docs]
+summary: "Doc sweep: inline dialog UX standards and post-import recalculation prompt; clarify SQLite-only dependencies"
+details: >
+  Consolidated requirements-bearing content from archived design docs into PROJECT_SPEC.md,
+  including dialog UI conventions and the post-import recalculation prompt behavior.
+  Also inlined the QTableView migration rejection rationale into the Spreadsheet UX section so the spec remains self-contained.
+  Marked the historical “critical session P/L” incident writeup as resolved to avoid stale warnings.
+  Also clarified that older archived PostgreSQL/ORM/pydantic dependency plans are deprecated;
+  the current product is SQLite-only and governed by requirements.txt.
+files_changed:
+  - docs/PROJECT_SPEC.md
+  - docs/incidents/CRITICAL_P&L_ISSUE.md
+  - docs/status/CHANGELOG.md
+pr: 138
+```
+
+```yaml
 id: 2026-02-17-08
 type: docs
 areas: [docs]
