@@ -21,6 +21,8 @@ details: >
   Expense Add/Edit dialogs now provide case-insensitive autocomplete for Vendor and
   Notes based on distinct existing expense values, with inline real-time prediction
   and Tab-to-accept behavior to match existing editable-field completion patterns.
+  Accepted completions preserve canonical casing from suggestions and users can
+  continue normal editing (including Backspace/Delete) after a prediction appears.
   This remains UX-only help (no new validation rules; free text still allowed).
 files_changed:
   - ui/tabs/expenses_tab.py
