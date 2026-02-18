@@ -2,6 +2,8 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from PySide6 import QtCore
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from app_facade import AppFacade
@@ -23,7 +25,7 @@ def facade():
     f.db.close()
 
 
-def test_expense_dialog_wires_vendor_and_notes_completers(qapp):
+def test_expense_dialog_vendor_and_notes_inline_prediction_with_tab_accept(qapp):
     dialog = ExpenseDialog(
         users=[],
         vendor_suggestions=["Amazon", "Walmart"],
@@ -31,8 +33,35 @@ def test_expense_dialog_wires_vendor_and_notes_completers(qapp):
         parent=None,
     )
 
-    assert dialog.vendor_edit.completer() is not None
-    assert dialog.description_edit.completer() is not None
+    dialog.show()
+    qapp.processEvents()
+
+    dialog.vendor_edit.setFocus()
+    QTest.keyClicks(dialog.vendor_edit, "Ama")
+    qapp.processEvents()
+
+    assert dialog.vendor_edit.text() == "Amazon"
+    assert dialog.vendor_edit.selectedText() == "zon"
+
+    QTest.keyClick(dialog.vendor_edit, QtCore.Qt.Key_Tab)
+    qapp.processEvents()
+
+    assert dialog.vendor_edit.text() == "Amazon"
+    assert dialog.vendor_edit.selectedText() == ""
+
+    dialog._toggle_notes()
+    dialog.description_edit.setFocus()
+    QTest.keyClicks(dialog.description_edit, "Par")
+    qapp.processEvents()
+
+    assert dialog.description_edit.toPlainText() == "Parking"
+    assert dialog.description_edit.textCursor().selectedText() == "king"
+
+    QTest.keyClick(dialog.description_edit, QtCore.Qt.Key_Tab)
+    qapp.processEvents()
+
+    assert dialog.description_edit.toPlainText() == "Parking"
+    assert not dialog.description_edit.textCursor().hasSelection()
 
     dialog.close()
 

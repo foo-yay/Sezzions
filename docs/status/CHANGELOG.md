@@ -18,9 +18,10 @@ areas: [ui, expenses]
 issue: 139
 summary: "Add autocomplete suggestions for Expense Vendor and Notes fields"
 details: >
-  Expense Add/Edit dialogs now provide case-insensitive autocomplete suggestions for
-  Vendor and Notes based on distinct existing expense values. This is UX-only help:
-  no new validation rules were introduced and users can still enter free text.
+  Expense Add/Edit dialogs now provide case-insensitive autocomplete for Vendor and
+  Notes based on distinct existing expense values, with inline real-time prediction
+  and Tab-to-accept behavior to match existing editable-field completion patterns.
+  This remains UX-only help (no new validation rules; free text still allowed).
 files_changed:
   - ui/tabs/expenses_tab.py
   - tests/ui/test_expenses_autocomplete.py

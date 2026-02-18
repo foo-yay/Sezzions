@@ -57,48 +57,131 @@ def validate_currency(value_str: str, allow_zero: bool = True):
         return False, "Please enter a valid number"
 
 
-class AutocompletePlainTextEdit(QtWidgets.QPlainTextEdit):
-    """QPlainTextEdit with whole-field autocomplete suggestions."""
+class PredictiveLineEdit(QtWidgets.QLineEdit):
+    """Single-line inline predictive completion with tab acceptance."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._completer = QtWidgets.QCompleter([], self)
-        self._completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
-        self._completer.setFilterMode(QtCore.Qt.MatchContains)
-        self._completer.setCompletionMode(QtWidgets.QCompleter.PopupCompletion)
-        self._completer.setWidget(self)
-        self._completer.activated.connect(self._insert_completion)
+        self._suggestions = []
 
     def set_suggestions(self, values):
-        model = QtCore.QStringListModel(values, self._completer)
-        self._completer.setModel(model)
-
-    def completer(self):
-        return self._completer
-
-    def _insert_completion(self, completion: str):
-        self.setPlainText(completion)
-        cursor = self.textCursor()
-        cursor.movePosition(QtGui.QTextCursor.End)
-        self.setTextCursor(cursor)
+        self._suggestions = list(values or [])
+        completer = QtWidgets.QCompleter(self._suggestions, self)
+        completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        completer.setFilterMode(QtCore.Qt.MatchStartsWith)
+        completer.setCompletionMode(QtWidgets.QCompleter.InlineCompletion)
+        self.setCompleter(completer)
 
     def keyPressEvent(self, event):
+        if event.key() in (QtCore.Qt.Key_Tab, QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            if self.hasSelectedText():
+                end_pos = len(self.text())
+                self.setSelection(end_pos, 0)
         super().keyPressEvent(event)
 
-        if event.key() in (QtCore.Qt.Key_Enter, QtCore.Qt.Key_Return, QtCore.Qt.Key_Escape):
+
+class PredictivePlainTextEdit(QtWidgets.QPlainTextEdit):
+    """Whole-field inline predictive completion with tab acceptance."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._suggestions = []
+        self._in_prediction_update = False
+
+    def set_suggestions(self, values):
+        self._suggestions = list(values or [])
+
+    def _match_for_prefix(self, prefix: str):
+        lower_prefix = prefix.casefold()
+        for value in self._suggestions:
+            if value.casefold().startswith(lower_prefix):
+                return value
+        return None
+
+    def _accept_prediction(self):
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            cursor.setPosition(cursor.selectionEnd())
+            self.setTextCursor(cursor)
+
+    def _apply_inline_prediction(self):
+        if self._in_prediction_update:
             return
 
-        prefix = self.toPlainText().strip()
-        if not prefix:
-            self._completer.popup().hide()
+        prefix = self.toPlainText()
+        if not prefix or "\n" in prefix:
             return
 
-        self._completer.setCompletionPrefix(prefix)
-        popup = self._completer.popup()
-        popup.setCurrentIndex(self._completer.completionModel().index(0, 0))
-        popup_rect = self.cursorRect()
-        popup_rect.setWidth(max(220, popup.sizeHintForColumn(0) + popup.verticalScrollBar().sizeHint().width()))
-        self._completer.complete(popup_rect)
+        cursor = self.textCursor()
+        if cursor.position() != len(prefix):
+            return
+
+        match = self._match_for_prefix(prefix)
+        if not match:
+            return
+        if match.casefold() == prefix.casefold():
+            return
+
+        self._in_prediction_update = True
+        self.setPlainText(match)
+        cursor = self.textCursor()
+        cursor.setPosition(len(prefix))
+        cursor.setPosition(len(match), QtGui.QTextCursor.KeepAnchor)
+        self.setTextCursor(cursor)
+        self._in_prediction_update = False
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key == QtCore.Qt.Key_Tab:
+            self._accept_prediction()
+            self.focusNextPrevChild(not bool(event.modifiers() & QtCore.Qt.ShiftModifier))
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
+
+        if key in (
+            QtCore.Qt.Key_Backspace,
+            QtCore.Qt.Key_Delete,
+            QtCore.Qt.Key_Space,
+            QtCore.Qt.Key_0,
+            QtCore.Qt.Key_1,
+            QtCore.Qt.Key_2,
+            QtCore.Qt.Key_3,
+            QtCore.Qt.Key_4,
+            QtCore.Qt.Key_5,
+            QtCore.Qt.Key_6,
+            QtCore.Qt.Key_7,
+            QtCore.Qt.Key_8,
+            QtCore.Qt.Key_9,
+            QtCore.Qt.Key_A,
+            QtCore.Qt.Key_B,
+            QtCore.Qt.Key_C,
+            QtCore.Qt.Key_D,
+            QtCore.Qt.Key_E,
+            QtCore.Qt.Key_F,
+            QtCore.Qt.Key_G,
+            QtCore.Qt.Key_H,
+            QtCore.Qt.Key_I,
+            QtCore.Qt.Key_J,
+            QtCore.Qt.Key_K,
+            QtCore.Qt.Key_L,
+            QtCore.Qt.Key_M,
+            QtCore.Qt.Key_N,
+            QtCore.Qt.Key_O,
+            QtCore.Qt.Key_P,
+            QtCore.Qt.Key_Q,
+            QtCore.Qt.Key_R,
+            QtCore.Qt.Key_S,
+            QtCore.Qt.Key_T,
+            QtCore.Qt.Key_U,
+            QtCore.Qt.Key_V,
+            QtCore.Qt.Key_W,
+            QtCore.Qt.Key_X,
+            QtCore.Qt.Key_Y,
+            QtCore.Qt.Key_Z,
+        ):
+            self._apply_inline_prediction()
 
 
 class ExpensesTab(QtWidgets.QWidget):
@@ -539,9 +622,9 @@ class ExpenseDialog(QtWidgets.QDialog):
         self.amount_edit = QtWidgets.QLineEdit()
         self.amount_edit.setPlaceholderText("0.00")
 
-        self.vendor_edit = QtWidgets.QLineEdit()
+        self.vendor_edit = PredictiveLineEdit()
         self.vendor_edit.setPlaceholderText("Vendor name...")
-        self._setup_line_edit_completer(self.vendor_edit, self.vendor_suggestions)
+        self.vendor_edit.set_suggestions(self.vendor_suggestions)
 
         self.category_combo = QtWidgets.QComboBox()
         self.category_combo.setEditable(True)
@@ -556,7 +639,7 @@ class ExpenseDialog(QtWidgets.QDialog):
         for user in users:
             self.user_combo.addItem(user.name, user.id)
 
-        self.description_edit = AutocompletePlainTextEdit()
+        self.description_edit = PredictivePlainTextEdit()
         self.description_edit.setPlaceholderText("Optional...")
         self.description_edit.setFixedHeight(80)
         self.description_edit.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
@@ -713,13 +796,6 @@ class ExpenseDialog(QtWidgets.QDialog):
             self._set_now()
 
         self._validate_inline()
-
-    def _setup_line_edit_completer(self, line_edit: QtWidgets.QLineEdit, values):
-        completer = QtWidgets.QCompleter(values, self)
-        completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
-        completer.setFilterMode(QtCore.Qt.MatchContains)
-        completer.setCompletionMode(QtWidgets.QCompleter.PopupCompletion)
-        line_edit.setCompleter(completer)
 
     def _create_section_header(self, text: str) -> QtWidgets.QLabel:
         """Create a section header label"""

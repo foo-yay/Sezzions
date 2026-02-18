@@ -601,6 +601,7 @@ In Expense Add/Edit dialogs, Sezzions provides autocomplete suggestions to speed
 
 - **Vendor** field: case-insensitive suggestions sourced from distinct, non-empty historical values in the Expenses `vendor` column.
 - **Notes** field: case-insensitive suggestions sourced from distinct, non-empty historical values in the Expenses `description`/notes column.
+- Prediction style matches editable-combo behavior used elsewhere: **inline real-time text prediction** as the user types, with **Tab accepting** the predicted completion.
 - Suggestions are UX-only assistance (no new validation rules and no forced selection).
 
 ### 5.1 Spreadsheet UX (Issue #14, Phase 1)
