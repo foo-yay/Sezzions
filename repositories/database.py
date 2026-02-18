@@ -274,6 +274,9 @@ class DatabaseManager:
                 session_basis TEXT,
                 basis_consumed TEXT,
                 net_taxable_pl TEXT,
+                tax_withholding_rate_pct REAL,
+                tax_withholding_is_custom INTEGER DEFAULT 0,
+                tax_withholding_amount REAL,
                 status TEXT DEFAULT 'Active',
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -382,6 +385,7 @@ class DatabaseManager:
                 status TEXT,
                 num_game_sessions INTEGER DEFAULT 0,
                 num_other_income_items INTEGER DEFAULT 0,
+                notes TEXT,
                 PRIMARY KEY (session_date, user_id),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
             )
@@ -576,6 +580,13 @@ class DatabaseManager:
         existing_columns = {row[1] for row in columns_info}
 
         game_id_col = next((row for row in columns_info if row[1] == "game_id"), None)
+        # DEAD CODE PATH — verified 2026-02-17:
+        # This full table rebuild only triggers when game_id has a NOT NULL constraint
+        # (game_id_col[3] == 1). The production sezzions.db has game_id nullable (notnull=0),
+        # so this branch has never fired and will never fire on the current database.
+        # It predates the single-user era of this app. Safe to ignore in all future audits.
+        # Do NOT remove it (belt-and-suspenders for theoretical legacy DBs), but do NOT
+        # add new business logic here — use the ALTER TABLE migrations list below instead.
         if game_id_col and game_id_col[3] == 1:
             try:
                 cursor.execute("PRAGMA foreign_keys=OFF")
@@ -690,6 +701,9 @@ class DatabaseManager:
             ("end_entry_time_zone", "TEXT"),
             ("status", "TEXT DEFAULT 'Active'"),
             ("deleted_at", "TIMESTAMP NULL"),
+            ("tax_withholding_rate_pct", "REAL"),
+            ("tax_withholding_is_custom", "INTEGER DEFAULT 0"),
+            ("tax_withholding_amount", "REAL"),
         ]
         
         for column_name, column_def in migrations:
@@ -706,10 +720,19 @@ class DatabaseManager:
             pass
 
     def _migrate_daily_sessions_table(self):
-        """Remove old tax withholding columns from daily_sessions (moved to daily_date_tax)"""
-        # Tax columns are now in daily_date_tax table, not daily_sessions
-        # This migration is a no-op, keeping for reference
-        pass
+        """Add missing columns to daily_sessions and ensure schema is up to date."""
+        cursor = self._connection.cursor()
+        cursor.execute("PRAGMA table_info(daily_sessions)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        migrations = [
+            ("notes", "TEXT"),
+        ]
+        for column_name, column_def in migrations:
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE daily_sessions ADD COLUMN {column_name} {column_def}")
+                except Exception:
+                    pass
 
 
     def _migrate_games_table(self):
@@ -892,6 +915,7 @@ class DatabaseManager:
                     description TEXT,
                     category TEXT,
                     user_id INTEGER,
+                    expense_entry_time_zone TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -902,7 +926,7 @@ class DatabaseManager:
             cursor.execute('''
                 INSERT INTO expenses_new 
                 SELECT id, expense_date, expense_time, amount, vendor, description, 
-                       category, user_id, created_at, updated_at
+                       category, user_id, expense_entry_time_zone, created_at, updated_at
                 FROM expenses
             ''')
             

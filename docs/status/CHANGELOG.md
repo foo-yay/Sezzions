@@ -12,6 +12,79 @@ Rules:
 ## 2026-02-17
 
 ```yaml
+id: 2026-02-17-10
+type: docs
+areas: [docs]
+summary: "Add Web Porting Contract to PROJECT_SPEC"
+details: >
+  Added a doctrinal portability section describing which invariants must remain true for a
+  faithful recreation or web port (accounting semantics, derived rebuildability, atomicity,
+  timezone/timestamp handling, audit/undo, and layering boundaries).
+files_changed:
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+pr: 138
+```
+
+```yaml
+id: 2026-02-17-09
+type: docs
+areas: [docs]
+summary: "Doc sweep: inline dialog UX standards and post-import recalculation prompt; clarify SQLite-only dependencies"
+details: >
+  Consolidated requirements-bearing content from archived design docs into PROJECT_SPEC.md,
+  including dialog UI conventions and the post-import recalculation prompt behavior.
+  Also inlined the QTableView migration rejection rationale into the Spreadsheet UX section so the spec remains self-contained.
+  Marked the historical “critical session P/L” incident writeup as resolved to avoid stale warnings.
+  Also clarified that older archived PostgreSQL/ORM/pydantic dependency plans are deprecated;
+  the current product is SQLite-only and governed by requirements.txt.
+files_changed:
+  - docs/PROJECT_SPEC.md
+  - docs/incidents/CRITICAL_P&L_ISSUE.md
+  - docs/status/CHANGELOG.md
+pr: 138
+```
+
+```yaml
+id: 2026-02-17-08
+type: docs
+areas: [docs]
+summary: "Clarify reconstruction contract and remove external doc dependency from PROJECT_SPEC"
+details: >
+  PROJECT_SPEC.md now explicitly treats repo file-path references as informational only and
+  inlines ADR-0002 justification instead of linking to docs/adr, keeping the spec self-contained.
+files_changed:
+  - docs/PROJECT_SPEC.md
+pr: 138
+```
+
+
+```yaml
+id: 2026-02-17-07
+type: fix
+areas: [database, schema, tests]
+issue: 136
+summary: "Schema/spec alignment — add missing canonical columns to fresh DB schema and Appendix A"
+details: >
+  Three tables were missing columns in the CREATE TABLE statements (fresh DB path), causing
+  divergence between upgraded real databases and freshly-created databases.
+  - daily_sessions: added `notes TEXT` to CREATE TABLE; updated _migrate_daily_sessions_table
+    to ALTER TABLE existing DBs.
+  - game_sessions: added `tax_withholding_rate_pct REAL`, `tax_withholding_is_custom INTEGER DEFAULT 0`,
+    `tax_withholding_amount REAL` to CREATE TABLE and to the ALTER TABLE migrations list.
+  - expenses migration rebuild: fixed `expenses_new` CREATE TABLE and INSERT…SELECT to preserve
+    `expense_entry_time_zone` (data-loss bug when DEFAULT constraint migration ran).
+  Appendix A DDL in PROJECT_SPEC.md updated to match corrected fresh schema.
+  11 integration tests added covering happy path, edge cases, and failure injection.
+files_changed:
+  - repositories/database.py
+  - docs/PROJECT_SPEC.md
+  - tests/integration/test_schema_alignment.py
+pr: 138
+```
+
+
+```yaml
 id: 2026-02-17-06
 type: docs
 areas: [docs, repo, tools]
