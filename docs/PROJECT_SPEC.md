@@ -595,6 +595,14 @@ Persistence and clearing rules:
 - States persist via application settings across restarts.
 - Existing per-tab “Clear All Filters” actions also clear these quick toggles.
 
+### Expenses Entry Autocomplete (Issue #139)
+
+In Expense Add/Edit dialogs, Sezzions provides autocomplete suggestions to speed repetitive text entry while keeping fields free-form:
+
+- **Vendor** field: case-insensitive suggestions sourced from distinct, non-empty historical values in the Expenses `vendor` column.
+- **Notes** field: case-insensitive suggestions sourced from distinct, non-empty historical values in the Expenses `description`/notes column.
+- Suggestions are UX-only assistance (no new validation rules and no forced selection).
+
 ### 5.1 Spreadsheet UX (Issue #14, Phase 1)
 
 **Purpose:**

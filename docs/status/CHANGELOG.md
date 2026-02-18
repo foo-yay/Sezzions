@@ -9,6 +9,26 @@ Rules:
 
 ---
 
+## 2026-02-18
+
+```yaml
+id: 2026-02-18-01
+type: enhancement
+areas: [ui, expenses]
+issue: 139
+summary: "Add autocomplete suggestions for Expense Vendor and Notes fields"
+details: >
+  Expense Add/Edit dialogs now provide case-insensitive autocomplete suggestions for
+  Vendor and Notes based on distinct existing expense values. This is UX-only help:
+  no new validation rules were introduced and users can still enter free text.
+files_changed:
+  - ui/tabs/expenses_tab.py
+  - tests/ui/test_expenses_autocomplete.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
 ## 2026-02-17
 
 ```yaml

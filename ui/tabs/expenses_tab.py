@@ -57,6 +57,50 @@ def validate_currency(value_str: str, allow_zero: bool = True):
         return False, "Please enter a valid number"
 
 
+class AutocompletePlainTextEdit(QtWidgets.QPlainTextEdit):
+    """QPlainTextEdit with whole-field autocomplete suggestions."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._completer = QtWidgets.QCompleter([], self)
+        self._completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        self._completer.setFilterMode(QtCore.Qt.MatchContains)
+        self._completer.setCompletionMode(QtWidgets.QCompleter.PopupCompletion)
+        self._completer.setWidget(self)
+        self._completer.activated.connect(self._insert_completion)
+
+    def set_suggestions(self, values):
+        model = QtCore.QStringListModel(values, self._completer)
+        self._completer.setModel(model)
+
+    def completer(self):
+        return self._completer
+
+    def _insert_completion(self, completion: str):
+        self.setPlainText(completion)
+        cursor = self.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.End)
+        self.setTextCursor(cursor)
+
+    def keyPressEvent(self, event):
+        super().keyPressEvent(event)
+
+        if event.key() in (QtCore.Qt.Key_Enter, QtCore.Qt.Key_Return, QtCore.Qt.Key_Escape):
+            return
+
+        prefix = self.toPlainText().strip()
+        if not prefix:
+            self._completer.popup().hide()
+            return
+
+        self._completer.setCompletionPrefix(prefix)
+        popup = self._completer.popup()
+        popup.setCurrentIndex(self._completer.completionModel().index(0, 0))
+        popup_rect = self.cursorRect()
+        popup_rect.setWidth(max(220, popup.sizeHintForColumn(0) + popup.verticalScrollBar().sizeHint().width()))
+        self._completer.complete(popup_rect)
+
+
 class ExpensesTab(QtWidgets.QWidget):
     def __init__(self, facade: AppFacade):
         super().__init__()
@@ -285,7 +329,13 @@ class ExpensesTab(QtWidgets.QWidget):
 
     def _add_expense(self):
         users = self.facade.get_all_users(active_only=True)
-        dialog = ExpenseDialog(users, parent=self)
+        vendor_suggestions, notes_suggestions = self._build_expense_autocomplete_lists()
+        dialog = ExpenseDialog(
+            users,
+            vendor_suggestions=vendor_suggestions,
+            notes_suggestions=notes_suggestions,
+            parent=self,
+        )
         if dialog.exec():
             data, error = dialog.collect_data()
             if error:
@@ -306,7 +356,14 @@ class ExpensesTab(QtWidgets.QWidget):
         if not expense:
             return
         users = self.facade.get_all_users(active_only=True)
-        dialog = ExpenseDialog(users, expense=expense, parent=self)
+        vendor_suggestions, notes_suggestions = self._build_expense_autocomplete_lists()
+        dialog = ExpenseDialog(
+            users,
+            expense=expense,
+            vendor_suggestions=vendor_suggestions,
+            notes_suggestions=notes_suggestions,
+            parent=self,
+        )
         if dialog.exec():
             data, error = dialog.collect_data()
             if error:
@@ -360,6 +417,29 @@ class ExpensesTab(QtWidgets.QWidget):
             return
         self.facade.delete_expense(expense_id)
         self.refresh_data()
+
+    @staticmethod
+    def _distinct_non_empty(values):
+        deduped = {}
+        for raw_value in values:
+            cleaned = (raw_value or "").strip()
+            if not cleaned:
+                continue
+            key = cleaned.casefold()
+            if key not in deduped:
+                deduped[key] = cleaned
+                continue
+
+            existing = deduped[key]
+            if existing.islower() and not cleaned.islower():
+                deduped[key] = cleaned
+        return sorted(deduped.values(), key=str.casefold)
+
+    def _build_expense_autocomplete_lists(self):
+        existing_expenses = self.facade.get_expenses()
+        vendors = self._distinct_non_empty([expense.vendor for expense in existing_expenses])
+        notes = self._distinct_non_empty([expense.description for expense in existing_expenses])
+        return vendors, notes
 
     def _export_csv(self):
         if self.table.rowCount() == 0:
@@ -420,10 +500,19 @@ class ExpensesTab(QtWidgets.QWidget):
 class ExpenseDialog(QtWidgets.QDialog):
     """Modern expense dialog with streamlined layout"""
     
-    def __init__(self, users, expense: Expense = None, parent=None):
+    def __init__(
+        self,
+        users,
+        expense: Expense = None,
+        vendor_suggestions=None,
+        notes_suggestions=None,
+        parent=None,
+    ):
         super().__init__(parent)
         self.users = users
         self.expense = expense
+        self.vendor_suggestions = vendor_suggestions or []
+        self.notes_suggestions = notes_suggestions or []
         self.setWindowTitle("Edit Expense" if expense else "Add Expense")
         self.setMinimumWidth(700)
         self.setMinimumHeight(420)
@@ -452,6 +541,7 @@ class ExpenseDialog(QtWidgets.QDialog):
 
         self.vendor_edit = QtWidgets.QLineEdit()
         self.vendor_edit.setPlaceholderText("Vendor name...")
+        self._setup_line_edit_completer(self.vendor_edit, self.vendor_suggestions)
 
         self.category_combo = QtWidgets.QComboBox()
         self.category_combo.setEditable(True)
@@ -466,10 +556,11 @@ class ExpenseDialog(QtWidgets.QDialog):
         for user in users:
             self.user_combo.addItem(user.name, user.id)
 
-        self.description_edit = QtWidgets.QPlainTextEdit()
+        self.description_edit = AutocompletePlainTextEdit()
         self.description_edit.setPlaceholderText("Optional...")
         self.description_edit.setFixedHeight(80)
         self.description_edit.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.description_edit.set_suggestions(self.notes_suggestions)
 
         # Build form
         form = QtWidgets.QVBoxLayout()
@@ -622,6 +713,13 @@ class ExpenseDialog(QtWidgets.QDialog):
             self._set_now()
 
         self._validate_inline()
+
+    def _setup_line_edit_completer(self, line_edit: QtWidgets.QLineEdit, values):
+        completer = QtWidgets.QCompleter(values, self)
+        completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        completer.setFilterMode(QtCore.Qt.MatchContains)
+        completer.setCompletionMode(QtWidgets.QCompleter.PopupCompletion)
+        line_edit.setCompleter(completer)
 
     def _create_section_header(self, text: str) -> QtWidgets.QLabel:
         """Create a section header label"""
