@@ -11,6 +11,8 @@ Target state: if the repo was lost and only this file plus `docs/status/CHANGELO
 Corollaries:
 - This spec must not rely on other markdown files for required behavior.
 - The changelog is the chronological “why/when”; this spec is the canonical “what/how”.
+- Any references to repository file paths (e.g., `services/...`, `ui/...`) are **informational only**.
+  They describe the current implementation, but the required behavior must be fully specified in this document.
 
 ## Quick Start (Developer Bootstrap)
 
@@ -365,7 +367,7 @@ Capture a durable, structured log of all CRUD operations on core entities (purch
 - `group_id`: UUID linking related operations (e.g., bulk deletes)
 
 **Implementation Architecture:**
-Audit logging happens at the **service layer** (not AppFacade). See ADR-0002 for detailed rationale.
+Audit logging happens at the **service layer** (not AppFacade). See §4.7.5 (ADR-0002) for rationale.
 
 **Adjustments/Checkpoints:**
 - `account_adjustments` now emits CREATE/DELETE/RESTORE audit entries for basis adjustments and balance checkpoints.
@@ -483,7 +485,7 @@ Audit logging was implemented at the **service layer** rather than centralized i
 - Distributed code (audit calls in multiple services)
 - Requires discipline when adding new CRUD methods
 
-See `docs/adr/0002-audit-logging-at-service-layer.md` for full justification.
+This section is the full justification (kept here so the spec is self-contained).
 
 ## 5) UI/UX (Product Behavior)
 

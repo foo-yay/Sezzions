@@ -12,6 +12,20 @@ Rules:
 ## 2026-02-17
 
 ```yaml
+id: 2026-02-17-08
+type: docs
+areas: [docs]
+summary: "Clarify reconstruction contract and remove external doc dependency from PROJECT_SPEC"
+details: >
+  PROJECT_SPEC.md now explicitly treats repo file-path references as informational only and
+  inlines ADR-0002 justification instead of linking to docs/adr, keeping the spec self-contained.
+files_changed:
+  - docs/PROJECT_SPEC.md
+pr: 138
+```
+
+
+```yaml
 id: 2026-02-17-07
 type: fix
 areas: [database, schema, tests]
