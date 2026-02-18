@@ -26,7 +26,7 @@ files_changed:
   - tests/ui/test_expenses_autocomplete.py
   - docs/PROJECT_SPEC.md
   - docs/status/CHANGELOG.md
-pr: null
+pr: 140
 ```
 
 ## 2026-02-17
