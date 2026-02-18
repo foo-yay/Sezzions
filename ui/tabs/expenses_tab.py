@@ -63,6 +63,7 @@ class PredictiveLineEdit(QtWidgets.QLineEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._suggestions = []
+        self.editingFinished.connect(self._normalize_case_to_suggestion)
 
     def set_suggestions(self, values):
         self._suggestions = list(values or [])
@@ -72,11 +73,38 @@ class PredictiveLineEdit(QtWidgets.QLineEdit):
         completer.setCompletionMode(QtWidgets.QCompleter.InlineCompletion)
         self.setCompleter(completer)
 
+    def _match_for_prefix(self, prefix: str):
+        lower_prefix = prefix.casefold()
+        for value in self._suggestions:
+            if value.casefold().startswith(lower_prefix):
+                return value
+        return None
+
+    def _normalize_case_to_suggestion(self):
+        text = self.text().strip()
+        if not text:
+            return
+        text_lower = text.casefold()
+        for value in self._suggestions:
+            if value.casefold() == text_lower:
+                if value != text:
+                    self.setText(value)
+                return
+
     def keyPressEvent(self, event):
-        if event.key() in (QtCore.Qt.Key_Tab, QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
-            if self.hasSelectedText():
-                end_pos = len(self.text())
-                self.setSelection(end_pos, 0)
+        key = event.key()
+        if key in (QtCore.Qt.Key_Tab, QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            prefix = self.text()
+            match = self._match_for_prefix(prefix)
+            if match:
+                self.setText(match)
+                self.setCursorPosition(len(match))
+
+            if key == QtCore.Qt.Key_Tab:
+                self.focusNextPrevChild(not bool(event.modifiers() & QtCore.Qt.ShiftModifier))
+                event.accept()
+                return
+
         super().keyPressEvent(event)
 
 
@@ -132,55 +160,16 @@ class PredictivePlainTextEdit(QtWidgets.QPlainTextEdit):
 
     def keyPressEvent(self, event):
         key = event.key()
-        if key == QtCore.Qt.Key_Tab:
+        if key in (QtCore.Qt.Key_Tab, QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
             self._accept_prediction()
-            self.focusNextPrevChild(not bool(event.modifiers() & QtCore.Qt.ShiftModifier))
-            event.accept()
-            return
+            if key == QtCore.Qt.Key_Tab:
+                self.focusNextPrevChild(not bool(event.modifiers() & QtCore.Qt.ShiftModifier))
+                event.accept()
+                return
 
         super().keyPressEvent(event)
 
-        if key in (
-            QtCore.Qt.Key_Backspace,
-            QtCore.Qt.Key_Delete,
-            QtCore.Qt.Key_Space,
-            QtCore.Qt.Key_0,
-            QtCore.Qt.Key_1,
-            QtCore.Qt.Key_2,
-            QtCore.Qt.Key_3,
-            QtCore.Qt.Key_4,
-            QtCore.Qt.Key_5,
-            QtCore.Qt.Key_6,
-            QtCore.Qt.Key_7,
-            QtCore.Qt.Key_8,
-            QtCore.Qt.Key_9,
-            QtCore.Qt.Key_A,
-            QtCore.Qt.Key_B,
-            QtCore.Qt.Key_C,
-            QtCore.Qt.Key_D,
-            QtCore.Qt.Key_E,
-            QtCore.Qt.Key_F,
-            QtCore.Qt.Key_G,
-            QtCore.Qt.Key_H,
-            QtCore.Qt.Key_I,
-            QtCore.Qt.Key_J,
-            QtCore.Qt.Key_K,
-            QtCore.Qt.Key_L,
-            QtCore.Qt.Key_M,
-            QtCore.Qt.Key_N,
-            QtCore.Qt.Key_O,
-            QtCore.Qt.Key_P,
-            QtCore.Qt.Key_Q,
-            QtCore.Qt.Key_R,
-            QtCore.Qt.Key_S,
-            QtCore.Qt.Key_T,
-            QtCore.Qt.Key_U,
-            QtCore.Qt.Key_V,
-            QtCore.Qt.Key_W,
-            QtCore.Qt.Key_X,
-            QtCore.Qt.Key_Y,
-            QtCore.Qt.Key_Z,
-        ):
+        if event.text() and event.text().isprintable() and key not in (QtCore.Qt.Key_Backspace, QtCore.Qt.Key_Delete):
             self._apply_inline_prediction()
 
 
