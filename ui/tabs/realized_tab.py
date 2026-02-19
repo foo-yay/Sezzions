@@ -1141,7 +1141,9 @@ class RealizedTab(QtWidgets.QWidget):
             FROM realized_transactions rt
             JOIN sites s ON rt.site_id = s.id
             JOIN users u ON rt.user_id = u.id
-            LEFT JOIN redemptions r ON rt.redemption_id = r.id
+                        JOIN redemptions r ON rt.redemption_id = r.id
+                            AND r.deleted_at IS NULL
+                            AND r.canceled_at IS NULL
         """
         params = []
         conditions = []
@@ -1568,7 +1570,9 @@ class RealizedTab(QtWidgets.QWidget):
             JOIN sites s ON rt.site_id = s.id
             JOIN users u ON rt.user_id = u.id
             LEFT JOIN redemption_methods rm ON r.redemption_method_id = rm.id
-            WHERE rt.id = ?
+                        WHERE rt.id = ?
+                            AND r.deleted_at IS NULL
+                            AND r.canceled_at IS NULL
             """,
             (tax_session_id,),
         )

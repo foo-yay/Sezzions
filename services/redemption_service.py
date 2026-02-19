@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple, TYPE_CHECKING
 from decimal import Decimal
 from datetime import date
 from models.redemption import Redemption
-from tools.timezone_utils import get_entry_timezone_name
+from tools.timezone_utils import get_entry_timezone_name, local_date_time_to_utc
 from repositories.redemption_repository import RedemptionRepository
 from services.fifo_service import FIFOService
 
@@ -72,16 +72,28 @@ class RedemptionService:
         if apply_fifo:
             # For Full redemptions (more_remaining=False), consume ALL remaining basis
             if not more_remaining:
+                redemption_cutoff_date, redemption_cutoff_time = local_date_time_to_utc(
+                    redemption_date,
+                    redemption_time or "23:59:59",
+                    redemption.redemption_entry_time_zone,
+                )
                 # Get total remaining basis for this site/user as of redemption timestamp
                 available_purchases = self.redemption_repo.db.fetch_one(
                     """
-                    SELECT COALESCE(SUM(remaining_amount), 0) as total_remaining
+                    SELECT COALESCE(SUM(CAST(remaining_amount AS REAL)), 0) as total_remaining
                     FROM purchases
-                    WHERE user_id = ? AND site_id = ? AND remaining_amount > 0
+                    WHERE user_id = ? AND site_id = ? AND CAST(remaining_amount AS REAL) > 0
+                      AND deleted_at IS NULL
                       AND (purchase_date < ? OR 
                            (purchase_date = ? AND COALESCE(purchase_time,'00:00:00') <= ?))
                     """,
-                    (user_id, site_id, redemption_date, redemption_date, redemption_time or "23:59:59")
+                    (
+                        user_id,
+                        site_id,
+                        redemption_cutoff_date,
+                        redemption_cutoff_date,
+                        redemption_cutoff_time,
+                    )
                 )
                 
                 total_remaining = Decimal(str(available_purchases['total_remaining'])) if available_purchases else Decimal("0.00")

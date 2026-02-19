@@ -192,7 +192,7 @@ class RecalculationService:
             """
             SELECT id, amount, purchase_date, COALESCE(purchase_time,'00:00:00') AS pt
             FROM purchases
-            WHERE user_id = ? AND site_id = ?
+            WHERE user_id = ? AND site_id = ? AND deleted_at IS NULL
             ORDER BY purchase_date ASC, COALESCE(purchase_time,'00:00:00') ASC, id ASC
             """,
             (user_id, site_id),
@@ -389,7 +389,7 @@ class RecalculationService:
             """
             SELECT id, amount, purchase_date, COALESCE(purchase_time,'00:00:00') AS pt
             FROM purchases
-            WHERE user_id = ? AND site_id = ?
+            WHERE user_id = ? AND site_id = ? AND deleted_at IS NULL
             ORDER BY purchase_date ASC, COALESCE(purchase_time,'00:00:00') ASC, id ASC
             """,
             (user_id, site_id),
@@ -443,10 +443,32 @@ class RecalculationService:
 
         cursor.execute(
             """
+            SELECT id
+            FROM redemptions
+            WHERE user_id = ? AND site_id = ?
+              AND (redemption_date > ?
+                   OR (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') >= ?))
+            """,
+            (user_id, site_id, from_date, from_date, from_time),
+        )
+        all_window_redemption_ids = [int(r["id"]) for r in cursor.fetchall()]
+        if all_window_redemption_ids:
+            placeholders = ",".join(["?"] * len(all_window_redemption_ids))
+            cursor.execute(
+                f"DELETE FROM redemption_allocations WHERE redemption_id IN ({placeholders})",
+                tuple(all_window_redemption_ids),
+            )
+            cursor.execute(
+                f"DELETE FROM realized_transactions WHERE redemption_id IN ({placeholders})",
+                tuple(all_window_redemption_ids),
+            )
+
+        cursor.execute(
+            """
             SELECT id, amount, redemption_date, COALESCE(redemption_time,'00:00:00') AS rt,
                    COALESCE(is_free_sc, 0) AS is_free_sc, COALESCE(more_remaining, 0) AS more_remaining, notes
-                        FROM redemptions
-                            WHERE user_id = ? AND site_id = ? AND deleted_at IS NULL AND canceled_at IS NULL
+            FROM redemptions
+            WHERE user_id = ? AND site_id = ? AND deleted_at IS NULL AND canceled_at IS NULL
               AND (redemption_date > ?
                    OR (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') >= ?))
             ORDER BY redemption_date ASC, COALESCE(redemption_time,'00:00:00') ASC, id ASC
@@ -454,18 +476,6 @@ class RecalculationService:
             (user_id, site_id, from_date, from_date, from_time),
         )
         redemption_rows = cursor.fetchall()
-
-        redemption_ids = [int(r["id"]) for r in redemption_rows]
-        if redemption_ids:
-            placeholders = ",".join(["?"] * len(redemption_ids))
-            cursor.execute(
-                f"DELETE FROM redemption_allocations WHERE redemption_id IN ({placeholders})",
-                tuple(redemption_ids),
-            )
-            cursor.execute(
-                f"DELETE FROM realized_transactions WHERE redemption_id IN ({placeholders})",
-                tuple(redemption_ids),
-            )
 
         allocations_to_write: List[Tuple[int, int, str]] = []
         realized_to_write: List[Tuple[str, int, int, int, str, str, str]] = []

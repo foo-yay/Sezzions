@@ -12,6 +12,32 @@ Rules:
 ## 2026-02-19
 
 ```yaml
+id: 2026-02-19-02
+type: fix
+areas: [recalculation, redemptions, realized]
+issue: 143
+summary: "Fix closeout basis inflation and stale realized rows after cancel/delete"
+details: >
+  Fixed two data-integrity edge cases found during manual Funrize testing.
+  1) Closeout redemption creation now excludes soft-deleted purchases and uses
+  UTC-normalized cutoff timestamps when summing available remaining basis,
+  preventing inflated cost basis on sites with no active purchases.
+  2) Rebuild-from-boundary now excludes soft-deleted purchases and clears
+  derived rows (allocations + realized transactions) for all redemptions in the
+  rebuild window, including deleted/canceled rows, preventing stale entries from
+  persisting in Realized after cancel/delete test cycles. Realized tab queries
+  now explicitly filter out deleted/canceled redemptions as a presentation guard.
+  Added targeted regression tests for both cases.
+files_changed:
+  - services/redemption_service.py
+  - services/recalculation_service.py
+  - ui/tabs/realized_tab.py
+  - tests/integration/test_issue_143_redemption_cancel.py
+  - docs/status/CHANGELOG.md
+pr: 144
+```
+
+```yaml
 id: 2026-02-19-01
 type: feature
 areas: [redemptions, accounting, ui, notifications, reports]

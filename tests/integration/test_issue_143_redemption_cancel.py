@@ -262,3 +262,92 @@ def test_cancel_impact_summary_excludes_current_and_prior_activity(app):
     assert summary["later_purchases"] == 0
     assert summary["later_redemptions"] == 0
     assert summary["later_sessions"] == 0
+
+
+def test_full_redemption_ignores_soft_deleted_purchases_for_cost_basis(app):
+    user = app.create_user("Deleted Purchase User")
+    site = app.create_site("Funrize", sc_rate=1.0)
+
+    p1 = app.create_purchase(
+        user_id=user.id,
+        site_id=site.id,
+        amount=Decimal("500.00"),
+        purchase_date=date.today() - timedelta(days=5),
+        purchase_time="08:00:00",
+        sc_received=Decimal("500.00"),
+    )
+    p2 = app.create_purchase(
+        user_id=user.id,
+        site_id=site.id,
+        amount=Decimal("500.00"),
+        purchase_date=date.today() - timedelta(days=4),
+        purchase_time="09:00:00",
+        sc_received=Decimal("500.00"),
+    )
+    app.purchase_repo.delete(p1.id)
+    app.purchase_repo.delete(p2.id)
+
+    redemption = app.create_redemption(
+        user_id=user.id,
+        site_id=site.id,
+        amount=Decimal("100.00"),
+        redemption_date=date.today() - timedelta(days=1),
+        redemption_time="10:00:00",
+        apply_fifo=True,
+        more_remaining=False,
+    )
+
+    realized_row = app.db.fetch_one(
+        "SELECT cost_basis, payout, net_pl FROM realized_transactions WHERE redemption_id = ?",
+        (redemption.id,),
+    )
+    assert realized_row is not None
+    assert Decimal(str(realized_row["cost_basis"])) == Decimal("0.00")
+    assert Decimal(str(realized_row["payout"])) == Decimal("100.00")
+    assert Decimal(str(realized_row["net_pl"])) == Decimal("100.00")
+
+
+def test_rebuild_from_clears_stale_realized_for_deleted_and_canceled_redemptions(app):
+    user = app.create_user("Funrize Cleanup User")
+    site = app.create_site("Funrize Cleanup", sc_rate=1.0)
+
+    app.create_purchase(
+        user_id=user.id,
+        site_id=site.id,
+        amount=Decimal("200.00"),
+        purchase_date=date.today() - timedelta(days=5),
+        purchase_time="08:00:00",
+        sc_received=Decimal("200.00"),
+    )
+
+    r1 = app.create_redemption(
+        user_id=user.id,
+        site_id=site.id,
+        amount=Decimal("100.00"),
+        redemption_date=date.today() - timedelta(days=2),
+        redemption_time="10:00:00",
+        apply_fifo=True,
+        more_remaining=True,
+    )
+    r2 = app.create_redemption(
+        user_id=user.id,
+        site_id=site.id,
+        amount=Decimal("50.00"),
+        redemption_date=date.today() - timedelta(days=1),
+        redemption_time="11:00:00",
+        apply_fifo=True,
+        more_remaining=True,
+    )
+
+    app.delete_redemption(r1.id)
+    app.cancel_redemption(r2.id, reason="test cancel")
+
+    stale = app.db.fetch_one(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM realized_transactions
+        WHERE redemption_id IN (?, ?)
+        """,
+        (r1.id, r2.id),
+    )
+    assert int(stale["cnt"]) == 0
