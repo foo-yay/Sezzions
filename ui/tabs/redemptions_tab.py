@@ -2858,6 +2858,28 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         
         layout.addWidget(notes_section)
 
+        # ========== CANCELLATION REASON SECTION (Only if canceled) ==========
+        if getattr(self.redemption, "is_canceled", False) or getattr(self.redemption, "canceled_at", None):
+            reason_section, reason_layout = create_section("🚫 Cancellation Reason")
+            reason_value = (getattr(self.redemption, "canceled_reason", None) or "").strip()
+
+            if reason_value:
+                reason_display = QtWidgets.QTextEdit()
+                reason_display.setReadOnly(True)
+                reason_display.setPlainText(reason_value)
+                reason_display.setMaximumHeight(80)
+                reason_display.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+                reason_layout.addWidget(reason_display)
+            else:
+                reason_empty = QtWidgets.QLabel("—")
+                reason_empty.setObjectName("MutedLabel")
+                reason_font = reason_empty.font()
+                reason_font.setItalic(True)
+                reason_empty.setFont(reason_font)
+                reason_layout.addWidget(reason_empty)
+
+            layout.addWidget(reason_section)
+
         if self.adjustments or self.period_adjustments or self.period_boundary_checkpoints:
             adj_section, adj_layout = create_section("🧩 Adjustments & Checkpoints")
             total = len(self.period_adjustments) + len(self.period_boundary_checkpoints) + len(self.adjustments)

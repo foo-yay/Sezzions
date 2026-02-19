@@ -351,3 +351,54 @@ def test_rebuild_from_clears_stale_realized_for_deleted_and_canceled_redemptions
         (r1.id, r2.id),
     )
     assert int(stale["cnt"]) == 0
+
+
+def test_cancel_impact_summary_scoped_to_user_and_site_pair_only(app):
+    user_a = app.create_user("Scope User A")
+    user_b = app.create_user("Scope User B")
+    site = app.create_site("Scope Site", sc_rate=1.0)
+
+    target = app.create_redemption(
+        user_id=user_a.id,
+        site_id=site.id,
+        amount=Decimal("100.00"),
+        redemption_date=date.today() - timedelta(days=2),
+        redemption_time="10:00:00",
+        apply_fifo=False,
+        more_remaining=True,
+    )
+
+    # Later activity on same site but different user must NOT be counted.
+    app.create_purchase(
+        user_id=user_b.id,
+        site_id=site.id,
+        amount=Decimal("50.00"),
+        purchase_date=date.today() - timedelta(days=1),
+        purchase_time="11:00:00",
+        sc_received=Decimal("50.00"),
+    )
+    app.create_redemption(
+        user_id=user_b.id,
+        site_id=site.id,
+        amount=Decimal("25.00"),
+        redemption_date=date.today() - timedelta(days=1),
+        redemption_time="12:00:00",
+        apply_fifo=False,
+        more_remaining=True,
+    )
+    app.create_game_session(
+        user_id=user_b.id,
+        site_id=site.id,
+        game_id=None,
+        session_date=date.today() - timedelta(days=1),
+        session_time="13:00:00",
+        starting_balance=Decimal("100.0"),
+        ending_balance=Decimal("100.0"),
+        starting_redeemable=Decimal("100.0"),
+        ending_redeemable=Decimal("100.0"),
+    )
+
+    summary = app.get_redemption_cancel_impact_summary(target.id)
+    assert summary["later_purchases"] == 0
+    assert summary["later_redemptions"] == 0
+    assert summary["later_sessions"] == 0

@@ -81,5 +81,30 @@ def test_redemption_view_dialog_shows_cancel_button(qtbot, tmp_path):
         button_texts = [btn.text() for btn in dialog.findChildren(QPushButton)]
         assert "🚫 Cancel" in button_texts
         assert "🗑️ Delete" in button_texts
+
+        from PySide6.QtWidgets import QLabel
+        label_texts = [label.text() for label in dialog.findChildren(QLabel)]
+        assert "🚫 Cancellation Reason" not in label_texts
+    finally:
+        facade.db.close()
+
+
+def test_redemption_view_dialog_shows_cancellation_reason_when_canceled(qtbot, tmp_path):
+    _ = QApplication.instance() or QApplication([])
+    facade, redemption = _mk_facade(tmp_path)
+    try:
+        facade.cancel_redemption(redemption.id, reason="Operator canceled duplicate")
+        dialog = RedemptionViewDialog(
+            redemption=facade.get_redemption(redemption.id),
+            facade=facade,
+        )
+        qtbot.addWidget(dialog)
+
+        from PySide6.QtWidgets import QLabel, QTextEdit
+        label_texts = [label.text() for label in dialog.findChildren(QLabel)]
+        assert "🚫 Cancellation Reason" in label_texts
+
+        text_values = [widget.toPlainText() for widget in dialog.findChildren(QTextEdit)]
+        assert any("Operator canceled duplicate" in value for value in text_values)
     finally:
         facade.db.close()
