@@ -140,7 +140,19 @@ class RedemptionsTab(QtWidgets.QWidget):
         self.delete_btn.clicked.connect(self._delete_redemption)
         self.delete_btn.setVisible(False)
         toolbar.addWidget(self.delete_btn)
-        
+
+        self.mark_received_btn = QtWidgets.QPushButton("📬 Mark Received")
+        self.mark_received_btn.setToolTip("Set receipt date for selected redemption(s)")
+        self.mark_received_btn.clicked.connect(self._mark_received)
+        self.mark_received_btn.setVisible(False)
+        toolbar.addWidget(self.mark_received_btn)
+
+        self.mark_processed_btn = QtWidgets.QPushButton("✅ Mark Processed")
+        self.mark_processed_btn.setToolTip("Mark selected redemption(s) as processed")
+        self.mark_processed_btn.clicked.connect(self._mark_processed)
+        self.mark_processed_btn.setVisible(False)
+        toolbar.addWidget(self.mark_processed_btn)
+
         toolbar.addStretch()
 
         self.pending_filter_check = QtWidgets.QCheckBox("Pending")
@@ -560,6 +572,8 @@ class RedemptionsTab(QtWidgets.QWidget):
         self.view_btn.setVisible(len(selected_rows) == 1)
         self.edit_btn.setVisible(len(selected_rows) == 1)
         self.delete_btn.setVisible(len(selected_rows) > 0)
+        self.mark_received_btn.setVisible(len(selected_rows) > 0)
+        self.mark_processed_btn.setVisible(len(selected_rows) > 0)
         
         # Update spreadsheet stats bar
         if has_selection:
@@ -1057,6 +1071,58 @@ class RedemptionsTab(QtWidgets.QWidget):
         copy_headers_action.triggered.connect(self._copy_with_headers)
         
         menu.exec_(self.table.viewport().mapToGlobal(position))
+
+    def _mark_received(self):
+        """Open Mark Received dialog and bulk-set receipt_date for selected rows."""
+        ids = self._get_selected_redemption_ids()
+        if not ids:
+            return
+
+        dialog = MarkReceivedDialog(parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+
+        receipt_date = dialog.get_receipt_date()
+        # receipt_date may be None (Clear was used)
+        count = len(ids)
+        try:
+            self.facade.bulk_update_redemption_metadata(ids, receipt_date=receipt_date)
+            self.refresh_data()
+            self.table.clearSelection()
+            self._on_selection_changed()
+            if hasattr(self, "main_window") and self.main_window is not None:
+                # Refresh notification bell after dismissals
+                if hasattr(self.main_window, "_refresh_notification_badge"):
+                    self.main_window._refresh_notification_badge()
+            if receipt_date is not None:
+                msg = (
+                    f"Receipt date set to {receipt_date.strftime('%m/%d/%y')} "
+                    f"for {count} redemption(s)."
+                )
+            else:
+                msg = f"Receipt date cleared for {count} redemption(s)."
+            QtWidgets.QMessageBox.information(self, "Mark Received", msg)
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Error", f"Failed to update:\n{str(e)}")
+
+    def _mark_processed(self):
+        """Bulk-set processed=True for all selected rows."""
+        ids = self._get_selected_redemption_ids()
+        if not ids:
+            return
+
+        count = len(ids)
+        try:
+            self.facade.bulk_update_redemption_metadata(ids, processed=True)
+            self.refresh_data()
+            self.table.clearSelection()
+            self._on_selection_changed()
+            QtWidgets.QMessageBox.information(
+                self, "Mark Processed",
+                f"{count} redemption(s) marked as processed."
+            )
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Error", f"Failed to update:\n{str(e)}")
 
     def _export_csv(self):
         """Export redemptions to CSV"""
@@ -3083,3 +3149,151 @@ class RedemptionViewDialog(QtWidgets.QDialog):
             self.accept()
             main_window.open_realized_by_redemption(redemption_id)
             return
+
+
+class MarkReceivedDialog(QtWidgets.QDialog):
+    """
+    Dialog for bulk-setting the Receipt Date on selected redemptions.
+
+    Mirrors the date-picker style used in RedemptionDialog:
+    - QLineEdit (MM/DD/YY) + 📅 calendar button + Today button
+    - Cancel / Clear / Save buttons styled per app theme
+    - Clear sets receipt_date to None (clears existing date)
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Mark Received — Set Receipt Date")
+        self.setMinimumWidth(360)
+        self._result_date: Optional[date] = None
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+
+        # --- Section header ---
+        header = QtWidgets.QLabel("📬  Set Receipt Date")
+        header.setObjectName("SectionHeader")
+        header.setStyleSheet("font-size: 15px; font-weight: bold;")
+        layout.addWidget(header)
+
+        # --- Info label ---
+        info = QtWidgets.QLabel(
+            "Enter the date the redemption(s) were received.\n"
+            "Leave blank and click Save to set today's date."
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet("color: #888; font-style: italic;")
+        layout.addWidget(info)
+
+        # --- Date row ---
+        date_section = QtWidgets.QWidget()
+        date_section.setObjectName("SectionBackground")
+        date_layout_outer = QtWidgets.QVBoxLayout(date_section)
+        date_layout_outer.setContentsMargins(12, 10, 12, 10)
+
+        date_row = QtWidgets.QHBoxLayout()
+        date_row.setSpacing(6)
+
+        date_label = QtWidgets.QLabel("Receipt Date:")
+        date_label.setObjectName("FieldLabel")
+        date_row.addWidget(date_label)
+
+        self.date_edit = QtWidgets.QLineEdit()
+        self.date_edit.setPlaceholderText("MM/DD/YY")
+        self.date_edit.setFixedWidth(110)
+        # Default to today
+        self.date_edit.setText(date.today().strftime("%m/%d/%y"))
+        date_row.addWidget(self.date_edit)
+
+        cal_btn = QtWidgets.QPushButton("📅")
+        cal_btn.setFixedWidth(44)
+        cal_btn.setToolTip("Open calendar picker")
+        cal_btn.clicked.connect(self._pick_date)
+        date_row.addWidget(cal_btn)
+
+        today_btn = QtWidgets.QPushButton("Today")
+        today_btn.clicked.connect(self._set_today)
+        date_row.addWidget(today_btn)
+
+        date_row.addStretch()
+        date_layout_outer.addLayout(date_row)
+        layout.addWidget(date_section)
+
+        layout.addStretch()
+
+        # --- Action buttons ---
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch()
+
+        cancel_btn = QtWidgets.QPushButton("✖️ Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        clear_btn = QtWidgets.QPushButton("🧹 Clear")
+        clear_btn.setToolTip("Clear receipt date (set to blank)")
+        clear_btn.clicked.connect(self._on_clear)
+        btn_row.addWidget(clear_btn)
+
+        save_btn = QtWidgets.QPushButton("💾 Save")
+        save_btn.setObjectName("PrimaryButton")
+        save_btn.setDefault(True)
+        save_btn.clicked.connect(self._on_save)
+        btn_row.addWidget(save_btn)
+
+        layout.addLayout(btn_row)
+
+    # ------------------------------------------------------------------
+    def _pick_date(self):
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Select Date")
+        cal_layout = QtWidgets.QVBoxLayout(dialog)
+        calendar = QtWidgets.QCalendarWidget()
+        calendar.setSelectedDate(QtCore.QDate.currentDate())
+        # Pre-load existing value if parseable
+        existing = parse_date_input(self.date_edit.text().strip())
+        if existing:
+            calendar.setSelectedDate(
+                QtCore.QDate(existing.year, existing.month, existing.day)
+            )
+        cal_layout.addWidget(calendar)
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        ok_btn = QtWidgets.QPushButton("Select")
+        cancel_cal_btn = QtWidgets.QPushButton("✖️ Cancel")
+        btn_row.addWidget(cancel_cal_btn)
+        btn_row.addWidget(ok_btn)
+        cal_layout.addLayout(btn_row)
+        cancel_cal_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            self.date_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+
+    def _set_today(self):
+        self.date_edit.setText(date.today().strftime("%m/%d/%y"))
+
+    def _on_save(self):
+        text = self.date_edit.text().strip()
+        if text:
+            parsed = parse_date_input(text)
+            if parsed is None:
+                QtWidgets.QMessageBox.warning(
+                    self, "Invalid Date",
+                    f"Cannot parse date: '{text}'\nUse MM/DD/YY format."
+                )
+                return
+            self._result_date = parsed
+        else:
+            # Blank field → default to today
+            self._result_date = date.today()
+        self.accept()
+
+    def _on_clear(self):
+        """Clear sets receipt_date = None."""
+        self._result_date = None
+        self.accept()
+
+    def get_receipt_date(self) -> Optional[date]:
+        """Returns the chosen date, or None if Clear was used."""
+        return self._result_date
+

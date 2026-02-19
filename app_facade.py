@@ -4,6 +4,7 @@ AppFacade - Unified interface for Qt application to access OOP backend services
 This facade provides a single entry point for the Qt UI to interact with
 all backend services while maintaining backward compatibility during migration.
 """
+from dataclasses import asdict
 from decimal import Decimal
 from datetime import date, datetime
 from typing import Optional, List, Dict, Any, Tuple, Callable
@@ -1533,7 +1534,129 @@ class AppFacade:
                 updated.user_id,
             )
         return updated
-    
+
+    def bulk_update_redemption_metadata(
+        self,
+        redemption_ids: List[int],
+        *,
+        receipt_date: Optional[date] = ...,  # type: ignore[assignment]
+        processed: Optional[bool] = ...,     # type: ignore[assignment]
+    ) -> int:
+        """Update receipt_date and/or processed flag for multiple redemptions in one transaction.
+
+        This is a pure metadata update — no FIFO rebuild, no session recalculation,
+        no game_session_event_link rebuild.  Only receipt_date and processed fields
+        are allowed.
+
+        Args:
+            redemption_ids: List of redemption IDs to update.
+            receipt_date: If provided (including None), sets receipt_date for all rows.
+                          Pass the sentinel Ellipsis (default) to leave the field unchanged.
+            processed: If provided (True/False), sets processed for all rows.
+                       Pass the sentinel Ellipsis (default) to leave the field unchanged.
+
+        Returns:
+            Number of rows updated.
+        """
+        _UNSET = ...  # sentinel
+
+        if not redemption_ids:
+            return 0
+
+        set_receipt = receipt_date is not _UNSET
+        set_processed = processed is not _UNSET
+
+        if not set_receipt and not set_processed:
+            return 0
+
+        # Build human-readable description for the undo stack
+        n = len(redemption_ids)
+        noun = "redemption" if n == 1 else "redemptions"
+        if set_receipt and set_processed:
+            _description = f"Bulk update {n} {noun} (receipt date + processed)"
+        elif set_receipt:
+            if receipt_date is None:
+                _description = f"Bulk clear receipt date for {n} {noun}"
+            else:
+                _description = f"Bulk mark {n} {noun} received"
+        else:
+            _description = f"Bulk mark {n} {noun} processed"
+
+        # Snapshot old state for each record BEFORE the SQL update.
+        # Skip IDs that no longer exist so we only audit rows we actually touch.
+        old_snapshots: Dict[int, Dict[str, Any]] = {}
+        for rid in redemption_ids:
+            r = self.redemption_repo.get_by_id(rid)
+            if r is not None:
+                old_snapshots[rid] = asdict(r)
+
+        # Generate one group_id shared across all rows in this bulk op
+        group_id = self.audit_service.generate_group_id() if hasattr(self, "audit_service") else None
+
+        with self.db.transaction():
+            placeholders = ",".join("?" * len(redemption_ids))
+
+            if set_receipt and set_processed:
+                receipt_val = receipt_date.isoformat() if receipt_date is not None else None
+                processed_val = 1 if processed else 0
+                query = (
+                    f"UPDATE redemptions SET receipt_date = ?, processed = ?, "
+                    f"updated_at = CURRENT_TIMESTAMP "
+                    f"WHERE id IN ({placeholders}) AND deleted_at IS NULL"
+                )
+                params = [receipt_val, processed_val, *redemption_ids]
+            elif set_receipt:
+                receipt_val = receipt_date.isoformat() if receipt_date is not None else None
+                query = (
+                    f"UPDATE redemptions SET receipt_date = ?, "
+                    f"updated_at = CURRENT_TIMESTAMP "
+                    f"WHERE id IN ({placeholders}) AND deleted_at IS NULL"
+                )
+                params = [receipt_val, *redemption_ids]
+            else:
+                processed_val = 1 if processed else 0
+                query = (
+                    f"UPDATE redemptions SET processed = ?, "
+                    f"updated_at = CURRENT_TIMESTAMP "
+                    f"WHERE id IN ({placeholders}) AND deleted_at IS NULL"
+                )
+                params = [processed_val, *redemption_ids]
+
+            self.db.execute(query, tuple(params))
+
+            # Log one audit UPDATE entry per affected row (all share the same group_id)
+            if group_id and hasattr(self, "audit_service"):
+                for rid, old_data in old_snapshots.items():
+                    new_data = dict(old_data)
+                    if set_receipt:
+                        new_data["receipt_date"] = receipt_date
+                    if set_processed:
+                        new_data["processed"] = processed
+                    self.audit_service.log_update(
+                        "redemptions",
+                        rid,
+                        old_data,
+                        new_data,
+                        group_id=group_id,
+                        auto_commit=False,
+                    )
+
+        # Push one undoable operation onto the undo stack (covers all rows)
+        if group_id and hasattr(self, "undo_redo_service"):
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=_description,
+                timestamp=datetime.now().isoformat(),
+            )
+
+        # Dismiss pending-receipt notifications for any rows that now have a receipt_date
+        if set_receipt and receipt_date is not None:
+            if hasattr(self, "notification_rules_service"):
+                for rid in redemption_ids:
+                    self.notification_rules_service.on_redemption_received(rid)
+
+        return len(redemption_ids)
+
     def delete_redemption(self, redemption_id: int) -> None:
         """Delete redemption (reverses FIFO if allocated)."""
         redemption = self.redemption_repo.get_by_id(redemption_id)

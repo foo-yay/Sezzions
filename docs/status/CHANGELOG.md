@@ -12,6 +12,37 @@ Rules:
 ## 2026-02-18
 
 ```yaml
+id: 2026-02-18-02
+type: feature
+areas: [ui, redemptions, services]
+issue: 141
+summary: "Bulk Mark Received / Mark Processed actions for Redemptions"
+details: >
+  Redemptions tab now shows two context-sensitive toolbar buttons (Mark Received,
+  Mark Processed) whenever one or more rows are selected. Mark Received opens a
+  themed dialog with a date-picker, Today shortcut, and Cancel/Clear/Save options
+  so the user can stamp or clear receipt_date on all selected redemptions at once.
+  Mark Processed sets the processed flag to True on all selected rows in a single
+  transaction. A new AppFacade method (bulk_update_redemption_metadata) performs
+  a direct SQL UPDATE with an IN clause, skipping all FIFO/session recalculation
+  and link-rebuild work. Pending-receipt notification dismissal is preserved:
+  on_redemption_received() is still called per ID when receipt_date is set.
+  Undo/redo supported: one audit UPDATE entry per row shares a group_id, and one
+  UndoRedoService.push_operation is pushed so Ctrl+Z reverts all rows atomically.
+  After save the table selection is cleared and buttons are hidden immediately.
+  15 integration tests cover happy-path, field isolation, edge cases (empty list
+  no-op), failure injection (no rebuild called), notification behavior, undo stack
+  presence, and full undo revert for both receipt_date and processed.
+files_changed:
+  - app_facade.py
+  - ui/tabs/redemptions_tab.py
+  - tests/integration/test_issue_141_bulk_metadata.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+pr: 142
+```
+
+```yaml
 id: 2026-02-18-01
 type: enhancement
 areas: [ui, expenses]
