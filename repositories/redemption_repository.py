@@ -172,9 +172,12 @@ class RedemptionRepository:
             SET user_id = ?, site_id = ?, amount = ?, fees = ?, redemption_date = ?, 
                 redemption_time = ?, redemption_entry_time_zone = ?, redemption_method_id = ?, is_free_sc = ?,
                 receipt_date = ?, processed = ?, more_remaining = ?,
-                notes = ?, updated_at = CURRENT_TIMESTAMP
+                notes = ?, canceled_at = ?, canceled_reason = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """
+        canceled_at = redemption.canceled_at
+        if hasattr(canceled_at, "isoformat"):
+            canceled_at = canceled_at.isoformat(sep=" ")
         self.db.execute(query, (
             redemption.user_id,
             redemption.site_id,
@@ -189,6 +192,8 @@ class RedemptionRepository:
             1 if redemption.processed else 0,
             1 if redemption.more_remaining else 0,
             redemption.notes,
+            canceled_at,
+            redemption.canceled_reason,
             redemption.id
         ))
         redemption.redemption_entry_time_zone = entry_tz
@@ -235,6 +240,8 @@ class RedemptionRepository:
             more_remaining=bool(row['more_remaining']) if 'more_remaining' in row.keys() else False,
             is_free_sc=bool(row['is_free_sc']) if 'is_free_sc' in row.keys() else False,
             notes=row['notes'] if 'notes' in row.keys() else None,
+            canceled_at=row['canceled_at'] if 'canceled_at' in row.keys() else None,
+            canceled_reason=row['canceled_reason'] if 'canceled_reason' in row.keys() else None,
             created_at=row['created_at'] if 'created_at' in row.keys() else None,
             updated_at=row['updated_at'] if 'updated_at' in row.keys() else None
         )

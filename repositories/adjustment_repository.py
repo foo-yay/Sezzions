@@ -394,6 +394,7 @@ class AdjustmentRepository:
             SELECT COUNT(1) AS cnt
             FROM redemptions
             WHERE deleted_at IS NULL
+                            AND canceled_at IS NULL
               AND user_id = ? AND site_id = ?
               AND (
                     redemption_date > ? OR

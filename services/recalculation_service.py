@@ -117,7 +117,7 @@ class RecalculationService:
             """
             SELECT DISTINCT user_id, site_id FROM purchases
             UNION
-            SELECT DISTINCT user_id, site_id FROM redemptions WHERE deleted_at IS NULL
+            SELECT DISTINCT user_id, site_id FROM redemptions WHERE deleted_at IS NULL AND canceled_at IS NULL
             UNION
             SELECT DISTINCT user_id, site_id FROM game_sessions
             UNION
@@ -231,7 +231,7 @@ class RecalculationService:
                  SELECT id, amount, redemption_date, COALESCE(redemption_time,'00:00:00') AS rt,
                      COALESCE(is_free_sc, 0) AS is_free_sc, COALESCE(more_remaining, 0) AS more_remaining, notes
             FROM redemptions
-            WHERE user_id = ? AND site_id = ? AND deleted_at IS NULL
+            WHERE user_id = ? AND site_id = ? AND deleted_at IS NULL AND canceled_at IS NULL
             ORDER BY redemption_date ASC, COALESCE(redemption_time,'00:00:00') ASC, id ASC
             """,
             (user_id, site_id),
@@ -427,6 +427,8 @@ class RecalculationService:
             FROM redemption_allocations ra
             JOIN redemptions r ON ra.redemption_id = r.id
             WHERE r.user_id = ? AND r.site_id = ?
+                            AND r.deleted_at IS NULL
+                            AND r.canceled_at IS NULL
               AND (r.redemption_date < ?
                    OR (r.redemption_date = ? AND COALESCE(r.redemption_time,'00:00:00') < ?))
             """,
@@ -444,7 +446,7 @@ class RecalculationService:
             SELECT id, amount, redemption_date, COALESCE(redemption_time,'00:00:00') AS rt,
                    COALESCE(is_free_sc, 0) AS is_free_sc, COALESCE(more_remaining, 0) AS more_remaining, notes
                         FROM redemptions
-                        WHERE user_id = ? AND site_id = ? AND deleted_at IS NULL
+                            WHERE user_id = ? AND site_id = ? AND deleted_at IS NULL AND canceled_at IS NULL
               AND (redemption_date > ?
                    OR (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') >= ?))
             ORDER BY redemption_date ASC, COALESCE(redemption_time,'00:00:00') ASC, id ASC

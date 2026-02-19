@@ -279,6 +279,8 @@ class AppFacade:
             try:
                 if bool(getattr(r, "more_remaining", False)):
                     continue
+                if bool(getattr(r, "is_canceled", False)):
+                    continue
                 r_time = self._normalize_time(getattr(r, "redemption_time", None))
                 r_dt = self._to_dt(r.redemption_date, r_time)
             except Exception:
@@ -310,6 +312,8 @@ class AppFacade:
         for r in redemptions:
             try:
                 if bool(getattr(r, "more_remaining", False)):
+                    continue
+                if bool(getattr(r, "is_canceled", False)):
                     continue
                 r_time = self._normalize_time(getattr(r, "redemption_time", None))
                 out.append(self._to_dt(r.redemption_date, r_time))
@@ -1587,8 +1591,11 @@ class AppFacade:
         old_snapshots: Dict[int, Dict[str, Any]] = {}
         for rid in redemption_ids:
             r = self.redemption_repo.get_by_id(rid)
-            if r is not None:
+            if r is not None and not getattr(r, "is_canceled", False):
                 old_snapshots[rid] = asdict(r)
+
+        if not old_snapshots:
+            return 0
 
         # Generate one group_id shared across all rows in this bulk op
         group_id = self.audit_service.generate_group_id() if hasattr(self, "audit_service") else None
@@ -1602,7 +1609,7 @@ class AppFacade:
                 query = (
                     f"UPDATE redemptions SET receipt_date = ?, processed = ?, "
                     f"updated_at = CURRENT_TIMESTAMP "
-                    f"WHERE id IN ({placeholders}) AND deleted_at IS NULL"
+                    f"WHERE id IN ({placeholders}) AND deleted_at IS NULL AND canceled_at IS NULL"
                 )
                 params = [receipt_val, processed_val, *redemption_ids]
             elif set_receipt:
@@ -1610,7 +1617,7 @@ class AppFacade:
                 query = (
                     f"UPDATE redemptions SET receipt_date = ?, "
                     f"updated_at = CURRENT_TIMESTAMP "
-                    f"WHERE id IN ({placeholders}) AND deleted_at IS NULL"
+                    f"WHERE id IN ({placeholders}) AND deleted_at IS NULL AND canceled_at IS NULL"
                 )
                 params = [receipt_val, *redemption_ids]
             else:
@@ -1618,7 +1625,7 @@ class AppFacade:
                 query = (
                     f"UPDATE redemptions SET processed = ?, "
                     f"updated_at = CURRENT_TIMESTAMP "
-                    f"WHERE id IN ({placeholders}) AND deleted_at IS NULL"
+                    f"WHERE id IN ({placeholders}) AND deleted_at IS NULL AND canceled_at IS NULL"
                 )
                 params = [processed_val, *redemption_ids]
 
@@ -1652,10 +1659,190 @@ class AppFacade:
         # Dismiss pending-receipt notifications for any rows that now have a receipt_date
         if set_receipt and receipt_date is not None:
             if hasattr(self, "notification_rules_service"):
-                for rid in redemption_ids:
+                for rid in old_snapshots.keys():
                     self.notification_rules_service.on_redemption_received(rid)
 
-        return len(redemption_ids)
+        return len(old_snapshots)
+
+    def get_redemption_cancel_impact_summary(self, redemption_id: int) -> Dict[str, int]:
+        redemption = self.redemption_repo.get_by_id(redemption_id)
+        if not redemption:
+            raise ValueError(f"Redemption {redemption_id} not found")
+
+        date_str = redemption.redemption_date.isoformat()
+        time_str = self._normalize_time(redemption.redemption_time)
+        params = (redemption.user_id, redemption.site_id, date_str, date_str, time_str)
+
+        purchases = self.db.fetch_one(
+            """
+            SELECT COUNT(1) AS cnt
+            FROM purchases
+            WHERE deleted_at IS NULL
+              AND user_id = ? AND site_id = ?
+              AND (
+                    purchase_date > ? OR
+                    (purchase_date = ? AND COALESCE(purchase_time, '00:00:00') > ?)
+                  )
+            """,
+            params,
+        )
+        later_redemptions = self.db.fetch_one(
+            """
+            SELECT COUNT(1) AS cnt
+            FROM redemptions
+            WHERE deleted_at IS NULL
+              AND canceled_at IS NULL
+              AND user_id = ? AND site_id = ?
+              AND (
+                    redemption_date > ? OR
+                    (redemption_date = ? AND COALESCE(redemption_time, '00:00:00') > ?)
+                  )
+            """,
+            params,
+        )
+        sessions = self.db.fetch_one(
+            """
+            SELECT COUNT(1) AS cnt
+            FROM game_sessions
+            WHERE deleted_at IS NULL
+              AND user_id = ? AND site_id = ?
+              AND (
+                    COALESCE(end_date, session_date) > ? OR
+                    (
+                      COALESCE(end_date, session_date) = ?
+                      AND COALESCE(end_time, session_time, '00:00:00') > ?
+                    )
+                  )
+            """,
+            params,
+        )
+
+        return {
+            "later_purchases": int((purchases or {}).get("cnt") or 0),
+            "later_redemptions": int((later_redemptions or {}).get("cnt") or 0),
+            "later_sessions": int((sessions or {}).get("cnt") or 0),
+        }
+
+    def cancel_redemption(self, redemption_id: int, reason: Optional[str] = None) -> Redemption:
+        redemption = self.redemption_repo.get_by_id(redemption_id)
+        if not redemption:
+            raise ValueError(f"Redemption {redemption_id} not found")
+        if redemption.is_canceled:
+            raise ValueError("Redemption is already canceled")
+
+        old_data = asdict(redemption)
+        cancel_reason = (reason or "").strip() or None
+        group_id = self.audit_service.generate_group_id()
+
+        with self.db.transaction():
+            allocations = self.redemption_service._get_allocations(redemption_id)
+            if allocations:
+                self.fifo_service.reverse_allocation(allocations)
+                self.redemption_service._delete_allocations(redemption_id)
+                self.redemption_service._delete_realized_transaction(redemption_id)
+
+            self.db.execute_no_commit(
+                """
+                UPDATE redemptions
+                SET canceled_at = CURRENT_TIMESTAMP,
+                    canceled_reason = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND deleted_at IS NULL AND canceled_at IS NULL
+                """,
+                (cancel_reason, redemption_id),
+            )
+
+            new_row = self.redemption_repo.get_by_id(redemption_id)
+            new_data = asdict(new_row) if new_row else dict(old_data)
+
+            self.audit_service.log_update(
+                "redemptions",
+                redemption_id,
+                old_data,
+                new_data,
+                group_id=group_id,
+                auto_commit=False,
+            )
+
+        self.undo_redo_service.push_operation(
+            group_id=group_id,
+            description=f"Cancel redemption #{redemption_id}",
+            timestamp=datetime.now().isoformat(),
+        )
+
+        self.notification_rules_service.on_redemption_received(redemption_id)
+
+        boundary_date, boundary_time = self._containing_boundary(
+            redemption.site_id,
+            redemption.user_id,
+            redemption.redemption_date,
+            redemption.redemption_time,
+        )
+        self._rebuild_or_mark_stale(
+            redemption.user_id,
+            redemption.site_id,
+            boundary_date,
+            boundary_time,
+            reason="redemption cancel",
+        )
+
+        return self.redemption_repo.get_by_id(redemption_id)
+
+    def uncancel_redemption(self, redemption_id: int) -> Redemption:
+        redemption = self.redemption_repo.get_by_id(redemption_id)
+        if not redemption:
+            raise ValueError(f"Redemption {redemption_id} not found")
+        if not redemption.is_canceled:
+            raise ValueError("Redemption is not canceled")
+
+        old_data = asdict(redemption)
+        group_id = self.audit_service.generate_group_id()
+
+        with self.db.transaction():
+            self.db.execute_no_commit(
+                """
+                UPDATE redemptions
+                SET canceled_at = NULL,
+                    canceled_reason = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND deleted_at IS NULL
+                """,
+                (redemption_id,),
+            )
+
+            new_row = self.redemption_repo.get_by_id(redemption_id)
+            new_data = asdict(new_row) if new_row else dict(old_data)
+
+            self.audit_service.log_update(
+                "redemptions",
+                redemption_id,
+                old_data,
+                new_data,
+                group_id=group_id,
+                auto_commit=False,
+            )
+
+        self.undo_redo_service.push_operation(
+            group_id=group_id,
+            description=f"Uncancel redemption #{redemption_id}",
+            timestamp=datetime.now().isoformat(),
+        )
+
+        boundary_date, boundary_time = self._containing_boundary(
+            redemption.site_id,
+            redemption.user_id,
+            redemption.redemption_date,
+            redemption.redemption_time,
+        )
+        self._rebuild_or_mark_stale(
+            redemption.user_id,
+            redemption.site_id,
+            boundary_date,
+            boundary_time,
+            reason="redemption uncancel",
+        )
+
+        return self.redemption_repo.get_by_id(redemption_id)
 
     def delete_redemption(self, redemption_id: int) -> None:
         """Delete redemption (reverses FIFO if allocated)."""

@@ -9,6 +9,51 @@ Rules:
 
 ---
 
+## 2026-02-19
+
+```yaml
+id: 2026-02-19-01
+type: feature
+areas: [redemptions, accounting, ui, notifications, reports]
+issue: 143
+summary: "Add reversible canceled status for redemptions with scoped rebuild and UI controls"
+details: >
+  Added a soft canceled status for redemptions (`canceled_at`, `canceled_reason`) that
+  voids accounting impact as-if the redemption never happened while preserving history.
+  AppFacade now supports `cancel_redemption`, `uncancel_redemption`, and a downstream
+  impact summary API used by the UI confirmation flow. Cancel reverses allocations/
+  realized rows for the redemption and triggers a scoped rebuild from the containing
+  boundary; uncancel clears canceled fields and rebuilds similarly. Both operations are
+  grouped for audit and undo/redo. Redemptions tab now includes cancel/uncancel action
+  wiring and skips canceled rows for bulk Mark Received / Mark Processed metadata updates.
+  View Redemption dialog now exposes a Cancel action button, and CRUD toolbar labels were
+  compacted to `View/Edit/Delete` across key tabs while preserving full Add labels.
+  Query/report/notification paths were updated to exclude canceled redemptions.
+  Added integration coverage for cancel/uncancel accounting behavior, undo/redo,
+  notification dismissal, bulk-metadata exclusion, downstream impact counts, rollback
+  behavior, and compact label/view-dialog expectations.
+files_changed:
+  - app_facade.py
+  - models/redemption.py
+  - repositories/database.py
+  - repositories/redemption_repository.py
+  - repositories/unrealized_position_repository.py
+  - repositories/adjustment_repository.py
+  - services/recalculation_service.py
+  - services/report_service.py
+  - services/notification_rules_service.py
+  - services/game_session_event_link_service.py
+  - services/game_session_service.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/purchases_tab.py
+  - ui/tabs/game_sessions_tab.py
+  - tests/integration/test_issue_143_redemption_cancel.py
+  - tests/integration/test_issue_143_crud_action_labels.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
 ## 2026-02-18
 
 ```yaml

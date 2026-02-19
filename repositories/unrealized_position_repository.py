@@ -34,6 +34,7 @@ class UnrealizedPositionRepository:
             JOIN purchases p ON p.id = ra.purchase_id
             WHERE r.site_id = ? AND r.user_id = ?
               AND r.deleted_at IS NULL
+                            AND r.canceled_at IS NULL
               AND r.is_free_sc = 0
               AND CAST(ra.allocated_amount AS REAL) > 0
               AND p.deleted_at IS NULL
@@ -43,6 +44,7 @@ class UnrealizedPositionRepository:
                   FROM redemptions r2
                   WHERE r2.site_id = ? AND r2.user_id = ?
                     AND r2.deleted_at IS NULL
+                                        AND r2.canceled_at IS NULL
                     AND r2.is_free_sc = 0
                     AND EXISTS (
                         SELECT 1 FROM redemption_allocations ra2
@@ -94,7 +96,7 @@ class UnrealizedPositionRepository:
                 UNION
                 SELECT site_id, user_id FROM game_sessions WHERE deleted_at IS NULL
                 UNION
-                SELECT site_id, user_id FROM redemptions WHERE deleted_at IS NULL
+                SELECT site_id, user_id FROM redemptions WHERE deleted_at IS NULL AND canceled_at IS NULL
             ) combined
         """
         
@@ -274,6 +276,7 @@ class UnrealizedPositionRepository:
                     FROM redemptions
                     WHERE site_id = ? AND user_id = ?
                       AND deleted_at IS NULL
+                                            AND canceled_at IS NULL
                       AND (
                           redemption_date > ?
                           OR (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') > ?)
@@ -291,6 +294,7 @@ class UnrealizedPositionRepository:
                     FROM redemptions
                     WHERE site_id = ? AND user_id = ?
                       AND deleted_at IS NULL
+                                            AND canceled_at IS NULL
                       AND is_free_sc = 0
                       AND (
                           redemption_date > ?
@@ -338,6 +342,7 @@ class UnrealizedPositionRepository:
                         FROM redemptions
                         WHERE site_id = ? AND user_id = ?
                           AND deleted_at IS NULL
+                                                    AND canceled_at IS NULL
                         ORDER BY redemption_date DESC, COALESCE(redemption_time,'00:00:00') DESC, id DESC
                         LIMIT 1
                     """
@@ -459,6 +464,7 @@ class UnrealizedPositionRepository:
             FROM redemptions
             WHERE site_id = ? AND user_id = ?
                             AND deleted_at IS NULL
+                            AND canceled_at IS NULL
               AND CAST(amount AS REAL) = 0
               AND notes LIKE 'Balance Closed%'
             ORDER BY redemption_date DESC, COALESCE(redemption_time,'00:00:00') DESC, id DESC
@@ -472,6 +478,7 @@ class UnrealizedPositionRepository:
             FROM redemptions
             WHERE site_id = ? AND user_id = ?
                             AND deleted_at IS NULL
+                            AND canceled_at IS NULL
               AND more_remaining IS NOT NULL
               AND more_remaining = 0
             ORDER BY redemption_date DESC, COALESCE(redemption_time,'00:00:00') DESC, id DESC

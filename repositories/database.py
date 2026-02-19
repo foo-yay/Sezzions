@@ -232,6 +232,8 @@ class DatabaseManager:
                 receipt_date TEXT,
                 processed INTEGER DEFAULT 0,
                 more_remaining INTEGER DEFAULT 0,
+                canceled_at TIMESTAMP NULL,
+                canceled_reason TEXT,
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP,
@@ -515,6 +517,7 @@ class DatabaseManager:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_redemptions_site_user ON redemptions(site_id, user_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_redemptions_date ON redemptions(redemption_date, redemption_time)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_redemptions_deleted ON redemptions(deleted_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_redemptions_canceled ON redemptions(canceled_at)')
         
         # Redemption allocations indexes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_allocations_redemption ON redemption_allocations(redemption_id)')
@@ -762,6 +765,8 @@ class DatabaseManager:
             ("receipt_date", "TEXT"),
             ("processed", "INTEGER DEFAULT 0"),
             ("more_remaining", "INTEGER DEFAULT 0"),
+            ("canceled_at", "TIMESTAMP NULL"),
+            ("canceled_reason", "TEXT"),
             ("deleted_at", "TIMESTAMP NULL"),
             ("redemption_entry_time_zone", "TEXT"),
         ]

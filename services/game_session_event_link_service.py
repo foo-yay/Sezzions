@@ -98,6 +98,8 @@ class GameSessionEventLinkService:
             SELECT id, redemption_date, COALESCE(redemption_time, '00:00:00') as redemption_time
             FROM redemptions
             WHERE site_id = ? AND user_id = ?
+                            AND deleted_at IS NULL
+                            AND canceled_at IS NULL
               AND redemption_date IS NOT NULL
             ORDER BY redemption_date ASC, COALESCE(redemption_time, '00:00:00') ASC, id ASC
             """,
@@ -260,6 +262,8 @@ class GameSessionEventLinkService:
             SELECT id, redemption_date, COALESCE(redemption_time, '00:00:00') as redemption_time
             FROM redemptions
             WHERE site_id = ? AND user_id = ?
+                            AND deleted_at IS NULL
+                            AND canceled_at IS NULL
               AND redemption_date IS NOT NULL
               AND (redemption_date > ? OR (redemption_date = ? AND COALESCE(redemption_time, '00:00:00') > ?))
             ORDER BY redemption_date ASC, COALESCE(redemption_time, '00:00:00') ASC, id ASC
@@ -345,7 +349,7 @@ class GameSessionEventLinkService:
             """
             SELECT DISTINCT user_id, site_id FROM purchases
             UNION
-            SELECT DISTINCT user_id, site_id FROM redemptions
+            SELECT DISTINCT user_id, site_id FROM redemptions WHERE deleted_at IS NULL AND canceled_at IS NULL
             UNION
             SELECT DISTINCT user_id, site_id FROM game_sessions
             """

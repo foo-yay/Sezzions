@@ -141,7 +141,7 @@ class NotificationRulesService:
     def evaluate_redemption_pending_rules(self):
         """Evaluate redemption pending-receipt notification rules"""
         # Get threshold from settings (default 7 days)
-        settings_data = self.settings.settings
+        settings_data = getattr(self.settings, 'settings', {}) if self.settings is not None else {}
         threshold_days = settings_data.get('redemption_pending_receipt_threshold_days', 7)
         
         if threshold_days <= 0:
@@ -161,6 +161,8 @@ class NotificationRulesService:
             JOIN users u ON r.user_id = u.id
             JOIN sites s ON r.site_id = s.id
             WHERE r.receipt_date IS NULL
+                            AND r.deleted_at IS NULL
+                            AND r.canceled_at IS NULL
                             AND (
                                         r.redemption_date < ?
                                         OR (r.redemption_date = ? AND COALESCE(r.redemption_time, '00:00:00') <= ?)
@@ -246,4 +248,9 @@ class NotificationRulesService:
     
     def on_redemption_received(self, redemption_id: int):
         """Called when a redemption is marked as received. Dismisses pending notification."""
-        self.notification_service.dismiss_by_type('redemption_pending_receipt', subject_id=str(redemption_id))
+        notification = self.notification_service.notification_repo.get_by_composite_key(
+            'redemption_pending_receipt',
+            subject_id=str(redemption_id),
+        )
+        if notification and not notification.is_deleted:
+            self.notification_service.delete(notification.id)

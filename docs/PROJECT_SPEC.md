@@ -583,8 +583,8 @@ In addition to date/search/header filters, key tabs provide persistent one-click
 
 - **Redemptions tab**: `Pending`, `Unprocessed`
   - Placement: immediately left of `📤 Export CSV`
-  - `Pending`: receipt not recorded (`receipt_date` empty/NULL)
-  - `Unprocessed`: `processed == False`
+  - `Pending`: receipt not recorded (`receipt_date` empty/NULL) **and redemption is not canceled**
+  - `Unprocessed`: `processed == False` **and redemption is not canceled**
   - If both are checked, both predicates are applied (AND behavior)
 
 - **Game Sessions tab**: `Active Only`
@@ -630,10 +630,36 @@ Located in `app_facade.py`. Accepts a list of redemption IDs plus optional keywo
 
 - Uses the Ellipsis sentinel (`...`) to distinguish "not provided" (skip column) from `None` (explicitly clear).
 - Executes a single parameterized SQL `UPDATE` with an `IN (?, ?, …)` clause inside one transaction.
+- Canceled redemptions (`canceled_at IS NOT NULL`) are excluded from update scope and skipped.
 - **No FIFO recalculation, no session rebuild, and no `rebuild_links_for_pair` call.**
 - After committing a non-`None` `receipt_date`, calls `notification_rules_service.on_redemption_received(id)` for each affected ID to dismiss any pending-receipt notification — preserving the same dismissal behavior as the single-record edit path.
 - Writes one `audit_service.log_update` entry per affected row (all sharing a single `group_id`) inside the transaction, then pushes one `undo_redo_service.push_operation` so the entire bulk op is a single entry on the undo stack. Ctrl+Z reverts all rows atomically.
 - Returns the count of rows updated; empty list is a no-op (returns 0).
+
+### Redemption Cancellation Status (Issue #143)
+
+Redemptions support a reversible canceled state that behaves as an accounting void (as-if the redemption never happened) while preserving row history.
+
+#### Data Model
+
+- `redemptions.canceled_at TIMESTAMP NULL`
+- `redemptions.canceled_reason TEXT NULL`
+- `idx_redemptions_canceled` index on `redemptions(canceled_at)`
+
+#### Behavior
+
+- Cancel action sets `canceled_at`/`canceled_reason`, reverses allocations/realized rows for that redemption, and triggers scoped rebuild from the containing boundary.
+- Uncancel clears `canceled_at`/`canceled_reason` and triggers the same scoped rebuild path to restore downstream accounting.
+- Both cancel and uncancel are logged as grouped audit UPDATE operations and pushed as single undo/redo operations.
+- Redemptions UI exposes cancel/uncancel in both the tab toolbar and View Redemption dialog.
+- Before cancel/uncancel, UI shows downstream impact preview counts (later purchases, redemptions, sessions) for the same user/site pair.
+- Bulk metadata actions (Mark Received / Mark Processed) skip canceled rows and report skipped counts.
+
+#### Query + Reporting Rules
+
+- Canceled redemptions are excluded from pending receipt notifications and pending-receipt evaluation queries.
+- Canceled redemptions are excluded from report summaries/tax-report joins and from session-link/recalculation candidate queries.
+- Full-redemption boundary helpers ignore canceled rows so period anchoring is based only on active redemptions.
 
 ### 5.1 Spreadsheet UX (Issue #14, Phase 1)
 
@@ -1683,6 +1709,8 @@ CREATE TABLE redemptions (
         receipt_date TEXT,
         processed INTEGER DEFAULT 0,
         more_remaining INTEGER DEFAULT 0,
+        canceled_at TIMESTAMP NULL,
+        canceled_reason TEXT,
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP, deleted_at TIMESTAMP NULL,
@@ -1807,6 +1835,9 @@ CREATE INDEX idx_redemptions_date ON redemptions(redemption_date, redemption_tim
 
 -- INDEX: idx_redemptions_deleted (table=redemptions)
 CREATE INDEX idx_redemptions_deleted ON redemptions(deleted_at);
+
+-- INDEX: idx_redemptions_canceled (table=redemptions)
+CREATE INDEX idx_redemptions_canceled ON redemptions(canceled_at);
 
 -- INDEX: idx_redemptions_site_user (table=redemptions)
 CREATE INDEX idx_redemptions_site_user ON redemptions(site_id, user_id);

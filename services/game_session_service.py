@@ -853,6 +853,8 @@ class GameSessionService:
             WHERE gsel.game_session_id = ? 
               AND gsel.event_type = 'redemption'
               AND gsel.relation = 'DURING'
+                            AND r.deleted_at IS NULL
+                            AND r.canceled_at IS NULL
         """, (session_id,)).fetchone()
         return Decimal(str(row['total'])) if row else Decimal("0.00")
 
@@ -1335,6 +1337,7 @@ class GameSessionService:
                 FROM redemptions
                 WHERE site_id = ? AND user_id = ?
                    AND deleted_at IS NULL
+                         AND canceled_at IS NULL
                   AND (redemption_date > ? 
                        OR (redemption_date = ? AND redemption_time > ?))
                 """,

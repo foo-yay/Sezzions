@@ -74,7 +74,7 @@ class ReportService:
                 COALESCE(SUM(CAST(amount AS REAL)), 0) as total_purchases,
                 COALESCE(SUM(CAST(remaining_amount AS REAL)), 0) as available_balance
             FROM purchases 
-            WHERE {where_clause}
+            WHERE {where_clause} AND deleted_at IS NULL
         """
         purchase_row = self.db.fetch_one(purchase_query, tuple(params))
         
@@ -82,7 +82,7 @@ class ReportService:
         redemption_query = f"""
             SELECT COALESCE(SUM(CAST(amount AS REAL)), 0) as total_redemptions
             FROM redemptions 
-            WHERE {where_clause}
+            WHERE {where_clause} AND deleted_at IS NULL AND canceled_at IS NULL
         """
         redemption_row = self.db.fetch_one(redemption_query, tuple(params))
         
@@ -92,7 +92,7 @@ class ReportService:
                 COUNT(*) as total_sessions,
                 COALESCE(SUM(CAST(net_taxable_pl AS REAL)), 0) as total_profit_loss
             FROM game_sessions 
-            WHERE {where_clause} AND net_taxable_pl IS NOT NULL
+            WHERE {where_clause} AND deleted_at IS NULL AND net_taxable_pl IS NOT NULL
         """
         session_row = self.db.fetch_one(session_query, tuple(params))
         
@@ -127,7 +127,7 @@ class ReportService:
         purchase_query = f"""
             SELECT COALESCE(SUM(CAST(amount AS REAL)), 0) as total_purchases
             FROM purchases 
-            WHERE {where_clause}
+            WHERE {where_clause} AND deleted_at IS NULL
         """
         purchase_row = self.db.fetch_one(purchase_query, tuple(params))
         
@@ -135,7 +135,7 @@ class ReportService:
         redemption_query = f"""
             SELECT COALESCE(SUM(CAST(amount AS REAL)), 0) as total_redemptions
             FROM redemptions 
-            WHERE {where_clause}
+            WHERE {where_clause} AND deleted_at IS NULL AND canceled_at IS NULL
         """
         redemption_row = self.db.fetch_one(redemption_query, tuple(params))
         
@@ -145,7 +145,7 @@ class ReportService:
                 COUNT(*) as total_sessions,
                 COALESCE(SUM(CAST(net_taxable_pl AS REAL)), 0) as total_profit_loss
             FROM game_sessions 
-            WHERE {where_clause} AND net_taxable_pl IS NOT NULL
+            WHERE {where_clause} AND deleted_at IS NULL AND net_taxable_pl IS NOT NULL
         """
         session_row = self.db.fetch_one(session_query, tuple(params))
         
@@ -237,7 +237,7 @@ class ReportService:
                 COALESCE(SUM(CAST(rt.net_pl AS REAL)), 0) as total_gain_loss
             FROM realized_transactions rt
             LEFT JOIN redemptions r ON rt.redemption_id = r.id
-            WHERE {where_clause}
+            WHERE {where_clause} AND r.deleted_at IS NULL AND r.canceled_at IS NULL
         """
         
         result = self.db.fetch_one(query, tuple(params))

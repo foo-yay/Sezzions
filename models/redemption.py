@@ -25,6 +25,8 @@ class Redemption:
     more_remaining: bool = False
     is_free_sc: bool = False
     notes: Optional[str] = None
+    canceled_at: Optional[datetime] = None
+    canceled_reason: Optional[str] = None
     id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -67,6 +69,12 @@ class Redemption:
             except Exception:
                 self.receipt_date = None
 
+        if isinstance(self.canceled_at, str) and self.canceled_at:
+            try:
+                self.canceled_at = datetime.fromisoformat(self.canceled_at)
+            except Exception:
+                self.canceled_at = None
+
         # Normalize optional numeric fields
         if self.cost_basis is not None and not isinstance(self.cost_basis, Decimal):
             self.cost_basis = Decimal(str(self.cost_basis))
@@ -87,3 +95,7 @@ class Redemption:
             or self.cost_basis is not None
             or self.taxable_profit is not None
         )
+
+    @property
+    def is_canceled(self) -> bool:
+        return self.canceled_at is not None
