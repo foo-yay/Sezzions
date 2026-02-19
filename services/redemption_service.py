@@ -241,7 +241,11 @@ class RedemptionService:
         
         if allocations:
             # Reverse the allocations (restore purchase remaining_amount)
-            self.fifo_service.reverse_allocation(allocations)
+            self.fifo_service.reverse_allocation(
+                allocations,
+                strict=False,
+                include_deleted=True,
+            )
             
             # Delete allocation records
             self._delete_allocations(redemption_id)
@@ -291,7 +295,11 @@ class RedemptionService:
             
             if allocations:
                 # Reverse the allocations (restore purchase remaining_amount)
-                self.fifo_service.reverse_allocation(allocations)
+                self.fifo_service.reverse_allocation(
+                    allocations,
+                    strict=False,
+                    include_deleted=True,
+                )
                 
                 # Delete allocation records
                 self._delete_allocations(redemption_id)
@@ -306,9 +314,6 @@ class RedemptionService:
             if self.audit_service:
                 self.audit_service.log_delete('redemptions', redemption_id, old_data, group_id=group_id)
             
-            # Delete the redemption
-            self.redemption_repo.delete(redemption_id)
-        
         # Commit once at the end
         self.db.commit()
         

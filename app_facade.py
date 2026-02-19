@@ -1665,12 +1665,18 @@ class AppFacade:
         return len(old_snapshots)
 
     def get_redemption_cancel_impact_summary(self, redemption_id: int) -> Dict[str, int]:
+        from tools.timezone_utils import get_configured_timezone_name, local_date_time_to_utc
+
         redemption = self.redemption_repo.get_by_id(redemption_id)
         if not redemption:
             raise ValueError(f"Redemption {redemption_id} not found")
 
-        date_str = redemption.redemption_date.isoformat()
-        time_str = self._normalize_time(redemption.redemption_time)
+        tz_name = redemption.redemption_entry_time_zone or get_configured_timezone_name()
+        date_str, time_str = local_date_time_to_utc(
+            redemption.redemption_date,
+            self._normalize_time(redemption.redemption_time),
+            tz_name,
+        )
         params = (redemption.user_id, redemption.site_id, date_str, date_str, time_str)
 
         purchases = self.db.fetch_one(
@@ -1692,13 +1698,14 @@ class AppFacade:
             FROM redemptions
             WHERE deleted_at IS NULL
               AND canceled_at IS NULL
+                            AND id != ?
               AND user_id = ? AND site_id = ?
               AND (
                     redemption_date > ? OR
                     (redemption_date = ? AND COALESCE(redemption_time, '00:00:00') > ?)
                   )
             """,
-            params,
+                        (redemption_id, *params),
         )
         sessions = self.db.fetch_one(
             """
@@ -1707,10 +1714,10 @@ class AppFacade:
             WHERE deleted_at IS NULL
               AND user_id = ? AND site_id = ?
               AND (
-                    COALESCE(end_date, session_date) > ? OR
+                                        session_date > ? OR
                     (
-                      COALESCE(end_date, session_date) = ?
-                      AND COALESCE(end_time, session_time, '00:00:00') > ?
+                                            session_date = ?
+                                            AND COALESCE(session_time, '00:00:00') > ?
                     )
                   )
             """,
@@ -1737,7 +1744,11 @@ class AppFacade:
         with self.db.transaction():
             allocations = self.redemption_service._get_allocations(redemption_id)
             if allocations:
-                self.fifo_service.reverse_allocation(allocations)
+                self.fifo_service.reverse_allocation(
+                    allocations,
+                    strict=False,
+                    include_deleted=True,
+                )
                 self.redemption_service._delete_allocations(redemption_id)
                 self.redemption_service._delete_realized_transaction(redemption_id)
 

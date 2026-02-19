@@ -124,14 +124,34 @@ def test_uncancel_redemption_restores_accounting_and_supports_undo_redo(app, see
 def test_cancel_dismisses_pending_receipt_notification(app, seeded_pair):
     _user, _site, _purchase, r1, _r2 = seeded_pair
 
-    app.notification_rules_service.evaluate_redemption_pending_rules()
-    before = app.notification_service.notification_repo.get_all()
-    assert any(n.type == "redemption_pending_receipt" and str(r1.id) == n.subject_id and not n.is_deleted for n in before)
+    existing = app.notification_service.notification_repo.get_by_composite_key(
+        "redemption_pending_receipt",
+        str(r1.id),
+    )
+    if existing:
+        app.notification_service.notification_repo.hard_delete(existing.id)
+
+    app.notification_service.create_or_update(
+        type="redemption_pending_receipt",
+        title="Pending receipt",
+        body="Test pending notification",
+        subject_id=str(r1.id),
+    )
+    before = app.notification_service.notification_repo.get_by_composite_key(
+        "redemption_pending_receipt",
+        str(r1.id),
+    )
+    assert before is not None
+    assert not before.is_deleted
 
     app.cancel_redemption(r1.id, reason="No payout")
 
-    after = app.notification_service.notification_repo.get_all()
-    assert not any(n.type == "redemption_pending_receipt" and str(r1.id) == n.subject_id and not n.is_deleted for n in after)
+    after = app.notification_service.notification_repo.get_by_composite_key(
+        "redemption_pending_receipt",
+        str(r1.id),
+    )
+    assert after is not None
+    assert after.is_deleted
 
 
 def test_bulk_metadata_update_skips_canceled_rows(app, seeded_pair):
@@ -162,7 +182,7 @@ def test_report_summary_excludes_canceled_redemptions(app, seeded_pair):
 def test_cancel_failure_rolls_back_state(app, seeded_pair, monkeypatch):
     _user, _site, purchase, r1, _r2 = seeded_pair
 
-    def _boom(_allocations):
+    def _boom(_allocations, *args, **kwargs):
         raise RuntimeError("forced reversal failure")
 
     monkeypatch.setattr(app.fifo_service, "reverse_allocation", _boom)
@@ -185,3 +205,60 @@ def test_cancel_impact_summary_counts_downstream_activity(app, seeded_pair):
     assert summary["later_redemptions"] >= 1
     assert "later_purchases" in summary
     assert "later_sessions" in summary
+
+
+def test_delete_redemption_succeeds_when_allocated_purchase_soft_deleted(app, seeded_pair):
+    _user, _site, purchase, r1, _r2 = seeded_pair
+
+    app.purchase_repo.delete(purchase.id)
+
+    app.delete_redemptions_bulk([r1.id])
+
+    row = app.db.fetch_one("SELECT deleted_at FROM redemptions WHERE id = ?", (r1.id,))
+    assert row is not None
+    assert row["deleted_at"] is not None
+
+
+def test_cancel_redemption_succeeds_when_allocated_purchase_soft_deleted(app, seeded_pair):
+    _user, _site, purchase, r1, _r2 = seeded_pair
+
+    app.purchase_repo.delete(purchase.id)
+
+    app.cancel_redemption(r1.id, reason="Cancel after purchase soft-delete")
+
+    current = app.get_redemption(r1.id)
+    assert current is not None
+    assert current.canceled_at is not None
+
+
+def test_cancel_impact_summary_excludes_current_and_prior_activity(app):
+    user = app.create_user("Impact User")
+    site = app.create_site("Impact Site", sc_rate=1.0)
+
+    app.create_game_session(
+        user_id=user.id,
+        site_id=site.id,
+        game_id=None,
+        session_date=date.today() - timedelta(days=1),
+        session_time="09:00:00",
+        starting_balance=Decimal("100.0"),
+        ending_balance=Decimal("100.0"),
+        starting_redeemable=Decimal("100.0"),
+        ending_redeemable=Decimal("100.0"),
+    )
+
+    redemption = app.create_redemption(
+        user_id=user.id,
+        site_id=site.id,
+        amount=Decimal("25.00"),
+        fees=Decimal("1.00"),
+        redemption_date=date.today() - timedelta(days=1),
+        redemption_time="10:00:00",
+        apply_fifo=False,
+        more_remaining=True,
+    )
+
+    summary = app.get_redemption_cancel_impact_summary(redemption.id)
+    assert summary["later_purchases"] == 0
+    assert summary["later_redemptions"] == 0
+    assert summary["later_sessions"] == 0

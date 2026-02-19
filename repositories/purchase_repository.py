@@ -26,6 +26,12 @@ class PurchaseRepository:
         query = "SELECT * FROM purchases WHERE id = ? AND deleted_at IS NULL"
         row = self.db.fetch_one(query, (purchase_id,))
         return self._row_to_model(row) if row else None
+
+    def get_by_id_any(self, purchase_id: int) -> Optional[Purchase]:
+        """Get purchase by ID including soft-deleted rows."""
+        query = "SELECT * FROM purchases WHERE id = ?"
+        row = self.db.fetch_one(query, (purchase_id,))
+        return self._row_to_model(row) if row else None
     
     def get_all(self, start_date: Optional[date] = None, end_date: Optional[date] = None) -> List[Purchase]:
         """Get all purchases with related names, optionally filtered by date range (excludes soft-deleted)"""

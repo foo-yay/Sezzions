@@ -102,7 +102,9 @@ class FIFOService:
     
     def reverse_allocation(
         self, 
-        allocations: List[Tuple[int, Decimal]]
+        allocations: List[Tuple[int, Decimal]],
+        strict: bool = True,
+        include_deleted: bool = False,
     ) -> None:
         """
         Reverse FIFO allocations by restoring purchase remaining_amount.
@@ -110,11 +112,18 @@ class FIFOService:
         
         Args:
             allocations: List of (purchase_id, amount_allocated) tuples
+            strict: If True, raise when purchase is missing. If False, skip missing rows.
+            include_deleted: If True, lookup includes soft-deleted purchases.
         """
         for purchase_id, amount_allocated in allocations:
-            purchase = self.purchase_repo.get_by_id(purchase_id)
+            if include_deleted and hasattr(self.purchase_repo, "get_by_id_any"):
+                purchase = self.purchase_repo.get_by_id_any(purchase_id)
+            else:
+                purchase = self.purchase_repo.get_by_id(purchase_id)
             if not purchase:
-                raise ValueError(f"Purchase {purchase_id} not found")
+                if strict:
+                    raise ValueError(f"Purchase {purchase_id} not found")
+                continue
             
             # Restore remaining amount
             new_remaining = purchase.remaining_amount + amount_allocated
