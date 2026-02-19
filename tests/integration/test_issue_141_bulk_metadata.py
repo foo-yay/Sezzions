@@ -194,3 +194,58 @@ def test_bulk_clear_receipt_date_does_not_dismiss_notifications(app, two_redempt
 
     app.bulk_update_redemption_metadata([r1.id], receipt_date=None)
     assert len(dismissed) == 0
+
+
+# ---------------------------------------------------------------------------
+# Undo/redo: bulk op pushes one undoable entry; Ctrl+Z reverts all rows
+# ---------------------------------------------------------------------------
+
+def test_bulk_mark_received_pushes_undo_entry(app, two_redemptions):
+    """Bulk mark-received creates exactly one entry on the undo stack."""
+    r1, r2 = two_redemptions
+    before = len(app.undo_redo_service._undo_stack)
+
+    app.bulk_update_redemption_metadata([r1.id, r2.id], receipt_date=date.today())
+
+    assert len(app.undo_redo_service._undo_stack) == before + 1
+    assert "received" in app.undo_redo_service._undo_stack[-1].description.lower()
+
+
+def test_bulk_mark_processed_pushes_undo_entry(app, two_redemptions):
+    """Bulk mark-processed creates exactly one entry on the undo stack."""
+    r1, r2 = two_redemptions
+    before = len(app.undo_redo_service._undo_stack)
+
+    app.bulk_update_redemption_metadata([r1.id, r2.id], processed=True)
+
+    assert len(app.undo_redo_service._undo_stack) == before + 1
+    assert "processed" in app.undo_redo_service._undo_stack[-1].description.lower()
+
+
+def test_undo_reverts_bulk_mark_received(app, two_redemptions):
+    """Ctrl+Z after bulk mark-received restores receipt_date=None on all rows."""
+    r1, r2 = two_redemptions
+    target_date = date.today()
+
+    app.bulk_update_redemption_metadata([r1.id, r2.id], receipt_date=target_date)
+    assert app.get_redemption(r1.id).receipt_date == target_date
+    assert app.get_redemption(r2.id).receipt_date == target_date
+
+    app.undo_redo_service.undo()
+
+    assert app.get_redemption(r1.id).receipt_date is None
+    assert app.get_redemption(r2.id).receipt_date is None
+
+
+def test_undo_reverts_bulk_mark_processed(app, two_redemptions):
+    """Ctrl+Z after bulk mark-processed restores processed=False on all rows."""
+    r1, r2 = two_redemptions
+
+    app.bulk_update_redemption_metadata([r1.id, r2.id], processed=True)
+    assert app.get_redemption(r1.id).processed is True
+    assert app.get_redemption(r2.id).processed is True
+
+    app.undo_redo_service.undo()
+
+    assert app.get_redemption(r1.id).processed is False
+    assert app.get_redemption(r2.id).processed is False

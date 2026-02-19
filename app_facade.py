@@ -4,6 +4,7 @@ AppFacade - Unified interface for Qt application to access OOP backend services
 This facade provides a single entry point for the Qt UI to interact with
 all backend services while maintaining backward compatibility during migration.
 """
+from dataclasses import asdict
 from decimal import Decimal
 from datetime import date, datetime
 from typing import Optional, List, Dict, Any, Tuple, Callable
@@ -1568,6 +1569,30 @@ class AppFacade:
         if not set_receipt and not set_processed:
             return 0
 
+        # Build human-readable description for the undo stack
+        n = len(redemption_ids)
+        noun = "redemption" if n == 1 else "redemptions"
+        if set_receipt and set_processed:
+            _description = f"Bulk update {n} {noun} (receipt date + processed)"
+        elif set_receipt:
+            if receipt_date is None:
+                _description = f"Bulk clear receipt date for {n} {noun}"
+            else:
+                _description = f"Bulk mark {n} {noun} received"
+        else:
+            _description = f"Bulk mark {n} {noun} processed"
+
+        # Snapshot old state for each record BEFORE the SQL update.
+        # Skip IDs that no longer exist so we only audit rows we actually touch.
+        old_snapshots: Dict[int, Dict[str, Any]] = {}
+        for rid in redemption_ids:
+            r = self.redemption_repo.get_by_id(rid)
+            if r is not None:
+                old_snapshots[rid] = asdict(r)
+
+        # Generate one group_id shared across all rows in this bulk op
+        group_id = self.audit_service.generate_group_id() if hasattr(self, "audit_service") else None
+
         with self.db.transaction():
             placeholders = ",".join("?" * len(redemption_ids))
 
@@ -1598,6 +1623,31 @@ class AppFacade:
                 params = [processed_val, *redemption_ids]
 
             self.db.execute(query, tuple(params))
+
+            # Log one audit UPDATE entry per affected row (all share the same group_id)
+            if group_id and hasattr(self, "audit_service"):
+                for rid, old_data in old_snapshots.items():
+                    new_data = dict(old_data)
+                    if set_receipt:
+                        new_data["receipt_date"] = receipt_date
+                    if set_processed:
+                        new_data["processed"] = processed
+                    self.audit_service.log_update(
+                        "redemptions",
+                        rid,
+                        old_data,
+                        new_data,
+                        group_id=group_id,
+                        auto_commit=False,
+                    )
+
+        # Push one undoable operation onto the undo stack (covers all rows)
+        if group_id and hasattr(self, "undo_redo_service"):
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=_description,
+                timestamp=datetime.now().isoformat(),
+            )
 
         # Dismiss pending-receipt notifications for any rows that now have a receipt_date
         if set_receipt and receipt_date is not None:
