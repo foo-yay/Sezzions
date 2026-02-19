@@ -27,15 +27,19 @@ details: >
   a direct SQL UPDATE with an IN clause, skipping all FIFO/session recalculation
   and link-rebuild work. Pending-receipt notification dismissal is preserved:
   on_redemption_received() is still called per ID when receipt_date is set.
-  11 integration tests cover happy-path, field isolation, edge cases (empty list
-  no-op), failure injection (no rebuild called), and notification behavior.
+  Undo/redo supported: one audit UPDATE entry per row shares a group_id, and one
+  UndoRedoService.push_operation is pushed so Ctrl+Z reverts all rows atomically.
+  After save the table selection is cleared and buttons are hidden immediately.
+  15 integration tests cover happy-path, field isolation, edge cases (empty list
+  no-op), failure injection (no rebuild called), notification behavior, undo stack
+  presence, and full undo revert for both receipt_date and processed.
 files_changed:
   - app_facade.py
   - ui/tabs/redemptions_tab.py
   - tests/integration/test_issue_141_bulk_metadata.py
   - docs/PROJECT_SPEC.md
   - docs/status/CHANGELOG.md
-pr: 141
+pr: 142
 ```
 
 ```yaml

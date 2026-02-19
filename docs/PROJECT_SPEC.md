@@ -612,7 +612,7 @@ The Redemptions tab supports bulk metadata updates for selected rows without tri
 
 #### Toolbar Buttons
 
-Two context-sensitive toolbar buttons appear whenever one or more redemption rows are selected; they are hidden when there is no selection:
+Two context-sensitive toolbar buttons appear whenever one or more redemption rows are selected; they are hidden when there is no selection. After a successful save, the table selection is cleared and the buttons are hidden immediately.
 
 - **📬 Mark Received** — opens `MarkReceivedDialog` to stamp `receipt_date` on all selected redemptions.
 - **✅ Mark Processed** — sets `processed = True` on all selected redemptions in a single transaction (no dialog).
@@ -632,6 +632,7 @@ Located in `app_facade.py`. Accepts a list of redemption IDs plus optional keywo
 - Executes a single parameterized SQL `UPDATE` with an `IN (?, ?, …)` clause inside one transaction.
 - **No FIFO recalculation, no session rebuild, and no `rebuild_links_for_pair` call.**
 - After committing a non-`None` `receipt_date`, calls `notification_rules_service.on_redemption_received(id)` for each affected ID to dismiss any pending-receipt notification — preserving the same dismissal behavior as the single-record edit path.
+- Writes one `audit_service.log_update` entry per affected row (all sharing a single `group_id`) inside the transaction, then pushes one `undo_redo_service.push_operation` so the entire bulk op is a single entry on the undo stack. Ctrl+Z reverts all rows atomically.
 - Returns the count of rows updated; empty list is a no-op (returns 0).
 
 ### 5.1 Spreadsheet UX (Issue #14, Phase 1)
