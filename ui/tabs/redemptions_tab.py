@@ -1088,6 +1088,8 @@ class RedemptionsTab(QtWidgets.QWidget):
         try:
             self.facade.bulk_update_redemption_metadata(ids, receipt_date=receipt_date)
             self.refresh_data()
+            self.table.clearSelection()
+            self._on_selection_changed()
             if hasattr(self, "main_window") and self.main_window is not None:
                 # Refresh notification bell after dismissals
                 if hasattr(self.main_window, "_refresh_notification_badge"):
@@ -1113,6 +1115,8 @@ class RedemptionsTab(QtWidgets.QWidget):
         try:
             self.facade.bulk_update_redemption_metadata(ids, processed=True)
             self.refresh_data()
+            self.table.clearSelection()
+            self._on_selection_changed()
             QtWidgets.QMessageBox.information(
                 self, "Mark Processed",
                 f"{count} redemption(s) marked as processed."
