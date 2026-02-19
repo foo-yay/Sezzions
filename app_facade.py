@@ -1533,7 +1533,80 @@ class AppFacade:
                 updated.user_id,
             )
         return updated
-    
+
+    def bulk_update_redemption_metadata(
+        self,
+        redemption_ids: List[int],
+        *,
+        receipt_date: Optional[date] = ...,  # type: ignore[assignment]
+        processed: Optional[bool] = ...,     # type: ignore[assignment]
+    ) -> int:
+        """Update receipt_date and/or processed flag for multiple redemptions in one transaction.
+
+        This is a pure metadata update — no FIFO rebuild, no session recalculation,
+        no game_session_event_link rebuild.  Only receipt_date and processed fields
+        are allowed.
+
+        Args:
+            redemption_ids: List of redemption IDs to update.
+            receipt_date: If provided (including None), sets receipt_date for all rows.
+                          Pass the sentinel Ellipsis (default) to leave the field unchanged.
+            processed: If provided (True/False), sets processed for all rows.
+                       Pass the sentinel Ellipsis (default) to leave the field unchanged.
+
+        Returns:
+            Number of rows updated.
+        """
+        _UNSET = ...  # sentinel
+
+        if not redemption_ids:
+            return 0
+
+        set_receipt = receipt_date is not _UNSET
+        set_processed = processed is not _UNSET
+
+        if not set_receipt and not set_processed:
+            return 0
+
+        with self.db.transaction():
+            placeholders = ",".join("?" * len(redemption_ids))
+
+            if set_receipt and set_processed:
+                receipt_val = receipt_date.isoformat() if receipt_date is not None else None
+                processed_val = 1 if processed else 0
+                query = (
+                    f"UPDATE redemptions SET receipt_date = ?, processed = ?, "
+                    f"updated_at = CURRENT_TIMESTAMP "
+                    f"WHERE id IN ({placeholders}) AND deleted_at IS NULL"
+                )
+                params = [receipt_val, processed_val, *redemption_ids]
+            elif set_receipt:
+                receipt_val = receipt_date.isoformat() if receipt_date is not None else None
+                query = (
+                    f"UPDATE redemptions SET receipt_date = ?, "
+                    f"updated_at = CURRENT_TIMESTAMP "
+                    f"WHERE id IN ({placeholders}) AND deleted_at IS NULL"
+                )
+                params = [receipt_val, *redemption_ids]
+            else:
+                processed_val = 1 if processed else 0
+                query = (
+                    f"UPDATE redemptions SET processed = ?, "
+                    f"updated_at = CURRENT_TIMESTAMP "
+                    f"WHERE id IN ({placeholders}) AND deleted_at IS NULL"
+                )
+                params = [processed_val, *redemption_ids]
+
+            self.db.execute(query, tuple(params))
+
+        # Dismiss pending-receipt notifications for any rows that now have a receipt_date
+        if set_receipt and receipt_date is not None:
+            if hasattr(self, "notification_rules_service"):
+                for rid in redemption_ids:
+                    self.notification_rules_service.on_redemption_received(rid)
+
+        return len(redemption_ids)
+
     def delete_redemption(self, redemption_id: int) -> None:
         """Delete redemption (reverses FIFO if allocated)."""
         redemption = self.redemption_repo.get_by_id(redemption_id)

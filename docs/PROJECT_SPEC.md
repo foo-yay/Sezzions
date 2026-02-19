@@ -606,6 +606,34 @@ In Expense Add/Edit dialogs, Sezzions provides autocomplete suggestions to speed
 - Users can continue normal editing after prediction (including Backspace/Delete) without being forced into a locked suggestion state.
 - Suggestions are UX-only assistance (no new validation rules and no forced selection).
 
+### Redemptions Bulk Actions (Issue #141)
+
+The Redemptions tab supports bulk metadata updates for selected rows without triggering any FIFO recalculation, session rebuild, or link-rebuild side-effects.
+
+#### Toolbar Buttons
+
+Two context-sensitive toolbar buttons appear whenever one or more redemption rows are selected; they are hidden when there is no selection:
+
+- **📬 Mark Received** — opens `MarkReceivedDialog` to stamp `receipt_date` on all selected redemptions.
+- **✅ Mark Processed** — sets `processed = True` on all selected redemptions in a single transaction (no dialog).
+
+#### Mark Received Dialog (`MarkReceivedDialog`)
+
+- Contains a themed date-picker row: text field (MM/DD/YY, pre-filled with today's date) + 📅 calendar picker button + **Today** shortcut.
+- Three action buttons: **Cancel** (no-op), **Clear** (sets `receipt_date = NULL`), **Save** (validates and applies chosen date).
+- Blank/cleared field treated as "today" only when **Save** is clicked; **Clear** explicitly nulls the field.
+- Accepts multi-row selection; all selected redemptions receive the same date.
+
+#### Facade Method (`bulk_update_redemption_metadata`)
+
+Located in `app_facade.py`. Accepts a list of redemption IDs plus optional keyword arguments `receipt_date` and `processed`.
+
+- Uses the Ellipsis sentinel (`...`) to distinguish "not provided" (skip column) from `None` (explicitly clear).
+- Executes a single parameterized SQL `UPDATE` with an `IN (?, ?, …)` clause inside one transaction.
+- **No FIFO recalculation, no session rebuild, and no `rebuild_links_for_pair` call.**
+- After committing a non-`None` `receipt_date`, calls `notification_rules_service.on_redemption_received(id)` for each affected ID to dismiss any pending-receipt notification — preserving the same dismissal behavior as the single-record edit path.
+- Returns the count of rows updated; empty list is a no-op (returns 0).
+
 ### 5.1 Spreadsheet UX (Issue #14, Phase 1)
 
 **Purpose:**
