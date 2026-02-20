@@ -12,6 +12,25 @@ Rules:
 ## 2026-02-20
 
 ```yaml
+id: 2026-02-20-12
+type: fix
+areas: [unrealized, redemptions, tests]
+issue: 145
+summary: "Fix unrealized totals after uncancel when a later cancellation checkpoint exists"
+details: >
+  Fixed unrealized projection drift where uncanceling an earlier redemption could leave totals
+  inflated if a later redemption-cancellation checkpoint remained active. Unrealized calculation
+  now applies forward uncancel reversal effects (from soft-deleted cancellation checkpoints) when
+  anchored on a balance-checkpoint adjustment. Added/kept integration coverage for the downstream
+  canceled-redemption uncancel path and validated against active DB repro.
+files_changed:
+  - repositories/unrealized_position_repository.py
+  - tests/integration/test_issue_145_redemption_cancel_ledger.py
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
+```yaml
 id: 2026-02-20-11
 type: fix
 areas: [redemptions, tests]

@@ -316,16 +316,52 @@ class UnrealizedPositionRepository:
                     (site_id, user_id, checkpoint_date, checkpoint_date, checkpoint_time)
                 )
                 redeemable_redemptions_since = Decimal(str(redeemable_redemptions_after['redeemable_redeemed'] or 0))
+
+                # Apply forward uncancel reversals that happened after the anchor checkpoint.
+                # When a cancellation checkpoint is soft-deleted due to uncancel, its effect
+                # should be removed from the deletion timestamp forward.
+                uncanceled_total = Decimal("0.00")
+                uncanceled_redeemable = Decimal("0.00")
+                if checkpoint.get('priority') == 3:
+                    checkpoint_cutoff = checkpoint_dt.strftime("%Y-%m-%d %H:%M:%S")
+                    uncancel_reversal_query = """
+                        SELECT
+                            COALESCE(SUM(CAST(r.amount AS REAL)), 0) AS total_uncanceled,
+                            COALESCE(SUM(
+                                CASE
+                                    WHEN COALESCE(r.is_free_sc, 0) = 0 THEN CAST(r.amount AS REAL)
+                                    ELSE 0
+                                END
+                            ), 0) AS redeemable_uncanceled
+                        FROM account_adjustments a
+                        JOIN redemptions r ON r.id = a.related_id
+                        WHERE a.site_id = ?
+                          AND a.user_id = ?
+                          AND a.type = 'BALANCE_CHECKPOINT_CORRECTION'
+                          AND a.related_table = 'redemptions'
+                          AND a.deleted_at IS NOT NULL
+                          AND a.deleted_at > ?
+                          AND (
+                              a.deleted_reason = 'Redemption uncanceled'
+                              OR a.deleted_reason = 'Finalize pending uncancel on session close'
+                          )
+                    """
+                    uncancel_reversals = self.db.fetch_one(
+                        uncancel_reversal_query,
+                        (site_id, user_id, checkpoint_cutoff),
+                    )
+                    uncanceled_total = Decimal(str(uncancel_reversals['total_uncanceled'] or 0))
+                    uncanceled_redeemable = Decimal(str(uncancel_reversals['redeemable_uncanceled'] or 0))
                 
                 # Compute estimated SC
                 # baseline_total from purchase checkpoint is starting_sc_balance (POST-purchase balance)
                 # The checkpoint purchase is excluded from purchases_since (id != ?) to avoid double-counting
-                total_sc = baseline_total + purchases_since - redemptions_since
+                total_sc = baseline_total + purchases_since - redemptions_since - uncanceled_total
                 
                 # Redeemable: use checkpoint redeemable minus redemptions if checkpoint is within current position
                 position_start_dt = position_start_dt_utc
                 if checkpoint_dt and position_start_dt and checkpoint_dt >= position_start_dt:
-                    redeemable_sc = baseline_redeemable - redeemable_redemptions_since
+                    redeemable_sc = baseline_redeemable - redeemable_redemptions_since - uncanceled_redeemable
                 else:
                     redeemable_sc = Decimal("0.00")
                 

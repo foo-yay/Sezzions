@@ -511,3 +511,59 @@ def test_uncancel_guard_still_blocks_when_active_session_exists_no_pending_bypas
         assert after_close.redemption_status == "CANCELED"
     finally:
         facade.db.close()
+
+
+def test_uncancel_after_downstream_canceled_redemption_updates_unrealized_total():
+    facade = AppFacade(":memory:")
+    try:
+        user, site, r1 = _seed_basic_pair(facade)
+
+        session = facade.create_game_session(
+            user_id=user.id,
+            site_id=site.id,
+            game_id=None,
+            game_type_id=None,
+            session_date=date(2026, 2, 20),
+            session_time="12:11:47",
+            starting_balance=Decimal("1000.00"),
+            ending_balance=Decimal("1000.00"),
+            starting_redeemable=Decimal("1000.00"),
+            ending_redeemable=Decimal("1000.00"),
+            notes="manual repro",
+        )
+
+        r1_canceled = facade.cancel_redemption(r1.id, reason="r1 canceled")
+        assert r1_canceled.redemption_status == "PENDING_CANCELLATION"
+
+        facade.update_game_session(
+            session.id,
+            status="Closed",
+            end_date=date(2026, 2, 20),
+            end_time="12:12:12",
+            ending_balance=Decimal("1000.00"),
+            ending_redeemable=Decimal("1000.00"),
+        )
+
+        r1_after_close = facade.get_redemption(r1.id)
+        assert r1_after_close is not None
+        assert r1_after_close.redemption_status == "CANCELED"
+
+        r2 = facade.create_redemption(
+            user_id=user.id,
+            site_id=site.id,
+            amount=Decimal("3472.41"),
+            redemption_date=date(2026, 2, 20),
+            redemption_time="12:12:50",
+            apply_fifo=False,
+            more_remaining=True,
+        )
+        facade.cancel_redemption(r2.id, reason="r2 canceled")
+
+        facade.uncancel_redemption(r1.id)
+
+        unrealized = facade.get_unrealized_position(site.id, user.id)
+        assert unrealized is not None
+        assert unrealized.total_sc == Decimal("1000.00")
+        assert unrealized.redeemable_sc == Decimal("1000.00")
+    finally:
+        facade.db.close()
