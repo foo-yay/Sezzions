@@ -160,11 +160,12 @@ Redemptions are forward-corrected rather than historically erased. Cancel/uncanc
 **Execution rules:**
 - **No active session** at request time:
   - Cancel: apply immediately (`CANCELED`) and stamp cancel-effective date/time/timezone.
-  - Uncancel: apply immediately (`REDEEMED`) and clear cancel-effective metadata, but only when no downstream purchases/redemptions exist after the cancel-effective timestamp.
+  - Uncancel: apply immediately (`REDEEMED`) and clear cancel-effective metadata, but only when no downstream purchases/redemptions exist after the original redemption timestamp.
 - **Active session present** at request time:
   - Cancel: move to `PENDING_CANCELLATION` only (no immediate projection change).
   - Uncancel of an effective canceled redemption: move to `PENDING_UNCANCEL` only.
 - Pending transitions finalize automatically when the active session closes, using the closing timestamp as the effective timestamp.
+- Immediate uncancel is blocked when downstream purchases or downstream redemptions exist after the original redemption timestamp (safety-first rule to prevent administrative double redemption paths).
 
 **Adjustment and projection semantics:**
 - Effective cancellation creates a linked correction entry in `account_adjustments` and stores its ID on the redemption (`cancellation_adjustment_id`).
@@ -674,7 +675,7 @@ The Redemptions tab context menu includes two status actions for individual rows
 Behavior contract:
 - If no active session exists for the redemption's (user, site), the action applies immediately and the table reflects the new effective status.
 - If an active session exists, the action is queued (`PENDING_CANCELLATION` or `PENDING_UNCANCEL`) and a user-facing message indicates it will finalize when that session closes.
-- Uncancel is blocked when downstream purchases or downstream **effective** redemptions exist after the cancellation effective timestamp. Downstream redemptions already neutralized (`CANCELED`/`PENDING_UNCANCEL`) do not block uncancel.
+- Uncancel is blocked when downstream purchases or downstream redemptions exist after the original redemption timestamp (safety-first rule to prevent administrative double redemption paths).
 - Search/filter text includes redemption status so pending/effective cancellation states are discoverable from the tab’s search field.
 
 UI placement/update (2026-02-20):

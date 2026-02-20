@@ -12,6 +12,25 @@ Rules:
 ## 2026-02-20
 
 ```yaml
+id: 2026-02-20-09
+type: fix
+areas: [redemptions, tests]
+issue: 145
+summary: "Harden uncancel guard with original-timestamp downstream checks and scenario matrix coverage"
+details: >
+  Tightened uncancel dependency validation to block when any downstream purchases or redemptions
+  exist after the original redemption timestamp, preventing administrative double-redeem paths in
+  chained R1/R2 cancel+uncancel sequences. Added a parameterized integration matrix that verifies
+  allow/block behavior across single-redemption and multi-redemption ordering scenarios.
+files_changed:
+  - services/redemption_service.py
+  - tests/integration/test_issue_145_redemption_cancel_ledger.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
+```yaml
 id: 2026-02-20-08
 type: fix
 areas: [redemptions, adjustments, tests]

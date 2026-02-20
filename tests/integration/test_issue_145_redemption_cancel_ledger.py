@@ -298,53 +298,80 @@ def test_uncancel_is_blocked_when_downstream_activity_exists_after_cancel_effect
         facade.db.close()
 
 
-def test_uncancel_chain_allows_when_downstream_redemption_was_already_canceled():
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "one_redemption_canceled",
+        "two_redemptions_first_canceled",
+        "two_redemptions_second_canceled",
+        "two_redemptions_both_canceled",
+        "two_redemptions_first_then_second_then_second_uncanceled",
+        "two_redemptions_second_then_first",
+    ],
+)
+def test_uncancel_dependency_matrix_blocks_double_redeem_paths(scenario):
     facade = AppFacade(":memory:")
     try:
         user, site, r1 = _seed_basic_pair(facade)
-        later_date = date(2026, 2, 21)
+        r2 = None
+        if scenario != "one_redemption_canceled":
+            r2 = facade.create_redemption(
+                user_id=user.id,
+                site_id=site.id,
+                amount=Decimal("20.00"),
+                redemption_date=date(2026, 2, 21),
+                redemption_time="11:00:00",
+                apply_fifo=False,
+                more_remaining=True,
+            )
 
-        session = facade.create_game_session(
-            user_id=user.id,
-            site_id=site.id,
-            game_id=None,
-            game_type_id=None,
-            session_date=later_date,
-            session_time="09:00:00",
-            starting_balance=Decimal("100.00"),
-            ending_balance=Decimal("95.00"),
-            starting_redeemable=Decimal("100.00"),
-            ending_redeemable=Decimal("95.00"),
-            notes="play",
-        )
-        facade.update_game_session(
-            session.id,
-            status="Closed",
-            end_date=later_date,
-            end_time="10:00:00",
-            ending_balance=Decimal("95.00"),
-            ending_redeemable=Decimal("95.00"),
-        )
+        def _cancel(redemption_id: int):
+            return facade.cancel_redemption(redemption_id, reason=f"matrix-{scenario}")
 
-        r2 = facade.create_redemption(
-            user_id=user.id,
-            site_id=site.id,
-            amount=Decimal("20.00"),
-            redemption_date=later_date,
-            redemption_time="11:00:00",
-            apply_fifo=False,
-            more_remaining=True,
-        )
+        def _try_uncancel(redemption_id: int) -> bool:
+            try:
+                facade.uncancel_redemption(redemption_id)
+                return True
+            except ValueError as exc:
+                assert "Cannot uncancel redemption because downstream activity exists" in str(exc)
+                return False
 
-        c1 = facade.cancel_redemption(r1.id, reason="chain-r1")
-        c2 = facade.cancel_redemption(r2.id, reason="chain-r2")
-        assert c1.redemption_status == "CANCELED"
-        assert c2.redemption_status == "CANCELED"
+        if scenario == "one_redemption_canceled":
+            _cancel(r1.id)
+            assert _try_uncancel(r1.id) is True
 
-        u1 = facade.uncancel_redemption(r1.id)
-        assert u1.redemption_status == "REDEEMED"
+        elif scenario == "two_redemptions_first_canceled":
+            assert r2 is not None
+            _cancel(r1.id)
+            assert _try_uncancel(r1.id) is False
 
-        u2 = facade.uncancel_redemption(r2.id)
-        assert u2.redemption_status == "REDEEMED"
+        elif scenario == "two_redemptions_second_canceled":
+            assert r2 is not None
+            _cancel(r2.id)
+            assert _try_uncancel(r2.id) is True
+
+        elif scenario == "two_redemptions_both_canceled":
+            assert r2 is not None
+            _cancel(r1.id)
+            _cancel(r2.id)
+            assert _try_uncancel(r1.id) is False
+            assert _try_uncancel(r2.id) is True
+
+        elif scenario == "two_redemptions_first_then_second_then_second_uncanceled":
+            assert r2 is not None
+            _cancel(r1.id)
+            _cancel(r2.id)
+            assert _try_uncancel(r2.id) is True
+            assert _try_uncancel(r1.id) is False
+
+        elif scenario == "two_redemptions_second_then_first":
+            assert r2 is not None
+            _cancel(r2.id)
+            _cancel(r1.id)
+            assert _try_uncancel(r1.id) is False
+            assert _try_uncancel(r2.id) is True
+
+        else:
+            raise AssertionError(f"Unexpected scenario: {scenario}")
     finally:
         facade.db.close()
