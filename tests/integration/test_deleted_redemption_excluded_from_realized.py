@@ -35,3 +35,33 @@ def test_deleted_redemption_excluded_from_realized_rebuild():
     assert realized == []
 
     facade.db.close()
+
+
+def test_canceled_redemption_excluded_from_realized_rebuild():
+    facade = AppFacade(":memory:")
+    user = facade.create_user("Cancel Test User")
+    site = facade.create_site("Cancel Test Site")
+
+    facade.create_purchase(
+        user_id=user.id,
+        site_id=site.id,
+        amount=Decimal("100.00"),
+        purchase_date=date(2026, 2, 15),
+        sc_received=Decimal("100.00"),
+        starting_sc_balance=Decimal("100.00"),
+    )
+
+    redemption = facade.create_redemption(
+        user_id=user.id,
+        site_id=site.id,
+        amount=Decimal("50.00"),
+        redemption_date=date(2026, 2, 15),
+    )
+
+    facade.cancel_redemption(redemption.id, reason="test canceled exclusion")
+    facade.recalculation_service.rebuild_for_pair(user.id, site.id)
+
+    realized = facade.realized_transaction_repo.get_all()
+    assert realized == []
+
+    facade.db.close()

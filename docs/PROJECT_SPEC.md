@@ -676,6 +676,21 @@ Behavior contract:
 - If an active session exists, the action is queued (`PENDING_CANCELLATION` or `PENDING_UNCANCEL`) and a user-facing message indicates it will finalize when that session closes.
 - Search/filter text includes redemption status so pending/effective cancellation states are discoverable from the tab’s search field.
 
+UI placement/update (2026-02-20):
+- Cancel/Uncancel is exposed as toolbar actions (not right-click actions).
+- For a single selected row:
+  - Show **Cancel** only when status is `REDEEMED` and `receipt_date` is empty (pending receipt).
+  - Hide Cancel when receipt date is present.
+  - Show **Uncancel** when status is `CANCELED`, `PENDING_CANCELLATION`, or `PENDING_UNCANCEL`.
+
+### Compact Action Labels (2026-02-20)
+
+For toolbar space efficiency, the primary row actions in Purchases, Redemptions, and Game Sessions tabs use compact labels:
+
+- `👁️ View`
+- `✏️ Edit`
+- `🗑️ Delete`
+
 ### 5.1 Spreadsheet UX (Issue #14, Phase 1)
 
 **Purpose:**

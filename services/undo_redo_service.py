@@ -85,8 +85,15 @@ class UndoRedoService:
                 self._max_undo_operations = self.DEFAULT_MAX_UNDO_OPERATIONS
         else:
             self._max_undo_operations = self.DEFAULT_MAX_UNDO_OPERATIONS
+
+    def _is_in_transaction(self) -> bool:
+        """Return True when the underlying sqlite connection already has an open transaction."""
+        connection = getattr(self.db, "_connection", None)
+        if connection is None:
+            return False
+        return bool(getattr(connection, "in_transaction", False))
     
-    def _save_stacks(self) -> None:
+    def _save_stacks(self, *, auto_commit: bool = True) -> None:
         """Persist undo/redo stacks to settings table"""
         undo_data = [
             {"group_id": op.group_id, "description": op.description, "timestamp": op.timestamp}
@@ -98,16 +105,28 @@ class UndoRedoService:
         ]
         
         # Upsert undo_stack
-        self.db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-            ("undo_stack", json.dumps(undo_data))
-        )
+        if auto_commit:
+            self.db.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                ("undo_stack", json.dumps(undo_data))
+            )
+        else:
+            self.db.execute_no_commit(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                ("undo_stack", json.dumps(undo_data))
+            )
         
         # Upsert redo_stack
-        self.db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-            ("redo_stack", json.dumps(redo_data))
-        )
+        if auto_commit:
+            self.db.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                ("redo_stack", json.dumps(redo_data))
+            )
+        else:
+            self.db.execute_no_commit(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                ("redo_stack", json.dumps(redo_data))
+            )
     
     def can_undo(self) -> bool:
         """Check if undo is available"""
@@ -147,8 +166,8 @@ class UndoRedoService:
         # Auto-prune if exceeds max (Issue #95)
         if self._max_undo_operations > 0 and len(self._undo_stack) > self._max_undo_operations:
             self._prune_to_limit(self._max_undo_operations)
-        
-        self._save_stacks()
+
+        self._save_stacks(auto_commit=not self._is_in_transaction())
     
     def get_max_undo_operations(self) -> int:
         """Get the current max undo operations limit (Issue #95)"""
@@ -211,24 +230,33 @@ class UndoRedoService:
                     pruned_group_ids.extend([op.group_id for op in pruned])
                     self._redo_stack = self._redo_stack[:redo_allowed]
         
-        # Prune audit snapshots in a transaction
+        in_transaction = self._is_in_transaction()
+
+        # Prune audit snapshots in a transaction (or the caller's existing transaction)
         if pruned_group_ids:
             try:
-                with self.db.transaction():
+                if in_transaction:
                     for group_id in pruned_group_ids:
-                        self.db.execute(
+                        self.db.execute_no_commit(
                             "UPDATE audit_log SET old_data = NULL, new_data = NULL WHERE group_id = ?",
                             (group_id,)
                         )
-                    # Save updated stacks within transaction
-                    self._save_stacks()
+                    self._save_stacks(auto_commit=False)
+                else:
+                    with self.db.transaction():
+                        for group_id in pruned_group_ids:
+                            self.db.execute_no_commit(
+                                "UPDATE audit_log SET old_data = NULL, new_data = NULL WHERE group_id = ?",
+                                (group_id,)
+                            )
+                        self._save_stacks(auto_commit=False)
             except Exception as e:
                 # Transaction rolled back; reload stacks to restore consistency
                 self._load_stacks()
                 raise RuntimeError(f"Failed to prune undo history: {e}")
         else:
             # No pruning needed, just save stacks
-            self._save_stacks()
+            self._save_stacks(auto_commit=not in_transaction)
     
     def undo(self) -> Optional[str]:
         """
@@ -491,6 +519,10 @@ class UndoRedoService:
         else:
             # Fallback to raw SQL for tables without models (e.g., lookup tables)
             skip_fields = {'id', 'created_at', 'updated_at', 'deleted_at'}
+            if table_name == 'account_adjustments':
+                # For adjustment undo/redo we must restore deleted_at from snapshot,
+                # otherwise soft-delete state can drift from audited state.
+                skip_fields.remove('deleted_at')
             fields = {k: v for k, v in model_data.items() if k not in skip_fields}
             
             if not fields:

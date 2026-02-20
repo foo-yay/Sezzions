@@ -691,15 +691,25 @@ class RedemptionService:
         effective_date: date,
         effective_time: str,
         effective_entry_time_zone: Optional[str] = None,
+        base_total_sc: Optional[Decimal] = None,
+        base_redeemable_sc: Optional[Decimal] = None,
     ) -> List[Redemption]:
         """Finalize pending cancellation/uncancel states when a session closes."""
         effective_entry_time_zone = effective_entry_time_zone or get_entry_timezone_name()
         finalized: List[Redemption] = []
         pending = self.redemption_repo.get_pending_for_pair(user_id, site_id)
+        running_total = Decimal(str(base_total_sc)) if base_total_sc is not None else None
+        running_redeemable = Decimal(str(base_redeemable_sc)) if base_redeemable_sc is not None else None
         for redemption in pending:
             if redemption.redemption_status == REDEMPTION_STATUS_PENDING_CANCELLATION:
                 group_id = self.audit_service.generate_group_id() if self.audit_service else str(uuid.uuid4())
                 old_data = asdict(redemption)
+                amount = Decimal(str(redemption.amount))
+                override_total = None
+                override_redeemable = None
+                if running_total is not None and running_redeemable is not None:
+                    override_total = running_total + amount
+                    override_redeemable = running_redeemable + amount
                 adjustment_id = self._create_reinstatement_adjustment(
                     redemption=redemption,
                     effective_date=effective_date,
@@ -707,7 +717,12 @@ class RedemptionService:
                     effective_entry_time_zone=effective_entry_time_zone,
                     reason="Finalize pending cancellation on session close",
                     group_id=group_id,
+                    checkpoint_total_override=override_total,
+                    checkpoint_redeemable_override=override_redeemable,
                 )
+                if override_total is not None and override_redeemable is not None:
+                    running_total = override_total
+                    running_redeemable = override_redeemable
                 self.redemption_repo.update_status_fields(
                     redemption_id=redemption.id,
                     redemption_status=REDEMPTION_STATUS_CANCELED,
@@ -778,20 +793,26 @@ class RedemptionService:
         effective_entry_time_zone: str,
         reason: Optional[str],
         group_id: str,
+        checkpoint_total_override: Optional[Decimal] = None,
+        checkpoint_redeemable_override: Optional[Decimal] = None,
     ) -> int:
         if not self.adjustment_service or not self.game_session_service:
             raise ValueError("Adjustment and game session services are required for cancellation reinstatement")
 
-        expected_total, expected_redeemable = self.game_session_service.compute_expected_balances(
-            user_id=redemption.user_id,
-            site_id=redemption.site_id,
-            session_date=effective_date,
-            session_time=effective_time,
-            entry_time_zone=effective_entry_time_zone,
-        )
-        amount = Decimal(str(redemption.amount))
-        checkpoint_total = expected_total + amount
-        checkpoint_redeemable = expected_redeemable + amount
+        if checkpoint_total_override is not None and checkpoint_redeemable_override is not None:
+            checkpoint_total = Decimal(str(checkpoint_total_override))
+            checkpoint_redeemable = Decimal(str(checkpoint_redeemable_override))
+        else:
+            expected_total, expected_redeemable = self.game_session_service.compute_expected_balances(
+                user_id=redemption.user_id,
+                site_id=redemption.site_id,
+                session_date=effective_date,
+                session_time=effective_time,
+                entry_time_zone=effective_entry_time_zone,
+            )
+            amount = Decimal(str(redemption.amount))
+            checkpoint_total = expected_total + amount
+            checkpoint_redeemable = expected_redeemable + amount
 
         adjustment = Adjustment(
             user_id=redemption.user_id,

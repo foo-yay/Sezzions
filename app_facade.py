@@ -2031,6 +2031,8 @@ class AppFacade:
                     effective_entry_time_zone=updated.end_entry_time_zone
                     or updated.start_entry_time_zone
                     or get_entry_timezone_name(),
+                    base_total_sc=Decimal(str(updated.ending_balance)),
+                    base_redeemable_sc=Decimal(str(updated.ending_redeemable)),
                 )
             if finalized:
                 boundary_date, boundary_time = self._containing_boundary(

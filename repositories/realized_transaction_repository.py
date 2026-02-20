@@ -50,6 +50,7 @@ class RealizedTransactionRepository:
             LEFT JOIN redemption_methods rm ON r.redemption_method_id = rm.id
                         WHERE 1=1
                             AND r.deleted_at IS NULL
+                            AND COALESCE(r.redemption_status, 'REDEEMED') NOT IN ('CANCELED', 'PENDING_UNCANCEL')
         """
         
         params = []

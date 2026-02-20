@@ -12,6 +12,68 @@ Rules:
 ## 2026-02-20
 
 ```yaml
+id: 2026-02-20-04
+type: fix
+areas: [services, redemptions, sessions, adjustments, tests]
+issue: 145
+summary: "Use closed-session ending balances as baseline when finalizing pending redemption cancellations"
+details: >
+  Fixed pending-cancellation finalization math so reinstatement checkpoint adjustments are anchored
+  to the just-closed session ending balances (total + redeemable), then add canceled redemption amount.
+  This prevents undercounted checkpoints (e.g., using only canceled amount) when close-time finalization
+  occurs at the same timestamp boundary as session end. Added regression assertions verifying checkpoint
+  and next expected balances include both session close balances and canceled amount.
+files_changed:
+  - app_facade.py
+  - services/redemption_service.py
+  - tests/integration/test_issue_145_redemption_cancel_ledger.py
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
+```yaml
+id: 2026-02-20-03
+type: fix
+areas: [services, undo-redo, redemptions, tests]
+issue: null
+summary: "Fix nested transaction error when canceling redemption with undo-history pruning"
+details: >
+  Fixed runtime error "Failed to prune undo history: cannot start a transaction within a transaction"
+  triggered when canceling/uncanceling redemptions while max undo history pruning occurred inside an
+  already-open transaction. UndoRedoService now detects active transactions, avoids opening a nested
+  transaction during prune, and saves undo/redo stacks with no-commit writes when participating in the
+  caller transaction. Added Issue #145 regression coverage to force prune during cancel and verify
+  operation completes successfully.
+files_changed:
+  - services/undo_redo_service.py
+  - tests/integration/test_issue_145_redemption_cancel_ledger.py
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
+```yaml
+id: 2026-02-20-02
+type: enhancement
+areas: [ui, redemptions, purchases, game-sessions, docs]
+issue: null
+summary: "Compact tab action labels and move redemption cancel/uncancel to conditional toolbar buttons"
+details: >
+  Purchases, Redemptions, and Game Sessions toolbars now use compact action labels
+  (`View`, `Edit`, `Delete`) for space efficiency. In Redemptions, cancel/uncancel
+  actions were removed from right-click context menu and moved to toolbar buttons with
+  selection-driven visibility: Cancel appears only for a single selected redemption that
+  is REDEEMED with no receipt_date (pending receipt); Uncancel appears for canceled or
+  queued-cancel states (CANCELED, PENDING_CANCELLATION, PENDING_UNCANCEL).
+files_changed:
+  - ui/tabs/purchases_tab.py
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/game_sessions_tab.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
+```yaml
 id: 2026-02-20-01
 type: feature
 areas: [redemptions, services, projections, ui, tests, schema]

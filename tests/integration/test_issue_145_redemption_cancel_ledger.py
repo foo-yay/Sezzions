@@ -96,6 +96,20 @@ def test_cancel_during_active_session_is_pending_then_auto_finalizes_on_close():
         assert finalized.redemption_status == "CANCELED"
         assert finalized.cancellation_adjustment_id is not None
         assert finalized.cancel_effective_date == date(2026, 2, 19)
+
+        adj = facade.adjustment_service.adjustment_repo.get_by_id(finalized.cancellation_adjustment_id)
+        assert adj is not None
+        assert Decimal(str(adj.checkpoint_total_sc)) == Decimal("100.00")
+        assert Decimal(str(adj.checkpoint_redeemable_sc)) == Decimal("100.00")
+
+        next_expected_total, next_expected_redeemable = facade.compute_expected_balances(
+            user.id,
+            site.id,
+            date(2026, 2, 19),
+            "12:00:01",
+        )
+        assert next_expected_total == Decimal("100.00")
+        assert next_expected_redeemable == Decimal("100.00")
     finally:
         facade.db.close()
 
@@ -179,5 +193,53 @@ def test_cancel_and_uncancel_are_audited_and_undoable():
             limit=30,
         )
         assert any((e.get("new_data") or {}).get("redemption_status") == "REDEEMED" for e in entries2)
+    finally:
+        facade.db.close()
+
+
+def test_cancel_allows_undo_prune_inside_existing_transaction():
+    facade = AppFacade(":memory:")
+    try:
+        _user, _site, redemption = _seed_basic_pair(facade)
+
+        facade.undo_redo_service.set_max_undo_operations(1)
+        facade.undo_redo_service.push_operation(
+            group_id="seed-op",
+            description="seed",
+            timestamp="2026-02-20T00:00:00",
+        )
+
+        canceled = facade.cancel_redemption(redemption.id, reason="trigger prune")
+        assert canceled.redemption_status in {"CANCELED", "PENDING_CANCELLATION"}
+    finally:
+        facade.db.close()
+
+
+def test_undo_uncancel_restores_reinstatement_adjustment_state():
+    facade = AppFacade(":memory:")
+    try:
+        _user, _site, redemption = _seed_basic_pair(facade)
+
+        canceled = facade.cancel_redemption(redemption.id, reason="undo-adjustment-check")
+        assert canceled.redemption_status == "CANCELED"
+        assert canceled.cancellation_adjustment_id is not None
+
+        adjustment_id = canceled.cancellation_adjustment_id
+        before_uncancel = facade.adjustment_service.adjustment_repo.get_by_id(adjustment_id)
+        assert before_uncancel is not None
+        assert before_uncancel.deleted_at is None
+
+        uncanceled = facade.uncancel_redemption(redemption.id)
+        assert uncanceled.redemption_status == "REDEEMED"
+
+        after_uncancel = facade.adjustment_service.adjustment_repo.get_by_id(adjustment_id)
+        assert after_uncancel is not None
+        assert after_uncancel.deleted_at is not None
+
+        facade.undo_redo_service.undo()
+
+        after_undo = facade.adjustment_service.adjustment_repo.get_by_id(adjustment_id)
+        assert after_undo is not None
+        assert after_undo.deleted_at is None
     finally:
         facade.db.close()
