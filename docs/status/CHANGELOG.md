@@ -12,6 +12,25 @@ Rules:
 ## 2026-02-20
 
 ```yaml
+id: 2026-02-20-14
+type: docs
+areas: [process, quality, testing]
+issue: null
+summary: "Add global product hardening standards for all future AI-assisted work"
+details: >
+  Expanded repository instruction files with a repo-wide hardening contract that requires
+  bug-replay-first testing, deeper stateful chain coverage, invariant-based assertions,
+  adversarial test matrices, active-DB reality checks for reported bugs, and a stricter
+  Ready-for-Review quality gate. This is intended to reduce manual post-implementation
+  troubleshooting across all features/fixes.
+files_changed:
+  - AGENTS.md
+  - .github/copilot-instructions.md
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
+```yaml
 id: 2026-02-20-13
 type: fix
 areas: [unrealized, redemptions, sessions, tests]

@@ -135,6 +135,63 @@ After implementation is complete and tests are green:
 - Do **not** fix items outside the Issue scope.
 - Record follow-ups as new GitHub Issues.
 
+## Product Hardening Standard (All Features + Fixes)
+
+The following rules apply to **all** future implementation work (bugs, features, refactors), not only accounting or one-off issues.
+
+### 1) Bug Replay First (Required)
+
+When a bug is reported from manual usage:
+
+1. Add an automated regression test that reproduces the exact sequence.
+2. Run it and confirm failure before production code changes.
+3. Implement fix.
+4. Re-run and confirm pass.
+
+No bug fix is considered complete without a replay test that would catch the same issue again.
+
+### 2) Stateful Scenario Depth (Required)
+
+For workflows with state transitions, include at least one chain test with 6+ operations (example pattern: create -> edit -> cancel -> uncancel -> recancel -> downstream change) and assert invariants after each step.
+
+### 3) Invariant Assertions (Required)
+
+Do not only assert status fields. For each impacted area, assert a relevant invariant set, such as:
+
+- balances (`total_sc`, `redeemable_sc`, expected balances)
+- link integrity (foreign keys / related IDs / checkpoint linkage)
+- soft-delete semantics (`deleted_at`, `deleted_reason`, restore behavior)
+- idempotence/no double-application on repeated operations
+- atomicity (no partial writes when failures occur)
+
+### 4) Adversarial Matrix (Required)
+
+For non-trivial behavior, test a matrix that includes:
+
+- happy path
+- at least 3 edge cases
+- reverse ordering / out-of-order operations
+- repeated-toggle or repeated-action sequences
+- at least 1 failure-injection case
+
+### 5) Data-Reality Verification (Required)
+
+When troubleshooting user-reported issues, validate against a copy of the active DB (never mutate the original during diagnosis), and verify both:
+
+- raw row-level state (tables directly involved)
+- computed/service-level outputs that UI consumes
+
+### 6) PR Quality Gate (Required)
+
+Before marking work Ready for Review, PR notes must include:
+
+- test matrix summary
+- invariants validated
+- manual verification step performed
+- pitfalls/follow-ups list
+
+If any item is missing, work is not review-ready.
+
 ## Legacy Rule
 
 - Avoid editing `.LEGACY/` unless explicitly requested.

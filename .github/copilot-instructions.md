@@ -89,6 +89,66 @@ Before moving to “Ready for Review”:
 - Run headless UI smoke tests if UI was touched.
 - Perform one minimal manual verification step (≤5 minutes) and note it in the PR.
 
+## Product Hardening Standard (Global, Not Issue-Specific)
+
+Apply these standards to **all future work** (bug fixes, features, refactors), not just one issue area.
+
+### 1) Bug Replay Test is Mandatory
+
+If a bug is reported from manual app usage:
+
+1. Write an automated regression test that reproduces the exact sequence.
+2. Run and confirm failure before production edits.
+3. Implement fix and re-run until pass.
+
+Never close a bug without a replay test.
+
+### 2) Stateful Workflow Depth
+
+If logic is stateful, add at least one chain test with 6+ operations and assert invariants after each operation.
+
+Examples:
+- create -> edit -> cancel -> uncancel -> recancel -> downstream edit
+- open session -> close session -> correction -> undo -> redo -> verify
+
+### 3) Invariants Over Status-Only Checks
+
+Tests must assert business invariants, not only status fields. Include applicable checks for:
+
+- computed balances and projections
+- relational linkage consistency
+- soft-delete + restore behavior
+- no double-application on repeated actions
+- transactional atomicity under injected failures
+
+### 4) Adversarial Coverage Matrix
+
+For non-trivial changes, include coverage for:
+
+- happy path
+- minimum 3 edge cases
+- reverse-order operations
+- repeated-toggle/repeated-action paths
+- at least 1 failure injection
+
+### 5) Active-DB Reality Check for Reported Bugs
+
+When diagnosing user-reported issues, validate against a copied active DB and confirm both:
+
+- raw table state,
+- service/facade outputs consumed by UI.
+
+### 6) Ready-for-Review Gate
+
+PR must include a short section with:
+
+- matrix executed,
+- invariants validated,
+- manual verification performed,
+- pitfalls/follow-ups.
+
+Do not move to Ready for Review without this section.
+
 ## Issues (Templates)
 
 - Prefer GitHub Issues for new work items.
