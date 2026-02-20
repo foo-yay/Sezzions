@@ -51,3 +51,69 @@ def test_realized_tab_groups_by_local_day(monkeypatch, tmp_path, qapp):
 
     if facade.db._connection is not None:
         facade.db._connection.close()
+
+
+def test_realized_tab_excludes_canceled_redemptions(tmp_path, qapp):
+    db_path = tmp_path / "canceled.db"
+    facade = AppFacade(str(db_path))
+    db = facade.db
+
+    user_id = db.execute("INSERT INTO users (name) VALUES (?)", ("Test User",))
+    site_id = db.execute("INSERT INTO sites (name) VALUES (?)", ("Sixty6",))
+    redemption_id = db.execute(
+        """
+        INSERT INTO redemptions
+            (user_id, site_id, amount, redemption_date, redemption_time, redemption_status)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (user_id, site_id, "10.00", "2026-02-15", "02:00:00", "CANCELED"),
+    )
+    db.execute(
+        """
+        INSERT INTO realized_transactions
+            (redemption_date, site_id, user_id, redemption_id, cost_basis, payout, net_pl)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("2026-02-15", site_id, user_id, redemption_id, "1.00", "10.00", "9.00"),
+    )
+
+    tab = RealizedTab(facade)
+    transactions = tab._fetch_transactions()
+
+    assert transactions == []
+
+    if facade.db._connection is not None:
+        facade.db._connection.close()
+
+
+def test_realized_tab_excludes_soft_deleted_redemptions(tmp_path, qapp):
+    db_path = tmp_path / "soft_deleted.db"
+    facade = AppFacade(str(db_path))
+    db = facade.db
+
+    user_id = db.execute("INSERT INTO users (name) VALUES (?)", ("Test User",))
+    site_id = db.execute("INSERT INTO sites (name) VALUES (?)", ("Sixty6",))
+    redemption_id = db.execute(
+        """
+        INSERT INTO redemptions
+            (user_id, site_id, amount, redemption_date, redemption_time, deleted_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        """,
+        (user_id, site_id, "10.00", "2026-02-15", "02:00:00"),
+    )
+    db.execute(
+        """
+        INSERT INTO realized_transactions
+            (redemption_date, site_id, user_id, redemption_id, cost_basis, payout, net_pl)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("2026-02-15", site_id, user_id, redemption_id, "1.00", "10.00", "9.00"),
+    )
+
+    tab = RealizedTab(facade)
+    transactions = tab._fetch_transactions()
+
+    assert transactions == []
+
+    if facade.db._connection is not None:
+        facade.db._connection.close()

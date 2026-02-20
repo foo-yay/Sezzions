@@ -723,6 +723,7 @@ class RealizedTab(QtWidgets.QWidget):
         self.active_date_filter = (None, None)
         self.selected_users = set()
         self.selected_sites = set()
+        self._redemptions_column_cache = {}
 
         self.columns = [
             "Date",
@@ -1141,10 +1142,14 @@ class RealizedTab(QtWidgets.QWidget):
             FROM realized_transactions rt
             JOIN sites s ON rt.site_id = s.id
             JOIN users u ON rt.user_id = u.id
-            LEFT JOIN redemptions r ON rt.redemption_id = r.id
+            JOIN redemptions r ON rt.redemption_id = r.id
         """
         params = []
         conditions = []
+        if self._has_redemptions_column("deleted_at"):
+            conditions.append("r.deleted_at IS NULL")
+        if self._has_redemptions_column("redemption_status"):
+            conditions.append("COALESCE(r.redemption_status, 'REDEEMED') NOT IN ('CANCELED', 'PENDING_UNCANCEL')")
         if self.selected_sites:
             placeholders = ",".join("?" * len(self.selected_sites))
             conditions.append(f"s.name IN ({placeholders})")
@@ -1543,8 +1548,13 @@ class RealizedTab(QtWidgets.QWidget):
         QtCore.QTimer.singleShot(0, lambda: self.main_window.open_daily_sessions_by_date(session_date))
 
     def _fetch_position_details(self, tax_session_id):
+        status_filter = ""
+        if self._has_redemptions_column("deleted_at"):
+            status_filter += " AND r.deleted_at IS NULL"
+        if self._has_redemptions_column("redemption_status"):
+            status_filter += " AND COALESCE(r.redemption_status, 'REDEEMED') NOT IN ('CANCELED', 'PENDING_UNCANCEL')"
         row = self.db.fetch_one(
-            """
+            f"""
             SELECT
                 rt.id as tax_session_id,
                 rt.redemption_date as session_date,
@@ -1569,10 +1579,23 @@ class RealizedTab(QtWidgets.QWidget):
             JOIN users u ON rt.user_id = u.id
             LEFT JOIN redemption_methods rm ON r.redemption_method_id = rm.id
             WHERE rt.id = ?
+            {status_filter}
             """,
             (tax_session_id,),
         )
         return dict(row) if row else None
+
+    def _has_redemptions_column(self, column_name: str) -> bool:
+        cached = self._redemptions_column_cache.get(column_name)
+        if cached is not None:
+            return cached
+        try:
+            rows = self.db.fetch_all("PRAGMA table_info(redemptions)")
+            exists = any((row[1] if not isinstance(row, dict) else row.get("name")) == column_name for row in rows)
+        except Exception:
+            exists = False
+        self._redemptions_column_cache[column_name] = exists
+        return exists
 
     def _fetch_redemption_allocations(self, redemption_id):
         rows = self.db.fetch_all(

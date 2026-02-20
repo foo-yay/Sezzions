@@ -683,6 +683,7 @@ UI placement/update (2026-02-20):
   - Show **Cancel** only when status is `REDEEMED` and `receipt_date` is empty (pending receipt).
   - Hide Cancel when receipt date is present.
   - Show **Uncancel** when status is `CANCELED`, `PENDING_CANCELLATION`, or `PENDING_UNCANCEL`.
+- Both actions require explicit confirmation (`Are you sure?`) with effect text before execution.
 
 ### Compact Action Labels (2026-02-20)
 
@@ -1012,6 +1013,7 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - Tax withholding rollups compute net daily P/L using local end dates (local day boundaries).
 - Tax and session P/L reports (and realized transaction filters) convert local date ranges to UTC bounds using stored timestamps.
 - Realized tab groups transactions by local day using redemption timestamps; view-position dialogs display related purchase/session times in local time.
+- Realized tab excludes redemptions that are soft-deleted (`deleted_at IS NOT NULL`) or effectively canceled (`CANCELED`, `PENDING_UNCANCEL`).
 - Game session recalculation uses local timestamps converted to UTC when finding containing sessions.
 - Expected balance checks compare UTC instants across entry time zones to avoid out-of-order inclusion.
 - Session close validation blocks saves when end time is before start time after UTC conversion.

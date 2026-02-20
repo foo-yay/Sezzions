@@ -12,6 +12,28 @@ Rules:
 ## 2026-02-20
 
 ```yaml
+id: 2026-02-20-06
+type: fix
+areas: [ui, redemptions, realized, repositories, tests]
+issue: 145
+summary: "Require cancel/uncancel confirmation and exclude canceled/soft-deleted rows from Realized tab"
+details: >
+  Added explicit confirmation dialogs before Cancel and Uncancel actions in the Redemptions tab,
+  including short effect descriptions. Fixed Realized tab leakage where canceled/soft-deleted
+  redemptions (or orphan realized rows) could still appear by aligning tab-level SQL and repository
+  queries to require active linked redemptions and apply status/deleted filters with schema-safe
+  column checks. Added UI regression coverage for canceled and soft-deleted exclusion.
+files_changed:
+  - ui/tabs/redemptions_tab.py
+  - ui/tabs/realized_tab.py
+  - repositories/realized_transaction_repository.py
+  - tests/ui/test_realized_tab_local_timezone.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
+```yaml
 id: 2026-02-20-05
 type: fix
 areas: [services, redemptions, tests]

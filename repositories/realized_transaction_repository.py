@@ -14,6 +14,19 @@ class RealizedTransactionRepository:
     
     def __init__(self, db):
         self.db = db
+        self._redemptions_column_cache = {}
+
+    def _has_redemptions_column(self, column_name: str) -> bool:
+        cached = self._redemptions_column_cache.get(column_name)
+        if cached is not None:
+            return cached
+        try:
+            rows = self.db.fetch_all("PRAGMA table_info(redemptions)")
+            exists = any((row[1] if not isinstance(row, dict) else row.get("name")) == column_name for row in rows)
+        except Exception:
+            exists = False
+        self._redemptions_column_cache[column_name] = exists
+        return exists
     
     def get_all(
         self,
@@ -46,12 +59,15 @@ class RealizedTransactionRepository:
             FROM realized_transactions rt
             JOIN sites s ON rt.site_id = s.id
             JOIN users u ON rt.user_id = u.id
-            LEFT JOIN redemptions r ON rt.redemption_id = r.id
+            JOIN redemptions r ON rt.redemption_id = r.id
             LEFT JOIN redemption_methods rm ON r.redemption_method_id = rm.id
-                        WHERE 1=1
-                            AND r.deleted_at IS NULL
-                            AND COALESCE(r.redemption_status, 'REDEEMED') NOT IN ('CANCELED', 'PENDING_UNCANCEL')
+            WHERE 1=1
         """
+
+        if self._has_redemptions_column("deleted_at"):
+            query += " AND r.deleted_at IS NULL"
+        if self._has_redemptions_column("redemption_status"):
+            query += " AND COALESCE(r.redemption_status, 'REDEEMED') NOT IN ('CANCELED', 'PENDING_UNCANCEL')"
         
         params = []
         

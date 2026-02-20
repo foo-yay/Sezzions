@@ -1122,6 +1122,17 @@ class RedemptionsTab(QtWidgets.QWidget):
         can_cancel, _ = self._get_cancel_button_visibility(redemption)
         if not redemption or not can_cancel:
             return
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Cancel Redemption",
+            "Cancel marks this redemption as canceled so its cashflow is neutralized from the cancellation effective timestamp forward.\n\n"
+            "Use this when a redemption was entered but should no longer count.\n\n"
+            "Are you sure you want to continue?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
         redemption_id = redemption.id
         try:
             updated = self.facade.cancel_redemption(redemption_id)
@@ -1146,6 +1157,17 @@ class RedemptionsTab(QtWidgets.QWidget):
         redemption = self._get_single_selected_redemption()
         _, can_uncancel = self._get_cancel_button_visibility(redemption)
         if not redemption or not can_uncancel:
+            return
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Uncancel Redemption",
+            "Uncancel restores a previously canceled redemption so it counts again.\n\n"
+            "Use this only when the cancellation was incorrect and no downstream redemptions/purchases depended on canceled funds.\n\n"
+            "Are you sure you want to continue?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if confirm != QtWidgets.QMessageBox.Yes:
             return
         redemption_id = redemption.id
         try:
