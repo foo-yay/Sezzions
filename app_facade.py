@@ -2563,6 +2563,34 @@ class AppFacade:
         """Update notes for a realized transaction by redemption ID."""
         self.realized_transaction_repo.update_notes(redemption_id, notes)
 
+    def get_realized_view_rows(
+        self,
+        *,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        site_names: Optional[List[str]] = None,
+        user_names: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get raw rows for Realized tab tree view."""
+        return self.realized_transaction_repo.get_view_rows(
+            start_date=start_date,
+            end_date=end_date,
+            site_names=site_names,
+            user_names=user_names,
+        )
+
+    def get_realized_position_details(self, tax_session_id: int) -> Optional[Dict[str, Any]]:
+        """Get detailed row for Realized View Position dialog."""
+        return self.realized_transaction_repo.get_position_details(tax_session_id)
+
+    def get_realized_notes_for_dates(self, dates: List[str]) -> Dict[str, str]:
+        """Get realized daily notes for a set of dates."""
+        return self.realized_notes_service.get_notes_for_dates(dates)
+
+    def get_redemption_allocation_details(self, redemption_id: int) -> List[Dict[str, Any]]:
+        """Get FIFO allocation detail rows for a redemption."""
+        return self.redemption_service.get_allocation_details(redemption_id)
+
     # ==========================================================================
     # Expenses
     # ==========================================================================

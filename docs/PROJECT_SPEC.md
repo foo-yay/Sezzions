@@ -1014,6 +1014,7 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - Tax and session P/L reports (and realized transaction filters) convert local date ranges to UTC bounds using stored timestamps.
 - Realized tab groups transactions by local day using redemption timestamps; view-position dialogs display related purchase/session times in local time.
 - Realized tab excludes redemptions that are soft-deleted (`deleted_at IS NOT NULL`) or effectively canceled (`CANCELED`, `PENDING_UNCANCEL`).
+- Realized tab reads are routed through facade/service/repository methods (no direct UI SQL/database calls).
 - Game session recalculation uses local timestamps converted to UTC when finding containing sessions.
 - Expected balance checks compare UTC instants across entry time zones to avoid out-of-order inclusion.
 - Session close validation blocks saves when end time is before start time after UTC conversion.

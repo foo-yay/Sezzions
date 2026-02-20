@@ -12,6 +12,28 @@ Rules:
 ## 2026-02-20
 
 ```yaml
+id: 2026-02-20-07
+type: refactor
+areas: [ui, facade, services, repositories, architecture]
+issue: 145
+summary: "Remove direct SQL from Realized tab and route data access through facade/service/repository"
+details: >
+  Refactored Realized tab data reads (transaction list, date-note lookup, position details,
+  FIFO allocation details) to use AppFacade methods backed by services/repositories instead of
+  direct UI database queries. This restores UI-to-service layering compliance while preserving
+  existing Realized tab behavior and filters.
+files_changed:
+  - ui/tabs/realized_tab.py
+  - app_facade.py
+  - services/realized_notes_service.py
+  - services/redemption_service.py
+  - repositories/realized_transaction_repository.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
+```yaml
 id: 2026-02-20-06
 type: fix
 areas: [ui, redemptions, realized, repositories, tests]

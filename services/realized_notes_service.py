@@ -4,7 +4,7 @@ RealizedNotesService - Service for managing daily session notes
 This service provides business layer methods for CRUD operations on
 realized_daily_notes table. UI should use this service instead of direct SQL.
 """
-from typing import Optional
+from typing import Optional, Dict, Iterable
 from repositories.database import DatabaseManager
 
 
@@ -35,6 +35,22 @@ class RealizedNotesService:
             (session_date,),
         )
         return row["notes"] if row else None
+
+    def get_notes_for_dates(self, dates: Iterable[str]) -> Dict[str, str]:
+        """Get notes for a set of session dates."""
+        date_list = list(dates)
+        if not date_list:
+            return {}
+        placeholders = ",".join("?" * len(date_list))
+        rows = self.db.fetch_all(
+            f"""
+            SELECT session_date, notes
+            FROM realized_daily_notes
+            WHERE session_date IN ({placeholders})
+            """,
+            tuple(date_list),
+        )
+        return {row["session_date"]: (row["notes"] or "") for row in rows}
 
     def set_date_note(self, session_date: str, notes: str) -> None:
         """

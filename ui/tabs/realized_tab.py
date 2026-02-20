@@ -20,7 +20,6 @@ from ui.input_parsers import parse_date_input
 from tools.timezone_utils import (
     get_accounting_timezone_name,
     get_configured_timezone_name,
-    local_date_range_to_utc_bounds,
     utc_date_time_to_local,
 )
 
@@ -713,7 +712,6 @@ class RealizedTab(QtWidgets.QWidget):
         super().__init__(parent)
         self.facade = facade
         self.main_window = main_window
-        self.db = facade.db
         self.all_transactions = []
         self.filtered_transactions = []
         self.column_filters = {}
@@ -723,7 +721,6 @@ class RealizedTab(QtWidgets.QWidget):
         self.active_date_filter = (None, None)
         self.selected_users = set()
         self.selected_sites = set()
-        self._redemptions_column_cache = {}
 
         self.columns = [
             "Date",
@@ -1121,71 +1118,15 @@ class RealizedTab(QtWidgets.QWidget):
 
     def _fetch_transactions(self):
         tz_name = get_configured_timezone_name()
-        query = """
-            SELECT
-                rt.id as tax_session_id,
-                rt.redemption_date as session_date,
-                rt.redemption_id as redemption_id,
-                rt.cost_basis,
-                rt.net_pl,
-                rt.site_id,
-                s.name as site_name,
-                rt.user_id,
-                u.name as user_name,
-                r.amount as redemption_amount,
-                r.fees as fees,
-                r.is_free_sc,
-                r.notes as redemption_notes,
-                rt.notes as session_notes,
-                r.redemption_date as redemption_date,
-                r.redemption_time as redemption_time
-            FROM realized_transactions rt
-            JOIN sites s ON rt.site_id = s.id
-            JOIN users u ON rt.user_id = u.id
-            JOIN redemptions r ON rt.redemption_id = r.id
-        """
-        params = []
-        conditions = []
-        if self._has_redemptions_column("deleted_at"):
-            conditions.append("r.deleted_at IS NULL")
-        if self._has_redemptions_column("redemption_status"):
-            conditions.append("COALESCE(r.redemption_status, 'REDEEMED') NOT IN ('CANCELED', 'PENDING_UNCANCEL')")
-        if self.selected_sites:
-            placeholders = ",".join("?" * len(self.selected_sites))
-            conditions.append(f"s.name IN ({placeholders})")
-            params.extend(list(self.selected_sites))
-        if self.selected_users:
-            placeholders = ",".join("?" * len(self.selected_users))
-            conditions.append(f"u.name IN ({placeholders})")
-            params.extend(list(self.selected_users))
         start_date, end_date = self.active_date_filter
-        if start_date:
-            start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
-            conditions.append(
-                "(COALESCE(r.redemption_date, rt.redemption_date) > ? OR "
-                "(COALESCE(r.redemption_date, rt.redemption_date) = ? AND "
-                "COALESCE(r.redemption_time, '00:00:00') >= ?))"
-            )
-            params.extend([start_utc[0], start_utc[0], start_utc[1]])
-        if end_date:
-            _, end_utc = local_date_range_to_utc_bounds(end_date, end_date, tz_name)
-            conditions.append(
-                "(COALESCE(r.redemption_date, rt.redemption_date) < ? OR "
-                "(COALESCE(r.redemption_date, rt.redemption_date) = ? AND "
-                "COALESCE(r.redemption_time, '00:00:00') <= ?))"
-            )
-            params.extend([end_utc[0], end_utc[0], end_utc[1]])
-        if conditions:
-            query += " WHERE " + " AND ".join(conditions)
-        query += (
-            " ORDER BY COALESCE(r.redemption_date, rt.redemption_date) DESC, "
-            "COALESCE(r.redemption_time, '00:00:00') DESC, s.name ASC, u.name ASC, rt.id ASC"
+        rows = self.facade.get_realized_view_rows(
+            start_date=start_date,
+            end_date=end_date,
+            site_names=sorted(self.selected_sites) if self.selected_sites else None,
+            user_names=sorted(self.selected_users) if self.selected_users else None,
         )
-
-        rows = self.db.fetch_all(query, tuple(params))
         transactions = []
         for row in rows:
-            row = dict(row)
             redemption_notes = row.get("redemption_notes") or ""
             session_notes = row.get("session_notes") or ""
             notes = redemption_notes or session_notes
@@ -1474,19 +1415,7 @@ class RealizedTab(QtWidgets.QWidget):
         self.refresh_view()
 
     def _fetch_notes_for_dates(self, dates):
-        dates = list(dates)
-        if not dates:
-            return {}
-        placeholders = ",".join("?" * len(dates))
-        rows = self.db.fetch_all(
-            f"""
-            SELECT session_date, notes
-            FROM realized_daily_notes
-            WHERE session_date IN ({placeholders})
-            """,
-            tuple(dates),
-        )
-        return {row["session_date"]: (row["notes"] or "") for row in rows}
+        return self.facade.get_realized_notes_for_dates(list(dates))
 
     def _edit_date_notes(self):
         meta = self._current_meta() or {}
@@ -1548,75 +1477,10 @@ class RealizedTab(QtWidgets.QWidget):
         QtCore.QTimer.singleShot(0, lambda: self.main_window.open_daily_sessions_by_date(session_date))
 
     def _fetch_position_details(self, tax_session_id):
-        status_filter = ""
-        if self._has_redemptions_column("deleted_at"):
-            status_filter += " AND r.deleted_at IS NULL"
-        if self._has_redemptions_column("redemption_status"):
-            status_filter += " AND COALESCE(r.redemption_status, 'REDEEMED') NOT IN ('CANCELED', 'PENDING_UNCANCEL')"
-        row = self.db.fetch_one(
-            f"""
-            SELECT
-                rt.id as tax_session_id,
-                rt.redemption_date as session_date,
-                rt.cost_basis,
-                rt.net_pl,
-                rt.redemption_id,
-                r.amount as redemption_amount,
-                r.redemption_date,
-                r.redemption_time,
-                r.fees,
-                r.more_remaining,
-                r.receipt_date,
-                r.processed,
-                r.notes as redemption_notes,
-                s.name as site_name,
-                u.name as user_name,
-                rm.name as method_name,
-                rm.method_type
-            FROM realized_transactions rt
-            JOIN redemptions r ON rt.redemption_id = r.id
-            JOIN sites s ON rt.site_id = s.id
-            JOIN users u ON rt.user_id = u.id
-            LEFT JOIN redemption_methods rm ON r.redemption_method_id = rm.id
-            WHERE rt.id = ?
-            {status_filter}
-            """,
-            (tax_session_id,),
-        )
-        return dict(row) if row else None
-
-    def _has_redemptions_column(self, column_name: str) -> bool:
-        cached = self._redemptions_column_cache.get(column_name)
-        if cached is not None:
-            return cached
-        try:
-            rows = self.db.fetch_all("PRAGMA table_info(redemptions)")
-            exists = any((row[1] if not isinstance(row, dict) else row.get("name")) == column_name for row in rows)
-        except Exception:
-            exists = False
-        self._redemptions_column_cache[column_name] = exists
-        return exists
+        return self.facade.get_realized_position_details(tax_session_id)
 
     def _fetch_redemption_allocations(self, redemption_id):
-        rows = self.db.fetch_all(
-            """
-            SELECT
-                ra.purchase_id,
-                ra.allocated_amount,
-                p.purchase_date,
-                p.purchase_time,
-                p.purchase_entry_time_zone,
-                p.amount,
-                p.sc_received,
-                p.remaining_amount
-            FROM redemption_allocations ra
-            JOIN purchases p ON ra.purchase_id = p.id
-            WHERE ra.redemption_id = ?
-            ORDER BY p.purchase_date ASC, COALESCE(p.purchase_time,'00:00:00') ASC, p.id ASC
-            """,
-            (redemption_id,),
-        )
-        return [dict(row) for row in rows]
+        return self.facade.get_redemption_allocation_details(redemption_id)
 
     def _fetch_linked_sessions(self, redemption_id):
         sessions = self.facade.get_linked_sessions_for_redemption(redemption_id)

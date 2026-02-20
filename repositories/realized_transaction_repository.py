@@ -1,7 +1,7 @@
 """
 Repository for querying realized transactions (completed redemption cash flow)
 """
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Iterable
 from decimal import Decimal
 from datetime import date
 
@@ -121,6 +121,121 @@ class RealizedTransactionRepository:
             transactions.append(trans)
         
         return transactions
+
+    def get_view_rows(
+        self,
+        *,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        site_names: Optional[Iterable[str]] = None,
+        user_names: Optional[Iterable[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get raw rows for Realized tab grouped/tree view."""
+        query = """
+            SELECT
+                rt.id as tax_session_id,
+                rt.redemption_date as session_date,
+                rt.redemption_id as redemption_id,
+                rt.cost_basis,
+                rt.net_pl,
+                rt.site_id,
+                s.name as site_name,
+                rt.user_id,
+                u.name as user_name,
+                r.amount as redemption_amount,
+                r.fees as fees,
+                r.is_free_sc,
+                r.notes as redemption_notes,
+                rt.notes as session_notes,
+                r.redemption_date as redemption_date,
+                r.redemption_time as redemption_time
+            FROM realized_transactions rt
+            JOIN sites s ON rt.site_id = s.id
+            JOIN users u ON rt.user_id = u.id
+            JOIN redemptions r ON rt.redemption_id = r.id
+            WHERE 1=1
+        """
+        params: List[Any] = []
+
+        if self._has_redemptions_column("deleted_at"):
+            query += " AND r.deleted_at IS NULL"
+        if self._has_redemptions_column("redemption_status"):
+            query += " AND COALESCE(r.redemption_status, 'REDEEMED') NOT IN ('CANCELED', 'PENDING_UNCANCEL')"
+
+        site_name_list = list(site_names or [])
+        if site_name_list:
+            placeholders = ",".join("?" * len(site_name_list))
+            query += f" AND s.name IN ({placeholders})"
+            params.extend(site_name_list)
+
+        user_name_list = list(user_names or [])
+        if user_name_list:
+            placeholders = ",".join("?" * len(user_name_list))
+            query += f" AND u.name IN ({placeholders})"
+            params.extend(user_name_list)
+
+        tz_name = None
+        if start_date or end_date:
+            tz_name = get_configured_timezone_name()
+        if start_date:
+            start_utc, _ = local_date_range_to_utc_bounds(start_date, start_date, tz_name)
+            query += (
+                " AND (COALESCE(r.redemption_date, rt.redemption_date) > ? OR "
+                "(COALESCE(r.redemption_date, rt.redemption_date) = ? AND "
+                "COALESCE(r.redemption_time, '00:00:00') >= ?))"
+            )
+            params.extend([start_utc[0], start_utc[0], start_utc[1]])
+        if end_date:
+            _, end_utc = local_date_range_to_utc_bounds(end_date, end_date, tz_name)
+            query += (
+                " AND (COALESCE(r.redemption_date, rt.redemption_date) < ? OR "
+                "(COALESCE(r.redemption_date, rt.redemption_date) = ? AND "
+                "COALESCE(r.redemption_time, '00:00:00') <= ?))"
+            )
+            params.extend([end_utc[0], end_utc[0], end_utc[1]])
+
+        query += (
+            " ORDER BY COALESCE(r.redemption_date, rt.redemption_date) DESC, "
+            "COALESCE(r.redemption_time, '00:00:00') DESC, s.name ASC, u.name ASC, rt.id ASC"
+        )
+        rows = self.db.fetch_all(query, tuple(params))
+        return [dict(row) for row in rows]
+
+    def get_position_details(self, tax_session_id: int) -> Optional[Dict[str, Any]]:
+        """Get detailed realized-position row for View Position dialog."""
+        query = """
+            SELECT
+                rt.id as tax_session_id,
+                rt.redemption_date as session_date,
+                rt.cost_basis,
+                rt.net_pl,
+                rt.redemption_id,
+                r.amount as redemption_amount,
+                r.redemption_date,
+                r.redemption_time,
+                r.fees,
+                r.more_remaining,
+                r.receipt_date,
+                r.processed,
+                r.notes as redemption_notes,
+                s.name as site_name,
+                u.name as user_name,
+                rm.name as method_name,
+                rm.method_type
+            FROM realized_transactions rt
+            JOIN redemptions r ON rt.redemption_id = r.id
+            JOIN sites s ON rt.site_id = s.id
+            JOIN users u ON rt.user_id = u.id
+            LEFT JOIN redemption_methods rm ON r.redemption_method_id = rm.id
+            WHERE rt.id = ?
+        """
+        params: List[Any] = [tax_session_id]
+        if self._has_redemptions_column("deleted_at"):
+            query += " AND r.deleted_at IS NULL"
+        if self._has_redemptions_column("redemption_status"):
+            query += " AND COALESCE(r.redemption_status, 'REDEEMED') NOT IN ('CANCELED', 'PENDING_UNCANCEL')"
+        row = self.db.fetch_one(query, tuple(params))
+        return dict(row) if row else None
     
     def get_by_redemption(self, redemption_id: int) -> Optional[RealizedTransaction]:
         """Get realized transaction for a specific redemption"""

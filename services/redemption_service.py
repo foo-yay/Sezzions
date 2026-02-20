@@ -431,6 +431,30 @@ class RedemptionService:
         query = "DELETE FROM realized_transactions WHERE redemption_id = ?"
         self.db.execute(query, (redemption_id,))
 
+    def get_allocation_details(self, redemption_id: int) -> List[dict]:
+        """Get FIFO allocation details for a redemption for UI display."""
+        if not self.db:
+            return []
+        rows = self.db.fetch_all(
+            """
+            SELECT
+                ra.purchase_id,
+                ra.allocated_amount,
+                p.purchase_date,
+                p.purchase_time,
+                p.purchase_entry_time_zone,
+                p.amount,
+                p.sc_received,
+                p.remaining_amount
+            FROM redemption_allocations ra
+            JOIN purchases p ON ra.purchase_id = p.id
+            WHERE ra.redemption_id = ?
+            ORDER BY p.purchase_date ASC, COALESCE(p.purchase_time,'00:00:00') ASC, p.id ASC
+            """,
+            (redemption_id,),
+        )
+        return [dict(row) for row in rows]
+
     def get_deletion_impact(self, redemption_id: int) -> str:
         """
         Check if deleting a redemption would affect FIFO allocations or game sessions.
