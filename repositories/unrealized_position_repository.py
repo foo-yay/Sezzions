@@ -34,6 +34,7 @@ class UnrealizedPositionRepository:
             JOIN purchases p ON p.id = ra.purchase_id
             WHERE r.site_id = ? AND r.user_id = ?
               AND r.deleted_at IS NULL
+                            AND COALESCE(r.redemption_status, 'REDEEMED') NOT IN ('CANCELED', 'PENDING_UNCANCEL')
               AND r.is_free_sc = 0
               AND CAST(ra.allocated_amount AS REAL) > 0
               AND p.deleted_at IS NULL
@@ -43,6 +44,7 @@ class UnrealizedPositionRepository:
                   FROM redemptions r2
                   WHERE r2.site_id = ? AND r2.user_id = ?
                     AND r2.deleted_at IS NULL
+                                        AND COALESCE(r2.redemption_status, 'REDEEMED') NOT IN ('CANCELED', 'PENDING_UNCANCEL')
                     AND r2.is_free_sc = 0
                     AND EXISTS (
                         SELECT 1 FROM redemption_allocations ra2
@@ -270,7 +272,13 @@ class UnrealizedPositionRepository:
                 
                 # Get redemptions after checkpoint (all redemptions affect total SC)
                 redemptions_after_query = """
-                    SELECT COALESCE(SUM(amount), 0) as total_redeemed
+                    SELECT COALESCE(SUM(
+                        CASE
+                            WHEN COALESCE(redemption_status, 'REDEEMED') IN ('CANCELED', 'PENDING_UNCANCEL')
+                                THEN 0
+                            ELSE amount
+                        END
+                    ), 0) as total_redeemed
                     FROM redemptions
                     WHERE site_id = ? AND user_id = ?
                       AND deleted_at IS NULL
@@ -287,7 +295,13 @@ class UnrealizedPositionRepository:
                 
                 # Get redeemable redemptions after checkpoint (only non-free-SC redemptions affect redeemable balance)
                 redeemable_redemptions_after_query = """
-                    SELECT COALESCE(SUM(amount), 0) as redeemable_redeemed
+                    SELECT COALESCE(SUM(
+                        CASE
+                            WHEN COALESCE(redemption_status, 'REDEEMED') IN ('CANCELED', 'PENDING_UNCANCEL')
+                                THEN 0
+                            ELSE amount
+                        END
+                    ), 0) as redeemable_redeemed
                     FROM redemptions
                     WHERE site_id = ? AND user_id = ?
                       AND deleted_at IS NULL
@@ -459,6 +473,7 @@ class UnrealizedPositionRepository:
             FROM redemptions
             WHERE site_id = ? AND user_id = ?
                             AND deleted_at IS NULL
+                            AND COALESCE(redemption_status, 'REDEEMED') NOT IN ('CANCELED', 'PENDING_UNCANCEL')
               AND CAST(amount AS REAL) = 0
               AND notes LIKE 'Balance Closed%'
             ORDER BY redemption_date DESC, COALESCE(redemption_time,'00:00:00') DESC, id DESC
@@ -472,6 +487,7 @@ class UnrealizedPositionRepository:
             FROM redemptions
             WHERE site_id = ? AND user_id = ?
                             AND deleted_at IS NULL
+                            AND COALESCE(redemption_status, 'REDEEMED') NOT IN ('CANCELED', 'PENDING_UNCANCEL')
               AND more_remaining IS NOT NULL
               AND more_remaining = 0
             ORDER BY redemption_date DESC, COALESCE(redemption_time,'00:00:00') DESC, id DESC

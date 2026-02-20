@@ -7,6 +7,19 @@ from datetime import datetime, date
 from decimal import Decimal
 
 
+REDEMPTION_STATUS_REDEEMED = "REDEEMED"
+REDEMPTION_STATUS_PENDING_CANCELLATION = "PENDING_CANCELLATION"
+REDEMPTION_STATUS_CANCELED = "CANCELED"
+REDEMPTION_STATUS_PENDING_UNCANCEL = "PENDING_UNCANCEL"
+
+VALID_REDEMPTION_STATUSES = {
+    REDEMPTION_STATUS_REDEEMED,
+    REDEMPTION_STATUS_PENDING_CANCELLATION,
+    REDEMPTION_STATUS_CANCELED,
+    REDEMPTION_STATUS_PENDING_UNCANCEL,
+}
+
+
 @dataclass
 class Redemption:
     """Represents a redemption/withdrawal of funds"""
@@ -25,6 +38,11 @@ class Redemption:
     more_remaining: bool = False
     is_free_sc: bool = False
     notes: Optional[str] = None
+    redemption_status: str = REDEMPTION_STATUS_REDEEMED
+    cancel_effective_date: Optional[date] = None
+    cancel_effective_time: Optional[str] = None
+    cancel_effective_entry_time_zone: Optional[str] = None
+    cancellation_adjustment_id: Optional[int] = None
     id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -72,6 +90,25 @@ class Redemption:
             self.cost_basis = Decimal(str(self.cost_basis))
         if self.taxable_profit is not None and not isinstance(self.taxable_profit, Decimal):
             self.taxable_profit = Decimal(str(self.taxable_profit))
+
+        # Normalize cancellation state
+        self.redemption_status = (self.redemption_status or REDEMPTION_STATUS_REDEEMED).upper()
+        if self.redemption_status not in VALID_REDEMPTION_STATUSES:
+            raise ValueError(f"Invalid redemption_status: {self.redemption_status}")
+
+        if isinstance(self.cancel_effective_date, str) and self.cancel_effective_date:
+            self.cancel_effective_date = datetime.strptime(self.cancel_effective_date, "%Y-%m-%d").date()
+
+        if self.cancel_effective_time and len(self.cancel_effective_time) == 5:
+            self.cancel_effective_time = f"{self.cancel_effective_time}:00"
+
+    @property
+    def is_pending_cancellation(self) -> bool:
+        return self.redemption_status == REDEMPTION_STATUS_PENDING_CANCELLATION
+
+    @property
+    def is_canceled_effective(self) -> bool:
+        return self.redemption_status in {REDEMPTION_STATUS_CANCELED, REDEMPTION_STATUS_PENDING_UNCANCEL}
     
     @property
     def datetime_str(self) -> str:

@@ -9,6 +9,44 @@ Rules:
 
 ---
 
+## 2026-02-20
+
+```yaml
+id: 2026-02-20-01
+type: feature
+areas: [redemptions, services, projections, ui, tests, schema]
+issue: 145
+summary: "Redemption cancel/uncancel restart with pending-session deferral and forward correction"
+details: >
+  Added full redemption cancellation restart workflow with explicit status states
+  (REDEEMED, PENDING_CANCELLATION, CANCELED, PENDING_UNCANCEL). Cancel/uncancel
+  now defers to pending status when a session is active for the same user/site and
+  auto-finalizes on session close using the close timestamp. Effective cancellation
+  creates a linked correction entry in account_adjustments and stores
+  cancellation_adjustment_id on the redemption; effective uncancel soft-deletes that
+  linked correction and restores the redemption to REDEEMED. Expected-balance and
+  unrealized projection logic were updated to honor forward-only correction semantics
+  so canceled/pending-uncancel redemptions are neutralized after cancel-effective
+  timestamp while pending cancellation is inert until finalization. Added Redemptions
+  tab context-menu actions for Cancel/Uncancel plus queued/immediate user feedback,
+  and integration coverage for immediate cancel+uncancel reversion, pending cancel
+  finalization on close, pending uncancel finalization on close, and audit/undo
+  transition logging.
+files_changed:
+  - models/redemption.py
+  - repositories/database.py
+  - repositories/redemption_repository.py
+  - repositories/unrealized_position_repository.py
+  - services/redemption_service.py
+  - services/game_session_service.py
+  - app_facade.py
+  - ui/tabs/redemptions_tab.py
+  - tests/integration/test_issue_145_redemption_cancel_ledger.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
 ## 2026-02-18
 
 ```yaml

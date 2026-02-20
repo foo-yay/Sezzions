@@ -529,6 +529,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                     str(unbased_value) if unbased_value is not None else '',
                     receipt_status,
                     processed_status,
+                    getattr(r, 'redemption_status', '') or '',
                     r.notes or '',
                 ]
                 haystack = " ".join(parts).lower()
@@ -1069,8 +1070,63 @@ class RedemptionsTab(QtWidgets.QWidget):
         
         copy_headers_action = menu.addAction("Copy With Headers")
         copy_headers_action.triggered.connect(self._copy_with_headers)
+
+        selected_ids = self._get_selected_redemption_ids()
+        if len(selected_ids) == 1:
+            redemption = self.facade.get_redemption(selected_ids[0])
+            if redemption is not None:
+                status = (getattr(redemption, "redemption_status", "REDEEMED") or "REDEEMED").upper()
+                menu.addSeparator()
+                if status in {"REDEEMED", "PENDING_UNCANCEL"}:
+                    cancel_action = menu.addAction("Cancel Redemption")
+                    cancel_action.triggered.connect(lambda: self._cancel_selected_redemption())
+                if status in {"CANCELED", "PENDING_CANCELLATION", "PENDING_UNCANCEL"}:
+                    uncancel_action = menu.addAction("Uncancel Redemption")
+                    uncancel_action.triggered.connect(lambda: self._uncancel_selected_redemption())
         
         menu.exec_(self.table.viewport().mapToGlobal(position))
+
+    def _cancel_selected_redemption(self):
+        redemption_id = self._get_selected_redemption_id()
+        if not redemption_id:
+            return
+        try:
+            updated = self.facade.cancel_redemption(redemption_id)
+            status = (getattr(updated, "redemption_status", "") or "").upper()
+            self.refresh_data()
+            if hasattr(self, "main_window") and self.main_window is not None:
+                self.main_window.refresh_all_tabs()
+            if status == "PENDING_CANCELLATION":
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Cancellation Queued",
+                    "Cancellation is pending and will auto-finalize when the active session ends.",
+                )
+            else:
+                QtWidgets.QMessageBox.information(self, "Redemption Canceled", "Redemption cancellation applied.")
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Error", f"Failed to cancel redemption:\n{e}")
+
+    def _uncancel_selected_redemption(self):
+        redemption_id = self._get_selected_redemption_id()
+        if not redemption_id:
+            return
+        try:
+            updated = self.facade.uncancel_redemption(redemption_id)
+            status = (getattr(updated, "redemption_status", "") or "").upper()
+            self.refresh_data()
+            if hasattr(self, "main_window") and self.main_window is not None:
+                self.main_window.refresh_all_tabs()
+            if status == "PENDING_UNCANCEL":
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Uncancel Queued",
+                    "Uncancel is pending and will auto-finalize when the active session ends.",
+                )
+            else:
+                QtWidgets.QMessageBox.information(self, "Redemption Uncanceled", "Redemption uncancel applied.")
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Error", f"Failed to uncancel redemption:\n{e}")
 
     def _mark_received(self):
         """Open Mark Received dialog and bulk-set receipt_date for selected rows."""

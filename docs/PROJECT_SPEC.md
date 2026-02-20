@@ -1,6 +1,6 @@
 # Sezzions — Master Product & Implementation Spec
 
-Version: 2026-02-17
+Version: 2026-02-20
 
 This document is intended to be the **single consolidated project file** describing Sezzions end-to-end. It should be usable by a developer team (or an AI) to recreate Sezzions with high functional parity.
 
@@ -146,6 +146,35 @@ Derived invariants:
 - `more_remaining = 1`: treat redemption as **partial**; consume only the redemption amount.
 
 This distinction is intentionally “business semantic” and must be preserved.
+
+#### Redemption Cancel / Uncancel Restart (Issue #145)
+
+Redemptions are forward-corrected rather than historically erased. Cancel/uncancel must preserve timestamped accounting continuity and remain undoable/auditable.
+
+**Redemption statuses:**
+- `REDEEMED`: normal, effective redemption.
+- `PENDING_CANCELLATION`: cancel requested while a session is Active for the same (user, site); effect is deferred.
+- `CANCELED`: cancellation effective; redemption is neutralized from its cancel-effective timestamp forward.
+- `PENDING_UNCANCEL`: uncancel requested while a session is Active for the same (user, site); reinstatement rollback is deferred.
+
+**Execution rules:**
+- **No active session** at request time:
+  - Cancel: apply immediately (`CANCELED`) and stamp cancel-effective date/time/timezone.
+  - Uncancel: apply immediately (`REDEEMED`) and clear cancel-effective metadata.
+- **Active session present** at request time:
+  - Cancel: move to `PENDING_CANCELLATION` only (no immediate projection change).
+  - Uncancel of an effective canceled redemption: move to `PENDING_UNCANCEL` only.
+- Pending transitions finalize automatically when the active session closes, using the closing timestamp as the effective timestamp.
+
+**Adjustment and projection semantics:**
+- Effective cancellation creates a linked correction entry in `account_adjustments` and stores its ID on the redemption (`cancellation_adjustment_id`).
+- Effective uncancel soft-deletes that linked correction and clears the link.
+- Expected balance and unrealized projections treat `CANCELED` and `PENDING_UNCANCEL` redemptions as neutralized after cancel-effective timestamp (forward-only correction).
+- Pending cancellation (`PENDING_CANCELLATION`) does not alter projections until finalization.
+
+**Safety requirements:**
+- Cancel/uncancel state transitions must log audit updates and push undo/redo entries.
+- All status changes + linked adjustment writes occur in one transaction (no partial state).
 
 ### 4.2 Expected Balance Checks (Purchase/Session Editing)
 
@@ -634,6 +663,18 @@ Located in `app_facade.py`. Accepts a list of redemption IDs plus optional keywo
 - After committing a non-`None` `receipt_date`, calls `notification_rules_service.on_redemption_received(id)` for each affected ID to dismiss any pending-receipt notification — preserving the same dismissal behavior as the single-record edit path.
 - Writes one `audit_service.log_update` entry per affected row (all sharing a single `group_id`) inside the transaction, then pushes one `undo_redo_service.push_operation` so the entire bulk op is a single entry on the undo stack. Ctrl+Z reverts all rows atomically.
 - Returns the count of rows updated; empty list is a no-op (returns 0).
+
+### Redemptions Cancel / Uncancel Actions (Issue #145)
+
+The Redemptions tab context menu includes two status actions for individual rows:
+
+- **Cancel Redemption**
+- **Uncancel Redemption**
+
+Behavior contract:
+- If no active session exists for the redemption's (user, site), the action applies immediately and the table reflects the new effective status.
+- If an active session exists, the action is queued (`PENDING_CANCELLATION` or `PENDING_UNCANCEL`) and a user-facing message indicates it will finalize when that session closes.
+- Search/filter text includes redemption status so pending/effective cancellation states are discoverable from the tab’s search field.
 
 ### 5.1 Spreadsheet UX (Issue #14, Phase 1)
 
@@ -1683,6 +1724,11 @@ CREATE TABLE redemptions (
         receipt_date TEXT,
         processed INTEGER DEFAULT 0,
         more_remaining INTEGER DEFAULT 0,
+        redemption_status TEXT DEFAULT 'REDEEMED',
+        cancel_effective_date TEXT,
+        cancel_effective_time TEXT,
+        cancel_effective_entry_time_zone TEXT,
+        cancellation_adjustment_id INTEGER,
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP, deleted_at TIMESTAMP NULL,

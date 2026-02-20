@@ -553,6 +553,21 @@ class GameSessionService:
             expected_total -= amount
             expected_redeemable -= amount
 
+            # Issue #145: forward correction for canceled redemptions.
+            # If cancellation is effective before cutoff, add back redeemed amount.
+            status = (getattr(r, "redemption_status", "REDEEMED") or "REDEEMED").upper()
+            if status in {"CANCELED", "PENDING_UNCANCEL"} and getattr(r, "cancel_effective_date", None):
+                c_dt = to_utc_dt(
+                    r.cancel_effective_date,
+                    getattr(r, "cancel_effective_time", None),
+                    getattr(r, "cancel_effective_entry_time_zone", None) or get_accounting_timezone_name(),
+                )
+                if anchor_dt is not None and c_dt <= anchor_dt:
+                    continue
+                if c_dt < cutoff:
+                    expected_total += amount
+                    expected_redeemable += amount
+
         for p in purchases_sorted:
             p_dt = to_utc_dt(
                 p.purchase_date,

@@ -5,8 +5,15 @@ import uuid
 from dataclasses import asdict
 from typing import List, Optional, Tuple, TYPE_CHECKING
 from decimal import Decimal
-from datetime import date
-from models.redemption import Redemption
+from datetime import date, datetime
+from models.redemption import (
+    Redemption,
+    REDEMPTION_STATUS_REDEEMED,
+    REDEMPTION_STATUS_PENDING_CANCELLATION,
+    REDEMPTION_STATUS_CANCELED,
+    REDEMPTION_STATUS_PENDING_UNCANCEL,
+)
+from models.adjustment import Adjustment, AdjustmentType
 from tools.timezone_utils import get_entry_timezone_name
 from repositories.redemption_repository import RedemptionRepository
 from services.fifo_service import FIFOService
@@ -30,6 +37,8 @@ class RedemptionService:
         self.db = db_manager
         self.audit_service: Optional['AuditService'] = None
         self.undo_redo_service: Optional['UndoRedoService'] = None
+        self.game_session_service = None
+        self.adjustment_service = None
     
     def create_redemption(
         self,
@@ -485,3 +494,350 @@ class RedemptionService:
         except Exception as e:
             print(f"Error checking redemption deletion impact: {e}")
             return ""
+
+    def cancel_redemption(
+        self,
+        redemption_id: int,
+        *,
+        reason: Optional[str] = None,
+        effective_date: Optional[date] = None,
+        effective_time: Optional[str] = None,
+        effective_entry_time_zone: Optional[str] = None,
+        defer_if_active_session: bool = True,
+    ) -> Redemption:
+        """Cancel a redemption using forward-only reinstatement semantics."""
+        redemption = self.redemption_repo.get_by_id(redemption_id)
+        if not redemption:
+            raise ValueError(f"Redemption {redemption_id} not found")
+
+        if redemption.redemption_status == REDEMPTION_STATUS_PENDING_CANCELLATION:
+            return redemption
+        if redemption.redemption_status in {REDEMPTION_STATUS_CANCELED, REDEMPTION_STATUS_PENDING_UNCANCEL}:
+            raise ValueError("Redemption is already canceled")
+
+        has_active = bool(self.game_session_service and self.game_session_service.get_active_session(redemption.user_id, redemption.site_id))
+        group_id = self.audit_service.generate_group_id() if self.audit_service else str(uuid.uuid4())
+        old_data = asdict(redemption)
+
+        if has_active and defer_if_active_session:
+            self.redemption_repo.update_status_fields(
+                redemption_id=redemption_id,
+                redemption_status=REDEMPTION_STATUS_PENDING_CANCELLATION,
+                auto_commit=False,
+            )
+            updated = self.redemption_repo.get_by_id(redemption_id)
+            if self.audit_service and updated:
+                self.audit_service.log_update(
+                    "redemptions",
+                    redemption_id,
+                    old_data,
+                    asdict(updated),
+                    group_id=group_id,
+                    auto_commit=False,
+                )
+            if self.undo_redo_service:
+                self.undo_redo_service.push_operation(
+                    group_id=group_id,
+                    description=f"Queue redemption cancel #{redemption_id}",
+                    timestamp=datetime.now().isoformat(),
+                )
+            return updated if updated else redemption
+
+        effective_date = effective_date or date.today()
+        effective_time = effective_time or "00:00:00"
+        effective_entry_time_zone = effective_entry_time_zone or get_entry_timezone_name()
+        adjustment_id = self._create_reinstatement_adjustment(
+            redemption=redemption,
+            effective_date=effective_date,
+            effective_time=effective_time,
+            effective_entry_time_zone=effective_entry_time_zone,
+            reason=reason,
+            group_id=group_id,
+        )
+
+        self.redemption_repo.update_status_fields(
+            redemption_id=redemption_id,
+            redemption_status=REDEMPTION_STATUS_CANCELED,
+            cancel_effective_date=effective_date,
+            cancel_effective_time=effective_time,
+            cancel_effective_entry_time_zone=effective_entry_time_zone,
+            cancellation_adjustment_id=adjustment_id,
+            auto_commit=False,
+        )
+
+        updated = self.redemption_repo.get_by_id(redemption_id)
+        if self.audit_service and updated:
+            self.audit_service.log_update(
+                "redemptions",
+                redemption_id,
+                old_data,
+                asdict(updated),
+                group_id=group_id,
+                auto_commit=False,
+            )
+        if self.undo_redo_service:
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Cancel redemption #{redemption_id}",
+                timestamp=datetime.now().isoformat(),
+            )
+        return updated if updated else redemption
+
+    def uncancel_redemption(
+        self,
+        redemption_id: int,
+        *,
+        defer_if_active_session: bool = True,
+    ) -> Redemption:
+        """Uncancel a redemption by removing pending/effective cancellation."""
+        redemption = self.redemption_repo.get_by_id(redemption_id)
+        if not redemption:
+            raise ValueError(f"Redemption {redemption_id} not found")
+
+        if redemption.redemption_status == REDEMPTION_STATUS_REDEEMED:
+            return redemption
+
+        group_id = self.audit_service.generate_group_id() if self.audit_service else str(uuid.uuid4())
+        old_data = asdict(redemption)
+
+        if redemption.redemption_status == REDEMPTION_STATUS_PENDING_CANCELLATION:
+            self.redemption_repo.update_status_fields(
+                redemption_id=redemption_id,
+                redemption_status=REDEMPTION_STATUS_REDEEMED,
+                auto_commit=False,
+            )
+            updated = self.redemption_repo.get_by_id(redemption_id)
+            if self.audit_service and updated:
+                self.audit_service.log_update(
+                    "redemptions",
+                    redemption_id,
+                    old_data,
+                    asdict(updated),
+                    group_id=group_id,
+                    auto_commit=False,
+                )
+            if self.undo_redo_service:
+                self.undo_redo_service.push_operation(
+                    group_id=group_id,
+                    description=f"Uncancel pending redemption #{redemption_id}",
+                    timestamp=datetime.now().isoformat(),
+                )
+            return updated if updated else redemption
+
+        has_active = bool(self.game_session_service and self.game_session_service.get_active_session(redemption.user_id, redemption.site_id))
+        if has_active and defer_if_active_session:
+            self.redemption_repo.update_status_fields(
+                redemption_id=redemption_id,
+                redemption_status=REDEMPTION_STATUS_PENDING_UNCANCEL,
+                cancel_effective_date=redemption.cancel_effective_date,
+                cancel_effective_time=redemption.cancel_effective_time,
+                cancel_effective_entry_time_zone=redemption.cancel_effective_entry_time_zone,
+                cancellation_adjustment_id=redemption.cancellation_adjustment_id,
+                auto_commit=False,
+            )
+            updated = self.redemption_repo.get_by_id(redemption_id)
+            if self.audit_service and updated:
+                self.audit_service.log_update(
+                    "redemptions",
+                    redemption_id,
+                    old_data,
+                    asdict(updated),
+                    group_id=group_id,
+                    auto_commit=False,
+                )
+            if self.undo_redo_service:
+                self.undo_redo_service.push_operation(
+                    group_id=group_id,
+                    description=f"Queue redemption uncancel #{redemption_id}",
+                    timestamp=datetime.now().isoformat(),
+                )
+            return updated if updated else redemption
+
+        if redemption.cancellation_adjustment_id:
+            self._soft_delete_reinstatement_adjustment(
+                adjustment_id=redemption.cancellation_adjustment_id,
+                group_id=group_id,
+                reason="Redemption uncanceled",
+            )
+
+        self.redemption_repo.update_status_fields(
+            redemption_id=redemption_id,
+            redemption_status=REDEMPTION_STATUS_REDEEMED,
+            auto_commit=False,
+        )
+        updated = self.redemption_repo.get_by_id(redemption_id)
+        if self.audit_service and updated:
+            self.audit_service.log_update(
+                "redemptions",
+                redemption_id,
+                old_data,
+                asdict(updated),
+                group_id=group_id,
+                auto_commit=False,
+            )
+        if self.undo_redo_service:
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Uncancel redemption #{redemption_id}",
+                timestamp=datetime.now().isoformat(),
+            )
+        return updated if updated else redemption
+
+    def finalize_pending_for_pair(
+        self,
+        *,
+        user_id: int,
+        site_id: int,
+        effective_date: date,
+        effective_time: str,
+        effective_entry_time_zone: Optional[str] = None,
+    ) -> List[Redemption]:
+        """Finalize pending cancellation/uncancel states when a session closes."""
+        effective_entry_time_zone = effective_entry_time_zone or get_entry_timezone_name()
+        finalized: List[Redemption] = []
+        pending = self.redemption_repo.get_pending_for_pair(user_id, site_id)
+        for redemption in pending:
+            if redemption.redemption_status == REDEMPTION_STATUS_PENDING_CANCELLATION:
+                group_id = self.audit_service.generate_group_id() if self.audit_service else str(uuid.uuid4())
+                old_data = asdict(redemption)
+                adjustment_id = self._create_reinstatement_adjustment(
+                    redemption=redemption,
+                    effective_date=effective_date,
+                    effective_time=effective_time,
+                    effective_entry_time_zone=effective_entry_time_zone,
+                    reason="Finalize pending cancellation on session close",
+                    group_id=group_id,
+                )
+                self.redemption_repo.update_status_fields(
+                    redemption_id=redemption.id,
+                    redemption_status=REDEMPTION_STATUS_CANCELED,
+                    cancel_effective_date=effective_date,
+                    cancel_effective_time=effective_time,
+                    cancel_effective_entry_time_zone=effective_entry_time_zone,
+                    cancellation_adjustment_id=adjustment_id,
+                    auto_commit=False,
+                )
+                updated = self.redemption_repo.get_by_id(redemption.id)
+                if self.audit_service and updated:
+                    self.audit_service.log_update(
+                        "redemptions",
+                        redemption.id,
+                        old_data,
+                        asdict(updated),
+                        group_id=group_id,
+                        auto_commit=False,
+                    )
+                if self.undo_redo_service:
+                    self.undo_redo_service.push_operation(
+                        group_id=group_id,
+                        description=f"Finalize pending cancel #{redemption.id}",
+                        timestamp=datetime.now().isoformat(),
+                    )
+                if updated:
+                    finalized.append(updated)
+            elif redemption.redemption_status == REDEMPTION_STATUS_PENDING_UNCANCEL:
+                group_id = self.audit_service.generate_group_id() if self.audit_service else str(uuid.uuid4())
+                old_data = asdict(redemption)
+                if redemption.cancellation_adjustment_id:
+                    self._soft_delete_reinstatement_adjustment(
+                        adjustment_id=redemption.cancellation_adjustment_id,
+                        group_id=group_id,
+                        reason="Finalize pending uncancel on session close",
+                    )
+                self.redemption_repo.update_status_fields(
+                    redemption_id=redemption.id,
+                    redemption_status=REDEMPTION_STATUS_REDEEMED,
+                    auto_commit=False,
+                )
+                updated = self.redemption_repo.get_by_id(redemption.id)
+                if self.audit_service and updated:
+                    self.audit_service.log_update(
+                        "redemptions",
+                        redemption.id,
+                        old_data,
+                        asdict(updated),
+                        group_id=group_id,
+                        auto_commit=False,
+                    )
+                if self.undo_redo_service:
+                    self.undo_redo_service.push_operation(
+                        group_id=group_id,
+                        description=f"Finalize pending uncancel #{redemption.id}",
+                        timestamp=datetime.now().isoformat(),
+                    )
+                if updated:
+                    finalized.append(updated)
+        return finalized
+
+    def _create_reinstatement_adjustment(
+        self,
+        *,
+        redemption: Redemption,
+        effective_date: date,
+        effective_time: str,
+        effective_entry_time_zone: str,
+        reason: Optional[str],
+        group_id: str,
+    ) -> int:
+        if not self.adjustment_service or not self.game_session_service:
+            raise ValueError("Adjustment and game session services are required for cancellation reinstatement")
+
+        expected_total, expected_redeemable = self.game_session_service.compute_expected_balances(
+            user_id=redemption.user_id,
+            site_id=redemption.site_id,
+            session_date=effective_date,
+            session_time=effective_time,
+            entry_time_zone=effective_entry_time_zone,
+        )
+        amount = Decimal(str(redemption.amount))
+        checkpoint_total = expected_total + amount
+        checkpoint_redeemable = expected_redeemable + amount
+
+        adjustment = Adjustment(
+            user_id=redemption.user_id,
+            site_id=redemption.site_id,
+            effective_date=effective_date,
+            effective_time=effective_time,
+            effective_entry_time_zone=effective_entry_time_zone,
+            type=AdjustmentType.BALANCE_CHECKPOINT_CORRECTION,
+            checkpoint_total_sc=checkpoint_total,
+            checkpoint_redeemable_sc=checkpoint_redeemable,
+            reason=reason or "Redemption cancellation reinstatement",
+            notes=f"REDEMPTION_CANCELLATION_REINSTATEMENT for redemption #{redemption.id}",
+            related_table="redemptions",
+            related_id=redemption.id,
+        )
+        adjustment = self.adjustment_service.adjustment_repo.create(adjustment, auto_commit=False)
+
+        if self.audit_service and adjustment.id is not None:
+            self.audit_service.log_create(
+                table_name="account_adjustments",
+                record_id=adjustment.id,
+                new_data=asdict(adjustment),
+                group_id=group_id,
+                auto_commit=False,
+            )
+        return int(adjustment.id)
+
+    def _soft_delete_reinstatement_adjustment(self, *, adjustment_id: int, group_id: str, reason: str) -> None:
+        if not self.adjustment_service:
+            return
+        existing = self.adjustment_service.adjustment_repo.get_by_id(adjustment_id)
+        if not existing or existing.deleted_at is not None:
+            return
+        old_data = asdict(existing)
+        self.adjustment_service.adjustment_repo.soft_delete(
+            adjustment_id,
+            reason=reason,
+            auto_commit=False,
+        )
+        updated = self.adjustment_service.adjustment_repo.get_by_id(adjustment_id)
+        if self.audit_service and updated:
+            self.audit_service.log_update(
+                "account_adjustments",
+                adjustment_id,
+                old_data,
+                asdict(updated),
+                group_id=group_id,
+                auto_commit=False,
+            )

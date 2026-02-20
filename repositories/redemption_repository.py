@@ -133,9 +133,21 @@ class RedemptionRepository:
             INSERT INTO redemptions 
             (user_id, site_id, amount, fees, redemption_date, redemption_time,
              redemption_entry_time_zone, redemption_method_id, is_free_sc,
-             receipt_date, processed, more_remaining, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             receipt_date, processed, more_remaining, redemption_status,
+             cancel_effective_date, cancel_effective_time, cancel_effective_entry_time_zone,
+             cancellation_adjustment_id, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
+        cancel_effective_date = None
+        cancel_effective_time = None
+        cancel_effective_tz = None
+        if redemption.cancel_effective_date:
+            cancel_effective_date, cancel_effective_time = local_date_time_to_utc(
+                redemption.cancel_effective_date,
+                redemption.cancel_effective_time,
+                redemption.cancel_effective_entry_time_zone or entry_tz,
+            )
+            cancel_effective_tz = redemption.cancel_effective_entry_time_zone or entry_tz
         redemption_id = self.db.execute(query, (
             redemption.user_id,
             redemption.site_id,
@@ -149,6 +161,11 @@ class RedemptionRepository:
             redemption.receipt_date.isoformat() if redemption.receipt_date else None,
             1 if redemption.processed else 0,
             1 if redemption.more_remaining else 0,
+            redemption.redemption_status,
+            cancel_effective_date,
+            cancel_effective_time,
+            cancel_effective_tz,
+            redemption.cancellation_adjustment_id,
             redemption.notes
         ))
         redemption.id = redemption_id
@@ -172,9 +189,22 @@ class RedemptionRepository:
             SET user_id = ?, site_id = ?, amount = ?, fees = ?, redemption_date = ?, 
                 redemption_time = ?, redemption_entry_time_zone = ?, redemption_method_id = ?, is_free_sc = ?,
                 receipt_date = ?, processed = ?, more_remaining = ?,
+                redemption_status = ?,
+                cancel_effective_date = ?, cancel_effective_time = ?, cancel_effective_entry_time_zone = ?,
+                cancellation_adjustment_id = ?,
                 notes = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """
+        cancel_effective_date = None
+        cancel_effective_time = None
+        cancel_effective_tz = None
+        if redemption.cancel_effective_date:
+            cancel_effective_date, cancel_effective_time = local_date_time_to_utc(
+                redemption.cancel_effective_date,
+                redemption.cancel_effective_time,
+                redemption.cancel_effective_entry_time_zone or entry_tz,
+            )
+            cancel_effective_tz = redemption.cancel_effective_entry_time_zone or entry_tz
         self.db.execute(query, (
             redemption.user_id,
             redemption.site_id,
@@ -188,6 +218,11 @@ class RedemptionRepository:
             redemption.receipt_date.isoformat() if redemption.receipt_date else None,
             1 if redemption.processed else 0,
             1 if redemption.more_remaining else 0,
+            redemption.redemption_status,
+            cancel_effective_date,
+            cancel_effective_time,
+            cancel_effective_tz,
+            redemption.cancellation_adjustment_id,
             redemption.notes,
             redemption.id
         ))
@@ -203,6 +238,70 @@ class RedemptionRepository:
         """Restore a soft-deleted redemption by clearing deleted_at"""
         query = "UPDATE redemptions SET deleted_at = NULL WHERE id = ?"
         self.db.execute(query, (redemption_id,))
+
+    def update_status_fields(
+        self,
+        *,
+        redemption_id: int,
+        redemption_status: str,
+        cancel_effective_date: Optional[date] = None,
+        cancel_effective_time: Optional[str] = None,
+        cancel_effective_entry_time_zone: Optional[str] = None,
+        cancellation_adjustment_id: Optional[int] = None,
+        auto_commit: bool = True,
+    ) -> None:
+        """Update cancellation-related fields for a redemption."""
+        effective_date_utc = None
+        effective_time_utc = None
+        effective_tz = None
+        if cancel_effective_date:
+            effective_tz = cancel_effective_entry_time_zone or get_entry_timezone_name()
+            effective_date_utc, effective_time_utc = local_date_time_to_utc(
+                cancel_effective_date,
+                cancel_effective_time or "00:00:00",
+                effective_tz,
+            )
+
+        query = """
+            UPDATE redemptions
+            SET redemption_status = ?,
+                cancel_effective_date = ?,
+                cancel_effective_time = ?,
+                cancel_effective_entry_time_zone = ?,
+                cancellation_adjustment_id = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """
+        params = (
+            redemption_status,
+            effective_date_utc,
+            effective_time_utc,
+            effective_tz,
+            cancellation_adjustment_id,
+            redemption_id,
+        )
+        if auto_commit:
+            self.db.execute(query, params)
+        else:
+            self.db.execute_no_commit(query, params)
+
+    def get_pending_for_pair(self, user_id: int, site_id: int) -> List[Redemption]:
+        """Get pending cancellation/uncancel redemptions for a user/site pair."""
+        query = """
+            SELECT r.*,
+                   EXISTS(
+                       SELECT 1 FROM redemption_allocations ra
+                       WHERE ra.redemption_id = r.id
+                   ) AS has_fifo_allocation
+            FROM redemptions r
+            WHERE r.deleted_at IS NULL
+              AND r.user_id = ?
+              AND r.site_id = ?
+              AND r.redemption_status IN ('PENDING_CANCELLATION', 'PENDING_UNCANCEL')
+            ORDER BY r.redemption_date ASC, COALESCE(r.redemption_time, '00:00:00') ASC, r.id ASC
+        """
+        rows = self.db.fetch_all(query, (user_id, site_id))
+        return [self._row_to_model(row) for row in rows]
     
     def _row_to_model(self, row: dict) -> Redemption:
         """Convert database row to Redemption model"""
@@ -235,9 +334,26 @@ class RedemptionRepository:
             more_remaining=bool(row['more_remaining']) if 'more_remaining' in row.keys() else False,
             is_free_sc=bool(row['is_free_sc']) if 'is_free_sc' in row.keys() else False,
             notes=row['notes'] if 'notes' in row.keys() else None,
+            redemption_status=row['redemption_status'] if 'redemption_status' in row.keys() and row['redemption_status'] else 'REDEEMED',
+            cancel_effective_date=row['cancel_effective_date'] if 'cancel_effective_date' in row.keys() else None,
+            cancel_effective_time=row['cancel_effective_time'] if 'cancel_effective_time' in row.keys() else None,
+            cancel_effective_entry_time_zone=row['cancel_effective_entry_time_zone'] if 'cancel_effective_entry_time_zone' in row.keys() else None,
+            cancellation_adjustment_id=row['cancellation_adjustment_id'] if 'cancellation_adjustment_id' in row.keys() else None,
             created_at=row['created_at'] if 'created_at' in row.keys() else None,
             updated_at=row['updated_at'] if 'updated_at' in row.keys() else None
         )
+
+        if redemption.cancel_effective_date and isinstance(redemption.cancel_effective_date, str):
+            redemption.cancel_effective_date = datetime.strptime(redemption.cancel_effective_date, "%Y-%m-%d").date()
+        if redemption.cancel_effective_date:
+            cancel_tz = redemption.cancel_effective_entry_time_zone or get_accounting_timezone_name()
+            local_cancel_date, local_cancel_time = utc_date_time_to_local(
+                redemption.cancel_effective_date,
+                redemption.cancel_effective_time or "00:00:00",
+                cancel_tz,
+            )
+            redemption.cancel_effective_date = local_cancel_date
+            redemption.cancel_effective_time = local_cancel_time
         
         # Add optional joined fields
         if 'user_name' in row.keys():

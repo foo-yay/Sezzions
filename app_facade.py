@@ -73,6 +73,7 @@ from models.unrealized_position import UnrealizedPosition
 from models.realized_transaction import RealizedTransaction
 from models.expense import Expense
 from models.adjustment import Adjustment
+from tools.timezone_utils import get_entry_timezone_name
 
 
 class AppFacade:
@@ -154,6 +155,8 @@ class AppFacade:
         
         # Inject game_session_service into purchase_service for redeemable balance computation
         self.purchase_service.game_session_service = self.game_session_service
+        self.redemption_service.game_session_service = self.game_session_service
+        self.redemption_service.adjustment_service = self.adjustment_service
         
         self.report_service = ReportService(self.db)
         self.validation_service = ValidationService(self.db)
@@ -1535,6 +1538,93 @@ class AppFacade:
             )
         return updated
 
+    def cancel_redemption(self, redemption_id: int, *, reason: Optional[str] = None) -> Redemption:
+        """Cancel a redemption with Issue #145 forward-only semantics."""
+        redemption = self.redemption_repo.get_by_id(redemption_id)
+        if not redemption:
+            raise ValueError(f"Redemption {redemption_id} not found")
+
+        active_session = self.game_session_service.get_active_session(redemption.user_id, redemption.site_id)
+        effective_date = date.today()
+        effective_time = "00:00:00"
+        effective_tz = get_entry_timezone_name()
+
+        if not active_session:
+            from datetime import datetime as dt_module
+            now = dt_module.now()
+            effective_date = now.date()
+            effective_time = now.strftime("%H:%M:%S")
+            adjusted_date_str, adjusted_time_str, _ = self.timestamp_service.ensure_unique_timestamp(
+                user_id=redemption.user_id,
+                site_id=redemption.site_id,
+                date_val=effective_date,
+                time_str=effective_time,
+                event_type="adjustment",
+            )
+            if isinstance(adjusted_date_str, str):
+                effective_date = dt_module.strptime(adjusted_date_str, "%Y-%m-%d").date()
+            else:
+                effective_date = adjusted_date_str
+            effective_time = adjusted_time_str
+
+        with self.db.transaction():
+            updated = self.redemption_service.cancel_redemption(
+                redemption_id,
+                reason=reason,
+                effective_date=effective_date,
+                effective_time=effective_time,
+                effective_entry_time_zone=effective_tz,
+                defer_if_active_session=True,
+            )
+
+        if updated.redemption_status == "CANCELED" and updated.cancel_effective_date:
+            boundary_date, boundary_time = self._containing_boundary(
+                updated.site_id,
+                updated.user_id,
+                updated.cancel_effective_date,
+                updated.cancel_effective_time,
+            )
+            self._rebuild_or_mark_stale(
+                updated.user_id,
+                updated.site_id,
+                boundary_date,
+                boundary_time,
+                reason="redemption cancel",
+            )
+        return updated
+
+    def uncancel_redemption(self, redemption_id: int) -> Redemption:
+        """Undo a redemption cancellation using Issue #145 semantics."""
+        old_redemption = self.redemption_repo.get_by_id(redemption_id)
+        if not old_redemption:
+            raise ValueError(f"Redemption {redemption_id} not found")
+
+        with self.db.transaction():
+            updated = self.redemption_service.uncancel_redemption(
+                redemption_id,
+                defer_if_active_session=True,
+            )
+
+        if (
+            old_redemption.redemption_status in {"CANCELED", "PENDING_UNCANCEL"}
+            and updated.redemption_status == "REDEEMED"
+            and old_redemption.cancel_effective_date
+        ):
+            boundary_date, boundary_time = self._containing_boundary(
+                old_redemption.site_id,
+                old_redemption.user_id,
+                old_redemption.cancel_effective_date,
+                old_redemption.cancel_effective_time,
+            )
+            self._rebuild_or_mark_stale(
+                old_redemption.user_id,
+                old_redemption.site_id,
+                boundary_date,
+                boundary_time,
+                reason="redemption uncancel",
+            )
+        return updated
+
     def bulk_update_redemption_metadata(
         self,
         redemption_ids: List[int],
@@ -1924,6 +2014,38 @@ class AppFacade:
             recalculate_pl=recalculate_pl, 
             **kwargs
         )
+
+        # Issue #145: finalize pending redemption cancellation/uncancel when a session closes.
+        became_closed = (
+            old_session is not None
+            and old_session.status != "Closed"
+            and updated.status == "Closed"
+        )
+        if became_closed and updated.end_date:
+            with self.db.transaction():
+                finalized = self.redemption_service.finalize_pending_for_pair(
+                    user_id=updated.user_id,
+                    site_id=updated.site_id,
+                    effective_date=updated.end_date,
+                    effective_time=updated.end_time or updated.session_time or "00:00:00",
+                    effective_entry_time_zone=updated.end_entry_time_zone
+                    or updated.start_entry_time_zone
+                    or get_entry_timezone_name(),
+                )
+            if finalized:
+                boundary_date, boundary_time = self._containing_boundary(
+                    updated.site_id,
+                    updated.user_id,
+                    updated.end_date,
+                    updated.end_time or updated.session_time,
+                )
+                self._rebuild_or_mark_stale(
+                    updated.user_id,
+                    updated.site_id,
+                    boundary_date,
+                    boundary_time,
+                    reason="session close finalize pending redemption actions",
+                )
         if old_session:
             old_pair = (old_session.user_id, old_session.site_id)
             new_pair = (updated.user_id, updated.site_id)
