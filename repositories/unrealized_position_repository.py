@@ -622,6 +622,7 @@ class UnrealizedPositionRepository:
                 WHERE site_id = ? AND user_id = ?
                   AND deleted_at IS NULL
                   AND type = 'BALANCE_CHECKPOINT_CORRECTION'
+                                    AND LOWER(COALESCE(related_table, '')) != 'redemptions'
                 ORDER BY effective_date DESC, COALESCE(effective_time,'00:00:00') DESC, id DESC
                 LIMIT 1
             """

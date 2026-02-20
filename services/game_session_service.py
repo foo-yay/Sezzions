@@ -473,6 +473,7 @@ class GameSessionService:
         cutoff_tz = entry_time_zone or get_entry_timezone_name() or get_accounting_timezone_name()
         cutoff = to_utc_dt(session_date, session_time, cutoff_tz)
         anchor_dt: Optional[datetime] = None
+        anchor_from_balance_checkpoint = False
 
         # Priority 1: explicit checkpoint
         if self.adjustment_service is not None:
@@ -490,6 +491,7 @@ class GameSessionService:
                 )
                 expected_total = Decimal(str(latest_checkpoint.checkpoint_total_sc))
                 expected_redeemable = Decimal(str(latest_checkpoint.checkpoint_redeemable_sc))
+                anchor_from_balance_checkpoint = True
 
         # Priority 2: last closed session
         if anchor_dt is None:
@@ -595,6 +597,42 @@ class GameSessionService:
                 expected_redeemable = Decimal(str(p.starting_redeemable_balance))
             # Otherwise purchases do not increase expected redeemable; redeemable is earned via play-through
             # captured in sessions/checkpoints.
+
+        if anchor_from_balance_checkpoint and anchor_dt is not None:
+            anchor_cutoff = anchor_dt.strftime("%Y-%m-%d %H:%M:%S")
+            query_cutoff = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+            uncancel_reversal_query = """
+                SELECT
+                    COALESCE(SUM(CAST(r.amount AS REAL)), 0) AS total_uncanceled,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN COALESCE(r.is_free_sc, 0) = 0 THEN CAST(r.amount AS REAL)
+                            ELSE 0
+                        END
+                    ), 0) AS redeemable_uncanceled
+                FROM account_adjustments a
+                JOIN redemptions r ON r.id = a.related_id
+                WHERE a.user_id = ?
+                  AND a.site_id = ?
+                  AND a.type = 'BALANCE_CHECKPOINT_CORRECTION'
+                  AND a.related_table = 'redemptions'
+                  AND a.deleted_at IS NOT NULL
+                  AND a.deleted_at > ?
+                  AND a.deleted_at < ?
+                  AND (
+                      a.deleted_reason = 'Redemption uncanceled'
+                      OR a.deleted_reason = 'Finalize pending uncancel on session close'
+                  )
+            """
+            adjustment_db = self.adjustment_service.adjustment_repo.db if self.adjustment_service else None
+            row = adjustment_db.fetch_one(
+                uncancel_reversal_query,
+                (user_id, site_id, anchor_cutoff, query_cutoff),
+            ) if adjustment_db else None
+            uncanceled_total = Decimal(str((row or {}).get("total_uncanceled") or 0))
+            uncanceled_redeemable = Decimal(str((row or {}).get("redeemable_uncanceled") or 0))
+            expected_total -= uncanceled_total
+            expected_redeemable -= uncanceled_redeemable
 
         expected_total = max(Decimal("0.00"), expected_total)
         expected_redeemable = max(Decimal("0.00"), expected_redeemable)

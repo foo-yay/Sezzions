@@ -12,6 +12,26 @@ Rules:
 ## 2026-02-20
 
 ```yaml
+id: 2026-02-20-13
+type: fix
+areas: [unrealized, redemptions, sessions, tests]
+issue: 145
+summary: "Fix re-cancel unrealized spike caused by compounding redemption checkpoint anchors"
+details: >
+  Resolved a state drift where re-canceling an uncanceled redemption could spike Unrealized totals
+  (for example 1000 -> 5944.82) due to redemption-checkpoint compounding. Unrealized anchor selection
+  now excludes redemption-generated checkpoints, and expected-balance computation applies forward
+  uncancel reversal events when checkpoint-anchored. Added regression coverage for no-double-jump
+  recancel behavior.
+files_changed:
+  - repositories/unrealized_position_repository.py
+  - services/game_session_service.py
+  - tests/integration/test_issue_145_redemption_cancel_ledger.py
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
+```yaml
 id: 2026-02-20-12
 type: fix
 areas: [unrealized, redemptions, tests]

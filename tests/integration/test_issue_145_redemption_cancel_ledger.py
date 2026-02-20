@@ -513,6 +513,51 @@ def test_uncancel_guard_still_blocks_when_active_session_exists_no_pending_bypas
         facade.db.close()
 
 
+def test_recancel_after_uncancel_with_downstream_canceled_does_not_double_jump_unrealized():
+    facade = AppFacade(":memory:")
+    try:
+        user, site, r1 = _seed_basic_pair(facade)
+
+        before = facade.get_unrealized_position(site.id, user.id)
+        assert before is not None
+        baseline_total = before.total_sc
+
+        facade.cancel_redemption(r1.id, reason="r1-cancel")
+        after_r1_cancel = facade.get_unrealized_position(site.id, user.id)
+        assert after_r1_cancel is not None
+        first_cancel_total = after_r1_cancel.total_sc
+
+        r2 = facade.create_redemption(
+            user_id=user.id,
+            site_id=site.id,
+            amount=Decimal("20.00"),
+            redemption_date=date(2026, 2, 21),
+            redemption_time="11:00:00",
+            apply_fifo=False,
+            more_remaining=True,
+        )
+        after_r2_create = facade.get_unrealized_position(site.id, user.id)
+        assert after_r2_create is not None
+        assert after_r2_create.total_sc == Decimal("80.00")
+
+        facade.cancel_redemption(r2.id, reason="r2-cancel")
+        after_r2_cancel = facade.get_unrealized_position(site.id, user.id)
+        assert after_r2_cancel is not None
+        assert after_r2_cancel.total_sc == Decimal("100.00")
+
+        facade.uncancel_redemption(r1.id)
+        after_r1_uncancel = facade.get_unrealized_position(site.id, user.id)
+        assert after_r1_uncancel is not None
+        assert after_r1_uncancel.total_sc == baseline_total
+
+        facade.cancel_redemption(r1.id, reason="r1-recancel")
+        after_r1_recancel = facade.get_unrealized_position(site.id, user.id)
+        assert after_r1_recancel is not None
+        assert after_r1_recancel.total_sc == first_cancel_total
+    finally:
+        facade.db.close()
+
+
 def test_uncancel_after_downstream_canceled_redemption_updates_unrealized_total():
     facade = AppFacade(":memory:")
     try:
