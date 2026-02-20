@@ -19,6 +19,19 @@ class AdjustmentRepository:
     
     def __init__(self, db_manager):
         self.db = db_manager
+        self._redemptions_column_cache = {}
+
+    def _has_redemptions_column(self, column_name: str) -> bool:
+        cached = self._redemptions_column_cache.get(column_name)
+        if cached is not None:
+            return cached
+        try:
+            rows = self.db.fetch_all("PRAGMA table_info(redemptions)")
+            exists = any((row[1] if not isinstance(row, dict) else row.get("name")) == column_name for row in rows)
+        except Exception:
+            exists = False
+        self._redemptions_column_cache[column_name] = exists
+        return exists
     
     def get_by_id(self, adjustment_id: int) -> Optional[Adjustment]:
         """Get adjustment by ID"""
@@ -347,6 +360,7 @@ class AdjustmentRepository:
         effective_date: date,
         effective_time: str,
         exclude_adjustment_id: Optional[int] = None,
+        effective_redemptions_only: bool = False,
     ) -> dict:
         """Return counts of later activity after a given effective timestamp.
 
@@ -389,8 +403,12 @@ class AdjustmentRepository:
             (user_id, site_id, date_str, date_str, time_str),
         )
 
+        redemption_status_filter = ""
+        if effective_redemptions_only and self._has_redemptions_column("redemption_status"):
+            redemption_status_filter = " AND COALESCE(redemption_status, 'REDEEMED') NOT IN ('CANCELED', 'PENDING_UNCANCEL')"
+
         redemptions = _count(
-            """
+            f"""
             SELECT COUNT(1) AS cnt
             FROM redemptions
             WHERE deleted_at IS NULL
@@ -399,6 +417,7 @@ class AdjustmentRepository:
                     redemption_date > ? OR
                     (redemption_date = ? AND COALESCE(redemption_time, '00:00:00') > ?)
                   )
+              {redemption_status_filter}
             """,
             (user_id, site_id, date_str, date_str, time_str),
         )

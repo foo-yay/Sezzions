@@ -12,6 +12,26 @@ Rules:
 ## 2026-02-20
 
 ```yaml
+id: 2026-02-20-08
+type: fix
+areas: [redemptions, adjustments, tests]
+issue: 145
+summary: "Refine uncancel dependency guard to ignore already-neutralized downstream redemptions"
+details: >
+  Updated uncancel blocking logic to count downstream purchases and downstream effective redemptions only.
+  Redemptions already neutralized (`CANCELED` / `PENDING_UNCANCEL`) no longer block uncancel of earlier
+  canceled redemptions. Added regression coverage for chain sequence where R1 and downstream R2 are both
+  canceled, then R1 uncancel and R2 uncancel are both allowed.
+files_changed:
+  - repositories/adjustment_repository.py
+  - services/redemption_service.py
+  - tests/integration/test_issue_145_redemption_cancel_ledger.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
+```yaml
 id: 2026-02-20-07
 type: refactor
 areas: [ui, facade, services, repositories, architecture]

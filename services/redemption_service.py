@@ -722,6 +722,7 @@ class RedemptionService:
             effective_date=redemption.cancel_effective_date,
             effective_time=redemption.cancel_effective_time or "00:00:00",
             exclude_adjustment_id=redemption.cancellation_adjustment_id,
+            effective_redemptions_only=True,
         )
         blocking_counts = {
             "purchases": int(summary.get("purchases", 0) or 0),

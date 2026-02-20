@@ -296,3 +296,55 @@ def test_uncancel_is_blocked_when_downstream_activity_exists_after_cancel_effect
         assert current.redemption_status == "CANCELED"
     finally:
         facade.db.close()
+
+
+def test_uncancel_chain_allows_when_downstream_redemption_was_already_canceled():
+    facade = AppFacade(":memory:")
+    try:
+        user, site, r1 = _seed_basic_pair(facade)
+        later_date = date(2026, 2, 21)
+
+        session = facade.create_game_session(
+            user_id=user.id,
+            site_id=site.id,
+            game_id=None,
+            game_type_id=None,
+            session_date=later_date,
+            session_time="09:00:00",
+            starting_balance=Decimal("100.00"),
+            ending_balance=Decimal("95.00"),
+            starting_redeemable=Decimal("100.00"),
+            ending_redeemable=Decimal("95.00"),
+            notes="play",
+        )
+        facade.update_game_session(
+            session.id,
+            status="Closed",
+            end_date=later_date,
+            end_time="10:00:00",
+            ending_balance=Decimal("95.00"),
+            ending_redeemable=Decimal("95.00"),
+        )
+
+        r2 = facade.create_redemption(
+            user_id=user.id,
+            site_id=site.id,
+            amount=Decimal("20.00"),
+            redemption_date=later_date,
+            redemption_time="11:00:00",
+            apply_fifo=False,
+            more_remaining=True,
+        )
+
+        c1 = facade.cancel_redemption(r1.id, reason="chain-r1")
+        c2 = facade.cancel_redemption(r2.id, reason="chain-r2")
+        assert c1.redemption_status == "CANCELED"
+        assert c2.redemption_status == "CANCELED"
+
+        u1 = facade.uncancel_redemption(r1.id)
+        assert u1.redemption_status == "REDEEMED"
+
+        u2 = facade.uncancel_redemption(r2.id)
+        assert u2.redemption_status == "REDEEMED"
+    finally:
+        facade.db.close()
