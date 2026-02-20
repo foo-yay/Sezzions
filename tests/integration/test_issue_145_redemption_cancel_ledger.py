@@ -355,7 +355,7 @@ def test_uncancel_dependency_matrix_blocks_double_redeem_paths(scenario):
             assert r2 is not None
             _cancel(r1.id)
             _cancel(r2.id)
-            assert _try_uncancel(r1.id) is False
+            assert _try_uncancel(r1.id) is True
             assert _try_uncancel(r2.id) is True
 
         elif scenario == "two_redemptions_first_then_second_then_second_uncanceled":
@@ -369,7 +369,7 @@ def test_uncancel_dependency_matrix_blocks_double_redeem_paths(scenario):
             assert r2 is not None
             _cancel(r2.id)
             _cancel(r1.id)
-            assert _try_uncancel(r1.id) is False
+            assert _try_uncancel(r1.id) is True
             assert _try_uncancel(r2.id) is True
 
         else:
@@ -400,9 +400,10 @@ def test_uncancel_is_blocked_when_downstream_redemption_has_same_timestamp():
         facade.db.close()
 
 
-def test_uncancel_permutation_stress_three_redemptions_blocks_upstream_paths():
+def test_uncancel_permutation_stress_three_redemptions_respects_effective_only_blocking():
     redemption_ids = ["r1", "r2", "r3"]
     uncancel_permutations = list(permutations(redemption_ids))
+    later_keys = {"r1": ["r2", "r3"], "r2": ["r3"], "r3": []}
 
     for cancel_order in permutations(redemption_ids):
         for uncancel_order in uncancel_permutations:
@@ -429,6 +430,7 @@ def test_uncancel_permutation_stress_three_redemptions_blocks_upstream_paths():
                 )
 
                 rows = {"r1": r1, "r2": r2, "r3": r3}
+                status = {"r1": "CANCELED", "r2": "CANCELED", "r3": "CANCELED"}
 
                 for key in cancel_order:
                     facade.cancel_redemption(rows[key].id, reason=f"stress-cancel-{cancel_order}")
@@ -436,16 +438,24 @@ def test_uncancel_permutation_stress_three_redemptions_blocks_upstream_paths():
                 outcomes = {}
                 for key in uncancel_order:
                     redemption_id = rows[key].id
+                    has_effective_downstream = any(
+                        status[later_key] == "REDEEMED" for later_key in later_keys[key]
+                    )
+                    expected_allowed = not has_effective_downstream
                     try:
                         facade.uncancel_redemption(redemption_id)
                         outcomes[key] = True
+                        status[key] = "REDEEMED"
                     except ValueError as exc:
                         assert "Cannot uncancel redemption because downstream activity exists" in str(exc)
                         outcomes[key] = False
-
-                assert outcomes["r1"] is False, (cancel_order, uncancel_order, outcomes)
-                assert outcomes["r2"] is False, (cancel_order, uncancel_order, outcomes)
-                assert outcomes["r3"] is True, (cancel_order, uncancel_order, outcomes)
+                    assert outcomes[key] is expected_allowed, (
+                        cancel_order,
+                        uncancel_order,
+                        key,
+                        outcomes,
+                        status,
+                    )
             finally:
                 facade.db.close()
 

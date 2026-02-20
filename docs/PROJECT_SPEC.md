@@ -165,7 +165,7 @@ Redemptions are forward-corrected rather than historically erased. Cancel/uncanc
   - Cancel: move to `PENDING_CANCELLATION` only (no immediate projection change).
   - Uncancel of an effective canceled redemption: move to `PENDING_UNCANCEL` only.
 - Pending transitions finalize automatically when the active session closes, using the closing timestamp as the effective timestamp.
-- Immediate uncancel is blocked when downstream purchases or downstream redemptions exist after the original redemption timestamp (safety-first rule to prevent administrative double redemption paths).
+- Immediate uncancel is blocked when downstream purchases or downstream **effective** redemptions exist after the original redemption timestamp. Downstream redemptions already neutralized (`CANCELED`/`PENDING_UNCANCEL`) do not block uncancel.
 
 **Adjustment and projection semantics:**
 - Effective cancellation creates a linked correction entry in `account_adjustments` and stores its ID on the redemption (`cancellation_adjustment_id`).
@@ -675,7 +675,7 @@ The Redemptions tab context menu includes two status actions for individual rows
 Behavior contract:
 - If no active session exists for the redemption's (user, site), the action applies immediately and the table reflects the new effective status.
 - If an active session exists, the action is queued (`PENDING_CANCELLATION` or `PENDING_UNCANCEL`) and a user-facing message indicates it will finalize when that session closes.
-- Uncancel is blocked when downstream purchases or downstream redemptions exist after the original redemption timestamp (safety-first rule to prevent administrative double redemption paths).
+- Uncancel is blocked when downstream purchases or downstream **effective** redemptions exist after the original redemption timestamp. Downstream redemptions already neutralized (`CANCELED`/`PENDING_UNCANCEL`) do not block uncancel.
 - Search/filter text includes redemption status so pending/effective cancellation states are discoverable from the tab’s search field.
 
 UI placement/update (2026-02-20):

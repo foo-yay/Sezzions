@@ -12,6 +12,25 @@ Rules:
 ## 2026-02-20
 
 ```yaml
+id: 2026-02-20-11
+type: fix
+areas: [redemptions, tests]
+issue: 145
+summary: "Restore effective-only downstream uncancel blocking to allow R1 uncancel after downstream R2 is canceled"
+details: >
+  Adjusted uncancel dependency validation to count only downstream effective redemptions
+  (excluding `CANCELED` and `PENDING_UNCANCEL`) while still blocking for downstream purchases.
+  This resolves manual workflow where R1 should become uncancelable once downstream R2 is also
+  canceled. Updated Issue #145 matrix and permutation stress expectations to match this behavior.
+files_changed:
+  - services/redemption_service.py
+  - tests/integration/test_issue_145_redemption_cancel_ledger.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
+```yaml
 id: 2026-02-20-10
 type: test
 areas: [redemptions, tests]
