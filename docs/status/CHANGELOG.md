@@ -12,6 +12,25 @@ Rules:
 ## 2026-02-20
 
 ```yaml
+id: 2026-02-20-05
+type: fix
+areas: [services, redemptions, tests]
+issue: 145
+summary: "Block uncancel when downstream purchases/redemptions exist after cancel-effective timestamp"
+details: >
+  Added a business-rule guard in uncancel flow to prevent reversing an effective canceled redemption
+  when later purchases or redemptions already occurred after the cancellation effective timestamp.
+  This prevents retroactive dependency conflicts where canceled funds were already reused downstream.
+  Added integration coverage for the edge case: cancel -> later session/redemption activity -> uncancel blocked.
+files_changed:
+  - services/redemption_service.py
+  - tests/integration/test_issue_145_redemption_cancel_ledger.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
+```yaml
 id: 2026-02-20-04
 type: fix
 areas: [services, redemptions, sessions, adjustments, tests]

@@ -624,6 +624,8 @@ class RedemptionService:
                 )
             return updated if updated else redemption
 
+        self._validate_uncancel_downstream_dependencies(redemption)
+
         has_active = bool(self.game_session_service and self.game_session_service.get_active_session(redemption.user_id, redemption.site_id))
         if has_active and defer_if_active_session:
             self.redemption_repo.update_status_fields(
@@ -682,6 +684,35 @@ class RedemptionService:
                 timestamp=datetime.now().isoformat(),
             )
         return updated if updated else redemption
+
+    def _validate_uncancel_downstream_dependencies(self, redemption: Redemption) -> None:
+        """Block uncancel when later activity exists after cancellation became effective."""
+        if not redemption.cancel_effective_date:
+            return
+        if not self.adjustment_service:
+            return
+
+        summary = self.adjustment_service.adjustment_repo.get_downstream_activity_summary(
+            user_id=redemption.user_id,
+            site_id=redemption.site_id,
+            effective_date=redemption.cancel_effective_date,
+            effective_time=redemption.cancel_effective_time or "00:00:00",
+            exclude_adjustment_id=redemption.cancellation_adjustment_id,
+        )
+        blocking_counts = {
+            "purchases": int(summary.get("purchases", 0) or 0),
+            "redemptions": int(summary.get("redemptions", 0) or 0),
+        }
+        if sum(blocking_counts.values()) <= 0:
+            return
+
+        details = ", ".join(
+            f"{count} {name}" for name, count in blocking_counts.items() if count > 0
+        )
+        raise ValueError(
+            "Cannot uncancel redemption because downstream activity exists after cancellation "
+            f"effective timestamp ({details})."
+        )
 
     def finalize_pending_for_pair(
         self,

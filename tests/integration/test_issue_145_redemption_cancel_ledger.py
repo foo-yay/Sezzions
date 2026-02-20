@@ -1,5 +1,6 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
+import pytest
 
 from app_facade import AppFacade
 
@@ -241,5 +242,57 @@ def test_undo_uncancel_restores_reinstatement_adjustment_state():
         after_undo = facade.adjustment_service.adjustment_repo.get_by_id(adjustment_id)
         assert after_undo is not None
         assert after_undo.deleted_at is None
+    finally:
+        facade.db.close()
+
+
+def test_uncancel_is_blocked_when_downstream_activity_exists_after_cancel_effective_time():
+    facade = AppFacade(":memory:")
+    try:
+        user, site, redemption = _seed_basic_pair(facade)
+
+        canceled = facade.cancel_redemption(redemption.id, reason="downstream-guard")
+        assert canceled.redemption_status == "CANCELED"
+        assert canceled.cancel_effective_date is not None
+
+        later_date = canceled.cancel_effective_date + timedelta(days=1)
+        session = facade.create_game_session(
+            user_id=user.id,
+            site_id=site.id,
+            game_id=None,
+            game_type_id=None,
+            session_date=later_date,
+            session_time="09:00:00",
+            starting_balance=Decimal("100.00"),
+            ending_balance=Decimal("120.00"),
+            starting_redeemable=Decimal("100.00"),
+            ending_redeemable=Decimal("120.00"),
+            notes="downstream session",
+        )
+        facade.update_game_session(
+            session.id,
+            status="Closed",
+            end_date=later_date,
+            end_time="10:00:00",
+            ending_balance=Decimal("120.00"),
+            ending_redeemable=Decimal("120.00"),
+        )
+
+        facade.create_redemption(
+            user_id=user.id,
+            site_id=site.id,
+            amount=Decimal("30.00"),
+            redemption_date=later_date,
+            redemption_time="11:00:00",
+            apply_fifo=False,
+            more_remaining=True,
+        )
+
+        with pytest.raises(ValueError, match="Cannot uncancel redemption because downstream activity exists"):
+            facade.uncancel_redemption(redemption.id)
+
+        current = facade.get_redemption(redemption.id)
+        assert current is not None
+        assert current.redemption_status == "CANCELED"
     finally:
         facade.db.close()

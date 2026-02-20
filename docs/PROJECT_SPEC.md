@@ -160,7 +160,7 @@ Redemptions are forward-corrected rather than historically erased. Cancel/uncanc
 **Execution rules:**
 - **No active session** at request time:
   - Cancel: apply immediately (`CANCELED`) and stamp cancel-effective date/time/timezone.
-  - Uncancel: apply immediately (`REDEEMED`) and clear cancel-effective metadata.
+  - Uncancel: apply immediately (`REDEEMED`) and clear cancel-effective metadata, but only when no downstream purchases/redemptions exist after the cancel-effective timestamp.
 - **Active session present** at request time:
   - Cancel: move to `PENDING_CANCELLATION` only (no immediate projection change).
   - Uncancel of an effective canceled redemption: move to `PENDING_UNCANCEL` only.
@@ -674,6 +674,7 @@ The Redemptions tab context menu includes two status actions for individual rows
 Behavior contract:
 - If no active session exists for the redemption's (user, site), the action applies immediately and the table reflects the new effective status.
 - If an active session exists, the action is queued (`PENDING_CANCELLATION` or `PENDING_UNCANCEL`) and a user-facing message indicates it will finalize when that session closes.
+- Uncancel is blocked when downstream purchases/redemptions exist after the cancellation effective timestamp; users must apply a forward correction instead of reversing historical dependency usage.
 - Search/filter text includes redemption status so pending/effective cancellation states are discoverable from the tab’s search field.
 
 UI placement/update (2026-02-20):
