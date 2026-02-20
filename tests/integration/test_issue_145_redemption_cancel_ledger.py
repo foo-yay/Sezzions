@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from itertools import permutations
 import pytest
 
 from app_facade import AppFacade
@@ -373,5 +374,130 @@ def test_uncancel_dependency_matrix_blocks_double_redeem_paths(scenario):
 
         else:
             raise AssertionError(f"Unexpected scenario: {scenario}")
+    finally:
+        facade.db.close()
+
+
+def test_uncancel_is_blocked_when_downstream_redemption_has_same_timestamp():
+    facade = AppFacade(":memory:")
+    try:
+        user, site, r1 = _seed_basic_pair(facade)
+        r2 = facade.create_redemption(
+            user_id=user.id,
+            site_id=site.id,
+            amount=Decimal("5.00"),
+            redemption_date=r1.redemption_date,
+            redemption_time=r1.redemption_time,
+            apply_fifo=False,
+            more_remaining=True,
+        )
+        assert r2.id != r1.id
+
+        facade.cancel_redemption(r1.id, reason="same-ts")
+        with pytest.raises(ValueError, match="Cannot uncancel redemption because downstream activity exists"):
+            facade.uncancel_redemption(r1.id)
+    finally:
+        facade.db.close()
+
+
+def test_uncancel_permutation_stress_three_redemptions_blocks_upstream_paths():
+    redemption_ids = ["r1", "r2", "r3"]
+    uncancel_permutations = list(permutations(redemption_ids))
+
+    for cancel_order in permutations(redemption_ids):
+        for uncancel_order in uncancel_permutations:
+            facade = AppFacade(":memory:")
+            try:
+                user, site, r1 = _seed_basic_pair(facade)
+                r2 = facade.create_redemption(
+                    user_id=user.id,
+                    site_id=site.id,
+                    amount=Decimal("20.00"),
+                    redemption_date=date(2026, 2, 21),
+                    redemption_time="11:00:00",
+                    apply_fifo=False,
+                    more_remaining=True,
+                )
+                r3 = facade.create_redemption(
+                    user_id=user.id,
+                    site_id=site.id,
+                    amount=Decimal("10.00"),
+                    redemption_date=date(2026, 2, 22),
+                    redemption_time="11:00:00",
+                    apply_fifo=False,
+                    more_remaining=True,
+                )
+
+                rows = {"r1": r1, "r2": r2, "r3": r3}
+
+                for key in cancel_order:
+                    facade.cancel_redemption(rows[key].id, reason=f"stress-cancel-{cancel_order}")
+
+                outcomes = {}
+                for key in uncancel_order:
+                    redemption_id = rows[key].id
+                    try:
+                        facade.uncancel_redemption(redemption_id)
+                        outcomes[key] = True
+                    except ValueError as exc:
+                        assert "Cannot uncancel redemption because downstream activity exists" in str(exc)
+                        outcomes[key] = False
+
+                assert outcomes["r1"] is False, (cancel_order, uncancel_order, outcomes)
+                assert outcomes["r2"] is False, (cancel_order, uncancel_order, outcomes)
+                assert outcomes["r3"] is True, (cancel_order, uncancel_order, outcomes)
+            finally:
+                facade.db.close()
+
+
+def test_uncancel_guard_still_blocks_when_active_session_exists_no_pending_bypass():
+    facade = AppFacade(":memory:")
+    try:
+        user, site, r1 = _seed_basic_pair(facade)
+        facade.cancel_redemption(r1.id, reason="active-bypass-guard")
+
+        facade.create_redemption(
+            user_id=user.id,
+            site_id=site.id,
+            amount=Decimal("15.00"),
+            redemption_date=date(2026, 2, 21),
+            redemption_time="11:00:00",
+            apply_fifo=False,
+            more_remaining=True,
+        )
+
+        session = facade.create_game_session(
+            user_id=user.id,
+            site_id=site.id,
+            game_id=None,
+            game_type_id=None,
+            session_date=date(2026, 2, 21),
+            session_time="12:00:00",
+            starting_balance=Decimal("60.00"),
+            ending_balance=Decimal("60.00"),
+            starting_redeemable=Decimal("60.00"),
+            ending_redeemable=Decimal("60.00"),
+            notes="active guard bypass",
+        )
+
+        with pytest.raises(ValueError, match="Cannot uncancel redemption because downstream activity exists"):
+            facade.uncancel_redemption(r1.id)
+
+        still_canceled = facade.get_redemption(r1.id)
+        assert still_canceled is not None
+        assert still_canceled.redemption_status == "CANCELED"
+
+        facade.update_game_session(
+            session.id,
+            status="Closed",
+            end_date=date(2026, 2, 21),
+            end_time="13:00:00",
+            ending_balance=Decimal("60.00"),
+            ending_redeemable=Decimal("60.00"),
+        )
+
+        after_close = facade.get_redemption(r1.id)
+        assert after_close is not None
+        assert after_close.redemption_status == "CANCELED"
     finally:
         facade.db.close()

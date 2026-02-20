@@ -12,6 +12,23 @@ Rules:
 ## 2026-02-20
 
 ```yaml
+id: 2026-02-20-10
+type: test
+areas: [redemptions, tests]
+issue: 145
+summary: "Expand Issue #145 adversarial stress coverage for cancel/uncancel dependency safety"
+details: >
+  Added broader stress-style integration coverage beyond the initial hand-picked scenarios,
+  including same-timestamp downstream redemption checks, exhaustive cancel/uncancel permutation
+  orderings across three redemptions, and explicit active-session bypass protection checks.
+  These tests harden confidence that administrative double-redeem paths remain blocked.
+files_changed:
+  - tests/integration/test_issue_145_redemption_cancel_ledger.py
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
+```yaml
 id: 2026-02-20-09
 type: fix
 areas: [redemptions, tests]
