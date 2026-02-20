@@ -12,6 +12,25 @@ Rules:
 ## 2026-02-20
 
 ```yaml
+id: 2026-02-20-15
+type: fix
+areas: [unrealized, redemptions, tests]
+issue: 145
+summary: "Fix both-canceled unrealized undercount by applying redemption restoration deltas after anchor"
+details: >
+  Corrected unrealized computation for states where redemptions are canceled after the anchor timestamp.
+  Formula now treats redemptions as a two-step delta (subtract at redemption time, add back at cancel-effective
+  time) so scenarios with both R1 and R2 canceled show restored balance correctly. This resolves live case where
+  Unrealized incorrectly stayed at 1000 instead of 3472.41 after re-canceling R1 with R2 already canceled.
+  Updated Issue #145 integration coverage accordingly and verified against active DB output.
+files_changed:
+  - repositories/unrealized_position_repository.py
+  - tests/integration/test_issue_145_redemption_cancel_ledger.py
+  - docs/status/CHANGELOG.md
+pr: null
+```
+
+```yaml
 id: 2026-02-20-14
 type: docs
 areas: [process, quality, testing]
