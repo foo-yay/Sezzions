@@ -235,6 +235,10 @@ class DatabaseManager:
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP,
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                canceled_at TEXT NULL,
+                cancel_reason TEXT NULL,
+                deleted_at TIMESTAMP NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
                 FOREIGN KEY (redemption_method_id) REFERENCES redemption_methods(id) ON DELETE SET NULL
@@ -764,6 +768,10 @@ class DatabaseManager:
             ("more_remaining", "INTEGER DEFAULT 0"),
             ("deleted_at", "TIMESTAMP NULL"),
             ("redemption_entry_time_zone", "TEXT"),
+            # Issue #148 — Cancel / Uncancel
+            ("status", "TEXT NOT NULL DEFAULT 'PENDING'"),
+            ("canceled_at", "TEXT NULL"),
+            ("cancel_reason", "TEXT NULL"),
         ]
 
         for column_name, column_def in migrations:

@@ -5,7 +5,7 @@ import uuid
 from dataclasses import asdict
 from typing import List, Optional, Tuple, TYPE_CHECKING
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime, timezone
 from models.redemption import Redemption
 from tools.timezone_utils import get_entry_timezone_name
 from repositories.redemption_repository import RedemptionRepository
@@ -332,6 +332,240 @@ class RedemptionService:
     def list_site_redemptions(self, site_id: int) -> List[Redemption]:
         """Get all redemptions for a site"""
         return self.redemption_repo.get_by_site(site_id)
+
+    # -----------------------------------------------------------------------
+    # Cancel / Uncancel (Issue #148)
+    # -----------------------------------------------------------------------
+
+    def cancel_redemption(
+        self,
+        redemption_id: int,
+        reason: str,
+        has_active_session: bool = False,
+        notification_service=None,
+        group_id: Optional[str] = None,
+    ) -> Redemption:
+        """Cancel a pending redemption, reversing its FIFO allocation.
+
+        If *has_active_session* is True the cancellation is deferred to status
+        PENDING_CANCEL and no FIFO reversal happens yet.  The reversal occurs
+        when the session closes (via :meth:`process_pending_cancels`).
+
+        Raises:
+            ValueError: if the redemption cannot be canceled (wrong status,
+                        already received, not found).
+        """
+        redemption = self.redemption_repo.get_by_id(redemption_id)
+        if not redemption:
+            raise ValueError(f"Redemption {redemption_id} not found")
+
+        if redemption.status == 'PENDING_CANCEL':
+            raise ValueError("Cancellation is already pending for this redemption.")
+        if redemption.status == 'CANCELED':
+            raise ValueError("This redemption has already been canceled.")
+        if redemption.status != 'PENDING':
+            raise ValueError(f"Cannot cancel a redemption with status '{redemption.status}'.")
+        if redemption.receipt_date is not None:
+            raise ValueError(
+                "Cannot cancel a completed redemption (receipt date is set). "
+                "Only unprocessed (pending) redemptions may be canceled."
+            )
+
+        old_data = asdict(redemption)
+        group_id = group_id or str(uuid.uuid4())
+
+        if has_active_session:
+            # Defer — mark as PENDING_CANCEL, no FIFO reversal yet
+            redemption.status = 'PENDING_CANCEL'
+            redemption.cancel_reason = reason
+            self.redemption_repo.update(redemption)
+
+            if self.audit_service:
+                self.audit_service.log_update(
+                    'redemptions', redemption.id, old_data, asdict(redemption),
+                    group_id=group_id,
+                )
+            if self.undo_redo_service:
+                self.undo_redo_service.push_operation(
+                    group_id=group_id,
+                    description=f"Queue cancel for redemption #{redemption_id} (session active)",
+                    timestamp=datetime.now().isoformat(),
+                )
+            return self.redemption_repo.get_by_id(redemption_id)
+
+        # Immediate cancel — reverse FIFO in a single transaction
+        self._execute_cancel(redemption, reason, group_id, old_data, notification_service)
+        return self.redemption_repo.get_by_id(redemption_id)
+
+    def _execute_cancel(
+        self,
+        redemption: Redemption,
+        reason: str,
+        group_id: str,
+        old_data: dict,
+        notification_service=None,
+    ) -> None:
+        """Inner helper that performs the actual FIFO reversal and status update."""
+        allocations = self._get_allocations(redemption.id)
+
+        if allocations:
+            self.fifo_service.reverse_allocation(allocations)
+            self._delete_allocations(redemption.id)
+            self._delete_realized_transaction(redemption.id)
+
+        # Mark canceled with UTC timestamp
+        canceled_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        redemption.status = 'CANCELED'
+        redemption.canceled_at = canceled_at
+        redemption.cancel_reason = reason
+        self.redemption_repo.update(redemption)
+
+        # Dismiss any pending-receipt notification for this redemption
+        if notification_service is not None:
+            try:
+                notification_service.dismiss_by_type(
+                    'redemption_pending_receipt',
+                    subject_id=str(redemption.id),
+                )
+            except Exception:
+                pass
+
+        if self.audit_service:
+            self.audit_service.log_update(
+                'redemptions', redemption.id, old_data, asdict(redemption),
+                group_id=group_id,
+            )
+        if self.undo_redo_service:
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Cancel redemption #{redemption.id}",
+                timestamp=datetime.now().isoformat(),
+            )
+
+    def uncancel_redemption(
+        self,
+        redemption_id: int,
+        group_id: Optional[str] = None,
+    ) -> Redemption:
+        """Uncancel a previously canceled redemption, re-applying FIFO.
+
+        Raises:
+            ValueError: if the redemption is not in CANCELED status or not found.
+        """
+        redemption = self.redemption_repo.get_by_id(redemption_id)
+        if not redemption:
+            raise ValueError(f"Redemption {redemption_id} not found")
+        if redemption.status != 'CANCELED':
+            raise ValueError(
+                f"Cannot uncancel a redemption with status '{redemption.status}'. "
+                "Only CANCELED redemptions may be uncanceled."
+            )
+
+        old_data = asdict(redemption)
+        group_id = group_id or str(uuid.uuid4())
+
+        # Re-apply FIFO — same logic as create_redemption
+        if not redemption.more_remaining:
+            # Full redemption: consume ALL remaining basis as of original timestamp
+            available = self.redemption_repo.db.fetch_one(
+                """
+                SELECT COALESCE(SUM(remaining_amount), 0) AS total_remaining
+                FROM purchases
+                WHERE user_id = ? AND site_id = ? AND remaining_amount > 0
+                  AND (purchase_date < ?
+                       OR (purchase_date = ? AND COALESCE(purchase_time,'00:00:00') <= ?))
+                """,
+                (
+                    redemption.user_id,
+                    redemption.site_id,
+                    redemption.redemption_date,
+                    redemption.redemption_date,
+                    redemption.redemption_time or "23:59:59",
+                ),
+            )
+            total_remaining = Decimal(str(available['total_remaining'])) if available else Decimal("0.00")
+            cost_basis, taxable_profit, allocations = self.fifo_service.calculate_cost_basis(
+                redemption.user_id,
+                redemption.site_id,
+                total_remaining,
+                redemption.redemption_date,
+                redemption.redemption_time or "23:59:59",
+                redemption_entry_time_zone=redemption.redemption_entry_time_zone,
+            )
+            taxable_profit = Decimal(str(redemption.amount)) - cost_basis
+        else:
+            cost_basis, taxable_profit, allocations = self.fifo_service.calculate_cost_basis(
+                redemption.user_id,
+                redemption.site_id,
+                Decimal(str(redemption.amount)),
+                redemption.redemption_date,
+                redemption.redemption_time or "23:59:59",
+                redemption_entry_time_zone=redemption.redemption_entry_time_zone,
+            )
+
+        # Persist allocations and restore accounting records
+        self._save_allocations(redemption.id, allocations)
+        self.fifo_service.apply_allocation(allocations)
+        self._create_realized_transaction(
+            redemption_id=redemption.id,
+            redemption_date=redemption.redemption_date,
+            user_id=redemption.user_id,
+            site_id=redemption.site_id,
+            cost_basis=cost_basis,
+            payout=Decimal(str(redemption.amount)),
+            net_pl=taxable_profit,
+        )
+
+        # Restore to PENDING
+        redemption.status = 'PENDING'
+        redemption.canceled_at = None
+        redemption.cancel_reason = None
+        redemption.receipt_date = None   # returning to pending state
+        redemption.cost_basis = cost_basis
+        redemption.taxable_profit = taxable_profit
+        self.redemption_repo.update(redemption)
+
+        if self.audit_service:
+            self.audit_service.log_update(
+                'redemptions', redemption.id, old_data, asdict(redemption),
+                group_id=group_id,
+            )
+        if self.undo_redo_service:
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Uncancel redemption #{redemption_id}",
+                timestamp=datetime.now().isoformat(),
+            )
+
+        return self.redemption_repo.get_by_id(redemption_id)
+
+    def process_pending_cancels(
+        self,
+        user_id: int,
+        site_id: int,
+        notification_service=None,
+    ) -> List[int]:
+        """Complete all PENDING_CANCEL redemptions for a user/site after a session ends.
+
+        Called by GameSessionService.update_session() when status transitions
+        to 'Closed'.  Processes in chronological order of redemption_date so
+        FIFO reversal is applied in the correct sequence.
+
+        Returns:
+            List of redemption IDs that were fully canceled.
+        """
+        pending = self.redemption_repo.get_pending_cancel_for_user_site(user_id, site_id)
+        canceled_ids: List[int] = []
+        for r in pending:
+            old_data = asdict(r)
+            gid = str(uuid.uuid4())
+            try:
+                self._execute_cancel(r, r.cancel_reason or "", gid, old_data, notification_service)
+                canceled_ids.append(r.id)
+            except Exception as exc:
+                # Don't let one failed cancel block the rest; log and continue
+                print(f"Warning: could not process pending cancel for redemption #{r.id}: {exc}")
+        return canceled_ids
     
     def list_redemptions(
         self, 

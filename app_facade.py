@@ -150,6 +150,7 @@ class AppFacade:
             redemption_repo=self.redemption_repo,
             tax_withholding_service=self.tax_withholding_service,
             adjustment_service=self.adjustment_service,
+            redemption_service=self.redemption_service,  # Issue #148 — PENDING_CANCEL processing
         )
         
         # Inject game_session_service into purchase_service for redeemable balance computation
@@ -1563,6 +1564,18 @@ class AppFacade:
         if not redemption_ids:
             return 0
 
+        # Guard (Issue #148): exclude CANCELED (and PENDING_CANCEL) rows from bulk
+        # metadata updates — receipt_date must not be set on a canceled redemption.
+        eligible_ids = []
+        for rid in redemption_ids:
+            r = self.redemption_repo.get_by_id(rid)
+            if r is not None and getattr(r, 'status', 'PENDING') == 'PENDING':
+                eligible_ids.append(rid)
+        redemption_ids = eligible_ids
+
+        if not redemption_ids:
+            return 0
+
         set_receipt = receipt_date is not _UNSET
         set_processed = processed is not _UNSET
 
@@ -1735,7 +1748,88 @@ class AppFacade:
                     boundary_date.isoformat(),
                     boundary_time,
                 )
-    
+
+    def cancel_redemption(
+        self,
+        redemption_id: int,
+        reason: str = "",
+    ) -> 'Redemption':
+        """Cancel a pending redemption, reversing its FIFO allocation.
+
+        If there is an active session for the same user/site, shows confirmation and
+        defers the cancellation to PENDING_CANCEL until the session closes.
+
+        Raises:
+            ValueError: if the redemption cannot be canceled.
+        """
+        redemption = self.redemption_repo.get_by_id(redemption_id)
+        if not redemption:
+            raise ValueError(f"Redemption {redemption_id} not found")
+
+        has_active = (
+            self.game_session_service.get_active_session(
+                redemption.user_id, redemption.site_id
+            )
+            is not None
+        )
+
+        canceled = self.redemption_service.cancel_redemption(
+            redemption_id,
+            reason=reason,
+            has_active_session=has_active,
+            notification_service=self.notification_rules_service,
+        )
+
+        if not has_active:
+            # Full cancel happened — trigger FIFO + session recalculation
+            boundary_date, boundary_time = self._containing_boundary(
+                redemption.site_id,
+                redemption.user_id,
+                redemption.redemption_date,
+                redemption.redemption_time,
+            )
+            self._rebuild_or_mark_stale(
+                redemption.user_id,
+                redemption.site_id,
+                boundary_date,
+                boundary_time,
+                reason="redemption cancel",
+            )
+
+        return canceled
+
+    def uncancel_redemption(
+        self,
+        redemption_id: int,
+    ) -> 'Redemption':
+        """Uncancel a previously canceled redemption, re-applying FIFO.
+
+        Raises:
+            ValueError: if the redemption is not in CANCELED status.
+        """
+        redemption = self.redemption_repo.get_by_id(redemption_id)
+        if not redemption:
+            raise ValueError(f"Redemption {redemption_id} not found")
+
+        uncanceled = self.redemption_service.uncancel_redemption(redemption_id)
+
+        # Trigger FIFO + session recalculation from the original redemption timestamp
+        boundary_date, boundary_time = self._containing_boundary(
+            redemption.site_id,
+            redemption.user_id,
+            redemption.redemption_date,
+            redemption.redemption_time,
+        )
+        self._rebuild_or_mark_stale(
+            redemption.user_id,
+            redemption.site_id,
+            boundary_date,
+            boundary_time,
+            reason="redemption uncancel",
+        )
+
+        return uncanceled
+
     # ==========================================================================
     # Game Session Operations
     # ==========================================================================

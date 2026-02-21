@@ -25,6 +25,10 @@ class Redemption:
     more_remaining: bool = False
     is_free_sc: bool = False
     notes: Optional[str] = None
+    # Cancel / Uncancel fields (Issue #148)
+    status: str = "PENDING"           # "PENDING" | "PENDING_CANCEL" | "CANCELED"
+    canceled_at: Optional[str] = None  # UTC datetime ISO string, set on cancel
+    cancel_reason: Optional[str] = None
     id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -72,7 +76,28 @@ class Redemption:
             self.cost_basis = Decimal(str(self.cost_basis))
         if self.taxable_profit is not None and not isinstance(self.taxable_profit, Decimal):
             self.taxable_profit = Decimal(str(self.taxable_profit))
+
+        # Normalize status — default PENDING for legacy rows with NULL
+        if not self.status:
+            self.status = "PENDING"
+        if self.status not in ("PENDING", "PENDING_CANCEL", "CANCELED"):
+            raise ValueError(f"Invalid redemption status: {self.status!r}")
     
+    @property
+    def is_canceled(self) -> bool:
+        """True when this redemption has been fully canceled."""
+        return self.status == "CANCELED"
+
+    @property
+    def is_pending_cancel(self) -> bool:
+        """True when cancellation is queued waiting for an active session to end."""
+        return self.status == "PENDING_CANCEL"
+
+    @property
+    def is_pending(self) -> bool:
+        """True when this redemption is in the normal pending-receipt state."""
+        return self.status == "PENDING"
+
     @property
     def datetime_str(self) -> str:
         """Get combined date/time string for sorting"""
