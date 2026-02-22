@@ -141,8 +141,11 @@ class NotificationRulesService:
     def evaluate_redemption_pending_rules(self):
         """Evaluate redemption pending-receipt notification rules"""
         # Get threshold from settings (default 7 days)
-        settings_data = self.settings.settings
-        threshold_days = settings_data.get('redemption_pending_receipt_threshold_days', 7)
+        if self.settings is None:
+            threshold_days = 7
+        else:
+            settings_data = self.settings.settings
+            threshold_days = settings_data.get('redemption_pending_receipt_threshold_days', 7)
         
         if threshold_days <= 0:
             # Feature disabled
@@ -161,6 +164,8 @@ class NotificationRulesService:
             JOIN users u ON r.user_id = u.id
             JOIN sites s ON r.site_id = s.id
             WHERE r.receipt_date IS NULL
+                            AND r.deleted_at IS NULL
+                            AND COALESCE(r.status, 'PENDING') = 'PENDING'
                             AND (
                                         r.redemption_date < ?
                                         OR (r.redemption_date = ? AND COALESCE(r.redemption_time, '00:00:00') <= ?)

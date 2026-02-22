@@ -517,6 +517,61 @@ Audit logging was implemented at the **service layer** rather than centralized i
 
 This section is the full justification (kept here so the spec is self-contained).
 
+### 4.8 Redemption Cancel / Uncancel (Issue #148)
+
+Sezzions supports canceling and uncanceling PENDING redemptions. Cancellation fully reverses the FIFO allocation and removes the redemption from all accounting streams.
+
+#### Status Lifecycle
+
+```
+PENDING  →  (cancel, no active session)  →  CANCELED
+CANCELED →  (uncancel)                   →  PENDING
+PENDING  →  (cancel, active session)     →  PENDING_CANCEL
+PENDING_CANCEL → (session closes)        →  CANCELED
+```
+
+#### Cancel Semantics
+
+- Only PENDING redemptions may be canceled (not already-received `receipt_date` rows).
+- Cancel stores `canceled_at` (UTC timestamp) and `cancel_reason` on the redemption.
+- All `redemption_allocations` and `realized_transactions` rows for the canceled redemption are deleted.
+- If there is an **Active** game session for the same (user, site) pair, cancellation is deferred: status becomes `PENDING_CANCEL` and FIFO reversal is delayed.
+- When a session transitions Active → Closed, `process_pending_cancels` executes all `PENDING_CANCEL` redemptions for that pair, completing FIFO reversal in chronological order.
+- After cancel, `_rebuild_or_mark_stale` is called to recalculate all downstream FIFO and session P/L from the redemption's timestamp boundary.
+
+#### Uncancel Semantics
+
+- Only CANCELED redemptions may be uncanceled (not PENDING_CANCEL).
+- Uncancel clears `canceled_at` and `cancel_reason`, sets status back to `PENDING`.
+- Re-applies FIFO allocation for the redemption.
+- Triggers full `_rebuild_or_mark_stale` from the original redemption timestamp.
+
+#### Accounting Invariants
+
+- **FIFO exclusion rule:** `RecalculationService` excludes `CANCELED` and `PENDING_CANCEL` redemptions from all rebuild queries (`WHERE COALESCE(status, 'PENDING') NOT IN ('CANCELED', 'PENDING_CANCEL')`).
+- **Notification exclusion rule:** `NotificationRulesService.evaluate_redemption_pending_rules` excludes non-PENDING rows (`AND COALESCE(r.status, 'PENDING') = 'PENDING'`).
+- **Bulk metadata update guard:** `bulk_update_redemption_metadata` skips CANCELED rows to prevent restoring already-canceled redemptions via bulk receipt entry.
+- **Two-event delta model for `compute_expected_balances`:** A CANCELED redemption contributes TWO events to the balance timeline:
+  1. A debit at `redemption_date` (as if it happened when submitted).
+  2. A credit at `canceled_at` (restoring the balance at the moment of cancellation).
+  This preserves correct expected-balance continuity across the entire timeline without rewriting historical data.
+
+#### UI Behavior
+
+- Redemptions tab toolbar: "Cancel" button (shown for single-selected PENDING row), "Uncancel" button (shown for single-selected CANCELED row).
+- Cancel dialog: warns if there is an Active session (cancel will be deferred), provides reason text input.
+- Table rendering: CANCELED rows shown in gray (#95a5a6); PENDING_CANCEL rows shown in purple (#8e44ad).
+- "Pending" quick filter: excludes CANCELED and PENDING_CANCEL rows.
+
+#### Schema
+
+`redemptions` table additions:
+```sql
+status      TEXT NOT NULL DEFAULT 'PENDING'  -- PENDING | CANCELED | PENDING_CANCEL
+canceled_at TEXT NULL                         -- UTC ISO timestamp
+cancel_reason TEXT NULL                       -- free-text reason
+```
+
 ## 5) UI/UX (Product Behavior)
 
 ### Navigation

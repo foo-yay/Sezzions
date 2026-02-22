@@ -232,6 +232,7 @@ class RecalculationService:
                      COALESCE(is_free_sc, 0) AS is_free_sc, COALESCE(more_remaining, 0) AS more_remaining, notes
             FROM redemptions
             WHERE user_id = ? AND site_id = ? AND deleted_at IS NULL
+              AND COALESCE(status, 'PENDING') NOT IN ('CANCELED', 'PENDING_CANCEL')
             ORDER BY redemption_date ASC, COALESCE(redemption_time,'00:00:00') ASC, id ASC
             """,
             (user_id, site_id),
@@ -445,6 +446,7 @@ class RecalculationService:
                    COALESCE(is_free_sc, 0) AS is_free_sc, COALESCE(more_remaining, 0) AS more_remaining, notes
                         FROM redemptions
                         WHERE user_id = ? AND site_id = ? AND deleted_at IS NULL
+              AND COALESCE(status, 'PENDING') NOT IN ('CANCELED', 'PENDING_CANCEL')
               AND (redemption_date > ?
                    OR (redemption_date = ? AND COALESCE(redemption_time,'00:00:00') >= ?))
             ORDER BY redemption_date ASC, COALESCE(redemption_time,'00:00:00') ASC, id ASC

@@ -133,8 +133,9 @@ class RedemptionRepository:
             INSERT INTO redemptions 
             (user_id, site_id, amount, fees, redemption_date, redemption_time,
              redemption_entry_time_zone, redemption_method_id, is_free_sc,
-             receipt_date, processed, more_remaining, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             receipt_date, processed, more_remaining, notes,
+             status, canceled_at, cancel_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         redemption_id = self.db.execute(query, (
             redemption.user_id,
@@ -149,7 +150,10 @@ class RedemptionRepository:
             redemption.receipt_date.isoformat() if redemption.receipt_date else None,
             1 if redemption.processed else 0,
             1 if redemption.more_remaining else 0,
-            redemption.notes
+            redemption.notes,
+            getattr(redemption, 'status', 'PENDING') or 'PENDING',
+            getattr(redemption, 'canceled_at', None),
+            getattr(redemption, 'cancel_reason', None),
         ))
         redemption.id = redemption_id
         redemption.redemption_entry_time_zone = entry_tz
@@ -172,7 +176,8 @@ class RedemptionRepository:
             SET user_id = ?, site_id = ?, amount = ?, fees = ?, redemption_date = ?, 
                 redemption_time = ?, redemption_entry_time_zone = ?, redemption_method_id = ?, is_free_sc = ?,
                 receipt_date = ?, processed = ?, more_remaining = ?,
-                notes = ?, updated_at = CURRENT_TIMESTAMP
+                notes = ?, status = ?, canceled_at = ?, cancel_reason = ?,
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """
         self.db.execute(query, (
@@ -189,6 +194,9 @@ class RedemptionRepository:
             1 if redemption.processed else 0,
             1 if redemption.more_remaining else 0,
             redemption.notes,
+            getattr(redemption, 'status', 'PENDING') or 'PENDING',
+            getattr(redemption, 'canceled_at', None),
+            getattr(redemption, 'cancel_reason', None),
             redemption.id
         ))
         redemption.redemption_entry_time_zone = entry_tz
@@ -203,7 +211,26 @@ class RedemptionRepository:
         """Restore a soft-deleted redemption by clearing deleted_at"""
         query = "UPDATE redemptions SET deleted_at = NULL WHERE id = ?"
         self.db.execute(query, (redemption_id,))
-    
+
+    def get_pending_cancel_for_user_site(
+        self, user_id: int, site_id: int
+    ) -> List['Redemption']:  # type: ignore[name-defined]
+        """Return all PENDING_CANCEL redemptions for a user/site, ordered chronologically."""
+        query = """
+            SELECT r.*,
+                   EXISTS(
+                       SELECT 1 FROM redemption_allocations ra
+                       WHERE ra.redemption_id = r.id
+                   ) AS has_fifo_allocation
+            FROM redemptions r
+            WHERE r.user_id = ? AND r.site_id = ?
+              AND r.status = 'PENDING_CANCEL'
+              AND r.deleted_at IS NULL
+            ORDER BY r.redemption_date ASC, COALESCE(r.redemption_time, '00:00:00') ASC, r.id ASC
+        """
+        rows = self.db.fetch_all(query, (user_id, site_id))
+        return [self._row_to_model(row) for row in rows]
+
     def _row_to_model(self, row: dict) -> Redemption:
         """Convert database row to Redemption model"""
         # Parse date
@@ -235,6 +262,9 @@ class RedemptionRepository:
             more_remaining=bool(row['more_remaining']) if 'more_remaining' in row.keys() else False,
             is_free_sc=bool(row['is_free_sc']) if 'is_free_sc' in row.keys() else False,
             notes=row['notes'] if 'notes' in row.keys() else None,
+            status=row['status'] if 'status' in row.keys() and row['status'] else 'PENDING',
+            canceled_at=row['canceled_at'] if 'canceled_at' in row.keys() else None,
+            cancel_reason=row['cancel_reason'] if 'cancel_reason' in row.keys() else None,
             created_at=row['created_at'] if 'created_at' in row.keys() else None,
             updated_at=row['updated_at'] if 'updated_at' in row.keys() else None
         )

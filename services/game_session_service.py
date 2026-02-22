@@ -35,7 +35,8 @@ class GameSessionService:
                  purchase_repo=None,
                  redemption_repo=None,
                  tax_withholding_service=None,
-                 adjustment_service=None):
+                 adjustment_service=None,
+                 redemption_service=None):
         self.session_repo = session_repo
         self.site_repo = site_repo
         self.fifo_service = fifo_service
@@ -43,6 +44,7 @@ class GameSessionService:
         self.redemption_repo = redemption_repo
         self.tax_withholding_service = tax_withholding_service
         self.adjustment_service = adjustment_service
+        self.redemption_service = redemption_service  # for PENDING_CANCEL processing
         self.audit_service: Optional['AuditService'] = None
         self.undo_redo_service: Optional['UndoRedoService'] = None
     
@@ -304,7 +306,7 @@ class GameSessionService:
                                 tax_service.apply_to_date(session_date=old_local_date.isoformat())
                     except Exception:
                         pass  # Don't fail the update if tax calculation fails
-            
+
             refreshed = self.session_repo.get_by_id(session_id)
             if refreshed:
                 self._sync_game_rtp(
@@ -316,6 +318,18 @@ class GameSessionService:
                 )
                 return refreshed
             return updated
+
+        # Process any PENDING_CANCEL redemptions now that the session is closed
+        # (Issue #148 — fires regardless of recalculate_pl flag so deferred cancels
+        # always execute when a session transitions Active → Closed.)
+        if target_status == "Closed" and old_status != "Closed" and self.redemption_service is not None:
+            try:
+                self.redemption_service.process_pending_cancels(
+                    session.user_id,
+                    session.site_id,
+                )
+            except Exception as exc:
+                print(f"Warning: process_pending_cancels failed: {exc}")
 
         return updated
     
@@ -539,19 +553,39 @@ class GameSessionService:
 
         # Apply redemptions (delta-based) first by walking time; purchases will overwrite total.
         # This is safe because purchase.starting_sc_balance is authoritative post-purchase.
+        #
+        # Two-event delta model (Issue #148):
+        #   PENDING / PENDING_CANCEL: one debit event at redemption_date
+        #   CANCELED: debit at redemption_date + credit at canceled_at
         for r in redemptions_sorted:
+            r_status = getattr(r, 'status', 'PENDING') or 'PENDING'
             r_dt = to_utc_dt(
                 r.redemption_date,
                 r.redemption_time,
                 r.redemption_entry_time_zone or get_accounting_timezone_name(),
             )
-            if anchor_dt is not None and r_dt <= anchor_dt:
-                continue
-            if not (r_dt < cutoff):
-                continue
-            amount = Decimal(str(r.amount))
-            expected_total -= amount
-            expected_redeemable -= amount
+            # Event 1 — debit (all statuses contribute the original debit)
+            if anchor_dt is None or r_dt > anchor_dt:
+                if r_dt < cutoff:
+                    amount = Decimal(str(r.amount))
+                    expected_total -= amount
+                    expected_redeemable -= amount
+
+            # Event 2 — credit back at canceled_at (CANCELED only)
+            if r_status == 'CANCELED':
+                canceled_at_str = getattr(r, 'canceled_at', None)
+                if canceled_at_str:
+                    try:
+                        # canceled_at is stored as UTC ISO datetime string
+                        cancel_dt = datetime.strptime(canceled_at_str[:19], "%Y-%m-%d %H:%M:%S")
+                    except (ValueError, TypeError):
+                        cancel_dt = None
+                    if cancel_dt is not None:
+                        if anchor_dt is None or cancel_dt > anchor_dt:
+                            if cancel_dt < cutoff:
+                                amount = Decimal(str(r.amount))
+                                expected_total += amount
+                                expected_redeemable += amount
 
         for p in purchases_sorted:
             p_dt = to_utc_dt(

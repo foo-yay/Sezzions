@@ -153,6 +153,19 @@ class RedemptionsTab(QtWidgets.QWidget):
         self.mark_processed_btn.setVisible(False)
         toolbar.addWidget(self.mark_processed_btn)
 
+        # Cancel / Uncancel (Issue #148)
+        self.cancel_btn = QtWidgets.QPushButton("🚫 Cancel")
+        self.cancel_btn.setToolTip("Cancel selected pending redemption (reverses FIFO)")
+        self.cancel_btn.clicked.connect(self._cancel_redemption)
+        self.cancel_btn.setVisible(False)
+        toolbar.addWidget(self.cancel_btn)
+
+        self.uncancel_btn = QtWidgets.QPushButton("↩️ Uncancel")
+        self.uncancel_btn.setToolTip("Uncancel selected redemption (re-applies FIFO)")
+        self.uncancel_btn.clicked.connect(self._uncancel_redemption)
+        self.uncancel_btn.setVisible(False)
+        toolbar.addWidget(self.uncancel_btn)
+
         toolbar.addStretch()
 
         self.pending_filter_check = QtWidgets.QCheckBox("Pending")
@@ -315,9 +328,15 @@ class RedemptionsTab(QtWidgets.QWidget):
                     date_time = f"{date_time} 🌐"
 
                 is_total_loss = float(redemption.amount) == 0
+                r_status = getattr(redemption, 'status', 'PENDING') or 'PENDING'
                 receipt_date = redemption.receipt_date.isoformat() if redemption.receipt_date else ""
                 is_pending = receipt_date == ""
-                if is_total_loss:
+
+                if r_status == 'CANCELED':
+                    receipt_display = "CANCELED"
+                elif r_status == 'PENDING_CANCEL':
+                    receipt_display = "PENDING CANCEL"
+                elif is_total_loss:
                     receipt_display = str(redemption.redemption_date)
                 elif is_pending:
                     receipt_display = "PENDING"
@@ -326,7 +345,16 @@ class RedemptionsTab(QtWidgets.QWidget):
 
                 method_display = "Loss" if is_total_loss else (getattr(redemption, 'method_name', None) or "")
 
-                status = "total_loss" if is_total_loss else ("pending" if is_pending else "normal")
+                if r_status == 'CANCELED':
+                    row_status = "canceled"
+                elif r_status == 'PENDING_CANCEL':
+                    row_status = "pending_cancel"
+                elif is_total_loss:
+                    row_status = "total_loss"
+                elif is_pending:
+                    row_status = "pending"
+                else:
+                    row_status = "normal"
 
                 # Date/Time
                 date_item = QtWidgets.QTableWidgetItem(date_time)
@@ -445,9 +473,13 @@ class RedemptionsTab(QtWidgets.QWidget):
                 notes = (redemption.notes or "")[:100]
                 self.table.setItem(row, 10, QtWidgets.QTableWidgetItem(notes))
 
-                if status == "total_loss":
+                if row_status == "total_loss":
                     color = QtGui.QColor("#c0392b")
-                elif status == "pending":
+                elif row_status == "canceled":
+                    color = QtGui.QColor("#95a5a6")
+                elif row_status == "pending_cancel":
+                    color = QtGui.QColor("#8e44ad")
+                elif row_status == "pending":
                     color = QtGui.QColor("#e67e22")
                 else:
                     color = None
@@ -481,8 +513,10 @@ class RedemptionsTab(QtWidgets.QWidget):
 
         quick_filtered = []
         for r in self.redemptions:
-            if pending_only and bool(r.receipt_date):
-                continue
+            if pending_only:
+                r_status = getattr(r, 'status', 'PENDING') or 'PENDING'
+                if bool(r.receipt_date) or r_status in ('CANCELED', 'PENDING_CANCEL'):
+                    continue
             if unprocessed_only and bool(r.processed):
                 continue
             quick_filtered.append(r)
@@ -570,11 +604,34 @@ class RedemptionsTab(QtWidgets.QWidget):
         # Get unique rows that have any selected cells
         selected_rows = self._get_selected_row_numbers()
         self.view_btn.setVisible(len(selected_rows) == 1)
-        self.edit_btn.setVisible(len(selected_rows) == 1)
+
+        # Edit/Delete/Mark buttons — single PENDING redemption for single-item actions
+        selected_redemptions = [self._get_redemption_for_row(r) for r in selected_rows]
+        selected_redemptions = [r for r in selected_redemptions if r is not None]
+
+        single_pending = (
+            len(selected_redemptions) == 1
+            and getattr(selected_redemptions[0], 'status', 'PENDING') == 'PENDING'
+        )
+        single_canceled = (
+            len(selected_redemptions) == 1
+            and getattr(selected_redemptions[0], 'status', 'PENDING') == 'CANCELED'
+        )
+
+        self.edit_btn.setVisible(len(selected_rows) == 1 and not single_canceled)
         self.delete_btn.setVisible(len(selected_rows) > 0)
-        self.mark_received_btn.setVisible(len(selected_rows) > 0)
-        self.mark_processed_btn.setVisible(len(selected_rows) > 0)
-        
+        # Bulk actions: only for PENDING rows
+        pending_count = sum(
+            1 for r in selected_redemptions
+            if getattr(r, 'status', 'PENDING') == 'PENDING'
+        )
+        self.mark_received_btn.setVisible(pending_count > 0)
+        self.mark_processed_btn.setVisible(pending_count > 0)
+
+        # Cancel / Uncancel (Issue #148)
+        self.cancel_btn.setVisible(single_pending)
+        self.uncancel_btn.setVisible(single_canceled)
+
         # Update spreadsheet stats bar
         if has_selection:
             grid = SpreadsheetUXController.extract_selection_grid(self.table)
@@ -604,6 +661,19 @@ class RedemptionsTab(QtWidgets.QWidget):
                 if value is not None:
                     ids.append(value)
         return ids
+
+    def _get_redemption_for_row(self, row: int):
+        """Return the Redemption model for a table row, looked up from self.redemptions."""
+        item = self.table.item(row, 0)
+        if item is None:
+            return None
+        rid = item.data(QtCore.Qt.UserRole)
+        if rid is None:
+            return None
+        for r in self.redemptions:
+            if r.id == rid:
+                return r
+        return None
     
     def _add_redemption(self):
         """Show dialog to add new redemption"""
@@ -1027,6 +1097,92 @@ class RedemptionsTab(QtWidgets.QWidget):
                     self, "Error", f"Failed to delete redemption(s):\n{str(e)}\n\n{error_detail}"
                 )
     
+    def _cancel_redemption(self):
+        """Cancel the selected PENDING redemption."""
+        redemption_id = self._get_selected_redemption_id()
+        if not redemption_id:
+            return
+        redemption = next((r for r in self.redemptions if r.id == redemption_id), None)
+        if not redemption:
+            return
+
+        # Check for active session
+        has_active = (
+            self.facade.game_session_service.get_active_session(
+                redemption.user_id, redemption.site_id
+            ) is not None
+        )
+
+        if has_active:
+            site_label = getattr(redemption, 'site_name', None) or f"site #{redemption.site_id}"
+            confirm_msg = (
+                f"An active session is in progress for {site_label}.\n"
+                "This cancellation will be queued and will complete automatically "
+                "when the session ends.\n\nProceed?"
+            )
+            reply = QtWidgets.QMessageBox.question(
+                self, "Queue Cancellation", confirm_msg,
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            )
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
+
+        reason, ok = QtWidgets.QInputDialog.getText(
+            self, "Cancel Reason",
+            "Enter a reason for cancellation (optional):"
+        )
+        if not ok:
+            return
+
+        try:
+            self.facade.cancel_redemption(redemption_id, reason=reason)
+            self.refresh_data()
+            if hasattr(self, "main_window") and self.main_window is not None:
+                self.main_window.refresh_all_tabs()
+            if has_active:
+                QtWidgets.QMessageBox.information(
+                    self, "Cancellation Queued",
+                    "Cancellation queued. It will complete when the active session ends."
+                )
+            else:
+                QtWidgets.QMessageBox.information(
+                    self, "Canceled",
+                    f"Redemption #{redemption_id} canceled successfully."
+                )
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self, "Error", f"Failed to cancel redemption:\n{str(e)}"
+            )
+
+    def _uncancel_redemption(self):
+        """Restore a CANCELED redemption back to PENDING."""
+        redemption_id = self._get_selected_redemption_id()
+        if not redemption_id:
+            return
+
+        reply = QtWidgets.QMessageBox.question(
+            self, "Uncancel Redemption",
+            f"Uncancel redemption #{redemption_id}?\n\n"
+            "This will re-apply FIFO allocations and restore it to PENDING status.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        try:
+            self.facade.uncancel_redemption(redemption_id)
+            self.refresh_data()
+            if hasattr(self, "main_window") and self.main_window is not None:
+                self.main_window.refresh_all_tabs()
+            QtWidgets.QMessageBox.information(
+                self, "Uncanceled",
+                f"Redemption #{redemption_id} restored to PENDING."
+            )
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(
+                self, "Error", f"Failed to uncancel redemption:\n{str(e)}"
+            )
+
     def _clear_search(self):
         """Clear search filter"""
         self.search_edit.clear()

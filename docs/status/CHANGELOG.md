@@ -9,7 +9,51 @@ Rules:
 
 ---
 
-## 2026-02-18
+## 2026-02-21
+
+```yaml
+id: 2026-02-21-01
+type: feature
+areas: [ui, redemptions, services, accounting]
+issue: 148
+summary: "Redemption Cancel / Uncancel"
+details: >
+  Implements full cancel/uncancel lifecycle for PENDING redemptions.
+
+  Schema: Added `status` (PENDING|CANCELED|PENDING_CANCEL), `canceled_at` (UTC),
+  and `cancel_reason` columns to the `redemptions` table via migration.
+
+  Accounting:
+  - Cancel: deletes FIFO allocations and triggers rebuild_or_mark_stale.
+    If an Active session exists for the same (user, site) pair, sets
+    PENDING_CANCEL (deferred) instead of CANCELED immediately.
+  - process_pending_cancels fires when a session transitions Active → Closed
+    (moved outside the recalculate_pl guard so it fires even with
+    recalculate_pl=False).
+  - Uncancel: re-applies FIFO and triggers rebuild.
+  - Two-event delta model in compute_expected_balances: CANCELED redemption
+    contributes a debit at redemption_date and a credit at canceled_at.
+  - RecalculationService excludes CANCELED/PENDING_CANCEL rows from all rebuild
+    FIFO queries (WHERE COALESCE(status,'PENDING') NOT IN ('CANCELED','PENDING_CANCEL')).
+  - NotificationRulesService.evaluate_redemption_pending_rules already filtered
+    by status='PENDING'; added settings=None guard for test/API usage.
+  - bulk_update_redemption_metadata skips CANCELED rows.
+
+  UI:
+  - Redemptions tab: Cancel toolbar button (single PENDING selection),
+    Uncancel toolbar button (single CANCELED selection).
+  - Cancel dialog: active-session deferred warning + reason input.
+  - Table rendering: CANCELED rows gray (#95a5a6), PENDING_CANCEL rows purple (#8e44ad).
+  - Pending quick filter excludes CANCELED and PENDING_CANCEL rows.
+
+  Tests: 15 integration tests (test_redemption_cancel_uncancel.py,
+  test_compute_expected_balances_cancel.py) covering H1-H4, E1-E6, F1, B1-B4.
+  940 total tests pass (1 skipped, 0 failures).
+```
+
+---
+
+
 
 ```yaml
 id: 2026-02-18-02
