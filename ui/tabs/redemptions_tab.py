@@ -126,17 +126,17 @@ class RedemptionsTab(QtWidgets.QWidget):
         add_btn.clicked.connect(self._add_redemption)
         toolbar.addWidget(add_btn)
 
-        self.view_btn = QtWidgets.QPushButton("👁️ View Redemption")
+        self.view_btn = QtWidgets.QPushButton("👁️ View")
         self.view_btn.clicked.connect(self._view_redemption)
         self.view_btn.setVisible(False)
         toolbar.addWidget(self.view_btn)
 
-        self.edit_btn = QtWidgets.QPushButton("✏️ Edit Redemption")
+        self.edit_btn = QtWidgets.QPushButton("✏️ Edit")
         self.edit_btn.clicked.connect(self._edit_redemption)
         self.edit_btn.setVisible(False)
         toolbar.addWidget(self.edit_btn)
 
-        self.delete_btn = QtWidgets.QPushButton("🗑️ Delete Redemption")
+        self.delete_btn = QtWidgets.QPushButton("🗑️ Delete")
         self.delete_btn.clicked.connect(self._delete_redemption)
         self.delete_btn.setVisible(False)
         toolbar.addWidget(self.delete_btn)
