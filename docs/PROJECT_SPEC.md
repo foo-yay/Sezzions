@@ -1153,7 +1153,7 @@ Provide passive, persistent notifications for important app events without inter
 - `services/notification_service.py`: CRUD operations, state transitions, de-duplication by composite key (type + subject_id)
 - `repositories/notification_repository.py`: JSON persistence to settings.json (v1 implementation)
 - `services/notification_rules_service.py`: Rule evaluators for backup and redemption conditions
-- `ui/notification_widgets.py`: Bell widget with badge, notification center dialog, snooze/dismiss/delete UI
+- `ui/notification_widgets.py`: Bell widget with badge, notification center dialog, snooze/delete UI
 - Periodic evaluation: Startup + hourly QTimer
 
 **Notification Model:**
@@ -1169,7 +1169,8 @@ Provide passive, persistent notifications for important app events without inter
   - **Resurfacing**: When cooldown expires + condition still true → clears deleted_at/read_at, resurfaces as new/unread
 - `get_all()`, `get_active()`, `get_by_id()`, `get_unread_count()`
 - State transitions: `mark_read(cooldown_days=0)`, `mark_unread()`, `mark_all_read()`
-- User actions: `dismiss()`, `snooze()`, `snooze_for_hours()`, `snooze_until_tomorrow()`, `delete(cooldown_days=0)`
+- User actions: `snooze()`, `snooze_for_hours()`, `snooze_until_tomorrow()`, `delete(cooldown_days=0)`
+  - **Note**: `dismiss()` and `dismiss_by_type()` remain in the service but are **system-only** — used by notification rules to auto-clear resolved conditions (backup completed, redemption received). No user-facing Dismiss button exists.
   - **Cooldown suppression** (Issue #73): `delete()` and `mark_read()` accept `cooldown_days` parameter
     - Sets `suppressed_until = datetime.now() + timedelta(days=cooldown_days)`
     - Prevents immediate reappearance when rules re-evaluate (fixes "nag loop")
@@ -1212,7 +1213,7 @@ Provide passive, persistent notifications for important app events without inter
   - Click opens NotificationCenterDialog
 - **NotificationItemWidget**: QFrame for a single notification
   - Severity icon (ℹ️/⚠️/❌), title (bold if unread), body, timestamp
-  - Actions: "Open" (if action_key), "Snooze", "Dismiss", "Delete", "Mark Read", "Mark Unread"
+  - Actions: "Open" (if action_key), "Snooze", "Delete", "Mark Read", "Mark Unread"
 - **NotificationCenterDialog**: grouped, scrollable list of notifications
   - Groups: Unread / Read / Snoozed (Read + Snoozed are collapsed by default)
   - "Mark All Read" button (applies to non-dismissed/non-deleted notifications, including snoozed)

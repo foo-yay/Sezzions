@@ -9,6 +9,29 @@ Rules:
 
 ---
 
+## 2026-02-23
+
+```yaml
+id: 2026-02-23-01
+type: cleanup
+areas: [ui, notifications]
+issue: ~
+summary: "Remove user-facing Dismiss button from Notification Center"
+details: >
+  The Dismiss button in NotificationItemWidget was non-functional: calling
+  notification_service.dismiss() sets dismissed_at, but create_or_update()
+  immediately resets dismissed_at to None on the next rule evaluation, so
+  the notification reappeared instantly. The button provided no lasting effect.
+  Removed: Dismiss button, dismissed Signal on NotificationItemWidget,
+  item_widget.dismissed.connect() wiring, _dismiss_notification() handler.
+  System-side dismiss() and dismiss_by_type() remain (used by notification
+  rules to auto-clear resolved conditions such as backup completed or
+  redemption received). Spec updated: §6.6 per-item actions and service
+  user-actions list updated to remove Dismiss; system-only note added.
+```
+
+---
+
 ## 2026-02-21
 
 ```yaml
