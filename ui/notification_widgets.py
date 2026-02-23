@@ -134,7 +134,6 @@ class NotificationItemWidget(QFrame):
     """Single notification item in the list"""
     
     action_clicked = Signal(object)  # notification
-    dismissed = Signal(int)  # notification_id
     snoozed = Signal(int, datetime)  # notification_id, until
     deleted = Signal(int)  # notification_id
     marked_read = Signal(int)  # notification_id
@@ -226,11 +225,6 @@ class NotificationItemWidget(QFrame):
         snooze_btn.clicked.connect(self._show_snooze_menu)
         actions_layout.addWidget(snooze_btn)
         
-        # Dismiss button
-        dismiss_btn = QPushButton("✓ Dismiss")
-        dismiss_btn.clicked.connect(lambda: self.dismissed.emit(self.notification.id))
-        actions_layout.addWidget(dismiss_btn)
-
         # Mark as read/unread (moves between groups)
         if self.notification.is_read:
             unread_btn = QPushButton("↩︎ Mark Unread")
@@ -458,7 +452,6 @@ class NotificationCenterDialog(QDialog):
             for notif in items:
                 item_widget = NotificationItemWidget(notif)
                 item_widget.action_clicked.connect(self._handle_action)
-                item_widget.dismissed.connect(self._dismiss_notification)
                 item_widget.snoozed.connect(self._snooze_notification)
                 item_widget.deleted.connect(self._delete_notification)
                 item_widget.marked_unread.connect(self._mark_unread_notification)
@@ -549,12 +542,6 @@ class NotificationCenterDialog(QDialog):
                     200,
                     lambda: self._select_redemption_row(redemptions_tab, redemption_id, _retried_all_time=True),
                 )
-    
-    def _dismiss_notification(self, notification_id):
-        """Dismiss a notification"""
-        self.facade.notification_service.dismiss(notification_id)
-        self.load_notifications()
-        self._refresh_bell_badge()
     
     def _snooze_notification(self, notification_id, until):
         """Snooze a notification"""
