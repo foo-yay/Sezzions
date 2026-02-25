@@ -9,6 +9,26 @@ Rules:
 
 ---
 
+## 2026-02-25
+
+```yaml
+id: 2026-02-25-01
+type: fix
+areas: [ui]
+issue: ~
+summary: "Fix black text in View Game Session Balances/Outcomes table"
+details: >
+  All data cells in the Balances/Outcomes grid had hardcoded color: black,
+  making them unreadable on dark backgrounds. Removed explicit color: black
+  from all Start/End/Basis cell stylesheets so they inherit the theme text
+  color. Changed the 'black' fallback in delta_color, delta_redeem_color, and
+  net_color (shown for null/dash values) to 'inherit'. Also softened the cell
+  border from rgba(0,0,0,0.2) to rgba(128,128,128,0.3) so it is visible on
+  both light and dark themes.
+```
+
+---
+
 ## 2026-02-23
 
 ```yaml

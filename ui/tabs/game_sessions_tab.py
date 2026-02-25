@@ -3952,7 +3952,7 @@ class ViewSessionDialog(QDialog):
         start_sc_label.setAlignment(Qt.AlignCenter)
         start_sc_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         start_sc_label.setCursor(Qt.IBeamCursor)
-        start_sc_label.setStyleSheet("color: black; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2);")
+        start_sc_label.setStyleSheet("padding: 6px; border: 1px solid rgba(128, 128, 128, 0.3);")
         balances_grid.addWidget(start_sc_label, row, 1)
 
         end_sc = f"{float(self.session.ending_balance or 0):.2f}" if not is_active and self.session.ending_balance is not None else "—"
@@ -3960,19 +3960,19 @@ class ViewSessionDialog(QDialog):
         end_sc_label.setAlignment(Qt.AlignCenter)
         end_sc_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         end_sc_label.setCursor(Qt.IBeamCursor)
-        end_sc_label.setStyleSheet("color: black; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-left: none;")
+        end_sc_label.setStyleSheet("padding: 6px; border: 1px solid rgba(128, 128, 128, 0.3); border-left: none;")
         balances_grid.addWidget(end_sc_label, row, 2)
 
         delta_total = self.session.delta_total if not is_active else None
         if not is_active and delta_total is None and self.session.starting_balance is not None and self.session.ending_balance is not None:
             delta_total = float(self.session.ending_balance) - float(self.session.starting_balance)
         delta_total_str = f"{float(delta_total):+.2f}" if delta_total is not None else "—"
-        delta_color = "#2e7d32" if delta_total is not None and delta_total >= 0 else ("#c62828" if delta_total is not None else "black")
+        delta_color = "#2e7d32" if delta_total is not None and delta_total >= 0 else ("#c62828" if delta_total is not None else "inherit")
         delta_total_label = QLabel(delta_total_str)
         delta_total_label.setAlignment(Qt.AlignCenter)
         delta_total_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         delta_total_label.setCursor(Qt.IBeamCursor)
-        delta_total_label.setStyleSheet(f"color: {delta_color}; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-left: none;")
+        delta_total_label.setStyleSheet(f"color: {delta_color}; padding: 6px; border: 1px solid rgba(128, 128, 128, 0.3); border-left: none;")
         balances_grid.addWidget(delta_total_label, row, 3)
 
         # Row: Redeemable
@@ -3986,7 +3986,7 @@ class ViewSessionDialog(QDialog):
         start_redeem_label.setAlignment(Qt.AlignCenter)
         start_redeem_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         start_redeem_label.setCursor(Qt.IBeamCursor)
-        start_redeem_label.setStyleSheet("color: black; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-top: none;")
+        start_redeem_label.setStyleSheet("padding: 6px; border: 1px solid rgba(128, 128, 128, 0.3); border-top: none;")
         balances_grid.addWidget(start_redeem_label, row, 1)
 
         end_redeem = f"{float(self.session.ending_redeemable or 0):.2f}" if not is_active and self.session.ending_redeemable is not None else "—"
@@ -3994,19 +3994,19 @@ class ViewSessionDialog(QDialog):
         end_redeem_label.setAlignment(Qt.AlignCenter)
         end_redeem_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         end_redeem_label.setCursor(Qt.IBeamCursor)
-        end_redeem_label.setStyleSheet("color: black; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-left: none; border-top: none;")
+        end_redeem_label.setStyleSheet("padding: 6px; border: 1px solid rgba(128, 128, 128, 0.3); border-left: none; border-top: none;")
         balances_grid.addWidget(end_redeem_label, row, 2)
 
         delta_redeem = self.session.delta_redeem if not is_active else None
         if not is_active and delta_redeem is None and self.session.starting_redeemable is not None and self.session.ending_redeemable is not None:
             delta_redeem = float(self.session.ending_redeemable) - float(self.session.starting_redeemable)
         delta_redeem_str = f"{float(delta_redeem):+.2f}" if delta_redeem is not None else "—"
-        delta_redeem_color = "#2e7d32" if delta_redeem is not None and delta_redeem >= 0 else ("#c62828" if delta_redeem is not None else "black")
+        delta_redeem_color = "#2e7d32" if delta_redeem is not None and delta_redeem >= 0 else ("#c62828" if delta_redeem is not None else "inherit")
         delta_redeem_label = QLabel(delta_redeem_str)
         delta_redeem_label.setAlignment(Qt.AlignCenter)
         delta_redeem_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         delta_redeem_label.setCursor(Qt.IBeamCursor)
-        delta_redeem_label.setStyleSheet(f"color: {delta_redeem_color}; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-left: none; border-top: none;")
+        delta_redeem_label.setStyleSheet(f"color: {delta_redeem_color}; padding: 6px; border: 1px solid rgba(128, 128, 128, 0.3); border-left: none; border-top: none;")
         balances_grid.addWidget(delta_redeem_label, row, 3)
 
         # Row: Basis
@@ -4019,7 +4019,7 @@ class ViewSessionDialog(QDialog):
         start_basis_label.setAlignment(Qt.AlignCenter)
         start_basis_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         start_basis_label.setCursor(Qt.IBeamCursor)
-        start_basis_label.setStyleSheet("color: black; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-top: none;")
+        start_basis_label.setStyleSheet("padding: 6px; border: 1px solid rgba(128, 128, 128, 0.3); border-top: none;")
         balances_grid.addWidget(start_basis_label, row, 1)
 
         basis_val = None if is_active else (self.session.basis_consumed if self.session.basis_consumed is not None else self.session.session_basis)
@@ -4028,14 +4028,14 @@ class ViewSessionDialog(QDialog):
         end_basis_label.setAlignment(Qt.AlignCenter)
         end_basis_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         end_basis_label.setCursor(Qt.IBeamCursor)
-        end_basis_label.setStyleSheet("color: black; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-left: none; border-top: none;")
+        end_basis_label.setStyleSheet("padding: 6px; border: 1px solid rgba(128, 128, 128, 0.3); border-left: none; border-top: none;")
         balances_grid.addWidget(end_basis_label, row, 2)
 
         delta_basis_label = QLabel(end_basis_str)
         delta_basis_label.setAlignment(Qt.AlignCenter)
         delta_basis_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         delta_basis_label.setCursor(Qt.IBeamCursor)
-        delta_basis_label.setStyleSheet("color: black; padding: 6px; border: 1px solid rgba(0, 0, 0, 0.2); border-left: none; border-top: none;")
+        delta_basis_label.setStyleSheet("padding: 6px; border: 1px solid rgba(128, 128, 128, 0.3); border-left: none; border-top: none;")
         balances_grid.addWidget(delta_basis_label, row, 3)
 
         # Spacer row
@@ -4054,7 +4054,7 @@ class ViewSessionDialog(QDialog):
         if net_val is None and not is_active:
             net_val = 0.0
         net_display = f"+${float(net_val):.2f}" if net_val is not None and float(net_val) >= 0 else (f"${float(net_val):.2f}" if net_val is not None else "—")
-        net_color = "#2e7d32" if net_val is not None and net_val >= 0 else ("#c62828" if net_val is not None else "black")
+        net_color = "#2e7d32" if net_val is not None and net_val >= 0 else ("#c62828" if net_val is not None else "inherit")
         net_pl_value = QLabel(net_display)
         net_pl_value.setAlignment(Qt.AlignCenter)
         net_pl_value.setTextInteractionFlags(Qt.TextSelectableByMouse)
