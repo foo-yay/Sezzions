@@ -12,6 +12,47 @@ Rules:
 ## 2026-02-25
 
 ```yaml
+id: 2026-02-25-02
+type: fix
+areas: [services, app_facade]
+issue: 152
+summary: "Fix scoped link rebuild timezone mixing — BEFORE purchase links silently dropped"
+details: >
+  Bug A (app_facade.py — _rebuild_or_mark_stale): The boundary returned by
+  _containing_boundary was in local time, but rebuild_links_for_pair_from
+  compared it against UTC-stored session end_time/session_time/purchase_time
+  columns via direct string comparison. For America/New_York (UTC-5), a
+  local boundary of e.g. 07:16:23 would be compared against UTC end_time
+  12:15:45 — numerically 07:16:23 < 12:15:45 — so the just-closed session was
+  incorrectly pulled into the suffix window. The scoped rebuild then DELETEd
+  the BEFORE purchase link that was correctly created by the session-close
+  rebuild, without re-inserting it. FIX: convert boundary to UTC via
+  local_date_time_to_utc before passing to rebuild_fifo_for_pair_from and
+  rebuild_links_for_pair_from inside _rebuild_or_mark_stale.
+
+  Bug B (app_facade.py — get_linked_events_for_session): The early-return
+  guard used `if events.get("purchases") or events.get("redemptions")`, which
+  returned immediately when a lone AFTER redemption link existed — preventing
+  the self-healing full rebuild from running even when purchase BEFORE links
+  were missing. FIX: changed to `if events.get("purchases")` so the heal only
+  short-circuits when purchase links are already present.
+
+  Bug C (_containing_boundary gap): When a new event lands in the AFTER gap
+  of the most-recently-closed session (no containing session found), the
+  boundary was set to the raw event time. This caused the just-ended session
+  to fall out of the suffix window (its UTC end_time < UTC boundary). FIX:
+  extended _containing_boundary to walk back to the closest prior closed
+  session's start when no containing session is found, so the session's
+  AFTER gap events get a correct boundary.
+
+  Data impact: Session 274 (user_id=2, site_id=31, Stake) had purchase #453
+  (BEFORE, 19s before session start) silently absent. Run "Rebuild All" from
+  Tools after deploying this fix to restore the missing link in the live DB.
+```
+
+---
+
+```yaml
 id: 2026-02-25-01
 type: fix
 areas: [ui]

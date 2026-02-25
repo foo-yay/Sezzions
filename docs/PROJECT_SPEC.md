@@ -817,6 +817,7 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
   - `get_stale_pairs()`: Retrieve list of stale pairs with metadata
 - `AppFacade._rebuild_or_mark_stale()`: Conditional helper method used by all CRUD operations
   - Normal mode: Immediately rebuilds derived data (FIFO allocations + session-event links) for affected pair
+  - **Timezone invariant (Issue #152):** The boundary passed to this method is in LOCAL time (from `_containing_boundary`). Before calling the underlying scoped rebuild services (which compare directly against UTC-stored DB columns), `_rebuild_or_mark_stale` converts the boundary to UTC via `local_date_time_to_utc`. **Do not pass local-time boundaries directly to `rebuild_links_for_pair_from` or `rebuild_fifo_for_pair_from`.**
   - Repair mode: Marks pair as stale and skips rebuild
 - Stale pair tracking:
   - Key: `{user_id}:{site_id}`
@@ -1095,7 +1096,7 @@ Rebuild derived accounting data (FIFO allocations, realized transactions, sessio
 
 **Core Service (`services/recalculation_service.py`):**
 - `rebuild_fifo_for_pair(user_id, site_id, progress_callback=None)`: rebuild one (user, site) pair end-to-end.
-- `rebuild_fifo_for_pair_from(user_id, site_id, from_date, from_time)`: scoped rebuild from a boundary forward.
+- `rebuild_fifo_for_pair_from(user_id, site_id, from_date, from_time)`: scoped rebuild from a boundary forward. **Boundary must be in UTC** (matches stored column timezone). Pass UTC values; use `local_date_time_to_utc` before calling if you have a local boundary.
 - `rebuild_fifo_all(progress_callback=None)`: rebuild all active pairs.
 - `rebuild_after_import(entity_type, user_ids, site_ids, progress_callback=None)`: targeted rebuild after CSV imports.
 
