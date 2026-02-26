@@ -12,6 +12,42 @@ Rules:
 ## 2026-02-25
 
 ```yaml
+id: 2026-02-25-03
+type: improvement
+areas: [ui]
+issue: ~
+summary: "Polish 'Purchases in Basis Period' table in View Purchase → Related tab"
+details: >
+  Three improvements to the basis-period purchases section shown in the Related
+  tab of the View Purchase dialog (ui/tabs/purchases_tab.py).
+
+  1. Grayed-out consumed rows: Any purchase whose remaining_amount == 0 (fully
+  consumed by FIFO redemption allocations) and is not the current purchase is
+  now rendered in gray text. Active/partial purchases and the current purchase
+  display normally. Current purchase remains bold as before.
+
+  2. Remaining Basis column: A new "Remaining Basis" column was added (position
+  5, before View Purchase) showing $X.XX for purchases with remaining basis or
+  an em-dash for fully consumed ones.
+
+  3. Plain-English header: The group box title was rewritten from the confusing
+  "Basis Period (Checkpoint Window) — Purchases ((no prior checkpoint) → (no
+  next checkpoint))" to human-readable labels such as:
+    - "Purchases in Basis Period — since 2026-02-20 14:31 (period still open)"
+    - "Purchases in Basis Period — since 2026-02-20 14:31 → until 2026-02-25 09:00"
+    - "Purchases in Basis Period — all history → until 2026-02-25 09:00"
+    - "Purchases in Basis Period — no full redemptions on record"
+  The header now uses the full-redemption window (nearest prev/next
+  more_remaining=0 redemption) as primary boundaries, falling back to balance
+  checkpoint effective dates when no full redemptions exist.
+  The (no prior checkpoint) and (no next checkpoint) fallback text was removed
+  entirely — when no boundary exists the label describes the situation in plain
+  language rather than showing internal field names.
+```
+
+---
+
+```yaml
 id: 2026-02-25-02
 type: fix
 areas: [services, app_facade]
