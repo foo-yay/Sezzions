@@ -370,7 +370,44 @@ class AppFacade:
         )
         if containing:
             return containing
-        return session_date, self._normalize_time(session_time)
+
+        # Issue #152: the event is not DURING any session.  It may fall in the
+        # AFTER gap of the most-recently-closed session (i.e. the session whose
+        # end_time is at or before the event timestamp).  If that is the case,
+        # use that session's START as the boundary so the scoped rebuild pulls
+        # in the prior session and can (re-)create its AFTER link while also
+        # preserving any BEFORE-purchase links for that session.
+        #
+        # Without this, create_redemption would pass a boundary = raw event
+        # time, the just-ended session would NOT appear in the suffix window,
+        # and the AFTER redemption link would never be created.
+        from tools.timezone_utils import get_configured_timezone_name, local_date_time_to_utc, utc_date_time_to_local
+        tz_name = get_configured_timezone_name()
+        ts_time = self._normalize_time(session_time)
+        utc_date, utc_time = local_date_time_to_utc(session_date, ts_time, tz_name)
+
+        row = self.db.fetch_one(
+            """
+            SELECT session_date, COALESCE(session_time,'00:00:00') as start_time
+            FROM game_sessions
+            WHERE site_id = ? AND user_id = ?
+              AND status = 'Closed'
+              AND (end_date < ?
+                   OR (end_date = ? AND COALESCE(end_time,'23:59:59') <= ?))
+            ORDER BY COALESCE(end_date, session_date) DESC,
+                     COALESCE(end_time, '00:00:00') DESC
+            LIMIT 1
+            """,
+            (site_id, user_id, utc_date, utc_date, utc_time),
+        )
+        if row:
+            start_date = row["session_date"]
+            if isinstance(start_date, str):
+                start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+            start_date, start_time = utc_date_time_to_local(start_date, row["start_time"], tz_name)
+            return start_date, start_time
+
+        return session_date, ts_time
 
     def _earliest_boundary_with_containing(
         self,
@@ -416,19 +453,27 @@ class AppFacade:
                 reason=reason
             )
         else:
-            # Normal mode: rebuild immediately
+            # Normal mode: rebuild immediately.
+            # The boundary comes from _containing_boundary which returns LOCAL time,
+            # but the FIFO and link rebuild services query raw DB columns stored as UTC.
+            # Convert to UTC so the suffix/checkpoint SQL comparisons are consistent.
+            # (Issue #152: mixing LOCAL boundary against UTC-stored end_time causes
+            # incorrect suffix inclusion and silent BEFORE link deletion.)
+            from tools.timezone_utils import get_configured_timezone_name, local_date_time_to_utc as _l2u
+            _tz = get_configured_timezone_name()
+            _utc_date, _utc_time = _l2u(boundary_date, boundary_time, _tz)
             self.recalculation_service.rebuild_fifo_for_pair_from(
                 user_id,
                 site_id,
-                boundary_date.isoformat(),
-                boundary_time
+                _utc_date,
+                _utc_time
             )
             # Rebuild session-event links to include newly added/edited events
             self.game_session_event_link_service.rebuild_links_for_pair_from(
                 site_id,
                 user_id,
-                boundary_date.isoformat(),
-                boundary_time
+                _utc_date,
+                _utc_time
             )
             # Recalculate session P/L fields (delta_redeem, basis_consumed, net_taxable_pl)
             self.game_session_service._recalculate_closed_sessions_for_pair_from(
@@ -2157,7 +2202,10 @@ class AppFacade:
 
     def get_linked_events_for_session(self, session_id: int):
         events = self.game_session_event_link_service.get_events_for_session(session_id)
-        if events.get("purchases") or events.get("redemptions"):
+        # Fast-return only when purchases are already populated.
+        # Do NOT short-circuit on a lone redemption link: a AFTER redemption can exist
+        # while the BEFORE purchase link is silently absent (Issue #152, Bug B).
+        if events.get("purchases"):
             return events
         session = self.game_session_repo.get_by_id(session_id)
         if session:

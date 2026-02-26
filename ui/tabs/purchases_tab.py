@@ -2761,9 +2761,10 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             exclude_purchase_id=None  # Include all purchases in period, including current
         )
 
+        anchor_time = getattr(self.purchase, "purchase_time", None) or "23:59:59"
         window_start, window_end = (None, None)
+        prev_full, next_full = (None, None)
         try:
-            anchor_time = getattr(self.purchase, "purchase_time", None) or "23:59:59"
             window_start, window_end = self.facade.adjustment_service.get_checkpoint_window_for_timestamp(
                 user_id=int(self.purchase.user_id),
                 site_id=int(self.purchase.site_id),
@@ -2772,24 +2773,49 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             )
         except Exception:
             window_start, window_end = (None, None)
-        
+        try:
+            prev_full, next_full = self.facade.get_full_redemption_window_for_timestamp(
+                user_id=int(self.purchase.user_id),
+                site_id=int(self.purchase.site_id),
+                anchor_date=self.purchase.purchase_date,
+                anchor_time=anchor_time,
+            )
+        except Exception:
+            prev_full, next_full = (None, None)
+
         if basis_purchases:
-            # Add header with period info
-            start_str = "(no prior checkpoint)"
-            if window_start:
-                start_str = f"{window_start.effective_date} {window_start.effective_time or '00:00:00'}"
-            end_str = "(no next checkpoint)"
-            if window_end:
-                end_str = f"{window_end.effective_date} {window_end.effective_time or '00:00:00'}"
-            period_label = f"Basis Period (Checkpoint Window) — Purchases ({start_str} → {end_str})"
+            # Build a plain-English header using full-redemption boundaries (more
+            # meaningful to users than internal checkpoint IDs).
+            if prev_full is not None:
+                start_str = f"since {prev_full[0]} {(prev_full[1] or '00:00:00')[:5]}"
+            elif window_start is not None:
+                start_str = f"since {window_start.effective_date} {(window_start.effective_time or '00:00:00')[:5]}"
+            else:
+                start_str = None
+
+            if next_full is not None:
+                end_str = f"until {next_full[0]} {(next_full[1] or '00:00:00')[:5]}"
+            elif window_end is not None:
+                end_str = f"until {window_end.effective_date} {(window_end.effective_time or '00:00:00')[:5]}"
+            else:
+                end_str = None
+
+            if start_str and end_str:
+                period_label = f"Purchases in Basis Period — {start_str} → {end_str}"
+            elif start_str:
+                period_label = f"Purchases in Basis Period — {start_str} (period still open)"
+            elif end_str:
+                period_label = f"Purchases in Basis Period — all history → {end_str}"
+            else:
+                period_label = "Purchases in Basis Period — no full redemptions on record"
             
             basis_group = QtWidgets.QGroupBox(period_label)
             basis_layout = QtWidgets.QVBoxLayout(basis_group)
             basis_layout.setContentsMargins(8, 10, 8, 8)
             
-            table = QtWidgets.QTableWidget(0, 5)
+            table = QtWidgets.QTableWidget(0, 6)
             table.setHorizontalHeaderLabels([
-                "Purchase Date/Time", "Amount", "SC Received", "Post-Purchase SC", "View Purchase"
+                "Purchase Date/Time", "Amount", "SC Received", "Post-Purchase SC", "Remaining Basis", "View Purchase"
             ])
             table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
             table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -2803,6 +2829,7 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             table.setColumnWidth(2, 100)
             table.setColumnWidth(3, 130)
             table.setColumnWidth(4, 120)
+            table.setColumnWidth(5, 120)
             
             # Set minimum height for 3 rows, but allow table to grow with content
             row_height = table.verticalHeader().defaultSectionSize()
@@ -2812,40 +2839,33 @@ class PurchaseViewDialog(QtWidgets.QDialog):
             # No max height - let it fill available space
             
             table.setRowCount(len(basis_purchases))
+            _gray = QtGui.QColor(150, 150, 150)
             for row, p in enumerate(basis_purchases):
                 is_current = p.id == self.purchase.id
-                
+                from decimal import Decimal as _D
+                is_consumed = (not is_current) and (float(p.remaining_amount or 0) == 0)
+
+                def _make_item(text, bold=False, gray=False):
+                    item = QtWidgets.QTableWidgetItem(text)
+                    if bold:
+                        f = item.font()
+                        f.setBold(True)
+                        item.setFont(f)
+                    if gray:
+                        item.setForeground(_gray)
+                    return item
+
                 date_val = str(p.purchase_date)
                 time_val = (p.purchase_time or "00:00:00")[:5]
-                date_time_display = f"{date_val} {time_val}"
-                date_item = QtWidgets.QTableWidgetItem(date_time_display)
-                if is_current:
-                    font = date_item.font()
-                    font.setBold(True)
-                    date_item.setFont(font)
-                table.setItem(row, 0, date_item)
-                
-                amount_item = QtWidgets.QTableWidgetItem(f"${float(p.amount):.2f}")
-                if is_current:
-                    font = amount_item.font()
-                    font.setBold(True)
-                    amount_item.setFont(font)
-                table.setItem(row, 1, amount_item)
-                
-                sc_received_item = QtWidgets.QTableWidgetItem(f"{float(p.sc_received):,.2f} SC")
-                if is_current:
-                    font = sc_received_item.font()
-                    font.setBold(True)
-                    sc_received_item.setFont(font)
-                table.setItem(row, 2, sc_received_item)
-                
-                post_sc_item = QtWidgets.QTableWidgetItem(f"{float(p.starting_sc_balance):,.2f} SC")
-                if is_current:
-                    font = post_sc_item.font()
-                    font.setBold(True)
-                    post_sc_item.setFont(font)
-                table.setItem(row, 3, post_sc_item)
-                
+                table.setItem(row, 0, _make_item(f"{date_val} {time_val}", bold=is_current, gray=is_consumed))
+                table.setItem(row, 1, _make_item(f"${float(p.amount):.2f}", bold=is_current, gray=is_consumed))
+                table.setItem(row, 2, _make_item(f"{float(p.sc_received):,.2f} SC", bold=is_current, gray=is_consumed))
+                table.setItem(row, 3, _make_item(f"{float(p.starting_sc_balance):,.2f} SC", bold=is_current, gray=is_consumed))
+
+                remaining_val = float(p.remaining_amount or 0)
+                remaining_text = f"${remaining_val:.2f}" if remaining_val > 0 else "—"
+                table.setItem(row, 4, _make_item(remaining_text, bold=is_current, gray=is_consumed))
+
                 # Add View Purchase button
                 view_btn = QtWidgets.QPushButton("👁️ View Purchase")
                 view_btn.setObjectName("MiniButton")
@@ -2857,7 +2877,7 @@ class PurchaseViewDialog(QtWidgets.QDialog):
                 view_layout = QtWidgets.QGridLayout(view_container)
                 view_layout.setContentsMargins(6, 4, 6, 4)
                 view_layout.addWidget(view_btn, 0, 0, QtCore.Qt.AlignCenter)
-                table.setCellWidget(row, 4, view_container)
+                table.setCellWidget(row, 5, view_container)
                 table.setRowHeight(
                     row,
                     max(table.rowHeight(row), view_btn.sizeHint().height() + 16),

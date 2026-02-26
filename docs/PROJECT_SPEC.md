@@ -172,7 +172,12 @@ When editing a purchase or creating/editing a game session, the system computes 
   - If first purchase in period: `expected_pre = compute_expected_balances()` (sums SC received from sessions)
   - `total_extra = (actual_pre - expected_pre).quantize(Decimal("0.01"))`
 - **Warning behavior:** Warns on ANY non-zero `total_extra` (no tolerance). Real-time label shows "✓ Balance Check: OK" or "✗ Balance Check: X.XX SC HIGHER/LOWER than expected (Y.YY SC)".
-- **UI visibility:** Purchase View dialog's Related tab includes a "Full Basis Period" section showing ALL purchases (past, current, future) in the basis period. Current purchase shown in **bold**. View Purchase buttons enable easy navigation through the purchase chain.
+- **UI visibility:** Purchase View dialog's Related tab includes a "Purchases in Basis Period" section showing ALL purchases in the basis period (bounded by the most recent and next full redemption for that user/site — see basis-period definition above). Columns: Purchase Date/Time, Amount, SC Received, Post-Purchase SC, **Remaining Basis**, View Purchase.
+  - The current purchase is highlighted in **bold**.
+  - Purchases whose `remaining_amount == 0` (fully consumed by redemptions) are rendered in gray to distinguish spent basis from active basis.
+  - The section header is plain-English: "Purchases in Basis Period — since YYYY-MM-DD HH:MM (period still open)" / "→ until YYYY-MM-DD HH:MM" / "all history → ..." / "no full redemptions on record". Header uses the full-redemption window (prev/next `more_remaining=0` redemption) as primary boundaries, falling back to balance checkpoint dates when available. This replaced a previous confusing "Basis Period (Checkpoint Window) — Purchases ((no prior checkpoint) → (no next checkpoint))" placeholder-looking label.
+  - View Purchase buttons enable easy navigation through the purchase chain.
+  - **Note on partial redemptions:** If all redemptions for a user/site are partial (`more_remaining=1`), there are no full-redemption boundaries, so the basis window spans the entire history for that pair. All historical purchases appear in the list; consumed ones are grayed out. This is expected and correct — the basis period has genuinely never been reset by a full redemption.
 
 **Active session warning (Issue #88, 2026-02-08):**
 - When saving a purchase for a (user, site) pair with an **Active** gaming session, the UI shows a blocking confirmation dialog before save.
@@ -817,6 +822,7 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
   - `get_stale_pairs()`: Retrieve list of stale pairs with metadata
 - `AppFacade._rebuild_or_mark_stale()`: Conditional helper method used by all CRUD operations
   - Normal mode: Immediately rebuilds derived data (FIFO allocations + session-event links) for affected pair
+  - **Timezone invariant (Issue #152):** The boundary passed to this method is in LOCAL time (from `_containing_boundary`). Before calling the underlying scoped rebuild services (which compare directly against UTC-stored DB columns), `_rebuild_or_mark_stale` converts the boundary to UTC via `local_date_time_to_utc`. **Do not pass local-time boundaries directly to `rebuild_links_for_pair_from` or `rebuild_fifo_for_pair_from`.**
   - Repair mode: Marks pair as stale and skips rebuild
 - Stale pair tracking:
   - Key: `{user_id}:{site_id}`
@@ -1095,7 +1101,7 @@ Rebuild derived accounting data (FIFO allocations, realized transactions, sessio
 
 **Core Service (`services/recalculation_service.py`):**
 - `rebuild_fifo_for_pair(user_id, site_id, progress_callback=None)`: rebuild one (user, site) pair end-to-end.
-- `rebuild_fifo_for_pair_from(user_id, site_id, from_date, from_time)`: scoped rebuild from a boundary forward.
+- `rebuild_fifo_for_pair_from(user_id, site_id, from_date, from_time)`: scoped rebuild from a boundary forward. **Boundary must be in UTC** (matches stored column timezone). Pass UTC values; use `local_date_time_to_utc` before calling if you have a local boundary.
 - `rebuild_fifo_all(progress_callback=None)`: rebuild all active pairs.
 - `rebuild_after_import(entity_type, user_ids, site_ids, progress_callback=None)`: targeted rebuild after CSV imports.
 
