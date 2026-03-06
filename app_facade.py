@@ -2180,6 +2180,21 @@ class AppFacade:
         """Recalculate RTP aggregates for a game (full rebuild)."""
         self.game_session_service.recalculate_game_rtp_full(game_id)
 
+    def get_game_filtered_stats(
+        self,
+        game_id: int,
+        user_id: Optional[int] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> Dict[str, Any]:
+        """Get game stats constrained by optional user/date filters."""
+        return self.game_session_service.get_game_filtered_stats(
+            game_id=game_id,
+            user_id=user_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
     def get_linked_sessions_for_purchase(self, purchase_id: int):
         sessions = self.game_session_event_link_service.get_sessions_for_purchase(purchase_id)
         if sessions:

@@ -6,7 +6,7 @@ Do NOT simplify or change this formula without verifying against legacy app.
 """
 import uuid
 from dataclasses import asdict
-from typing import List, Optional, Tuple, TYPE_CHECKING
+from typing import List, Optional, Tuple, TYPE_CHECKING, Dict, Any
 from decimal import Decimal
 from datetime import date, datetime
 from repositories.game_session_repository import GameSessionRepository
@@ -444,6 +444,54 @@ class GameSessionService:
             sessions = [s for s in sessions if s.status == status]
         
         return sessions
+
+    def get_game_filtered_stats(
+        self,
+        game_id: int,
+        user_id: Optional[int] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> Dict[str, Any]:
+        """Compute game stats constrained by optional user/date filters."""
+        sessions = self.session_repo.get_all()
+        filtered: List[GameSession] = []
+
+        for session in sessions:
+            if session.game_id != game_id:
+                continue
+            if user_id is not None and session.user_id != user_id:
+                continue
+            if start_date is not None and session.session_date < start_date:
+                continue
+            if end_date is not None and session.session_date > end_date:
+                continue
+            filtered.append(session)
+
+        total_wager = Decimal("0.00")
+        total_delta = Decimal("0.00")
+        rtp_values: List[float] = []
+
+        for session in filtered:
+            total_wager += Decimal(str(session.wager_amount or Decimal("0.00")))
+            total_delta += Decimal(str(session.delta_total or Decimal("0.00")))
+            if session.rtp is not None:
+                rtp_values.append(float(session.rtp))
+
+        actual_rtp = 0.0
+        if total_wager > 0:
+            actual_rtp = float(((total_wager + total_delta) / total_wager) * Decimal("100"))
+
+        average_rtp: Optional[float] = None
+        if rtp_values:
+            average_rtp = sum(rtp_values) / len(rtp_values)
+
+        return {
+            "session_count": len(filtered),
+            "total_wager": total_wager,
+            "total_delta": total_delta,
+            "actual_rtp": actual_rtp,
+            "rtp": average_rtp,
+        }
 
     def get_active_session(self, user_id: int, site_id: int) -> Optional[GameSession]:
         """Get active session for a user/site, if any"""

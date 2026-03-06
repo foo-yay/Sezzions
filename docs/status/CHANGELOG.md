@@ -9,6 +9,66 @@ Rules:
 
 ---
 
+## 2026-03-05
+
+```yaml
+id: 2026-03-05-01
+type: feature
+areas: [ui, services, app_facade, tests]
+issue: 154
+summary: "View Game dialog: add user/date filters and filtered Actual RTP + Total Wager"
+details: >
+  Setup -> Games -> View Game now supports scoped stat analysis for the selected
+  game via user and date filters.
+
+  UI changes (ui/tabs/games_tab.py):
+  - Added an editable User filter combo with Add Purchase-style inline autocomplete.
+    Default behavior is All Users via placeholder text.
+  - Added compact Date Filter controls on one line under the User filter:
+    From + calendar, To + calendar, quick-range combo (Today, Last 30,
+    This Month, This Year, All Time), and Clear.
+  - Clear now resets all filters (user + date), restoring User=All Users
+    behavior and Date=All Time.
+  - Increased View Game dialog minimum size to accommodate the new controls.
+  - Added "Total Wager" line item under Actual RTP.
+
+  Stat semantics:
+  - RTP (%) in View Game remains the configured game RTP (setup value).
+  - Actual RTP now recalculates against the active filters:
+      ((total_wager + total_delta) / total_wager) * 100, else 0.0 when wager is 0.
+  - Total Wager sums wager_amount for filtered sessions; null/missing wager values
+    are treated as 0.
+
+  Service + facade:
+  - Added GameSessionService.get_game_filtered_stats(game_id, user_id, start_date, end_date)
+    returning session_count, total_wager, total_delta, actual_rtp, and average rtp.
+  - Added AppFacade.get_game_filtered_stats(...) passthrough for UI-layer access.
+
+  Tests:
+  - Added service tests for happy path + user/date filtering + missing wager edge
+    handling + failure injection in tests/unit/test_game_session_service.py.
+  - Added headless UI coverage in tests/ui/test_view_game_dialog_filters.py for:
+    - View Game filter controls presence/defaults
+    - MainWindow startup smoke (QApplication + MainWindow instantiation)
+
+  Validation executed during implementation:
+  - Targeted tests: pytest -q tests/unit/test_game_session_service.py tests/ui/test_view_game_dialog_filters.py
+    -> passed.
+  - Full suite: pytest -q
+    -> one unrelated pre-existing failure observed in tests/ui/test_expenses_autocomplete.py
+       (autocomplete assertion), while issue-154 tests passed.
+files_changed:
+  - ui/tabs/games_tab.py
+  - services/game_session_service.py
+  - app_facade.py
+  - tests/unit/test_game_session_service.py
+  - tests/ui/test_view_game_dialog_filters.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+---
+
 ## 2026-02-25
 
 ```yaml

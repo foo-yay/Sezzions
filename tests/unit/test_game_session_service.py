@@ -242,3 +242,125 @@ def test_find_containing_session_start_uses_local_bounds(monkeypatch, game_sessi
 
     assert start_date == date(2026, 1, 1)
     assert start_time == "23:30:00"
+
+
+def test_get_game_filtered_stats_filters_by_user_and_date(
+    game_session_service,
+    user_service,
+    sample_user,
+    sample_site,
+    sample_game,
+):
+    other_user = user_service.create_user("Other User", "other@example.com")
+
+    s1 = game_session_service.create_session(
+        user_id=sample_user.id,
+        site_id=sample_site.id,
+        game_id=sample_game.id,
+        session_date=date(2026, 1, 10),
+        session_time="10:00:00",
+        starting_balance=Decimal("100.00"),
+        ending_balance=Decimal("120.00"),
+        wager_amount=Decimal("100.00"),
+    )
+    game_session_service.update_session(
+        s1.id,
+        status="Closed",
+        end_date=s1.session_date,
+        end_time="11:00:00",
+    )
+
+    s2 = game_session_service.create_session(
+        user_id=sample_user.id,
+        site_id=sample_site.id,
+        game_id=sample_game.id,
+        session_date=date(2026, 2, 10),
+        session_time="10:00:00",
+        starting_balance=Decimal("100.00"),
+        ending_balance=Decimal("90.00"),
+    )
+    game_session_service.update_session(
+        s2.id,
+        status="Closed",
+        end_date=s2.session_date,
+        end_time="11:00:00",
+    )
+
+    s3 = game_session_service.create_session(
+        user_id=other_user.id,
+        site_id=sample_site.id,
+        game_id=sample_game.id,
+        session_date=date(2026, 1, 15),
+        session_time="10:00:00",
+        starting_balance=Decimal("100.00"),
+        ending_balance=Decimal("100.00"),
+        wager_amount=Decimal("50.00"),
+    )
+    game_session_service.update_session(
+        s3.id,
+        status="Closed",
+        end_date=s3.session_date,
+        end_time="11:00:00",
+    )
+
+    all_stats = game_session_service.get_game_filtered_stats(sample_game.id)
+    assert all_stats["session_count"] == 3
+    assert all_stats["total_wager"] == Decimal("150.00")
+    assert all_stats["actual_rtp"] == pytest.approx(106.6666666667)
+
+    user_stats = game_session_service.get_game_filtered_stats(
+        sample_game.id,
+        user_id=sample_user.id,
+    )
+    assert user_stats["session_count"] == 2
+    assert user_stats["total_wager"] == Decimal("100.00")
+    assert user_stats["actual_rtp"] == pytest.approx(110.0)
+
+    jan_stats = game_session_service.get_game_filtered_stats(
+        sample_game.id,
+        user_id=sample_user.id,
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 1, 31),
+    )
+    assert jan_stats["session_count"] == 1
+    assert jan_stats["total_wager"] == Decimal("100.00")
+    assert jan_stats["actual_rtp"] == pytest.approx(120.0)
+
+
+def test_get_game_filtered_stats_handles_missing_wager_as_zero(
+    game_session_service,
+    sample_user,
+    sample_site,
+    sample_game,
+):
+    session = game_session_service.create_session(
+        user_id=sample_user.id,
+        site_id=sample_site.id,
+        game_id=sample_game.id,
+        session_date=date(2026, 1, 20),
+        session_time="12:00:00",
+        starting_balance=Decimal("100.00"),
+        ending_balance=Decimal("110.00"),
+        wager_amount=Decimal("0.00"),
+    )
+    game_session_service.update_session(
+        session.id,
+        status="Closed",
+        end_date=session.session_date,
+        end_time="12:30:00",
+    )
+
+    stats = game_session_service.get_game_filtered_stats(sample_game.id)
+    assert stats["session_count"] == 1
+    assert stats["total_wager"] == Decimal("0.00")
+    assert stats["actual_rtp"] == pytest.approx(0.0)
+
+
+def test_get_game_filtered_stats_failure_injection(monkeypatch, game_session_service, sample_game):
+    def _boom():
+        raise RuntimeError("forced failure")
+
+    monkeypatch.setattr(game_session_service.session_repo, "get_all", _boom)
+
+    with pytest.raises(RuntimeError, match="forced failure"):
+        game_session_service.get_game_filtered_stats(sample_game.id)

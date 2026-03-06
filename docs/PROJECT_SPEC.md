@@ -655,6 +655,66 @@ Persistence and clearing rules:
 - States persist via application settings across restarts.
 - Existing per-tab “Clear All Filters” actions also clear these quick toggles.
 
+### View Game Filtered Stats (Issue #154)
+
+Setup → Games → View Game dialog includes scoped filters and derived stats for the selected game.
+
+#### Filter controls
+
+- **User filter (editable combo)**:
+  - Default behavior is **All Users**.
+  - Uses Add Purchase-style editable combo/autocomplete behavior (inline prediction).
+  - Placeholder text is `All Users` when no explicit user is selected.
+  - If typed text does not match a known user, user scope falls back to All Users.
+
+- **Date filter section**:
+  - Default is **All Time**.
+  - Layout uses two rows: User filter on top, then a single compact date row below.
+  - Date row order: `From` + calendar, `To` + calendar, quick-range combo, `Clear`.
+  - Includes two compact date pickers with calendar buttons (`From`, `To`).
+  - Includes a quick-select combo with: `Today`, `Last 30`, `This Month`, `This Year`, `All Time`.
+  - Quick-select changes auto-apply immediately.
+  - A dedicated **Clear** button resets all filters (user + date), restoring User=All Users behavior and Date=All Time.
+
+- **Dialog sizing**:
+  - View Game dialog may expand to accommodate filter controls and additional stat row.
+
+#### Stat semantics in View Game
+
+- **RTP (%)**:
+  - Displays the game’s configured RTP from Setup (not user/date-filtered).
+
+- **Actual RTP**:
+  - Computed from filtered sessions for this game using:
+    - optional `user_id`
+    - optional `start_date` / `end_date` (inclusive bounds)
+  - Formula: `((total_wager + total_delta) / total_wager) * 100` when `total_wager > 0`, else `0.0`.
+
+- **Total Wager** (new line under Actual RTP):
+  - Sum of `wager_amount` across filtered sessions for this game.
+  - Missing/null wager values are treated as `0` (no error, no skip-crash behavior).
+  - Sessions are still counted even when wager is zero/missing.
+
+#### Service/API contract used by dialog
+
+- UI calls facade only (no direct repository/SQL):
+  - `AppFacade.get_game_filtered_stats(game_id, user_id=None, start_date=None, end_date=None)`
+  - Delegates to `GameSessionService.get_game_filtered_stats(...)`.
+- Returned payload includes at minimum:
+  - `session_count`, `total_wager`, `total_delta`, `actual_rtp`, `rtp`
+- `session_count` counts game-matching sessions after filters; date filter is inclusive.
+
+#### Reproducibility / validation notes
+
+- Red→Green test workflow is required:
+  1. add failing tests for user/date scoping and missing-wager handling,
+  2. implement minimal service/UI changes,
+  3. rerun targeted tests and full suite.
+- Required automated coverage for this behavior:
+  - service tests for user/date filtering + null wager edge case + failure injection,
+  - UI test confirming View Game filter controls render,
+  - headless MainWindow smoke to catch wiring/startup regressions.
+
 ### Expenses Entry Autocomplete (Issue #139)
 
 In Expense Add/Edit dialogs, Sezzions provides autocomplete suggestions to speed repetitive text entry while keeping fields free-form:
