@@ -1,13 +1,14 @@
 """
 Games tab - Manage individual games
 """
-from datetime import date
+from datetime import date, timedelta
 from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
 from models.game import Game
 from ui.table_header_filters import TableHeaderFilter
 from ui.spreadsheet_ux import SpreadsheetUXController
 from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from ui.input_parsers import parse_date_input
 
 
 class GamesTab(QtWidgets.QWidget):
@@ -399,6 +400,7 @@ class GamesTab(QtWidgets.QWidget):
         
         dialog = GameViewDialog(
             game,
+            facade=self.facade,
             parent=self,
             on_edit=self._edit_game,
             on_delete=self._delete_game,
@@ -701,13 +703,14 @@ class GameDialog(QtWidgets.QDialog):
 class GameViewDialog(QtWidgets.QDialog):
     """Dialog for viewing game details"""
     
-    def __init__(self, game: Game, parent=None, on_edit=None, on_delete=None):
+    def __init__(self, game: Game, parent=None, facade: AppFacade = None, on_edit=None, on_delete=None):
         super().__init__(parent)
         self.game = game
+        self.facade = facade or getattr(parent, "facade", None)
         self._on_edit = on_edit
         self._on_delete = on_delete
         self.setWindowTitle("View Game")
-        self.setMinimumSize(620, 360)
+        self.setMinimumSize(760, 460)
         
         # Main layout
         main_layout = QtWidgets.QVBoxLayout(self)
@@ -718,6 +721,61 @@ class GameViewDialog(QtWidgets.QDialog):
         details_header = QtWidgets.QLabel("🎮 Game Details")
         details_header.setObjectName("SectionHeader")
         main_layout.addWidget(details_header)
+
+        # Filter section
+        filter_section = QtWidgets.QWidget()
+        filter_section.setObjectName("SectionBackground")
+        filter_layout = QtWidgets.QGridLayout(filter_section)
+        filter_layout.setContentsMargins(12, 12, 12, 12)
+        filter_layout.setHorizontalSpacing(10)
+        filter_layout.setVerticalSpacing(8)
+
+        user_lbl = QtWidgets.QLabel("User:")
+        user_lbl.setObjectName("MutedLabel")
+        filter_layout.addWidget(user_lbl, 0, 0)
+
+        self.user_filter_combo = QtWidgets.QComboBox()
+        self.user_filter_combo.setEditable(True)
+        self.user_filter_combo.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
+        self.user_filter_combo.setMinimumWidth(220)
+        self.user_filter_combo.lineEdit().setPlaceholderText("All Users")
+        filter_layout.addWidget(self.user_filter_combo, 0, 1)
+
+        date_lbl = QtWidgets.QLabel("Date Filter:")
+        date_lbl.setObjectName("MutedLabel")
+        filter_layout.addWidget(date_lbl, 0, 2)
+
+        self.date_quick_combo = QtWidgets.QComboBox()
+        self.date_quick_combo.addItems(["Today", "Last 30", "This Month", "This Year", "All Time"])
+        self.date_quick_combo.setCurrentText("All Time")
+        self.date_quick_combo.setMinimumWidth(130)
+        filter_layout.addWidget(self.date_quick_combo, 0, 3)
+
+        filter_layout.addWidget(QtWidgets.QLabel("From:"), 1, 0)
+        self.start_date_edit = QtWidgets.QLineEdit()
+        self.start_date_edit.setPlaceholderText("MM/DD/YY")
+        filter_layout.addWidget(self.start_date_edit, 1, 1)
+
+        self.start_calendar = QtWidgets.QPushButton("📅")
+        self.start_calendar.setFixedWidth(44)
+        self.start_calendar.clicked.connect(lambda: self._pick_date(self.start_date_edit))
+        filter_layout.addWidget(self.start_calendar, 1, 2)
+
+        filter_layout.addWidget(QtWidgets.QLabel("To:"), 1, 3)
+        self.end_date_edit = QtWidgets.QLineEdit()
+        self.end_date_edit.setPlaceholderText("MM/DD/YY")
+        filter_layout.addWidget(self.end_date_edit, 1, 4)
+
+        self.end_calendar = QtWidgets.QPushButton("📅")
+        self.end_calendar.setFixedWidth(44)
+        self.end_calendar.clicked.connect(lambda: self._pick_date(self.end_date_edit))
+        filter_layout.addWidget(self.end_calendar, 1, 5)
+
+        self.clear_date_btn = QtWidgets.QPushButton("Clear")
+        self.clear_date_btn.clicked.connect(self._clear_date_filter)
+        filter_layout.addWidget(self.clear_date_btn, 1, 6)
+
+        main_layout.addWidget(filter_section)
         
         # Game details section
         details_section = QtWidgets.QWidget()
@@ -760,22 +818,30 @@ class GameViewDialog(QtWidgets.QDialog):
         
         rtp_lbl = QtWidgets.QLabel("RTP (%):")
         rtp_lbl.setObjectName("MutedLabel")
-        rtp_val = self._make_selectable_label(str(game.rtp) if game.rtp is not None else "—")
+        self.rtp_value = self._make_selectable_label(
+            f"{float(game.rtp):.2f}%" if game.rtp is not None else "—"
+        )
         right_grid.addWidget(rtp_lbl, 0, 0, QtCore.Qt.AlignRight)
-        right_grid.addWidget(rtp_val, 0, 1)
+        right_grid.addWidget(self.rtp_value, 0, 1)
         
         actual_rtp_lbl = QtWidgets.QLabel("Actual RTP:")
         actual_rtp_lbl.setObjectName("MutedLabel")
         actual_rtp_val_text = f"{float(getattr(game, 'actual_rtp', 0) or 0):.2f}%" if getattr(game, "actual_rtp", None) is not None else "—"
-        actual_rtp_val = self._make_selectable_label(actual_rtp_val_text)
+        self.actual_rtp_value = self._make_selectable_label(actual_rtp_val_text)
         right_grid.addWidget(actual_rtp_lbl, 1, 0, QtCore.Qt.AlignRight)
-        right_grid.addWidget(actual_rtp_val, 1, 1)
+        right_grid.addWidget(self.actual_rtp_value, 1, 1)
+
+        total_wager_lbl = QtWidgets.QLabel("Total Wager:")
+        total_wager_lbl.setObjectName("MutedLabel")
+        self.total_wager_value = self._make_selectable_label("$0.00")
+        right_grid.addWidget(total_wager_lbl, 2, 0, QtCore.Qt.AlignRight)
+        right_grid.addWidget(self.total_wager_value, 2, 1)
         
         status_lbl = QtWidgets.QLabel("Status:")
         status_lbl.setObjectName("MutedLabel")
         status_val = self._make_selectable_label("Active" if game.is_active else "Inactive")
-        right_grid.addWidget(status_lbl, 2, 0, QtCore.Qt.AlignRight)
-        right_grid.addWidget(status_val, 2, 1)
+        right_grid.addWidget(status_lbl, 3, 0, QtCore.Qt.AlignRight)
+        right_grid.addWidget(status_val, 3, 1)
         
         columns.addLayout(right_grid, 1)
         
@@ -833,6 +899,11 @@ class GameViewDialog(QtWidgets.QDialog):
         btn_row.addWidget(close_btn)
         
         main_layout.addLayout(btn_row)
+
+        self._load_user_filter_options()
+        self._setup_user_autocomplete()
+        self._wire_filter_signals()
+        self._clear_date_filter()
     
     def _create_section(self, title):
         """Create a section with header"""
@@ -846,6 +917,128 @@ class GameViewDialog(QtWidgets.QDialog):
         layout.setSpacing(6)
         
         return section, layout
+
+    def _wire_filter_signals(self):
+        self.user_filter_combo.currentTextChanged.connect(self._refresh_stats)
+        self.user_filter_combo.editTextChanged.connect(self._refresh_stats)
+        self.date_quick_combo.currentTextChanged.connect(self._apply_quick_date_range)
+        self.start_date_edit.editingFinished.connect(self._refresh_stats)
+        self.end_date_edit.editingFinished.connect(self._refresh_stats)
+
+    def _load_user_filter_options(self):
+        self.user_filter_combo.clear()
+        if self.facade is None:
+            return
+        users = self.facade.get_all_users(active_only=True)
+        for user in users:
+            self.user_filter_combo.addItem(user.name, user.id)
+        self.user_filter_combo.setCurrentIndex(-1)
+        self.user_filter_combo.setEditText("")
+
+    def _setup_user_autocomplete(self):
+        completer = QtWidgets.QCompleter(self.user_filter_combo.model())
+        completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        completer.setFilterMode(QtCore.Qt.MatchStartsWith)
+        completer.setCompletionMode(QtWidgets.QCompleter.InlineCompletion)
+        self.user_filter_combo.setCompleter(completer)
+        if self.user_filter_combo.lineEdit() is not None:
+            self.user_filter_combo.lineEdit().setCompleter(completer)
+            app = QtWidgets.QApplication.instance()
+            if app is not None and hasattr(app, "_completer_filter"):
+                self.user_filter_combo.lineEdit().installEventFilter(app._completer_filter)
+
+    def _current_user_id(self):
+        text = (self.user_filter_combo.currentText() or "").strip()
+        if not text:
+            return None
+        for idx in range(self.user_filter_combo.count()):
+            if self.user_filter_combo.itemText(idx).strip().lower() == text.lower():
+                return self.user_filter_combo.itemData(idx)
+        return None
+
+    def _current_date_range(self):
+        start = parse_date_input(self.start_date_edit.text())
+        end = parse_date_input(self.end_date_edit.text())
+        if start and end and start > end:
+            start, end = end, start
+        return start, end
+
+    def _apply_quick_date_range(self):
+        preset = self.date_quick_combo.currentText()
+        today = date.today()
+
+        if preset == "Today":
+            start = today
+            end = today
+        elif preset == "Last 30":
+            start = today - timedelta(days=30)
+            end = today
+        elif preset == "This Month":
+            start = date(today.year, today.month, 1)
+            end = today
+        elif preset == "This Year":
+            start = date(today.year, 1, 1)
+            end = today
+        else:
+            start = None
+            end = None
+
+        self.start_date_edit.blockSignals(True)
+        self.end_date_edit.blockSignals(True)
+        try:
+            self.start_date_edit.setText(start.strftime("%m/%d/%y") if start else "")
+            self.end_date_edit.setText(end.strftime("%m/%d/%y") if end else "")
+        finally:
+            self.start_date_edit.blockSignals(False)
+            self.end_date_edit.blockSignals(False)
+
+        self._refresh_stats()
+
+    def _clear_date_filter(self):
+        self.date_quick_combo.setCurrentText("All Time")
+        self.start_date_edit.clear()
+        self.end_date_edit.clear()
+        self._refresh_stats()
+
+    def _pick_date(self, target_edit: QtWidgets.QLineEdit):
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Select Date")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        calendar = QtWidgets.QCalendarWidget()
+        calendar.setSelectedDate(QtCore.QDate.currentDate())
+        layout.addWidget(calendar)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        ok_btn = QtWidgets.QPushButton("Select")
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(ok_btn)
+        layout.addLayout(btn_row)
+
+        cancel_btn.clicked.connect(dialog.reject)
+        ok_btn.clicked.connect(dialog.accept)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            target_edit.setText(calendar.selectedDate().toString("MM/dd/yy"))
+            self._refresh_stats()
+
+    def _refresh_stats(self):
+        if self.facade is None or not getattr(self.game, "id", None):
+            return
+
+        user_id = self._current_user_id()
+        start_date, end_date = self._current_date_range()
+
+        stats = self.facade.get_game_filtered_stats(
+            game_id=self.game.id,
+            user_id=user_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        self.actual_rtp_value.setText(f"{float(stats.get('actual_rtp', 0.0)):.2f}%")
+        total_wager = stats.get("total_wager", 0)
+        self.total_wager_value.setText(f"${float(total_wager):,.2f}")
     
     def _make_selectable_label(self, text):
         """Create selectable text label"""
