@@ -669,10 +669,12 @@ Setup → Games → View Game dialog includes scoped filters and derived stats f
 
 - **Date filter section**:
   - Default is **All Time**.
+  - Layout uses two rows: User filter on top, then a single compact date row below.
+  - Date row order: `From` + calendar, `To` + calendar, quick-range combo, `Clear`.
   - Includes two compact date pickers with calendar buttons (`From`, `To`).
   - Includes a quick-select combo with: `Today`, `Last 30`, `This Month`, `This Year`, `All Time`.
   - Quick-select changes auto-apply immediately.
-  - A dedicated **Clear** button resets date scope back to All Time.
+  - A dedicated **Clear** button resets all filters (user + date), restoring User=All Users behavior and Date=All Time.
 
 - **Dialog sizing**:
   - View Game dialog may expand to accommodate filter controls and additional stat row.

@@ -24,9 +24,11 @@ details: >
   UI changes (ui/tabs/games_tab.py):
   - Added an editable User filter combo with Add Purchase-style inline autocomplete.
     Default behavior is All Users via placeholder text.
-  - Added compact Date Filter controls: From/To date fields with calendar buttons,
-    quick-range combo (Today, Last 30, This Month, This Year, All Time), and
-    Clear button that resets to All Time.
+  - Added compact Date Filter controls on one line under the User filter:
+    From + calendar, To + calendar, quick-range combo (Today, Last 30,
+    This Month, This Year, All Time), and Clear.
+  - Clear now resets all filters (user + date), restoring User=All Users
+    behavior and Date=All Time.
   - Increased View Game dialog minimum size to accommodate the new controls.
   - Added "Total Wager" line item under Actual RTP.
 
