@@ -729,6 +729,7 @@ class GameViewDialog(QtWidgets.QDialog):
         filter_layout.setContentsMargins(12, 12, 12, 12)
         filter_layout.setHorizontalSpacing(10)
         filter_layout.setVerticalSpacing(8)
+        filter_layout.setColumnStretch(1, 1)
 
         user_lbl = QtWidgets.QLabel("User:")
         user_lbl.setObjectName("MutedLabel")
@@ -741,16 +742,11 @@ class GameViewDialog(QtWidgets.QDialog):
         self.user_filter_combo.lineEdit().setPlaceholderText("All Users")
         filter_layout.addWidget(self.user_filter_combo, 0, 1)
 
-        date_lbl = QtWidgets.QLabel("Date Filter:")
-        date_lbl.setObjectName("MutedLabel")
-        filter_layout.addWidget(date_lbl, 0, 2)
-
         self.date_quick_combo = QtWidgets.QComboBox()
         self.date_quick_combo.addItems(["Today", "Last 30", "This Month", "This Year", "All Time"])
         self.date_quick_combo.setCurrentText("All Time")
         self.date_quick_combo.setMinimumWidth(130)
-        filter_layout.addWidget(self.date_quick_combo, 0, 3)
-
+        
         filter_layout.addWidget(QtWidgets.QLabel("From:"), 1, 0)
         self.start_date_edit = QtWidgets.QLineEdit()
         self.start_date_edit.setPlaceholderText("MM/DD/YY")
@@ -771,9 +767,11 @@ class GameViewDialog(QtWidgets.QDialog):
         self.end_calendar.clicked.connect(lambda: self._pick_date(self.end_date_edit))
         filter_layout.addWidget(self.end_calendar, 1, 5)
 
+        filter_layout.addWidget(self.date_quick_combo, 1, 6)
+
         self.clear_date_btn = QtWidgets.QPushButton("Clear")
-        self.clear_date_btn.clicked.connect(self._clear_date_filter)
-        filter_layout.addWidget(self.clear_date_btn, 1, 6)
+        self.clear_date_btn.clicked.connect(self._clear_all_filters)
+        filter_layout.addWidget(self.clear_date_btn, 1, 7)
 
         main_layout.addWidget(filter_section)
         
@@ -903,7 +901,7 @@ class GameViewDialog(QtWidgets.QDialog):
         self._load_user_filter_options()
         self._setup_user_autocomplete()
         self._wire_filter_signals()
-        self._clear_date_filter()
+        self._clear_all_filters()
     
     def _create_section(self, title):
         """Create a section with header"""
@@ -989,6 +987,27 @@ class GameViewDialog(QtWidgets.QDialog):
             self.start_date_edit.setText(start.strftime("%m/%d/%y") if start else "")
             self.end_date_edit.setText(end.strftime("%m/%d/%y") if end else "")
         finally:
+            self.start_date_edit.blockSignals(False)
+            self.end_date_edit.blockSignals(False)
+
+        self._refresh_stats()
+
+    def _clear_all_filters(self):
+        self.user_filter_combo.blockSignals(True)
+        self.date_quick_combo.blockSignals(True)
+        self.start_date_edit.blockSignals(True)
+        self.end_date_edit.blockSignals(True)
+        try:
+            self.user_filter_combo.setCurrentIndex(-1)
+            self.user_filter_combo.setEditText("")
+            if self.user_filter_combo.lineEdit() is not None:
+                self.user_filter_combo.lineEdit().setPlaceholderText("All Users")
+            self.date_quick_combo.setCurrentText("All Time")
+            self.start_date_edit.clear()
+            self.end_date_edit.clear()
+        finally:
+            self.user_filter_combo.blockSignals(False)
+            self.date_quick_combo.blockSignals(False)
             self.start_date_edit.blockSignals(False)
             self.end_date_edit.blockSignals(False)
 

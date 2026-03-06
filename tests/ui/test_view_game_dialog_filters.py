@@ -74,3 +74,29 @@ def test_headless_main_window_smoke_for_view_game_filters(qapp):
     qapp.processEvents()
     window.close()
     facade.db.close()
+
+
+def test_view_game_clear_button_resets_user_and_date_filters(qapp, facade):
+    user = facade.create_user("Clear User")
+    site = facade.create_site("Clear Site")
+    game_type = facade.create_game_type("Clear Type")
+    game = facade.create_game("Clear Game", game_type.id, rtp=95.0)
+
+    dialog = GameViewDialog(game=game, parent=None, facade=facade)
+    dialog.show()
+    qapp.processEvents()
+
+    dialog.user_filter_combo.setCurrentText(user.name)
+    dialog.date_quick_combo.setCurrentText("Today")
+    qapp.processEvents()
+
+    dialog.clear_date_btn.click()
+    qapp.processEvents()
+
+    assert dialog.user_filter_combo.currentText().strip() == ""
+    assert dialog.user_filter_combo.lineEdit().placeholderText() == "All Users"
+    assert dialog.date_quick_combo.currentText() == "All Time"
+    assert dialog.start_date_edit.text().strip() == ""
+    assert dialog.end_date_edit.text().strip() == ""
+
+    dialog.close()
