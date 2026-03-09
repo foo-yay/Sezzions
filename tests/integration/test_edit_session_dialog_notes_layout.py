@@ -49,6 +49,27 @@ def _seed_session_with_notes(facade: AppFacade):
     return session
 
 
+def _seed_closed_session_without_game_metadata(facade: AppFacade):
+    user = facade.create_user("No Game User")
+    site = facade.create_site("No Game Site", "https://example.com/no-game", sc_rate=1.0)
+
+    session = facade.create_game_session(
+        user_id=user.id,
+        site_id=site.id,
+        game_id=None,
+        game_type_id=None,
+        session_date=date(2026, 1, 20),
+        starting_balance=Decimal("50.00"),
+        ending_balance=Decimal("25.00"),
+        starting_redeemable=Decimal("50.00"),
+        ending_redeemable=Decimal("25.00"),
+        session_time="13:00:00",
+        notes="",
+        calculate_pl=False,
+    )
+    return session
+
+
 def test_edit_session_dialog_starts_collapsed_then_expands(qtbot, temp_db_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -106,6 +127,24 @@ def test_edit_closed_session_dialog_starts_collapsed_then_expands(qtbot, temp_db
     qtbot.wait(50)
     assert dialog.notes_section.isVisible() is False
     assert dialog.height() <= collapsed_height
+
+    dialog.close()
+    facade.db.close()
+
+
+def test_edit_closed_session_dialog_no_game_type_does_not_default_first_option(qtbot, temp_db_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+    facade = AppFacade(temp_db_path)
+    facade.create_game_type("Blackjack")
+    facade.create_game_type("Slots")
+    session = _seed_closed_session_without_game_metadata(facade)
+
+    dialog = EditClosedSessionDialog(facade, session)
+    qtbot.addWidget(dialog)
+
+    assert dialog.game_type_combo.currentText().strip() == ""
+    assert dialog.game_name_combo.currentText().strip() == ""
 
     dialog.close()
     facade.db.close()

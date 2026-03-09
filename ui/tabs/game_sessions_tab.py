@@ -3326,9 +3326,21 @@ class EditClosedSessionDialog(QDialog):
             self.game_type_combo.blockSignals(True)
             self.game_type_combo.setCurrentText(game_type_name)
             self.game_type_combo.blockSignals(False)
+        else:
+            self.game_type_combo.blockSignals(True)
+            self.game_type_combo.setCurrentIndex(-1)
+            if self.game_type_combo.lineEdit():
+                self.game_type_combo.setEditText("")
+            self.game_type_combo.blockSignals(False)
+
         if game and game.name:
             self.game_name_combo.blockSignals(True)
             self.game_name_combo.setCurrentText(game.name)
+            self.game_name_combo.blockSignals(False)
+        else:
+            self.game_name_combo.blockSignals(True)
+            self.game_name_combo.setCurrentIndex(-1)
+            self.game_name_combo.setEditText("")
             self.game_name_combo.blockSignals(False)
 
         self._update_game_names()
