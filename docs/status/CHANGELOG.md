@@ -12,6 +12,42 @@ Rules:
 ## 2026-03-09
 
 ```yaml
+id: 2026-03-09-02
+type: fix
+areas: [services, tests, docs]
+issue: ~
+summary: "Fix startup maintenance false-positive when purchase amounts are stored as TEXT"
+details: >
+  DataIntegrityService previously checked invalid purchase remaining amounts
+  using `remaining_amount > amount` without numeric casting. Because SQLite can
+  store monetary values as TEXT, lexical comparison could incorrectly flag valid
+  rows (example: '8.51' > '149.97'). This triggered maintenance-mode prompts on
+  startup even when the data was numerically valid.
+
+  Changes:
+  - Updated purchase remaining checks in services/data_integrity_service.py to
+    use numeric comparison: CAST(remaining_amount AS REAL) > CAST(amount AS REAL)
+  - Updated the auto-fix query in the same service to use the same numeric CAST
+    predicate.
+  - Added regression tests in tests/unit/test_data_integrity_service.py for:
+    - valid text-stored values that must NOT violate
+    - true numeric violations that must still be detected
+
+  Validation:
+  - pytest -q tests/unit/test_data_integrity_service.py
+  - pytest -q tests/unit/test_validation_service.py
+files_changed:
+  - services/data_integrity_service.py
+  - tests/unit/test_data_integrity_service.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+---
+
+## 2026-03-09
+
+```yaml
 id: 2026-03-09-01
 type: fix
 areas: [services, tests, docs]

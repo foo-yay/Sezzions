@@ -1188,6 +1188,7 @@ Prevent app crashes from data integrity violations (common during multi-session 
 - `services/data_integrity_service.py`: Detects violations with quick mode (stops at first violation for performance)
   - `check_integrity(quick=bool)`: Returns `IntegrityCheckResult` with violations list
   - **Checks**: Invalid remaining_amount (> purchase amount), negative amounts, orphaned FKs, null required fields
+    - Remaining-vs-amount check uses numeric comparison (CAST to REAL) to avoid false positives when SQLite stores values as TEXT.
   - **Fix methods**: Auto-fix for simple cases (e.g., cap remaining_amount at amount)
 - `ui/maintenance_mode_dialog.py`: User-friendly dialog explaining violations and remediation options
   - Shows summary (count by type) and details (first 50 violations)
