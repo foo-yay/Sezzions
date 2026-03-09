@@ -9,6 +9,91 @@ Rules:
 
 ---
 
+## 2026-03-09
+
+```yaml
+id: 2026-03-09-02
+type: fix
+areas: [services, tests, docs]
+issue: ~
+summary: "Fix startup maintenance false-positive when purchase amounts are stored as TEXT"
+details: >
+  DataIntegrityService previously checked invalid purchase remaining amounts
+  using `remaining_amount > amount` without numeric casting. Because SQLite can
+  store monetary values as TEXT, lexical comparison could incorrectly flag valid
+  rows (example: '8.51' > '149.97'). This triggered maintenance-mode prompts on
+  startup even when the data was numerically valid.
+
+  Changes:
+  - Updated purchase remaining checks in services/data_integrity_service.py to
+    use numeric comparison: CAST(remaining_amount AS REAL) > CAST(amount AS REAL)
+  - Updated the auto-fix query in the same service to use the same numeric CAST
+    predicate.
+  - Added regression tests in tests/unit/test_data_integrity_service.py for:
+    - valid text-stored values that must NOT violate
+    - true numeric violations that must still be detected
+
+  Validation:
+  - pytest -q tests/unit/test_data_integrity_service.py
+  - pytest -q tests/unit/test_validation_service.py
+files_changed:
+  - services/data_integrity_service.py
+  - tests/unit/test_data_integrity_service.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+---
+
+## 2026-03-09
+
+```yaml
+id: 2026-03-09-01
+type: fix
+areas: [services, tests, docs]
+issue: 156
+summary: "Fix Balance Closed FIFO rebuild to consume basis and prevent realized/unrealized double-counting"
+details: >
+  Fixed a data-correctness bug in RecalculationService FIFO rebuild where
+  close-marker redemptions (`amount=0` with parsable `Net Loss: $X.XX` notes)
+  recreated realized loss rows but skipped FIFO allocations and purchase basis
+  consumption.
+
+  Root cause:
+  - services/recalculation_service.py had a special close-marker branch that
+    wrote `realized_transactions` and `continue`d before allocation logic.
+
+  Fix behavior:
+  - Close-marker rebuild now performs timestamp-bounded FIFO consumption from
+    purchases at or before the close timestamp.
+  - Writes corresponding `redemption_allocations` rows for real purchase IDs.
+  - Updates `purchases.remaining_amount` so pre-close lots cannot reappear as
+    unrealized basis after reopen.
+  - Synchronizes realized values to consumed basis:
+      `cost_basis=consumed_basis`, `payout=0`, `net_pl=-consumed_basis`.
+  - Caps consumed basis at available pre-close basis when parsed note loss is
+    larger than available lots.
+
+  Regression coverage (tests/unit/test_recalculation_service.py):
+  - Added close-marker happy-path test asserting allocations + remaining basis
+    updates + realized synchronization.
+  - Added timestamp-boundary test ensuring no allocation from future purchases.
+  - Updated existing zero-payout Net Loss test to assert basis consumption.
+
+  Validation:
+  - pytest -q tests/unit/test_recalculation_service.py
+  - pytest -q tests/integration/test_recalculation_integration.py
+  - pytest -q
+  All passed at implementation time.
+files_changed:
+  - services/recalculation_service.py
+  - tests/unit/test_recalculation_service.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+---
+
 ## 2026-03-05
 
 ```yaml

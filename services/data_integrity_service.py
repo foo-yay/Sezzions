@@ -118,7 +118,7 @@ class DataIntegrityService:
         query = """
             SELECT id, purchase_date, amount, remaining_amount
             FROM purchases
-            WHERE remaining_amount > amount
+            WHERE CAST(remaining_amount AS REAL) > CAST(amount AS REAL)
         """
         
         rows = self.db.fetch_all(query)
@@ -222,7 +222,7 @@ class DataIntegrityService:
         query = """
             UPDATE purchases 
             SET remaining_amount = amount 
-            WHERE remaining_amount > amount
+            WHERE CAST(remaining_amount AS REAL) > CAST(amount AS REAL)
         """
         
         self.db.execute(query)

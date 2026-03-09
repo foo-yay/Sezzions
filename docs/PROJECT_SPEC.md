@@ -210,6 +210,11 @@ When editing a purchase or creating/editing a game session, the system computes 
   - Explicit "Balance Closed" marker (`amount=0, notes LIKE 'Balance Closed%'`)
   - FULL redemption (`more_remaining IS NOT NULL AND more_remaining = 0`)
   - **Semantics:** `more_remaining=0` means "I'm cashing out everything I want to/can; treat remaining balance as dormant." Position automatically reopens when new activity (purchases, sessions) occurs after closure datetime.
+  - **Recalculation invariant (Issue #156, 2026-03-09):** During FIFO rebuild, a close marker with parsable `Net Loss: $X.XX` is treated as basis-consuming closeout accounting for that timestamp window.
+    - Rebuild allocates FIFO basis to the close marker redemption up to `min(parsed_loss, available_basis_at_or_before_close_time)`.
+    - Allocations are written to `redemption_allocations`, and `purchases.remaining_amount` is reduced accordingly.
+    - Realized row remains synchronized to consumed basis (`cost_basis = consumed_basis`, `payout = 0`, `net_pl = -consumed_basis`) to prevent realized/unrealized double-counting.
+    - Future purchases (after close timestamp) are never eligible for that close-marker allocation.
   - **Position visibility:** Positions removed when: (a) estimated SC < threshold (0.01), (b) closure event datetime >= last activity, or (c) no checkpoint available.
 
 ### 4.4 Taxable P/L (Game Sessions)
@@ -1183,6 +1188,7 @@ Prevent app crashes from data integrity violations (common during multi-session 
 - `services/data_integrity_service.py`: Detects violations with quick mode (stops at first violation for performance)
   - `check_integrity(quick=bool)`: Returns `IntegrityCheckResult` with violations list
   - **Checks**: Invalid remaining_amount (> purchase amount), negative amounts, orphaned FKs, null required fields
+    - Remaining-vs-amount check uses numeric comparison (CAST to REAL) to avoid false positives when SQLite stores values as TEXT.
   - **Fix methods**: Auto-fix for simple cases (e.g., cap remaining_amount at amount)
 - `ui/maintenance_mode_dialog.py`: User-friendly dialog explaining violations and remediation options
   - Shows summary (count by type) and details (first 50 violations)

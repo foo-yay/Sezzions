@@ -208,8 +208,8 @@ class TestRebuildFIFOForPair:
         
         result = service._rebuild_fifo_for_pair(1, 1)
         
-        # No allocations for zero payout
-        assert result.allocations_written == 0
+        # Parsed close-loss should consume matching basis
+        assert result.allocations_written == 1
         
         # Realized transaction shows loss
         cursor.execute("SELECT * FROM realized_transactions")
@@ -217,6 +217,113 @@ class TestRebuildFIFOForPair:
         assert float(realized['cost_basis']) == 75.50
         assert float(realized['payout']) == 0.0
         assert float(realized['net_pl']) == -75.50
+
+        # Purchase remaining is reduced by allocated close-loss basis
+        cursor.execute("SELECT remaining_amount FROM purchases")
+        assert float(cursor.fetchone()['remaining_amount']) == 24.50
+
+    def test_balance_closed_net_loss_consumes_basis_and_writes_allocations(self, test_db, service):
+        """Close marker should consume pre-close FIFO basis like a full closeout."""
+        cursor = test_db._connection.cursor()
+
+        cursor.execute(
+            """
+            INSERT INTO purchases (user_id, site_id, amount, purchase_date, purchase_time, remaining_amount)
+            VALUES (1, 1, 100.0, '2024-01-01', '10:00:00', 100.0)
+            """
+        )
+        first_purchase_id = cursor.lastrowid
+        cursor.execute(
+            """
+            INSERT INTO purchases (user_id, site_id, amount, purchase_date, purchase_time, remaining_amount)
+            VALUES (1, 1, 100.0, '2024-01-02', '10:00:00', 100.0)
+            """
+        )
+        second_purchase_id = cursor.lastrowid
+
+        cursor.execute(
+            """
+            INSERT INTO redemptions (user_id, site_id, amount, redemption_date, redemption_time, more_remaining, notes)
+            VALUES (1, 1, 0.0, '2024-01-03', '10:00:00', 0, 'Balance Closed - Net Loss: $150.00')
+            """
+        )
+        close_redemption_id = cursor.lastrowid
+        test_db._connection.commit()
+
+        result = service._rebuild_fifo_for_pair(1, 1)
+        assert result.allocations_written == 2
+
+        cursor.execute(
+            "SELECT purchase_id, allocated_amount FROM redemption_allocations WHERE redemption_id = ? ORDER BY purchase_id",
+            (close_redemption_id,),
+        )
+        allocations = cursor.fetchall()
+        assert len(allocations) == 2
+        assert allocations[0]["purchase_id"] == first_purchase_id
+        assert float(allocations[0]["allocated_amount"]) == 100.0
+        assert allocations[1]["purchase_id"] == second_purchase_id
+        assert float(allocations[1]["allocated_amount"]) == 50.0
+
+        cursor.execute("SELECT remaining_amount FROM purchases WHERE id = ?", (first_purchase_id,))
+        assert float(cursor.fetchone()["remaining_amount"]) == 0.0
+        cursor.execute("SELECT remaining_amount FROM purchases WHERE id = ?", (second_purchase_id,))
+        assert float(cursor.fetchone()["remaining_amount"]) == 50.0
+
+        cursor.execute("SELECT cost_basis, payout, net_pl FROM realized_transactions WHERE redemption_id = ?", (close_redemption_id,))
+        realized = cursor.fetchone()
+        assert float(realized["cost_basis"]) == 150.0
+        assert float(realized["payout"]) == 0.0
+        assert float(realized["net_pl"]) == -150.0
+
+    def test_balance_closed_net_loss_respects_redemption_timestamp_boundary(self, test_db, service):
+        """Close marker should never allocate from purchases after the close timestamp."""
+        cursor = test_db._connection.cursor()
+
+        cursor.execute(
+            """
+            INSERT INTO purchases (user_id, site_id, amount, purchase_date, purchase_time, remaining_amount)
+            VALUES (1, 1, 100.0, '2024-01-01', '10:00:00', 100.0)
+            """
+        )
+        eligible_purchase_id = cursor.lastrowid
+        cursor.execute(
+            """
+            INSERT INTO purchases (user_id, site_id, amount, purchase_date, purchase_time, remaining_amount)
+            VALUES (1, 1, 100.0, '2024-01-04', '10:00:00', 100.0)
+            """
+        )
+        future_purchase_id = cursor.lastrowid
+
+        cursor.execute(
+            """
+            INSERT INTO redemptions (user_id, site_id, amount, redemption_date, redemption_time, more_remaining, notes)
+            VALUES (1, 1, 0.0, '2024-01-03', '10:00:00', 0, 'Balance Closed - Net Loss: $150.00')
+            """
+        )
+        close_redemption_id = cursor.lastrowid
+        test_db._connection.commit()
+
+        service._rebuild_fifo_for_pair(1, 1)
+
+        cursor.execute(
+            "SELECT purchase_id, allocated_amount FROM redemption_allocations WHERE redemption_id = ? ORDER BY purchase_id",
+            (close_redemption_id,),
+        )
+        allocations = cursor.fetchall()
+        assert len(allocations) == 1
+        assert allocations[0]["purchase_id"] == eligible_purchase_id
+        assert float(allocations[0]["allocated_amount"]) == 100.0
+
+        cursor.execute("SELECT remaining_amount FROM purchases WHERE id = ?", (eligible_purchase_id,))
+        assert float(cursor.fetchone()["remaining_amount"]) == 0.0
+        cursor.execute("SELECT remaining_amount FROM purchases WHERE id = ?", (future_purchase_id,))
+        assert float(cursor.fetchone()["remaining_amount"]) == 100.0
+
+        cursor.execute("SELECT cost_basis, payout, net_pl FROM realized_transactions WHERE redemption_id = ?", (close_redemption_id,))
+        realized = cursor.fetchone()
+        assert float(realized["cost_basis"]) == 100.0
+        assert float(realized["payout"]) == 0.0
+        assert float(realized["net_pl"]) == -100.0
 
 
 class TestRebuildFIFOAll:
