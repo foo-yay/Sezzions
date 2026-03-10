@@ -272,8 +272,8 @@ def test_start_session_balance_check_displays_two_expected_lines(qapp, facade):
     qapp.processEvents()
 
     text = dialog.balance_check_display.text()
-    assert "Starting SC:" in text
-    assert "Starting Redeemable:" in text
+    assert "Starting SC" in text
+    assert "Starting Redeemable" in text
     dialog.close()
 
 
@@ -322,14 +322,14 @@ def test_start_session_balance_check_flags_mismatch_with_indicator(qapp, facade)
 
     dialog.user_combo.setCurrentText(seeded["user1"].name)
     dialog.site_combo.setCurrentText(seeded["site1"].name)
-    dialog.start_total_edit.setText("149.00")
-    dialog.start_redeem_edit.setText("39.00")
+    dialog.start_total_edit.setText("149.50")
+    dialog.start_redeem_edit.setText("40.00")
     qapp.processEvents()
 
     text = dialog.balance_check_display.text()
-    assert "Starting SC:" in text
-    assert "Starting Redeemable:" in text
-    assert "✗ entered" in text
-    assert dialog.balance_check_display.property("status") == "negative"
+    assert "⚠️ Starting SC: Expected 150.00 (-0.50)" in text
+    assert "✅ Starting Redeemable" in text
+    assert "⚠️ Starting Redeemable" not in text
+    assert dialog.balance_check_display.property("status") == "neutral"
 
     dialog.close()

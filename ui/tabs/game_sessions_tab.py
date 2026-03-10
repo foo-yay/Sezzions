@@ -1784,52 +1784,33 @@ class StartSessionDialog(QDialog):
         self._programmatic_start_redeem_update = False
 
     def _update_balance_check(self):
-        """Show expected balances and flag entered-value mismatches in real time."""
+        """Show expected balances with independent per-line match/mismatch formatting."""
         expected = self._compute_expected_start_balances()
         if expected is None:
             self.balance_check_display.setText("Starting SC: —\nStarting Redeemable: —")
             self.balance_check_display.setProperty("status", "neutral")
         else:
             expected_total, expected_redeem = expected
-            status = "neutral"
+            def _format_line(label: str, expected_value: Decimal, entered_text: str) -> str:
+                text = entered_text.strip()
+                if not text:
+                    return f"{label}: —"
+                valid, parsed = validate_currency(text)
+                if not valid:
+                    return f"<span style='color: #b26a00;'>⚠️ {label}: Invalid entry</span>"
+                delta = Decimal(str(parsed)) - Decimal(str(expected_value))
+                if delta == Decimal("0"):
+                    return f"✅ {label}"
+                return (
+                    f"<span style='color: #b26a00;'>⚠️ {label}: "
+                    f"Expected {float(expected_value):.2f} ({float(delta):+.2f})"
+                    f"</span>"
+                )
 
-            start_total_text = self.start_total_edit.text().strip()
-            total_suffix = ""
-            if start_total_text:
-                valid_total, total_val = validate_currency(start_total_text)
-                if valid_total:
-                    delta_total = Decimal(str(total_val)) - Decimal(str(expected_total))
-                    if delta_total == Decimal("0"):
-                        total_suffix = f" (✓ entered {float(total_val):.2f})"
-                    else:
-                        sign = "+" if delta_total > 0 else ""
-                        total_suffix = f" (✗ entered {float(total_val):.2f}, {sign}{float(delta_total):.2f})"
-                        status = "negative"
-                else:
-                    total_suffix = " (✗ invalid entry)"
-                    status = "negative"
-
-            start_redeem_text = self.start_redeem_edit.text().strip()
-            redeem_suffix = ""
-            if start_redeem_text:
-                valid_redeem, redeem_val = validate_currency(start_redeem_text)
-                if valid_redeem:
-                    delta_redeem = Decimal(str(redeem_val)) - Decimal(str(expected_redeem))
-                    if delta_redeem == Decimal("0"):
-                        redeem_suffix = f" (✓ entered {float(redeem_val):.2f})"
-                    else:
-                        sign = "+" if delta_redeem > 0 else ""
-                        redeem_suffix = f" (✗ entered {float(redeem_val):.2f}, {sign}{float(delta_redeem):.2f})"
-                        status = "negative"
-                else:
-                    redeem_suffix = " (✗ invalid entry)"
-                    status = "negative"
-
-            self.balance_check_display.setText(
-                f"Starting SC: {float(expected_total):.2f}{total_suffix}\n"
-                f"Starting Redeemable: {float(expected_redeem):.2f}{redeem_suffix}"
-            )
-            self.balance_check_display.setProperty("status", status)
+            total_line = _format_line("Starting SC", expected_total, self.start_total_edit.text())
+            redeem_line = _format_line("Starting Redeemable", expected_redeem, self.start_redeem_edit.text())
+            self.balance_check_display.setText(f"{total_line}<br/>{redeem_line}")
+            self.balance_check_display.setProperty("status", "neutral")
         self.balance_check_display.style().unpolish(self.balance_check_display)
         self.balance_check_display.style().polish(self.balance_check_display)
 
@@ -2831,52 +2812,33 @@ class EditClosedSessionDialog(QDialog):
             self.rtp_display.setText("—")
     
     def _update_balance_check(self):
-        """Show expected balances and flag entered-value mismatches in real time."""
+        """Show expected balances with independent per-line match/mismatch formatting."""
         expected = self._compute_expected_start_balances()
         if expected is None:
             self.balance_check_display.setText("Starting SC: —\nStarting Redeemable: —")
             self.balance_check_display.setProperty("status", "neutral")
         else:
             expected_total, expected_redeem = expected
-            status = "neutral"
+            def _format_line(label: str, expected_value: Decimal, entered_text: str) -> str:
+                text = entered_text.strip()
+                if not text:
+                    return f"{label}: —"
+                valid, parsed = validate_currency(text)
+                if not valid:
+                    return f"<span style='color: #b26a00;'>⚠️ {label}: Invalid entry</span>"
+                delta = Decimal(str(parsed)) - Decimal(str(expected_value))
+                if delta == Decimal("0"):
+                    return f"✅ {label}"
+                return (
+                    f"<span style='color: #b26a00;'>⚠️ {label}: "
+                    f"Expected {float(expected_value):.2f} ({float(delta):+.2f})"
+                    f"</span>"
+                )
 
-            start_total_text = self.start_total_edit.text().strip()
-            total_suffix = ""
-            if start_total_text:
-                valid_total, total_val = validate_currency(start_total_text)
-                if valid_total:
-                    delta_total = Decimal(str(total_val)) - Decimal(str(expected_total))
-                    if delta_total == Decimal("0"):
-                        total_suffix = f" (✓ entered {float(total_val):.2f})"
-                    else:
-                        sign = "+" if delta_total > 0 else ""
-                        total_suffix = f" (✗ entered {float(total_val):.2f}, {sign}{float(delta_total):.2f})"
-                        status = "negative"
-                else:
-                    total_suffix = " (✗ invalid entry)"
-                    status = "negative"
-
-            start_redeem_text = self.start_redeem_edit.text().strip()
-            redeem_suffix = ""
-            if start_redeem_text:
-                valid_redeem, redeem_val = validate_currency(start_redeem_text)
-                if valid_redeem:
-                    delta_redeem = Decimal(str(redeem_val)) - Decimal(str(expected_redeem))
-                    if delta_redeem == Decimal("0"):
-                        redeem_suffix = f" (✓ entered {float(redeem_val):.2f})"
-                    else:
-                        sign = "+" if delta_redeem > 0 else ""
-                        redeem_suffix = f" (✗ entered {float(redeem_val):.2f}, {sign}{float(delta_redeem):.2f})"
-                        status = "negative"
-                else:
-                    redeem_suffix = " (✗ invalid entry)"
-                    status = "negative"
-
-            self.balance_check_display.setText(
-                f"Starting SC: {float(expected_total):.2f}{total_suffix}\n"
-                f"Starting Redeemable: {float(expected_redeem):.2f}{redeem_suffix}"
-            )
-            self.balance_check_display.setProperty("status", status)
+            total_line = _format_line("Starting SC", expected_total, self.start_total_edit.text())
+            redeem_line = _format_line("Starting Redeemable", expected_redeem, self.start_redeem_edit.text())
+            self.balance_check_display.setText(f"{total_line}<br/>{redeem_line}")
+            self.balance_check_display.setProperty("status", "neutral")
         self.balance_check_display.style().unpolish(self.balance_check_display)
         self.balance_check_display.style().polish(self.balance_check_display)
 
