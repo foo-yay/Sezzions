@@ -502,8 +502,31 @@ class RecalculationService:
 
             close_balance_loss = _parse_close_balance_loss(notes)
             if payout == 0 and close_balance_loss is not None:
-                cost_basis = close_balance_loss
-                net_pl = -close_balance_loss
+                remaining_to_allocate = close_balance_loss
+                cost_basis = Decimal("0.00")
+
+                for purchase_id, purchase_dt, _purchase_amt in purchases:
+                    if remaining_to_allocate <= 0:
+                        break
+                    if purchase_dt > red_dt:
+                        break
+
+                    avail = remaining.get(purchase_id, Decimal("0.00"))
+                    if avail <= 0:
+                        continue
+
+                    alloc = min(avail, remaining_to_allocate)
+                    if alloc <= 0:
+                        continue
+
+                    remaining[purchase_id] = avail - alloc
+                    remaining_to_allocate -= alloc
+                    cost_basis += alloc
+
+                    if purchase_id > 0:
+                        allocations_to_write.append((redemption_id, purchase_id, str(alloc)))
+
+                net_pl = payout - cost_basis
                 realized_to_write.append(
                     (
                         red_row["redemption_date"],

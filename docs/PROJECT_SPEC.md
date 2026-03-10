@@ -215,6 +215,10 @@ When editing a purchase or creating/editing a game session, the system computes 
     - Allocations are written to `redemption_allocations`, and `purchases.remaining_amount` is reduced accordingly.
     - Realized row remains synchronized to consumed basis (`cost_basis = consumed_basis`, `payout = 0`, `net_pl = -consumed_basis`) to prevent realized/unrealized double-counting.
     - Future purchases (after close timestamp) are never eligible for that close-marker allocation.
+    - **Parity rule (Issue #158, 2026-03-10):** The same close-marker basis-consumption logic must apply in both rebuild paths:
+      - full pair rebuild (`_rebuild_fifo_for_pair`), and
+      - scoped suffix rebuild (`rebuild_fifo_for_pair_from`) used by `AppFacade._rebuild_or_mark_stale`.
+      This prevents path-dependent drift where realized rows are regenerated but basis allocations are omitted.
   - **Position visibility:** Positions removed when: (a) estimated SC < threshold (0.01), (b) closure event datetime >= last activity, or (c) no checkpoint available.
 
 ### 4.4 Taxable P/L (Game Sessions)
