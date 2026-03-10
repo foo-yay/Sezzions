@@ -3435,7 +3435,11 @@ class EditClosedSessionDialog(QDialog):
         locked_start_sc = max(Decimal("0.00"), start_total - start_redeem)
         unlocked_from_wager = wager_amount / playthrough_requirement
         unlocked_sc = min(locked_start_sc, max(Decimal("0.00"), unlocked_from_wager))
-        auto_end_redeem = min(end_total, max(Decimal("0.00"), start_redeem + unlocked_sc))
+        net_delta = end_total - start_total
+        provisional_redeem = start_redeem + unlocked_sc
+        if net_delta < 0:
+            provisional_redeem += net_delta
+        auto_end_redeem = min(end_total, max(Decimal("0.00"), provisional_redeem))
         return auto_end_redeem.quantize(Decimal("0.01"))
 
     def _apply_auto_end_redeemable(self) -> None:
@@ -5742,7 +5746,11 @@ class EndSessionDialog(QDialog):
         locked_start_sc = max(Decimal("0.00"), start_total - start_redeem)
         unlocked_from_wager = wager_amount / playthrough_requirement
         unlocked_sc = min(locked_start_sc, max(Decimal("0.00"), unlocked_from_wager))
-        auto_end_redeem = min(end_total, max(Decimal("0.00"), start_redeem + unlocked_sc))
+        net_delta = end_total - start_total
+        provisional_redeem = start_redeem + unlocked_sc
+        if net_delta < 0:
+            provisional_redeem += net_delta
+        auto_end_redeem = min(end_total, max(Decimal("0.00"), provisional_redeem))
         return auto_end_redeem.quantize(Decimal("0.01"))
 
     def _on_auto_redeem_context_changed(self, _value=None) -> None:

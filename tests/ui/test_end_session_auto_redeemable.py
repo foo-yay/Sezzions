@@ -119,6 +119,40 @@ def test_edit_closed_session_auto_calc_toggle_locks_and_updates_redeemable(qapp,
     dialog.close()
 
 
+def test_end_session_auto_calc_zero_when_loss_exceeds_unlocked_redeemable(qapp, facade):
+    session = _build_open_session(facade)
+
+    dialog = EndSessionDialog(facade=facade, session=session, parent=None)
+    dialog.show()
+    qapp.processEvents()
+
+    dialog.auto_redeem_check.setChecked(True)
+    dialog.wager_edit.setText("600.00")
+    dialog.end_total_edit.setText("1405.00")
+    qapp.processEvents()
+
+    assert dialog.end_redeem_edit.text() == "0.00"
+
+    dialog.close()
+
+
+def test_edit_closed_session_auto_calc_zero_when_loss_exceeds_unlocked_redeemable(qapp, facade):
+    session = _build_closed_session(facade)
+
+    dialog = EditClosedSessionDialog(facade=facade, session=session, parent=None)
+    dialog.show()
+    qapp.processEvents()
+
+    dialog.auto_redeem_check.setChecked(True)
+    dialog.wager_edit.setText("600.00")
+    dialog.end_total_edit.setText("1405.00")
+    qapp.processEvents()
+
+    assert dialog.end_redeem_edit.text() == "0.00"
+
+    dialog.close()
+
+
 def test_end_session_auto_mode_requires_wager(qapp, facade):
     session = _build_open_session(facade)
 

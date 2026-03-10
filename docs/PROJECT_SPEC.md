@@ -645,7 +645,9 @@ Session redeemable entry (Issue #160):
     - `locked_start_sc = max(0, Start SC - Start Redeemable)`
     - `unlocked_from_wager_sc = Wager / playthrough_requirement`
     - `unlocked_sc = min(locked_start_sc, unlocked_from_wager_sc)`
-    - `Ending Redeemable SC = min(End SC, max(0, Start Redeemable + unlocked_sc))`
+    - `provisional = Start Redeemable + unlocked_sc`
+    - if `End SC < Start SC`, apply loss to provisional (`provisional += End SC - Start SC`)
+    - `Ending Redeemable SC = min(End SC, max(0, provisional))`
 - When disabled:
   - `Ending Redeemable SC` is fully manual and validated as before.
   - `Wager` remains optional.
