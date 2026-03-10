@@ -28,6 +28,8 @@ details: >
     `Starting SC: ...` and `Starting Redeemable: ...`.
 
   Starting Redeemable behavior updates:
+  - `Starting Total SC` now follows the same auto-pop/manual-override lifecycle
+    as `Starting Redeemable` in Start/Edit/Edit Closed dialogs.
   - Start/Edit/Edit Closed dialogs now auto-populate Starting Redeemable from
     expected balances when User/Site context resolves and no manual override exists.
   - Manual entry (including zero) disables auto-refresh on User/Site changes.

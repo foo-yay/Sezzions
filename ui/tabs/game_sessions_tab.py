@@ -1153,7 +1153,9 @@ class StartSessionDialog(QDialog):
         self.facade = facade
         self.session = session
         self._time_edited = False
+        self._start_total_manual_override = False
         self._start_redeem_manual_override = False
+        self._programmatic_start_total_update = False
         self._programmatic_start_redeem_update = False
         self._game_names_by_type = {}
         self._game_lookup = {}
@@ -1474,15 +1476,20 @@ class StartSessionDialog(QDialog):
         self.game_name_combo.currentTextChanged.connect(self._update_rtp_display)
         self.site_combo.currentTextChanged.connect(self._update_balance_check)
         self.user_combo.currentTextChanged.connect(self._update_balance_check)
+        self.site_combo.currentTextChanged.connect(self._refresh_start_total_if_auto)
+        self.user_combo.currentTextChanged.connect(self._refresh_start_total_if_auto)
         self.site_combo.currentTextChanged.connect(self._refresh_start_redeemable_if_auto)
         self.user_combo.currentTextChanged.connect(self._refresh_start_redeemable_if_auto)
         self.start_total_edit.textChanged.connect(self._update_balance_check)
         self.start_redeem_edit.textChanged.connect(self._update_balance_check)
         self.date_edit.textChanged.connect(self._update_balance_check)
         self.time_edit.textChanged.connect(self._update_balance_check)
+        self.date_edit.textChanged.connect(self._refresh_start_total_if_auto)
+        self.time_edit.textChanged.connect(self._refresh_start_total_if_auto)
         self.date_edit.textChanged.connect(self._refresh_start_redeemable_if_auto)
         self.time_edit.textChanged.connect(self._refresh_start_redeemable_if_auto)
         self.time_edit.textEdited.connect(self._mark_time_edited)
+        self.start_total_edit.textEdited.connect(self._on_start_total_edited)
         self.start_redeem_edit.textEdited.connect(self._on_start_redeem_edited)
         self.date_edit.textChanged.connect(self._validate_inline)
         self.time_edit.textChanged.connect(self._validate_inline)
@@ -1515,6 +1522,8 @@ class StartSessionDialog(QDialog):
 
 
         self._update_completers()
+        self._refresh_start_total_if_auto()
+        self._refresh_start_redeemable_if_auto()
         self._validate_inline()
         self._update_timestamp_info()
 
@@ -1769,6 +1778,25 @@ class StartSessionDialog(QDialog):
             return
         self._start_redeem_manual_override = bool(text.strip())
 
+    def _on_start_total_edited(self, text: str):
+        if self._programmatic_start_total_update:
+            return
+        self._start_total_manual_override = bool(text.strip())
+
+    def _refresh_start_total_if_auto(self):
+        if self._start_total_manual_override:
+            return
+        expected = self._compute_expected_start_balances()
+        if expected is None:
+            return
+        expected_total, _expected_redeem = expected
+        expected_text = f"{float(expected_total):.2f}"
+        if self.start_total_edit.text().strip() == expected_text:
+            return
+        self._programmatic_start_total_update = True
+        self.start_total_edit.setText(expected_text)
+        self._programmatic_start_total_update = False
+
     def _refresh_start_redeemable_if_auto(self):
         if self._start_redeem_manual_override:
             return
@@ -1896,6 +1924,7 @@ class StartSessionDialog(QDialog):
         self.start_total_edit.setText(str(self.session.starting_balance))
         start_redeem = self.session.starting_redeemable
         self.start_redeem_edit.setText(str(start_redeem))
+        self._start_total_manual_override = True
         self._start_redeem_manual_override = True
         self.notes_edit.setPlainText(self.session.notes or "")
 
@@ -1925,6 +1954,7 @@ class StartSessionDialog(QDialog):
                 combo.setCurrentIndex(0)
         self.start_total_edit.clear()
         self.start_redeem_edit.clear()
+        self._start_total_manual_override = False
         self._start_redeem_manual_override = False
         self.notes_edit.clear()
         self._set_today()
@@ -2145,7 +2175,9 @@ class EditClosedSessionDialog(QDialog):
         super().__init__(parent)
         self.facade = facade
         self.session = session
+        self._start_total_manual_override = False
         self._start_redeem_manual_override = False
+        self._programmatic_start_total_update = False
         self._programmatic_start_redeem_update = False
         self._game_names_by_type = {}
         self._game_lookup = {}
@@ -2606,14 +2638,19 @@ class EditClosedSessionDialog(QDialog):
         self.game_name_combo.currentTextChanged.connect(self._update_rtp_display)
         self.site_combo.currentTextChanged.connect(self._update_balance_check)
         self.user_combo.currentTextChanged.connect(self._update_balance_check)
+        self.site_combo.currentTextChanged.connect(self._refresh_start_total_if_auto)
+        self.user_combo.currentTextChanged.connect(self._refresh_start_total_if_auto)
         self.site_combo.currentTextChanged.connect(self._refresh_start_redeemable_if_auto)
         self.user_combo.currentTextChanged.connect(self._refresh_start_redeemable_if_auto)
         self.start_total_edit.textChanged.connect(self._update_balance_check)
         self.start_redeem_edit.textChanged.connect(self._update_balance_check)
         self.date_edit.textChanged.connect(self._update_balance_check)
         self.time_edit.textChanged.connect(self._update_balance_check)
+        self.date_edit.textChanged.connect(self._refresh_start_total_if_auto)
+        self.time_edit.textChanged.connect(self._refresh_start_total_if_auto)
         self.date_edit.textChanged.connect(self._refresh_start_redeemable_if_auto)
         self.time_edit.textChanged.connect(self._refresh_start_redeemable_if_auto)
+        self.start_total_edit.textEdited.connect(self._on_start_total_edited)
         self.start_redeem_edit.textEdited.connect(self._on_start_redeem_edited)
         self.date_edit.textChanged.connect(self._validate_inline)
         self.time_edit.textChanged.connect(self._validate_inline)
@@ -2668,6 +2705,8 @@ class EditClosedSessionDialog(QDialog):
         self.setTabOrder(self.save_btn, self.cancel_btn)
 
         self._load_session()
+        self._refresh_start_total_if_auto()
+        self._refresh_start_redeemable_if_auto()
         self._on_auto_redeem_toggled(self.auto_redeem_check.isChecked())
         self._validate_inline()
         self._update_start_timestamp_info()
@@ -2875,6 +2914,25 @@ class EditClosedSessionDialog(QDialog):
         if self._programmatic_start_redeem_update:
             return
         self._start_redeem_manual_override = bool(text.strip())
+
+    def _on_start_total_edited(self, text: str):
+        if self._programmatic_start_total_update:
+            return
+        self._start_total_manual_override = bool(text.strip())
+
+    def _refresh_start_total_if_auto(self):
+        if self._start_total_manual_override:
+            return
+        expected = self._compute_expected_start_balances()
+        if expected is None:
+            return
+        expected_total, _expected_redeem = expected
+        expected_text = f"{float(expected_total):.2f}"
+        if self.start_total_edit.text().strip() == expected_text:
+            return
+        self._programmatic_start_total_update = True
+        self.start_total_edit.setText(expected_text)
+        self._programmatic_start_total_update = False
 
     def _refresh_start_redeemable_if_auto(self):
         if self._start_redeem_manual_override:
@@ -3355,6 +3413,7 @@ class EditClosedSessionDialog(QDialog):
 
         self.start_total_edit.setText(str(self.session.starting_balance))
         self.start_redeem_edit.setText(str(self.session.starting_redeemable))
+        self._start_total_manual_override = True
         self._start_redeem_manual_override = True
         self.end_total_edit.setText(str(self.session.ending_balance or ""))
         self.end_redeem_edit.setText(str(self.session.ending_redeemable or ""))

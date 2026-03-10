@@ -659,12 +659,12 @@ Session start/edit balance guidance (Issue #162):
 - Expected values are sourced from the same timestamp-aware expected-balance engine used elsewhere.
 - This display updates when User/Site/date/time context changes, including system-driven flows (for example End & Start New prefill paths).
 
-Starting Redeemable input behavior (Issue #162):
+Starting balance input behavior (Issue #162):
 - In Start Session, Edit Session, and Edit Closed Session dialogs:
-  - `Starting Redeemable` auto-populates from expected balances when User/Site context resolves and no manual value has been entered.
-  - If user manually enters a value (including `0`), auto-updates stop for subsequent User/Site changes.
-  - If user clears the field, the next User/Site context change returns the field to auto mode and repopulates it.
-  - Saving without a manual override persists the auto-populated value.
+  - `Starting Total SC` and `Starting Redeemable` auto-populate from expected balances when User/Site context resolves and no manual value has been entered.
+  - If user manually enters a value (including `0`) in either field, auto-updates stop for that field on subsequent User/Site changes.
+  - If user clears a field, the next User/Site context change returns that field to auto mode and repopulates it.
+  - Saving without a manual override persists the auto-populated values.
 
 Sites setup (Issue #160):
 - Sites now include `playthrough_requirement` (default `1.0`, must be positive).

@@ -293,23 +293,78 @@ def test_starting_redeemable_auto_fill_manual_override_and_repopulate(qapp, faca
         session_date=date.today(),
         session_time="23:59:59",
     )
+    assert dialog.start_total_edit.text() == f"{float(expected_total_1):.2f}"
     assert dialog.start_redeem_edit.text() == f"{float(expected_redeem_1):.2f}"
 
+    dialog.start_total_edit.setText("999.00")
+    dialog._on_start_total_edited("999.00")
     dialog.start_redeem_edit.setText("0.00")
     dialog._on_start_redeem_edited("0.00")
     qapp.processEvents()
     dialog.user_combo.setCurrentText(seeded["user2"].name)
     dialog.site_combo.setCurrentText(seeded["site2"].name)
     qapp.processEvents()
+    assert dialog.start_total_edit.text() == "999.00"
     assert dialog.start_redeem_edit.text() == "0.00"
 
+    dialog.start_total_edit.clear()
+    dialog._on_start_total_edited("")
     dialog.start_redeem_edit.clear()
     dialog._on_start_redeem_edited("")
     qapp.processEvents()
     dialog.user_combo.setCurrentText(seeded["user1"].name)
     dialog.site_combo.setCurrentText(seeded["site1"].name)
     qapp.processEvents()
+    assert dialog.start_total_edit.text() == f"{float(expected_total_1):.2f}"
     assert dialog.start_redeem_edit.text() == f"{float(expected_redeem_1):.2f}"
+
+    dialog.close()
+
+
+def test_edit_closed_session_start_balances_auto_fill_apply_on_context_change(qapp, facade):
+    seeded = _build_history_for_starting_redeemable(facade)
+    session = facade.create_game_session(
+        user_id=seeded["user1"].id,
+        site_id=seeded["site1"].id,
+        game_id=seeded["game"].id,
+        session_date=date(2026, 3, 2),
+        session_time="12:00:00",
+        starting_balance=Decimal("150.00"),
+        ending_balance=Decimal("145.00"),
+        starting_redeemable=Decimal("40.00"),
+        ending_redeemable=Decimal("35.00"),
+    )
+    closed = facade.update_game_session(
+        session.id,
+        status="Closed",
+        end_date=session.session_date,
+        end_time="13:00:00",
+        ending_balance=Decimal("145.00"),
+        ending_redeemable=Decimal("35.00"),
+    )
+
+    dialog = EditClosedSessionDialog(facade=facade, session=closed, parent=None)
+    dialog.show()
+    qapp.processEvents()
+
+    dialog.start_total_edit.clear()
+    dialog._on_start_total_edited("")
+    dialog.start_redeem_edit.clear()
+    dialog._on_start_redeem_edited("")
+    qapp.processEvents()
+
+    dialog.user_combo.setCurrentText(seeded["user2"].name)
+    dialog.site_combo.setCurrentText(seeded["site2"].name)
+    qapp.processEvents()
+
+    expected_total_2, expected_redeem_2 = facade.compute_expected_balances(
+        user_id=seeded["user2"].id,
+        site_id=seeded["site2"].id,
+        session_date=date.today(),
+        session_time="23:59:59",
+    )
+    assert dialog.start_total_edit.text() == f"{float(expected_total_2):.2f}"
+    assert dialog.start_redeem_edit.text() == f"{float(expected_redeem_2):.2f}"
 
     dialog.close()
 
