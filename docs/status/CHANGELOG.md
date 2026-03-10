@@ -16,10 +16,11 @@ id: 2026-03-10-02
 type: feature
 areas: [ui, models, repositories, services, tests, docs]
 issue: 160
-summary: "Add site playthrough requirement + End Session auto-calculate redeemable toggle"
+summary: "Add site playthrough requirement + session auto-calculate redeemable toggle"
 details: >
-  Added a site-level `playthrough_requirement` setting and wired it into the
-  End Session workflow via a new `Auto-Calculate End Redeemable SC` toggle.
+  Added a site-level `playthrough_requirement` setting and wired it into
+  End Session and Edit Closed Session workflows via a new
+  `Auto-Calculate End Redeemable SC` toggle.
 
   Site changes:
   - Added `playthrough_requirement` to Site model with positive-value validation.
@@ -28,8 +29,9 @@ details: >
   - Updated site repository/service/facade and Setup → Sites UI (table, add/edit,
     and view dialogs) to persist/display the field.
 
-  End Session changes:
-  - Added `Auto-Calculate End Redeemable SC` toggle to End Session dialog.
+  Session dialog changes:
+  - Added `Auto-Calculate End Redeemable SC` toggle to End Session and
+    Edit Closed Session dialogs.
   - Default state is OFF to preserve prior manual behavior.
   - When ON, Ending Redeemable is locked and auto-calculated in real time from:
       Start SC, Start Redeemable, End SC, and site playthrough requirement.

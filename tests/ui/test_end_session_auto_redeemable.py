@@ -6,7 +6,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from app_facade import AppFacade
-from ui.tabs.game_sessions_tab import EndSessionDialog
+from ui.tabs.game_sessions_tab import EndSessionDialog, EditClosedSessionDialog
 
 
 @pytest.fixture(scope="module")
@@ -44,6 +44,18 @@ def _build_open_session(facade: AppFacade):
     )
 
 
+def _build_closed_session(facade: AppFacade):
+    session = _build_open_session(facade)
+    return facade.update_game_session(
+        session.id,
+        status="Closed",
+        end_date=session.session_date,
+        end_time="11:00:00",
+        ending_balance=Decimal("100.00"),
+        ending_redeemable=Decimal("40.00"),
+    )
+
+
 def test_end_session_auto_calc_toggle_locks_and_updates_redeemable(qapp, facade):
     session = _build_open_session(facade)
 
@@ -61,6 +73,37 @@ def test_end_session_auto_calc_toggle_locks_and_updates_redeemable(qapp, facade)
     dialog.end_total_edit.setText("50.00")
     qapp.processEvents()
 
+    assert dialog.end_redeem_edit.text() == "30.00"
+
+    dialog.auto_redeem_check.setChecked(False)
+    qapp.processEvents()
+    assert dialog.end_redeem_edit.isEnabled()
+
+    dialog.end_redeem_edit.setText("12.34")
+    qapp.processEvents()
+    assert dialog.end_redeem_edit.text() == "12.34"
+
+    dialog.close()
+
+
+def test_edit_closed_session_auto_calc_toggle_locks_and_updates_redeemable(qapp, facade):
+    session = _build_closed_session(facade)
+
+    dialog = EditClosedSessionDialog(facade=facade, session=session, parent=None)
+    dialog.show()
+    qapp.processEvents()
+
+    assert hasattr(dialog, "auto_redeem_check")
+    assert not dialog.auto_redeem_check.isChecked()
+    assert dialog.end_redeem_edit.isEnabled()
+
+    dialog.auto_redeem_check.setChecked(True)
+    qapp.processEvents()
+    assert dialog.auto_redeem_check.isChecked()
+    assert not dialog.end_redeem_edit.isEnabled()
+
+    dialog.end_total_edit.setText("50.00")
+    qapp.processEvents()
     assert dialog.end_redeem_edit.text() == "30.00"
 
     dialog.auto_redeem_check.setChecked(False)

@@ -634,8 +634,8 @@ Game Sessions convenience:
   - End Session dialog: **"End & Start New"**
   - New Start Session dialog is prefilled with the ended session’s ending balances (same user/site); game selection is intentionally left blank.
 
-End Session redeemable entry (Issue #160):
-- End Session includes an `Auto-Calculate End Redeemable SC` toggle.
+Session redeemable entry (Issue #160):
+- End Session and Edit Closed Session include an `Auto-Calculate End Redeemable SC` toggle.
 - Default is **off** to preserve prior manual-entry behavior.
 - When enabled:
   - `Ending Redeemable SC` becomes read-only.
