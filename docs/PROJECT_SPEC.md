@@ -635,7 +635,7 @@ Game Sessions convenience:
   - New Start Session dialog is prefilled with the ended session’s ending balances (same user/site); game selection is intentionally left blank.
 
 Session redeemable entry (Issue #160):
-- End Session and Edit Closed Session include an `Auto-Calculate End Redeemable SC` toggle.
+- End Session and Edit Closed Session include an `Auto-Calc Redeemable SC` toggle (checkbox-only row; no extra label).
 - Default is **off** to preserve prior manual-entry behavior.
 - When enabled:
   - `Ending Redeemable SC` becomes read-only.
@@ -651,6 +651,20 @@ Session redeemable entry (Issue #160):
 - When disabled:
   - `Ending Redeemable SC` is fully manual and validated as before.
   - `Wager` remains optional.
+
+Session start/edit balance guidance (Issue #162):
+- Start Session, Edit Session, and Edit Closed Session `Balance Check` now shows two expected-value lines in real time:
+  - `Starting SC: ...`
+  - `Starting Redeemable: ...`
+- Expected values are sourced from the same timestamp-aware expected-balance engine used elsewhere.
+- This display updates when User/Site/date/time context changes, including system-driven flows (for example End & Start New prefill paths).
+
+Starting Redeemable input behavior (Issue #162):
+- In Start Session, Edit Session, and Edit Closed Session dialogs:
+  - `Starting Redeemable` auto-populates from expected balances when User/Site context resolves and no manual value has been entered.
+  - If user manually enters a value (including `0`), auto-updates stop for subsequent User/Site changes.
+  - If user clears the field, the next User/Site context change returns the field to auto mode and repopulates it.
+  - Saving without a manual override persists the auto-populated value.
 
 Sites setup (Issue #160):
 - Sites now include `playthrough_requirement` (default `1.0`, must be positive).
