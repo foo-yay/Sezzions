@@ -634,6 +634,23 @@ Game Sessions convenience:
   - End Session dialog: **"End & Start New"**
   - New Start Session dialog is prefilled with the ended session’s ending balances (same user/site); game selection is intentionally left blank.
 
+End Session redeemable entry (Issue #160):
+- End Session includes an `Auto-Calculate End Redeemable SC` toggle.
+- Default is **off** to preserve prior manual-entry behavior.
+- When enabled:
+  - `Ending Redeemable SC` becomes read-only.
+  - Value auto-updates as `End Total SC` changes, using site playthrough requirement.
+  - Formula:
+    - `locked_start_sc = max(0, Start SC - Start Redeemable)`
+    - `locked_redeem_equivalent = locked_start_sc / playthrough_requirement`
+    - `Ending Redeemable SC = max(0, End SC - locked_redeem_equivalent)`
+- When disabled:
+  - `Ending Redeemable SC` is fully manual and validated as before.
+
+Sites setup (Issue #160):
+- Sites now include `playthrough_requirement` (default `1.0`, must be positive).
+- This value is configured in Setup → Sites (Add/Edit/View) and used by End Session auto-calc.
+
 ### Default Date Filter Presets
 
 Many primary tabs use `DateFilterWidget` as the first-level time scoping control.
@@ -1841,6 +1858,7 @@ CREATE TABLE sites (
         name TEXT NOT NULL UNIQUE,
         url TEXT,
         sc_rate REAL DEFAULT 1.0,
+  playthrough_requirement REAL DEFAULT 1.0,
         is_active INTEGER DEFAULT 1,
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

@@ -634,12 +634,14 @@ class AppFacade:
         return sites[0] if sites else None
     
     def create_site(self, name: str, url: Optional[str] = None,
-                    sc_rate: float = 1.0, notes: Optional[str] = None) -> Site:
+                    sc_rate: float = 1.0, playthrough_requirement: float = 1.0,
+                    notes: Optional[str] = None) -> Site:
         """Create new site."""
         return self.site_service.create_site(
             name=name,
             url=url,
             sc_rate=sc_rate,
+            playthrough_requirement=playthrough_requirement,
             notes=notes
         )
     

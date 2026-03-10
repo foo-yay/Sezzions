@@ -11,6 +11,7 @@ def test_create_site_service(site_service):
         name="Stake",
         url="https://stake.us",
         sc_rate=1.0,
+        playthrough_requirement=3.0,
         notes="Test site"
     )
     
@@ -18,6 +19,7 @@ def test_create_site_service(site_service):
     assert site.name == "Stake"
     assert site.url == "https://stake.us"
     assert site.sc_rate == 1.0
+    assert site.playthrough_requirement == pytest.approx(3.0)
 
 
 def test_create_site_validation(site_service):
@@ -30,6 +32,12 @@ def test_create_site_invalid_sc_rate(site_service):
     """Test service validates SC rate"""
     with pytest.raises(ValueError, match="SC rate must be positive"):
         site_service.create_site(name="Test Site", sc_rate=0)
+
+
+def test_create_site_invalid_playthrough_requirement(site_service):
+    """Test service validates playthrough requirement"""
+    with pytest.raises(ValueError, match="Playthrough requirement must be positive"):
+        site_service.create_site(name="Test Site", playthrough_requirement=0)
 
 
 def test_update_site_service(site_service, sample_site):

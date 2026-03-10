@@ -101,6 +101,17 @@ class TestExpensesFreshSchema:
             assert col in cols, f"expenses.{col} unexpectedly missing"
 
 
+class TestSitesFreshSchema:
+    """sites must include playthrough_requirement on a fresh DB."""
+
+    def test_playthrough_requirement_present(self, fresh_db):
+        cols = _columns(fresh_db, "sites")
+        assert "playthrough_requirement" in cols, (
+            "sites.playthrough_requirement missing from fresh schema — "
+            "Site model/repository now require it"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Edge-cases
 # ---------------------------------------------------------------------------
@@ -153,6 +164,59 @@ class TestDailySessionsMigration:
         db.close()
 
         assert "notes" in cols, "Migration failed to add daily_sessions.notes"
+
+
+class TestSitesMigration:
+    """Migration path: verify sites migration adds playthrough_requirement."""
+
+    def test_playthrough_requirement_added_by_migration(self, tmp_path):
+        db = DatabaseManager(str(tmp_path / "migrate_sites_test.db"))
+        conn = db._connection
+
+        conn.execute("PRAGMA foreign_keys=OFF")
+        conn.execute("ALTER TABLE sites RENAME TO sites_bak")
+        conn.execute(
+            """
+            CREATE TABLE sites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                url TEXT,
+                sc_rate REAL DEFAULT 1.0,
+                is_active INTEGER DEFAULT 1,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO sites (id, name, url, sc_rate, is_active, notes, created_at, updated_at)
+            SELECT id, name, url, sc_rate, is_active, notes, created_at, updated_at
+            FROM sites_bak
+            """
+        )
+        conn.execute("DROP TABLE sites_bak")
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.commit()
+
+        db._migrate_sites_table()
+        conn.commit()
+
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(sites)")
+        cols = {row[1] for row in cursor.fetchall()}
+
+        cursor.execute("INSERT INTO sites (name) VALUES (?)", ("Migrated Site",))
+        row = conn.execute(
+            "SELECT playthrough_requirement FROM sites WHERE name = ?",
+            ("Migrated Site",),
+        ).fetchone()
+        db.close()
+
+        assert "playthrough_requirement" in cols
+        assert row is not None
+        assert float(row[0]) == pytest.approx(1.0)
 
 
 class TestGameSessionsMigration:

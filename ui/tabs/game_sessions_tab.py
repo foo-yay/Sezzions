@@ -4682,6 +4682,17 @@ class EndSessionDialog(QDialog):
         self.end_redeem_edit.setFixedWidth(140)
         balances_layout.addWidget(self.end_redeem_edit, row, 3)
 
+        # Auto-calc toggle for End Redeemable
+        row += 1
+        auto_redeem_label = QLabel("Auto End Redeemable:")
+        auto_redeem_label.setObjectName("FieldLabel")
+        auto_redeem_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balances_layout.addWidget(auto_redeem_label, row, 2)
+
+        self.auto_redeem_check = QCheckBox("Auto-Calculate End Redeemable SC")
+        self.auto_redeem_check.setChecked(False)
+        balances_layout.addWidget(self.auto_redeem_check, row, 3)
+
         # Left: Wager Amount
         row += 1
         wager_label = QLabel("Wager Amount:")
@@ -4925,6 +4936,7 @@ class EndSessionDialog(QDialog):
         self.end_total_edit.textChanged.connect(self._update_session_details)
         self.end_redeem_edit.textChanged.connect(self._update_session_details)
         self.wager_edit.textChanged.connect(self._update_session_details)
+        self.auto_redeem_check.toggled.connect(self._on_auto_redeem_toggled)
         self.date_edit.textChanged.connect(self._validate_inline)
         self.time_edit.textChanged.connect(self._validate_inline)
         self.end_total_edit.textChanged.connect(self._validate_inline)
@@ -4949,6 +4961,7 @@ class EndSessionDialog(QDialog):
         # Initialize
         self._set_today()
         self._set_now()
+        self._on_auto_redeem_toggled(self.auto_redeem_check.isChecked())
         self._validate_inline()
         self._update_timestamp_info()
         
@@ -5302,6 +5315,9 @@ class EndSessionDialog(QDialog):
     
     def _update_session_details(self):
         """Update all calculated fields in real-time - reuses P/L calculation logic"""
+        if getattr(self, "auto_redeem_check", None) is not None and self.auto_redeem_check.isChecked():
+            self._apply_auto_end_redeemable()
+
         start_total = Decimal(str(self.session.starting_balance or 0))
         start_redeem = Decimal(str(self.session.starting_redeemable or 0))
 
@@ -5515,7 +5531,12 @@ class EndSessionDialog(QDialog):
                 self._set_valid(self.end_total_edit)
 
         end_redeem_text = self.end_redeem_edit.text().strip()
-        if not end_redeem_text:
+        if self.auto_redeem_check.isChecked():
+            if not end_redeem_text:
+                self._apply_auto_end_redeemable()
+                end_redeem_text = self.end_redeem_edit.text().strip()
+            self._set_valid(self.end_redeem_edit)
+        elif not end_redeem_text:
             self._set_invalid(self.end_redeem_edit, "Ending Redeemable is required.")
         else:
             valid, _result = validate_currency(end_redeem_text)
@@ -5559,6 +5580,8 @@ class EndSessionDialog(QDialog):
             return None, result
         end_total = result
 
+        if self.auto_redeem_check.isChecked():
+            self._apply_auto_end_redeemable()
         end_redeem_str = self.end_redeem_edit.text().strip()
         if not end_redeem_str:
             return None, "Please enter Ending Redeemable SC."
@@ -5588,4 +5611,53 @@ class EndSessionDialog(QDialog):
             "wager_amount": wager_amount,
             "notes": notes,
         }, None
+
+    def _get_site_playthrough_requirement(self) -> Decimal:
+        site = self.facade.site_repo.get_by_id(self.session.site_id) if self.facade.site_repo else None
+        if not site:
+            return Decimal("1.0")
+        value = getattr(site, "playthrough_requirement", 1.0)
+        try:
+            parsed = Decimal(str(value))
+            if parsed <= 0:
+                return Decimal("1.0")
+            return parsed
+        except Exception:
+            return Decimal("1.0")
+
+    def _calculate_auto_end_redeemable(self, end_total: Decimal) -> Decimal:
+        start_total = Decimal(str(self.session.starting_balance or 0))
+        start_redeem = Decimal(str(self.session.starting_redeemable or 0))
+        playthrough_requirement = self._get_site_playthrough_requirement()
+
+        locked_start_sc = max(Decimal("0.00"), start_total - start_redeem)
+        locked_redeem_equivalent = locked_start_sc / playthrough_requirement
+        auto_end_redeem = max(Decimal("0.00"), end_total - locked_redeem_equivalent)
+        return auto_end_redeem.quantize(Decimal("0.01"))
+
+    def _apply_auto_end_redeemable(self) -> None:
+        end_total_text = self.end_total_edit.text().strip()
+        if not end_total_text:
+            self.end_redeem_edit.clear()
+            return
+
+        valid, result = validate_currency(end_total_text)
+        if not valid:
+            self.end_redeem_edit.clear()
+            return
+
+        end_total = Decimal(str(result))
+        auto_end_redeem = self._calculate_auto_end_redeemable(end_total)
+        auto_text = f"{auto_end_redeem:.2f}"
+        if self.end_redeem_edit.text().strip() != auto_text:
+            self.end_redeem_edit.blockSignals(True)
+            self.end_redeem_edit.setText(auto_text)
+            self.end_redeem_edit.blockSignals(False)
+
+    def _on_auto_redeem_toggled(self, checked: bool) -> None:
+        self.end_redeem_edit.setEnabled(not checked)
+        if checked:
+            self._apply_auto_end_redeemable()
+        self._validate_inline()
+        self._update_session_details()
 

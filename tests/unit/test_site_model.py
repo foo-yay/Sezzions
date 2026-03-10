@@ -11,6 +11,7 @@ def test_site_creation():
     assert site.name == "Stake"
     assert site.url == "https://stake.us"
     assert site.sc_rate == 1.0
+    assert site.playthrough_requirement == 1.0
     assert site.is_active is True
     assert site.id is None
 
@@ -52,3 +53,18 @@ def test_site_invalid_sc_rate():
     
     with pytest.raises(ValueError, match="SC rate must be positive"):
         Site(name="Test Site", sc_rate=-1.0)
+
+
+def test_site_custom_playthrough_requirement():
+    """Test site with custom playthrough requirement"""
+    site = Site(name="Stake", playthrough_requirement=3.0)
+    assert site.playthrough_requirement == 3.0
+
+
+def test_site_invalid_playthrough_requirement():
+    """Test that invalid playthrough requirement raises error"""
+    with pytest.raises(ValueError, match="Playthrough requirement must be positive"):
+        Site(name="Test Site", playthrough_requirement=0)
+
+    with pytest.raises(ValueError, match="Playthrough requirement must be positive"):
+        Site(name="Test Site", playthrough_requirement=-2.0)

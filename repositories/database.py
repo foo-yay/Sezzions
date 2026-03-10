@@ -91,12 +91,14 @@ class DatabaseManager:
                 name TEXT NOT NULL UNIQUE,
                 url TEXT,
                 sc_rate REAL DEFAULT 1.0,
+                playthrough_requirement REAL DEFAULT 1.0,
                 is_active INTEGER DEFAULT 1,
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP
             )
         ''')
+        self._migrate_sites_table()
         
         # Cards table
         cursor.execute('''
@@ -735,6 +737,21 @@ class DatabaseManager:
             if column_name not in existing_columns:
                 try:
                     cursor.execute(f"ALTER TABLE daily_sessions ADD COLUMN {column_name} {column_def}")
+                except Exception:
+                    pass
+
+    def _migrate_sites_table(self):
+        """Add missing columns to sites and ensure schema is up to date."""
+        cursor = self._connection.cursor()
+        cursor.execute("PRAGMA table_info(sites)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+        migrations = [
+            ("playthrough_requirement", "REAL DEFAULT 1.0"),
+        ]
+        for column_name, column_def in migrations:
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE sites ADD COLUMN {column_name} {column_def}")
                 except Exception:
                     pass
 
