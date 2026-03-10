@@ -37,10 +37,10 @@ def _build_open_session(facade: AppFacade):
         game_id=game.id,
         session_date=date(2026, 3, 1),
         session_time="10:00:00",
-        starting_balance=Decimal("100.00"),
-        ending_balance=Decimal("100.00"),
-        starting_redeemable=Decimal("40.00"),
-        ending_redeemable=Decimal("40.00"),
+        starting_balance=Decimal("2005.00"),
+        ending_balance=Decimal("2605.00"),
+        starting_redeemable=Decimal("0.00"),
+        ending_redeemable=Decimal("0.00"),
     )
 
 
@@ -51,8 +51,8 @@ def _build_closed_session(facade: AppFacade):
         status="Closed",
         end_date=session.session_date,
         end_time="11:00:00",
-        ending_balance=Decimal("100.00"),
-        ending_redeemable=Decimal("40.00"),
+        ending_balance=Decimal("2605.00"),
+        ending_redeemable=Decimal("0.00"),
     )
 
 
@@ -70,10 +70,11 @@ def test_end_session_auto_calc_toggle_locks_and_updates_redeemable(qapp, facade)
     assert dialog.auto_redeem_check.isChecked()
     assert not dialog.end_redeem_edit.isEnabled()
 
-    dialog.end_total_edit.setText("50.00")
+    dialog.wager_edit.setText("600.00")
+    dialog.end_total_edit.setText("2605.00")
     qapp.processEvents()
 
-    assert dialog.end_redeem_edit.text() == "30.00"
+    assert dialog.end_redeem_edit.text() == "200.00"
 
     dialog.auto_redeem_check.setChecked(False)
     qapp.processEvents()
@@ -102,9 +103,10 @@ def test_edit_closed_session_auto_calc_toggle_locks_and_updates_redeemable(qapp,
     assert dialog.auto_redeem_check.isChecked()
     assert not dialog.end_redeem_edit.isEnabled()
 
-    dialog.end_total_edit.setText("50.00")
+    dialog.wager_edit.setText("600.00")
+    dialog.end_total_edit.setText("2605.00")
     qapp.processEvents()
-    assert dialog.end_redeem_edit.text() == "30.00"
+    assert dialog.end_redeem_edit.text() == "200.00"
 
     dialog.auto_redeem_check.setChecked(False)
     qapp.processEvents()

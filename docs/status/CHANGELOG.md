@@ -34,7 +34,7 @@ details: >
     Edit Closed Session dialogs.
   - Default state is OFF to preserve prior manual behavior.
   - When ON, Ending Redeemable is locked and auto-calculated in real time from:
-      Start SC, Start Redeemable, End SC, and site playthrough requirement.
+      Start SC, Start Redeemable, Wager, End SC, and site playthrough requirement.
   - When OFF, Ending Redeemable remains manually editable/validated.
 
   Tests:

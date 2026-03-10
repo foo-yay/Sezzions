@@ -639,11 +639,12 @@ Session redeemable entry (Issue #160):
 - Default is **off** to preserve prior manual-entry behavior.
 - When enabled:
   - `Ending Redeemable SC` becomes read-only.
-  - Value auto-updates as `End Total SC` changes, using site playthrough requirement.
+  - Value auto-updates as `End Total SC` / `Wager` changes, using site playthrough requirement.
   - Formula:
     - `locked_start_sc = max(0, Start SC - Start Redeemable)`
-    - `locked_redeem_equivalent = locked_start_sc / playthrough_requirement`
-    - `Ending Redeemable SC = max(0, End SC - locked_redeem_equivalent)`
+    - `unlocked_from_wager_sc = Wager / playthrough_requirement`
+    - `unlocked_sc = min(locked_start_sc, unlocked_from_wager_sc)`
+    - `Ending Redeemable SC = min(End SC, max(0, Start Redeemable + unlocked_sc))`
 - When disabled:
   - `Ending Redeemable SC` is fully manual and validated as before.
 

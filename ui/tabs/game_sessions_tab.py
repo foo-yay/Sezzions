@@ -2656,6 +2656,7 @@ class EditClosedSessionDialog(QDialog):
         self.start_total_edit.textChanged.connect(self._on_auto_redeem_context_changed)
         self.start_redeem_edit.textChanged.connect(self._on_auto_redeem_context_changed)
         self.site_combo.currentTextChanged.connect(self._on_auto_redeem_context_changed)
+        self.wager_edit.textChanged.connect(self._on_auto_redeem_context_changed)
         
         # Connect fields that affect RTP calculation
         self.wager_edit.textChanged.connect(self._update_rtp_display)
@@ -3411,6 +3412,7 @@ class EditClosedSessionDialog(QDialog):
     def _calculate_auto_end_redeemable(self, end_total: Decimal) -> Decimal:
         start_total_text = self.start_total_edit.text().strip()
         start_redeem_text = self.start_redeem_edit.text().strip()
+        wager_text = self.wager_edit.text().strip()
 
         valid_start, start_total_val = validate_currency(start_total_text) if start_total_text else (False, None)
         valid_redeem, start_redeem_val = validate_currency(start_redeem_text) if start_redeem_text else (False, None)
@@ -3421,10 +3423,15 @@ class EditClosedSessionDialog(QDialog):
         start_total = Decimal(str(start_total_val))
         start_redeem = Decimal(str(start_redeem_val))
         playthrough_requirement = self._get_site_playthrough_requirement()
+        valid_wager, wager_val = validate_currency(wager_text) if wager_text else (True, 0.0)
+        if not valid_wager:
+            wager_val = 0.0
+        wager_amount = Decimal(str(wager_val or 0.0))
 
         locked_start_sc = max(Decimal("0.00"), start_total - start_redeem)
-        locked_redeem_equivalent = locked_start_sc / playthrough_requirement
-        auto_end_redeem = max(Decimal("0.00"), end_total - locked_redeem_equivalent)
+        unlocked_from_wager = wager_amount / playthrough_requirement
+        unlocked_sc = min(locked_start_sc, max(Decimal("0.00"), unlocked_from_wager))
+        auto_end_redeem = min(end_total, max(Decimal("0.00"), start_redeem + unlocked_sc))
         return auto_end_redeem.quantize(Decimal("0.01"))
 
     def _apply_auto_end_redeemable(self) -> None:
@@ -5025,6 +5032,7 @@ class EndSessionDialog(QDialog):
         self.end_redeem_edit.textChanged.connect(self._update_session_details)
         self.wager_edit.textChanged.connect(self._update_session_details)
         self.auto_redeem_check.toggled.connect(self._on_auto_redeem_toggled)
+        self.wager_edit.textChanged.connect(self._on_auto_redeem_context_changed)
         self.date_edit.textChanged.connect(self._validate_inline)
         self.time_edit.textChanged.connect(self._validate_inline)
         self.end_total_edit.textChanged.connect(self._validate_inline)
@@ -5717,11 +5725,23 @@ class EndSessionDialog(QDialog):
         start_total = Decimal(str(self.session.starting_balance or 0))
         start_redeem = Decimal(str(self.session.starting_redeemable or 0))
         playthrough_requirement = self._get_site_playthrough_requirement()
+        wager_text = self.wager_edit.text().strip()
+        valid_wager, wager_val = validate_currency(wager_text) if wager_text else (True, 0.0)
+        if not valid_wager:
+            wager_val = 0.0
+        wager_amount = Decimal(str(wager_val or 0.0))
 
         locked_start_sc = max(Decimal("0.00"), start_total - start_redeem)
-        locked_redeem_equivalent = locked_start_sc / playthrough_requirement
-        auto_end_redeem = max(Decimal("0.00"), end_total - locked_redeem_equivalent)
+        unlocked_from_wager = wager_amount / playthrough_requirement
+        unlocked_sc = min(locked_start_sc, max(Decimal("0.00"), unlocked_from_wager))
+        auto_end_redeem = min(end_total, max(Decimal("0.00"), start_redeem + unlocked_sc))
         return auto_end_redeem.quantize(Decimal("0.01"))
+
+    def _on_auto_redeem_context_changed(self, _value=None) -> None:
+        if self.auto_redeem_check.isChecked():
+            self._apply_auto_end_redeemable()
+            self._validate_inline()
+            self._update_session_details()
 
     def _apply_auto_end_redeemable(self) -> None:
         end_total_text = self.end_total_edit.text().strip()
