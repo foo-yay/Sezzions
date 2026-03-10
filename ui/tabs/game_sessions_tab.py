@@ -1777,39 +1777,46 @@ class StartSessionDialog(QDialog):
         if self._programmatic_start_redeem_update:
             return
         self._start_redeem_manual_override = bool(text.strip())
+        self._set_start_field_autofill_visual(self.start_redeem_edit, False)
 
     def _on_start_total_edited(self, text: str):
         if self._programmatic_start_total_update:
             return
         self._start_total_manual_override = bool(text.strip())
+        self._set_start_field_autofill_visual(self.start_total_edit, False)
+
+    def _set_start_field_autofill_visual(self, field: QLineEdit, is_autofilled: bool) -> None:
+        field.setStyleSheet("color: #8c8c8c;" if is_autofilled else "")
 
     def _refresh_start_total_if_auto(self):
         if self._start_total_manual_override:
             return
         expected = self._compute_expected_start_balances()
         if expected is None:
+            self._set_start_field_autofill_visual(self.start_total_edit, False)
             return
         expected_total, _expected_redeem = expected
         expected_text = f"{float(expected_total):.2f}"
-        if self.start_total_edit.text().strip() == expected_text:
-            return
-        self._programmatic_start_total_update = True
-        self.start_total_edit.setText(expected_text)
-        self._programmatic_start_total_update = False
+        if self.start_total_edit.text().strip() != expected_text:
+            self._programmatic_start_total_update = True
+            self.start_total_edit.setText(expected_text)
+            self._programmatic_start_total_update = False
+        self._set_start_field_autofill_visual(self.start_total_edit, True)
 
     def _refresh_start_redeemable_if_auto(self):
         if self._start_redeem_manual_override:
             return
         expected = self._compute_expected_start_balances()
         if expected is None:
+            self._set_start_field_autofill_visual(self.start_redeem_edit, False)
             return
         _expected_total, expected_redeem = expected
         expected_text = f"{float(expected_redeem):.2f}"
-        if self.start_redeem_edit.text().strip() == expected_text:
-            return
-        self._programmatic_start_redeem_update = True
-        self.start_redeem_edit.setText(expected_text)
-        self._programmatic_start_redeem_update = False
+        if self.start_redeem_edit.text().strip() != expected_text:
+            self._programmatic_start_redeem_update = True
+            self.start_redeem_edit.setText(expected_text)
+            self._programmatic_start_redeem_update = False
+        self._set_start_field_autofill_visual(self.start_redeem_edit, True)
 
     def _update_balance_check(self):
         """Show expected balances with independent per-line match/mismatch formatting."""
@@ -1926,6 +1933,8 @@ class StartSessionDialog(QDialog):
         self.start_redeem_edit.setText(str(start_redeem))
         self._start_total_manual_override = True
         self._start_redeem_manual_override = True
+        self._set_start_field_autofill_visual(self.start_total_edit, False)
+        self._set_start_field_autofill_visual(self.start_redeem_edit, False)
         self.notes_edit.setPlainText(self.session.notes or "")
 
         # Notes start collapsed even if notes exist (dialog opens compact).
@@ -1956,6 +1965,8 @@ class StartSessionDialog(QDialog):
         self.start_redeem_edit.clear()
         self._start_total_manual_override = False
         self._start_redeem_manual_override = False
+        self._set_start_field_autofill_visual(self.start_total_edit, False)
+        self._set_start_field_autofill_visual(self.start_redeem_edit, False)
         self.notes_edit.clear()
         self._set_today()
         self._set_now()
@@ -2547,9 +2558,14 @@ class EditClosedSessionDialog(QDialog):
         row += 1
 
         # Right Column - Auto End Redeemable toggle
-        self.auto_redeem_check = QCheckBox("Auto-Calc Redeemable SC")
+        auto_redeem_label = QLabel("Auto-Calc Redeemable SC")
+        auto_redeem_label.setObjectName("FieldLabel")
+        auto_redeem_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balance_grid.addWidget(auto_redeem_label, row, 2)
+
+        self.auto_redeem_check = QCheckBox()
         self.auto_redeem_check.setChecked(False)
-        balance_grid.addWidget(self.auto_redeem_check, row, 2, 1, 2)
+        balance_grid.addWidget(self.auto_redeem_check, row, 3)
 
         row += 1
         
@@ -2914,39 +2930,46 @@ class EditClosedSessionDialog(QDialog):
         if self._programmatic_start_redeem_update:
             return
         self._start_redeem_manual_override = bool(text.strip())
+        self._set_start_field_autofill_visual(self.start_redeem_edit, False)
 
     def _on_start_total_edited(self, text: str):
         if self._programmatic_start_total_update:
             return
         self._start_total_manual_override = bool(text.strip())
+        self._set_start_field_autofill_visual(self.start_total_edit, False)
+
+    def _set_start_field_autofill_visual(self, field: QLineEdit, is_autofilled: bool) -> None:
+        field.setStyleSheet("color: #8c8c8c;" if is_autofilled else "")
 
     def _refresh_start_total_if_auto(self):
         if self._start_total_manual_override:
             return
         expected = self._compute_expected_start_balances()
         if expected is None:
+            self._set_start_field_autofill_visual(self.start_total_edit, False)
             return
         expected_total, _expected_redeem = expected
         expected_text = f"{float(expected_total):.2f}"
-        if self.start_total_edit.text().strip() == expected_text:
-            return
-        self._programmatic_start_total_update = True
-        self.start_total_edit.setText(expected_text)
-        self._programmatic_start_total_update = False
+        if self.start_total_edit.text().strip() != expected_text:
+            self._programmatic_start_total_update = True
+            self.start_total_edit.setText(expected_text)
+            self._programmatic_start_total_update = False
+        self._set_start_field_autofill_visual(self.start_total_edit, True)
 
     def _refresh_start_redeemable_if_auto(self):
         if self._start_redeem_manual_override:
             return
         expected = self._compute_expected_start_balances()
         if expected is None:
+            self._set_start_field_autofill_visual(self.start_redeem_edit, False)
             return
         _expected_total, expected_redeem = expected
         expected_text = f"{float(expected_redeem):.2f}"
-        if self.start_redeem_edit.text().strip() == expected_text:
-            return
-        self._programmatic_start_redeem_update = True
-        self.start_redeem_edit.setText(expected_text)
-        self._programmatic_start_redeem_update = False
+        if self.start_redeem_edit.text().strip() != expected_text:
+            self._programmatic_start_redeem_update = True
+            self.start_redeem_edit.setText(expected_text)
+            self._programmatic_start_redeem_update = False
+        self._set_start_field_autofill_visual(self.start_redeem_edit, True)
     
     def _lookup_ids(self, site_name, user_name):
         """Lookup site and user IDs by name"""
@@ -3415,6 +3438,8 @@ class EditClosedSessionDialog(QDialog):
         self.start_redeem_edit.setText(str(self.session.starting_redeemable))
         self._start_total_manual_override = True
         self._start_redeem_manual_override = True
+        self._set_start_field_autofill_visual(self.start_total_edit, False)
+        self._set_start_field_autofill_visual(self.start_redeem_edit, False)
         self.end_total_edit.setText(str(self.session.ending_balance or ""))
         self.end_redeem_edit.setText(str(self.session.ending_redeemable or ""))
         if getattr(self.session, "wager_amount", None) is not None:
@@ -4822,12 +4847,6 @@ class EndSessionDialog(QDialog):
         self.end_redeem_edit.setFixedWidth(140)
         balances_layout.addWidget(self.end_redeem_edit, row, 3)
 
-        # Auto-calc toggle for End Redeemable
-        row += 1
-        self.auto_redeem_check = QCheckBox("Auto-Calc Redeemable SC")
-        self.auto_redeem_check.setChecked(False)
-        balances_layout.addWidget(self.auto_redeem_check, row, 2, 1, 2)
-
         # Left: Wager Amount
         row += 1
         wager_label = QLabel("Wager Amount:")
@@ -4839,6 +4858,16 @@ class EndSessionDialog(QDialog):
         self.wager_edit.setPlaceholderText("0.00")
         self.wager_edit.setFixedWidth(140)
         balances_layout.addWidget(self.wager_edit, row, 1)
+
+        # Right: Auto-calc label + checkbox (under End Redeemable)
+        auto_redeem_label = QLabel("Auto-Calc Redeemable SC")
+        auto_redeem_label.setObjectName("FieldLabel")
+        auto_redeem_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balances_layout.addWidget(auto_redeem_label, row, 2)
+
+        self.auto_redeem_check = QCheckBox()
+        self.auto_redeem_check.setChecked(False)
+        balances_layout.addWidget(self.auto_redeem_check, row, 3)
 
         balances_layout.setColumnStretch(1, 1)
         balances_layout.setColumnStretch(3, 1)

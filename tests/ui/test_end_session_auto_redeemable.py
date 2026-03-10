@@ -241,7 +241,11 @@ def test_auto_calc_checkbox_text_and_label_cleanup_in_auto_dialogs(qapp, facade)
     end_dialog.show()
     qapp.processEvents()
 
-    assert end_dialog.auto_redeem_check.text() == "Auto-Calc Redeemable SC"
+    assert end_dialog.auto_redeem_check.text() == ""
+    assert any(
+        label.text() == "Auto-Calc Redeemable SC"
+        for label in end_dialog.findChildren(QLabel)
+    )
     assert all(
         label.text() != "Auto End Redeemable:"
         for label in end_dialog.findChildren(QLabel)
@@ -252,7 +256,11 @@ def test_auto_calc_checkbox_text_and_label_cleanup_in_auto_dialogs(qapp, facade)
     closed_dialog.show()
     qapp.processEvents()
 
-    assert closed_dialog.auto_redeem_check.text() == "Auto-Calc Redeemable SC"
+    assert closed_dialog.auto_redeem_check.text() == ""
+    assert any(
+        label.text() == "Auto-Calc Redeemable SC"
+        for label in closed_dialog.findChildren(QLabel)
+    )
     assert all(
         label.text() != "Auto End Redeemable:"
         for label in closed_dialog.findChildren(QLabel)
@@ -295,6 +303,8 @@ def test_starting_redeemable_auto_fill_manual_override_and_repopulate(qapp, faca
     )
     assert dialog.start_total_edit.text() == f"{float(expected_total_1):.2f}"
     assert dialog.start_redeem_edit.text() == f"{float(expected_redeem_1):.2f}"
+    assert "color: #8c8c8c" in dialog.start_total_edit.styleSheet()
+    assert "color: #8c8c8c" in dialog.start_redeem_edit.styleSheet()
 
     dialog.start_total_edit.setText("999.00")
     dialog._on_start_total_edited("999.00")
@@ -306,6 +316,8 @@ def test_starting_redeemable_auto_fill_manual_override_and_repopulate(qapp, faca
     qapp.processEvents()
     assert dialog.start_total_edit.text() == "999.00"
     assert dialog.start_redeem_edit.text() == "0.00"
+    assert dialog.start_total_edit.styleSheet() == ""
+    assert dialog.start_redeem_edit.styleSheet() == ""
 
     dialog.start_total_edit.clear()
     dialog._on_start_total_edited("")
@@ -317,6 +329,8 @@ def test_starting_redeemable_auto_fill_manual_override_and_repopulate(qapp, faca
     qapp.processEvents()
     assert dialog.start_total_edit.text() == f"{float(expected_total_1):.2f}"
     assert dialog.start_redeem_edit.text() == f"{float(expected_redeem_1):.2f}"
+    assert "color: #8c8c8c" in dialog.start_total_edit.styleSheet()
+    assert "color: #8c8c8c" in dialog.start_redeem_edit.styleSheet()
 
     dialog.close()
 
@@ -365,6 +379,8 @@ def test_edit_closed_session_start_balances_auto_fill_apply_on_context_change(qa
     )
     assert dialog.start_total_edit.text() == f"{float(expected_total_2):.2f}"
     assert dialog.start_redeem_edit.text() == f"{float(expected_redeem_2):.2f}"
+    assert "color: #8c8c8c" in dialog.start_total_edit.styleSheet()
+    assert "color: #8c8c8c" in dialog.start_redeem_edit.styleSheet()
 
     dialog.close()
 

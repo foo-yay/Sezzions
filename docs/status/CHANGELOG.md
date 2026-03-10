@@ -24,12 +24,17 @@ details: >
   Dialog updates:
   - End Session and Edit Closed Session auto checkbox now uses concise text:
     `Auto-Calc Redeemable SC` (no separate row label).
+  - End Session and Edit Closed Session balance sections now render Auto-Calc as
+    a dedicated label + inline checkbox row beneath Ending Redeemable, with Wager
+    aligned in the paired left column row for a consistent 4x4 field grid.
   - Start/Edit/Edit Closed `Balance Check` now shows two real-time expected lines:
     `Starting SC: ...` and `Starting Redeemable: ...`.
 
   Starting Redeemable behavior updates:
   - `Starting Total SC` now follows the same auto-pop/manual-override lifecycle
     as `Starting Redeemable` in Start/Edit/Edit Closed dialogs.
+  - Auto-populated Starting SC/Starting Redeemable values now render in muted
+    gray text until manually edited; manual input restores normal field styling.
   - Start/Edit/Edit Closed dialogs now auto-populate Starting Redeemable from
     expected balances when User/Site context resolves and no manual override exists.
   - Manual entry (including zero) disables auto-refresh on User/Site changes.
