@@ -312,3 +312,24 @@ def test_starting_redeemable_auto_fill_manual_override_and_repopulate(qapp, faca
     assert dialog.start_redeem_edit.text() == f"{float(expected_redeem_1):.2f}"
 
     dialog.close()
+
+
+def test_start_session_balance_check_flags_mismatch_with_indicator(qapp, facade):
+    seeded = _build_history_for_starting_redeemable(facade)
+    dialog = StartSessionDialog(facade=facade, parent=None)
+    dialog.show()
+    qapp.processEvents()
+
+    dialog.user_combo.setCurrentText(seeded["user1"].name)
+    dialog.site_combo.setCurrentText(seeded["site1"].name)
+    dialog.start_total_edit.setText("149.00")
+    dialog.start_redeem_edit.setText("39.00")
+    qapp.processEvents()
+
+    text = dialog.balance_check_display.text()
+    assert "Starting SC:" in text
+    assert "Starting Redeemable:" in text
+    assert "✗ entered" in text
+    assert dialog.balance_check_display.property("status") == "negative"
+
+    dialog.close()

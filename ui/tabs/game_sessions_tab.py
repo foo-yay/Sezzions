@@ -1477,6 +1477,7 @@ class StartSessionDialog(QDialog):
         self.site_combo.currentTextChanged.connect(self._refresh_start_redeemable_if_auto)
         self.user_combo.currentTextChanged.connect(self._refresh_start_redeemable_if_auto)
         self.start_total_edit.textChanged.connect(self._update_balance_check)
+        self.start_redeem_edit.textChanged.connect(self._update_balance_check)
         self.date_edit.textChanged.connect(self._update_balance_check)
         self.time_edit.textChanged.connect(self._update_balance_check)
         self.date_edit.textChanged.connect(self._refresh_start_redeemable_if_auto)
@@ -1783,17 +1784,52 @@ class StartSessionDialog(QDialog):
         self._programmatic_start_redeem_update = False
 
     def _update_balance_check(self):
-        """Show expected starting SC/redeemable values for this user/site/time."""
+        """Show expected balances and flag entered-value mismatches in real time."""
         expected = self._compute_expected_start_balances()
         if expected is None:
             self.balance_check_display.setText("Starting SC: —\nStarting Redeemable: —")
+            self.balance_check_display.setProperty("status", "neutral")
         else:
             expected_total, expected_redeem = expected
+            status = "neutral"
+
+            start_total_text = self.start_total_edit.text().strip()
+            total_suffix = ""
+            if start_total_text:
+                valid_total, total_val = validate_currency(start_total_text)
+                if valid_total:
+                    delta_total = Decimal(str(total_val)) - Decimal(str(expected_total))
+                    if delta_total == Decimal("0"):
+                        total_suffix = f" (✓ entered {float(total_val):.2f})"
+                    else:
+                        sign = "+" if delta_total > 0 else ""
+                        total_suffix = f" (✗ entered {float(total_val):.2f}, {sign}{float(delta_total):.2f})"
+                        status = "negative"
+                else:
+                    total_suffix = " (✗ invalid entry)"
+                    status = "negative"
+
+            start_redeem_text = self.start_redeem_edit.text().strip()
+            redeem_suffix = ""
+            if start_redeem_text:
+                valid_redeem, redeem_val = validate_currency(start_redeem_text)
+                if valid_redeem:
+                    delta_redeem = Decimal(str(redeem_val)) - Decimal(str(expected_redeem))
+                    if delta_redeem == Decimal("0"):
+                        redeem_suffix = f" (✓ entered {float(redeem_val):.2f})"
+                    else:
+                        sign = "+" if delta_redeem > 0 else ""
+                        redeem_suffix = f" (✗ entered {float(redeem_val):.2f}, {sign}{float(delta_redeem):.2f})"
+                        status = "negative"
+                else:
+                    redeem_suffix = " (✗ invalid entry)"
+                    status = "negative"
+
             self.balance_check_display.setText(
-                f"Starting SC: {float(expected_total):.2f}\n"
-                f"Starting Redeemable: {float(expected_redeem):.2f}"
+                f"Starting SC: {float(expected_total):.2f}{total_suffix}\n"
+                f"Starting Redeemable: {float(expected_redeem):.2f}{redeem_suffix}"
             )
-        self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.setProperty("status", status)
         self.balance_check_display.style().unpolish(self.balance_check_display)
         self.balance_check_display.style().polish(self.balance_check_display)
 
@@ -2592,6 +2628,7 @@ class EditClosedSessionDialog(QDialog):
         self.site_combo.currentTextChanged.connect(self._refresh_start_redeemable_if_auto)
         self.user_combo.currentTextChanged.connect(self._refresh_start_redeemable_if_auto)
         self.start_total_edit.textChanged.connect(self._update_balance_check)
+        self.start_redeem_edit.textChanged.connect(self._update_balance_check)
         self.date_edit.textChanged.connect(self._update_balance_check)
         self.time_edit.textChanged.connect(self._update_balance_check)
         self.date_edit.textChanged.connect(self._refresh_start_redeemable_if_auto)
@@ -2794,17 +2831,52 @@ class EditClosedSessionDialog(QDialog):
             self.rtp_display.setText("—")
     
     def _update_balance_check(self):
-        """Show expected starting SC/redeemable values for this user/site/time."""
+        """Show expected balances and flag entered-value mismatches in real time."""
         expected = self._compute_expected_start_balances()
         if expected is None:
             self.balance_check_display.setText("Starting SC: —\nStarting Redeemable: —")
+            self.balance_check_display.setProperty("status", "neutral")
         else:
             expected_total, expected_redeem = expected
+            status = "neutral"
+
+            start_total_text = self.start_total_edit.text().strip()
+            total_suffix = ""
+            if start_total_text:
+                valid_total, total_val = validate_currency(start_total_text)
+                if valid_total:
+                    delta_total = Decimal(str(total_val)) - Decimal(str(expected_total))
+                    if delta_total == Decimal("0"):
+                        total_suffix = f" (✓ entered {float(total_val):.2f})"
+                    else:
+                        sign = "+" if delta_total > 0 else ""
+                        total_suffix = f" (✗ entered {float(total_val):.2f}, {sign}{float(delta_total):.2f})"
+                        status = "negative"
+                else:
+                    total_suffix = " (✗ invalid entry)"
+                    status = "negative"
+
+            start_redeem_text = self.start_redeem_edit.text().strip()
+            redeem_suffix = ""
+            if start_redeem_text:
+                valid_redeem, redeem_val = validate_currency(start_redeem_text)
+                if valid_redeem:
+                    delta_redeem = Decimal(str(redeem_val)) - Decimal(str(expected_redeem))
+                    if delta_redeem == Decimal("0"):
+                        redeem_suffix = f" (✓ entered {float(redeem_val):.2f})"
+                    else:
+                        sign = "+" if delta_redeem > 0 else ""
+                        redeem_suffix = f" (✗ entered {float(redeem_val):.2f}, {sign}{float(delta_redeem):.2f})"
+                        status = "negative"
+                else:
+                    redeem_suffix = " (✗ invalid entry)"
+                    status = "negative"
+
             self.balance_check_display.setText(
-                f"Starting SC: {float(expected_total):.2f}\n"
-                f"Starting Redeemable: {float(expected_redeem):.2f}"
+                f"Starting SC: {float(expected_total):.2f}{total_suffix}\n"
+                f"Starting Redeemable: {float(expected_redeem):.2f}{redeem_suffix}"
             )
-        self.balance_check_display.setProperty("status", "neutral")
+            self.balance_check_display.setProperty("status", status)
         self.balance_check_display.style().unpolish(self.balance_check_display)
         self.balance_check_display.style().polish(self.balance_check_display)
 
