@@ -32,13 +32,14 @@ class SiteRepository:
     def create(self, site: Site) -> Site:
         """Create new site"""
         query = """
-            INSERT INTO sites (name, url, sc_rate, is_active, notes)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO sites (name, url, sc_rate, playthrough_requirement, is_active, notes)
+            VALUES (?, ?, ?, ?, ?, ?)
         """
         site_id = self.db.execute(query, (
             site.name,
             site.url,
             site.sc_rate,
+            site.playthrough_requirement,
             1 if site.is_active else 0,
             site.notes
         ))
@@ -52,13 +53,14 @@ class SiteRepository:
         
         query = """
             UPDATE sites
-            SET name = ?, url = ?, sc_rate = ?, is_active = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+            SET name = ?, url = ?, sc_rate = ?, playthrough_requirement = ?, is_active = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """
         self.db.execute(query, (
             site.name,
             site.url,
             site.sc_rate,
+            site.playthrough_requirement,
             1 if site.is_active else 0,
             site.notes,
             site.id
@@ -77,6 +79,7 @@ class SiteRepository:
             name=row['name'],
             url=row.get('url'),
             sc_rate=float(row['sc_rate']) if row.get('sc_rate') else 1.0,
+            playthrough_requirement=float(row['playthrough_requirement']) if row.get('playthrough_requirement') else 1.0,
             is_active=bool(row['is_active']),
             notes=row.get('notes'),
             created_at=row.get('created_at'),

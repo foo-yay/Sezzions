@@ -12,6 +12,7 @@ class Site:
     name: str
     url: Optional[str] = None
     sc_rate: float = 1.0
+    playthrough_requirement: float = 1.0
     is_active: bool = True
     notes: Optional[str] = None
     id: Optional[int] = None
@@ -30,3 +31,7 @@ class Site:
         # Validate sc_rate
         if self.sc_rate <= 0:
             raise ValueError("SC rate must be positive")
+
+        # Validate playthrough requirement
+        if self.playthrough_requirement <= 0:
+            raise ValueError("Playthrough requirement must be positive")

@@ -17,11 +17,18 @@ class SiteService:
         name: str,
         url: Optional[str] = None,
         sc_rate: float = 1.0,
+        playthrough_requirement: float = 1.0,
         notes: Optional[str] = None
     ) -> Site:
         """Create new site with validation"""
         # Create site model (validates in __post_init__)
-        site = Site(name=name, url=url, sc_rate=sc_rate, notes=notes)
+        site = Site(
+            name=name,
+            url=url,
+            sc_rate=sc_rate,
+            playthrough_requirement=playthrough_requirement,
+            notes=notes,
+        )
         
         # Save to database
         return self.site_repo.create(site)

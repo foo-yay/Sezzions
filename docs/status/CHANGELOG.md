@@ -12,6 +12,67 @@ Rules:
 ## 2026-03-10
 
 ```yaml
+id: 2026-03-10-02
+type: feature
+areas: [ui, models, repositories, services, tests, docs]
+issue: 160
+summary: "Add site playthrough requirement + session auto-calculate redeemable toggle"
+details: >
+  Added a site-level `playthrough_requirement` setting and wired it into
+  End Session and Edit Closed Session workflows via a new
+  `Auto-Calculate End Redeemable SC` toggle.
+
+  Site changes:
+  - Added `playthrough_requirement` to Site model with positive-value validation.
+  - Extended sites schema and migration path (`_migrate_sites_table`) with
+    default `1.0` for existing/new records.
+  - Updated site repository/service/facade and Setup → Sites UI (table, add/edit,
+    and view dialogs) to persist/display the field.
+
+  Session dialog changes:
+  - Added `Auto-Calculate End Redeemable SC` toggle to End Session and
+    Edit Closed Session dialogs.
+  - Default state is OFF to preserve prior manual behavior.
+  - When ON, Ending Redeemable is locked and auto-calculated in real time from:
+      Start SC, Start Redeemable, Wager, End SC, and site playthrough requirement.
+  - Auto mode now requires Wager input; manual mode keeps Wager optional.
+  - Auto mode now applies net losses against provisional redeemable so losing
+    sessions do not overstate ending redeemable.
+  - When OFF, Ending Redeemable remains manually editable/validated.
+
+  Tests:
+  - Added UI regression test for auto-calc lock/unlock + live update behavior.
+  - Extended site model/repository/service tests for new field semantics.
+  - Extended schema alignment tests for fresh schema + migration path.
+
+  Validation:
+  - pytest -q tests/unit/test_site_model.py tests/unit/test_site_repository.py
+    tests/unit/test_site_service.py tests/integration/test_schema_alignment.py
+    tests/ui/test_end_session_auto_redeemable.py
+  - pytest -q tests/integration/test_switch_game_flow.py tests/ui/test_end_session_auto_redeemable.py
+  - pytest -q
+files_changed:
+  - models/site.py
+  - repositories/database.py
+  - repositories/site_repository.py
+  - services/site_service.py
+  - app_facade.py
+  - ui/tabs/sites_tab.py
+  - ui/tabs/game_sessions_tab.py
+  - tests/unit/test_site_model.py
+  - tests/unit/test_site_repository.py
+  - tests/unit/test_site_service.py
+  - tests/integration/test_schema_alignment.py
+  - tests/ui/test_end_session_auto_redeemable.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+---
+
+## 2026-03-10
+
+```yaml
 id: 2026-03-10-01
 type: fix
 areas: [services, tests, docs]

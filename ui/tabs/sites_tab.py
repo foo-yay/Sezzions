@@ -83,8 +83,8 @@ class SitesTab(QtWidgets.QWidget):
         
         # Table
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["Name", "URL", "SC Rate", "Status", "Notes"])
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(["Name", "URL", "SC Rate", "Playthrough", "Status", "Notes"])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
@@ -158,17 +158,22 @@ class SitesTab(QtWidgets.QWidget):
                 rate_item = QtWidgets.QTableWidgetItem(f"{site.sc_rate:.4f}")
                 rate_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
                 self.table.setItem(row, 2, rate_item)
+
+                # Playthrough requirement
+                playthrough_item = QtWidgets.QTableWidgetItem(f"{site.playthrough_requirement:.4f}")
+                playthrough_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+                self.table.setItem(row, 3, playthrough_item)
                 
                 # Status
                 status = "Active" if site.is_active else "Inactive"
                 status_item = QtWidgets.QTableWidgetItem(status)
                 if not site.is_active:
                     status_item.setForeground(QtGui.QColor("#999"))
-                self.table.setItem(row, 3, status_item)
+                self.table.setItem(row, 4, status_item)
                 
                 # Notes
                 notes = (site.notes or "")[:100]
-                self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(notes))
+                self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(notes))
 
         finally:
             self.table.blockSignals(False)
@@ -253,6 +258,7 @@ class SitesTab(QtWidgets.QWidget):
                     name=dialog.name_edit.text(),
                     url=dialog.url_edit.text() or None,
                     sc_rate=float(dialog.rate_edit.text()),
+                    playthrough_requirement=float(dialog.playthrough_edit.text()),
                     notes=dialog.notes_edit.toPlainText() or None
                 )
                 self.refresh_data()
@@ -282,6 +288,7 @@ class SitesTab(QtWidgets.QWidget):
                     name=dialog.name_edit.text(),
                     url=dialog.url_edit.text() or None,
                     sc_rate=float(dialog.rate_edit.text()),
+                    playthrough_requirement=float(dialog.playthrough_edit.text()),
                     notes=dialog.notes_edit.toPlainText() or None,
                     is_active=dialog.active_check.isChecked()
                 )
@@ -422,7 +429,7 @@ class SiteDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.site = site
         self.setWindowTitle("Edit Site" if site else "Add Site")
-        self.setMinimumSize(400, 380)
+        self.setMinimumSize(420, 420)
         
         # Main layout
         main_layout = QtWidgets.QVBoxLayout(self)
@@ -483,6 +490,17 @@ class SiteDialog(QtWidgets.QDialog):
         self.rate_edit.setText(str(site.sc_rate if site else "1.0"))
         main_grid.addWidget(rate_label, 3, 0)
         main_grid.addWidget(self.rate_edit, 3, 1)
+
+        # Playthrough Requirement (required)
+        playthrough_label = QtWidgets.QLabel("Playthrough Requirement:")
+        playthrough_label.setObjectName("FieldLabel")
+        playthrough_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.playthrough_edit = QtWidgets.QLineEdit()
+        self.playthrough_edit.setPlaceholderText("Required (e.g., 1.0)")
+        self.playthrough_edit.setFixedWidth(140)
+        self.playthrough_edit.setText(str(site.playthrough_requirement if site else "1.0"))
+        main_grid.addWidget(playthrough_label, 4, 0)
+        main_grid.addWidget(self.playthrough_edit, 4, 1)
         
         main_layout.addWidget(main_section)
         
@@ -533,13 +551,15 @@ class SiteDialog(QtWidgets.QDialog):
         # Validation
         self.name_edit.textChanged.connect(self._validate_inline)
         self.rate_edit.textChanged.connect(self._validate_inline)
+        self.playthrough_edit.textChanged.connect(self._validate_inline)
         self._validate_inline()
         
         # Tab order
         self.setTabOrder(self.name_edit, self.active_check)
         self.setTabOrder(self.active_check, self.url_edit)
         self.setTabOrder(self.url_edit, self.rate_edit)
-        self.setTabOrder(self.rate_edit, self.notes_edit)
+        self.setTabOrder(self.rate_edit, self.playthrough_edit)
+        self.setTabOrder(self.playthrough_edit, self.notes_edit)
         self.setTabOrder(self.notes_edit, self.save_btn)
     
     def _toggle_notes(self):
@@ -548,14 +568,14 @@ class SiteDialog(QtWidgets.QDialog):
         self.notes_section.setVisible(not self.notes_collapsed)
         if self.notes_collapsed:
             self.notes_toggle.setText("📝 Add Notes...")
-            self.setMinimumHeight(380)
-            self.setMaximumHeight(380)
-            self.resize(self.width(), 380)
+            self.setMinimumHeight(420)
+            self.setMaximumHeight(420)
+            self.resize(self.width(), 420)
         else:
             self.notes_toggle.setText("📝 Hide Notes")
-            self.setMinimumHeight(460)
+            self.setMinimumHeight(500)
             self.setMaximumHeight(16777215)
-            self.resize(self.width(), 460)
+            self.resize(self.width(), 500)
     
     def _set_invalid(self, widget, message):
         widget.setProperty("invalid", True)
@@ -586,6 +606,15 @@ class SiteDialog(QtWidgets.QDialog):
             self._set_valid(self.rate_edit)
         except Exception:
             self._set_invalid(self.rate_edit, "Enter a positive rate")
+            valid = False
+
+        try:
+            playthrough = float(self.playthrough_edit.text())
+            if playthrough <= 0:
+                raise ValueError("Playthrough requirement must be positive")
+            self._set_valid(self.playthrough_edit)
+        except Exception:
+            self._set_invalid(self.playthrough_edit, "Enter a positive playthrough requirement")
             valid = False
         
         self.save_btn.setEnabled(valid)
@@ -670,6 +699,12 @@ class SiteViewDialog(QtWidgets.QDialog):
         rate_val = self._make_selectable_label(str(site.sc_rate))
         right_grid.addWidget(rate_lbl, 1, 0, QtCore.Qt.AlignRight)
         right_grid.addWidget(rate_val, 1, 1)
+
+        playthrough_lbl = QtWidgets.QLabel("Playthrough:")
+        playthrough_lbl.setObjectName("MutedLabel")
+        playthrough_val = self._make_selectable_label(str(site.playthrough_requirement))
+        right_grid.addWidget(playthrough_lbl, 2, 0, QtCore.Qt.AlignRight)
+        right_grid.addWidget(playthrough_val, 2, 1)
         
         columns.addLayout(right_grid, 1)
         
