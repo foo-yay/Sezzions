@@ -3106,6 +3106,8 @@ class EditClosedSessionDialog(QDialog):
         # Validate wager amount
         wager_str = self.wager_edit.text().strip()
         wager_amount = None
+        if self.auto_redeem_check.isChecked() and not wager_str:
+            return None, "Please enter Wager Amount when Auto-Calculate End Redeemable SC is enabled."
         if wager_str:
             valid, result = validate_currency(wager_str)
             if not valid:
@@ -3304,7 +3306,9 @@ class EditClosedSessionDialog(QDialog):
 
         # Validate wager (optional)
         wager_text = self.wager_edit.text().strip()
-        if wager_text:
+        if self.auto_redeem_check.isChecked() and not wager_text:
+            self._set_invalid(self.wager_edit, "Wager is required when auto-calculate is enabled.")
+        elif wager_text:
             valid, _result = validate_currency(wager_text)
             if not valid:
                 self._set_invalid(self.wager_edit, "Enter a valid amount (max 2 decimals).")
@@ -5642,7 +5646,9 @@ class EndSessionDialog(QDialog):
                 self._set_valid(self.end_redeem_edit)
 
         wager_text = self.wager_edit.text().strip()
-        if wager_text:
+        if self.auto_redeem_check.isChecked() and not wager_text:
+            self._set_invalid(self.wager_edit, "Wager is required when auto-calculate is enabled.")
+        elif wager_text:
             valid, _result = validate_currency(wager_text)
             if not valid:
                 self._set_invalid(self.wager_edit, "Enter a valid amount (max 2 decimals).")
@@ -5691,6 +5697,8 @@ class EndSessionDialog(QDialog):
 
         wager_amount = None
         wager_text = self.wager_edit.text().strip()
+        if self.auto_redeem_check.isChecked() and not wager_text:
+            return None, "Please enter Wager Amount when Auto-Calculate End Redeemable SC is enabled."
         if wager_text:
             valid, result = validate_currency(wager_text)
             if not valid:

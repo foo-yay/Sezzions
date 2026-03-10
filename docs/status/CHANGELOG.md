@@ -35,6 +35,7 @@ details: >
   - Default state is OFF to preserve prior manual behavior.
   - When ON, Ending Redeemable is locked and auto-calculated in real time from:
       Start SC, Start Redeemable, Wager, End SC, and site playthrough requirement.
+  - Auto mode now requires Wager input; manual mode keeps Wager optional.
   - When OFF, Ending Redeemable remains manually editable/validated.
 
   Tests:

@@ -117,3 +117,39 @@ def test_edit_closed_session_auto_calc_toggle_locks_and_updates_redeemable(qapp,
     assert dialog.end_redeem_edit.text() == "12.34"
 
     dialog.close()
+
+
+def test_end_session_auto_mode_requires_wager(qapp, facade):
+    session = _build_open_session(facade)
+
+    dialog = EndSessionDialog(facade=facade, session=session, parent=None)
+    dialog.show()
+    qapp.processEvents()
+
+    dialog.auto_redeem_check.setChecked(True)
+    dialog.end_total_edit.setText("2605.00")
+    dialog.wager_edit.clear()
+    qapp.processEvents()
+
+    _data, error = dialog.collect_data()
+    assert error == "Please enter Wager Amount when Auto-Calculate End Redeemable SC is enabled."
+
+    dialog.close()
+
+
+def test_edit_closed_session_auto_mode_requires_wager(qapp, facade):
+    session = _build_closed_session(facade)
+
+    dialog = EditClosedSessionDialog(facade=facade, session=session, parent=None)
+    dialog.show()
+    qapp.processEvents()
+
+    dialog.auto_redeem_check.setChecked(True)
+    dialog.end_total_edit.setText("2605.00")
+    dialog.wager_edit.clear()
+    qapp.processEvents()
+
+    _data, error = dialog.collect_data()
+    assert error == "Please enter Wager Amount when Auto-Calculate End Redeemable SC is enabled."
+
+    dialog.close()

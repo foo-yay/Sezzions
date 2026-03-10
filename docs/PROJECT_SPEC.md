@@ -639,6 +639,7 @@ Session redeemable entry (Issue #160):
 - Default is **off** to preserve prior manual-entry behavior.
 - When enabled:
   - `Ending Redeemable SC` becomes read-only.
+  - `Wager` becomes required.
   - Value auto-updates as `End Total SC` / `Wager` changes, using site playthrough requirement.
   - Formula:
     - `locked_start_sc = max(0, Start SC - Start Redeemable)`
@@ -647,6 +648,7 @@ Session redeemable entry (Issue #160):
     - `Ending Redeemable SC = min(End SC, max(0, Start Redeemable + unlocked_sc))`
 - When disabled:
   - `Ending Redeemable SC` is fully manual and validated as before.
+  - `Wager` remains optional.
 
 Sites setup (Issue #160):
 - Sites now include `playthrough_requirement` (default `1.0`, must be positive).
