@@ -9,6 +9,56 @@ Rules:
 
 ---
 
+## 2026-03-10
+
+```yaml
+id: 2026-03-10-01
+type: fix
+areas: [services, tests, docs]
+issue: 158
+summary: "Fix scoped FIFO rebuild to consume close-marker basis (parity with full rebuild)"
+details: >
+  Fixed a path-dependent accounting bug in RecalculationService where scoped
+  FIFO rebuild (`rebuild_fifo_for_pair_from`) handled close-marker redemptions
+  (`amount=0` + parsable `Net Loss`) differently from full rebuild.
+
+  Root cause:
+  - Full rebuild path had Issue #156 close-marker allocation logic.
+  - Scoped rebuild path still used legacy realized-only handling for close
+    markers, writing realized loss rows without consuming basis or writing
+    redemption_allocations.
+
+  User-visible symptom:
+  - Remaining basis was overstated after close markers when scoped rebuild was
+    triggered by normal edit flows, causing Unrealized P/L to be materially wrong.
+
+  Fix behavior:
+  - Scoped rebuild now mirrors full rebuild for close markers:
+    - consume FIFO basis up to parsed close-loss amount,
+    - cap at available basis at/before close timestamp,
+    - write `redemption_allocations`,
+    - update `purchases.remaining_amount`,
+    - keep realized synchronized (`net_pl = payout - consumed_basis`).
+
+  Regression coverage:
+  - Added scoped-path tests in tests/unit/test_recalculation_service.py:
+    - close-marker basis consumption + allocation writes
+    - timestamp boundary guard (no future purchase allocation)
+
+  Validation:
+  - pytest -q tests/unit/test_recalculation_service.py -k scoped_rebuild_close_marker
+  - pytest -q tests/unit/test_recalculation_service.py
+  - pytest -q tests/integration/test_recalculation_integration.py
+  - pytest -q  (1 unrelated pre-existing failure in tests/ui/test_expenses_autocomplete.py)
+files_changed:
+  - services/recalculation_service.py
+  - tests/unit/test_recalculation_service.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+---
+
 ## 2026-03-09
 
 ```yaml
