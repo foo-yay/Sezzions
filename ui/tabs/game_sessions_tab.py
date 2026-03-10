@@ -1153,6 +1153,10 @@ class StartSessionDialog(QDialog):
         self.facade = facade
         self.session = session
         self._time_edited = False
+        self._start_total_manual_override = False
+        self._start_redeem_manual_override = False
+        self._programmatic_start_total_update = False
+        self._programmatic_start_redeem_update = False
         self._game_names_by_type = {}
         self._game_lookup = {}
         self._game_types_by_id = {}
@@ -1249,7 +1253,7 @@ class StartSessionDialog(QDialog):
         self.balance_check_display = QLabel("—")
         self.balance_check_display.setObjectName("ValueChip")
         self.balance_check_display.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.balance_check_display.setFixedHeight(28)
+        self.balance_check_display.setFixedHeight(44)
         self.balance_check_display.setWordWrap(True)
         self.balance_check_display.setProperty("status", "neutral")
         self.balance_check_display.setToolTip(balance_tooltip)
@@ -1472,10 +1476,21 @@ class StartSessionDialog(QDialog):
         self.game_name_combo.currentTextChanged.connect(self._update_rtp_display)
         self.site_combo.currentTextChanged.connect(self._update_balance_check)
         self.user_combo.currentTextChanged.connect(self._update_balance_check)
+        self.site_combo.currentTextChanged.connect(self._refresh_start_total_if_auto)
+        self.user_combo.currentTextChanged.connect(self._refresh_start_total_if_auto)
+        self.site_combo.currentTextChanged.connect(self._refresh_start_redeemable_if_auto)
+        self.user_combo.currentTextChanged.connect(self._refresh_start_redeemable_if_auto)
         self.start_total_edit.textChanged.connect(self._update_balance_check)
+        self.start_redeem_edit.textChanged.connect(self._update_balance_check)
         self.date_edit.textChanged.connect(self._update_balance_check)
         self.time_edit.textChanged.connect(self._update_balance_check)
+        self.date_edit.textChanged.connect(self._refresh_start_total_if_auto)
+        self.time_edit.textChanged.connect(self._refresh_start_total_if_auto)
+        self.date_edit.textChanged.connect(self._refresh_start_redeemable_if_auto)
+        self.time_edit.textChanged.connect(self._refresh_start_redeemable_if_auto)
         self.time_edit.textEdited.connect(self._mark_time_edited)
+        self.start_total_edit.textEdited.connect(self._on_start_total_edited)
+        self.start_redeem_edit.textEdited.connect(self._on_start_redeem_edited)
         self.date_edit.textChanged.connect(self._validate_inline)
         self.time_edit.textChanged.connect(self._validate_inline)
         self.user_combo.currentTextChanged.connect(self._validate_inline)
@@ -1507,6 +1522,8 @@ class StartSessionDialog(QDialog):
 
 
         self._update_completers()
+        self._refresh_start_total_if_auto()
+        self._refresh_start_redeemable_if_auto()
         self._validate_inline()
         self._update_timestamp_info()
 
@@ -1726,121 +1743,109 @@ class StartSessionDialog(QDialog):
         user = self._user_lookup.get(user_name.lower())
         return (site.id if site else None, user.id if user else None)
 
-    def _update_balance_check(self):
-        """Update balance check display with styled value chip"""
+    def _compute_expected_start_balances(self):
         site_name = self.site_combo.currentText().strip()
         user_name = self.user_combo.currentText().strip()
-        start_total_text = self.start_total_edit.text().strip()
-        if not site_name or not user_name or not start_total_text:
-            self.balance_check_display.setText("—")
-            self.balance_check_display.setProperty("status", "neutral")
-            self.balance_check_display.style().unpolish(self.balance_check_display)
-            self.balance_check_display.style().polish(self.balance_check_display)
-            return
-        valid, result = validate_currency(start_total_text)
-        if not valid:
-            self.balance_check_display.setText("—")
-            self.balance_check_display.setProperty("status", "neutral")
-            self.balance_check_display.style().unpolish(self.balance_check_display)
-            self.balance_check_display.style().polish(self.balance_check_display)
-            return
+        if not site_name or not user_name:
+            return None
+
         site_id, user_id = self._lookup_ids(site_name, user_name)
         if not site_id or not user_id:
-            self.balance_check_display.setText("—")
-            self.balance_check_display.setProperty("status", "neutral")
-            self.balance_check_display.style().unpolish(self.balance_check_display)
-            self.balance_check_display.style().polish(self.balance_check_display)
-            return
+            return None
+
         session_date = self.date_edit.text().strip() or None
         session_time = self.time_edit.text().strip() or None
         try:
             parsed_date = parse_date_input(session_date) if session_date else None
             parsed_time = parse_time_input(session_time) if session_time else None
         except ValueError:
-            self.balance_check_display.setText("—")
-            self.balance_check_display.setProperty("status", "neutral")
-            self.balance_check_display.style().unpolish(self.balance_check_display)
-            self.balance_check_display.style().polish(self.balance_check_display)
-            return
-        site_name = self.site_combo.currentText().strip()
-        user_name = self.user_combo.currentText().strip()
-        start_total_text = self.start_total_edit.text().strip()
-        if not site_name or not user_name or not start_total_text:
-            self.balance_check_display.setText("—")
-            self.balance_check_display.setProperty("status", "neutral")
-            self.balance_check_display.style().unpolish(self.balance_check_display)
-            self.balance_check_display.style().polish(self.balance_check_display)
-            return
-        valid, result = validate_currency(start_total_text)
-        if not valid:
-            self.balance_check_display.setText("—")
-            self.balance_check_display.setProperty("status", "neutral")
-            self.balance_check_display.style().unpolish(self.balance_check_display)
-            self.balance_check_display.style().polish(self.balance_check_display)
-            return
-        site_id, user_id = self._lookup_ids(site_name, user_name)
-        if not site_id or not user_id:
-            self.balance_check_display.setText("—")
-            self.balance_check_display.setProperty("status", "neutral")
-            self.balance_check_display.style().unpolish(self.balance_check_display)
-            self.balance_check_display.style().polish(self.balance_check_display)
-            return
-        session_date = self.date_edit.text().strip() or None
-        session_time = self.time_edit.text().strip() or None
-        try:
-            parsed_date = parse_date_input(session_date) if session_date else None
-            parsed_time = parse_time_input(session_time) if session_time else None
-        except ValueError:
-            self.balance_check_display.setText("—")
-            self.balance_check_display.setProperty("status", "neutral")
-            self.balance_check_display.style().unpolish(self.balance_check_display)
-            self.balance_check_display.style().polish(self.balance_check_display)
-            return
+            return None
 
-        if not self._time_edited and parsed_date == date.today():
-            # Only auto-update time if the field doesn't already have seconds
-            # (e.g., it was manually entered as HH:MM or is empty)
-            current_text = self.time_edit.text().strip()
-            if current_text and len(current_text) > 5:
-                # Time has seconds (HH:MM:SS), don't overwrite it
-                pass
-            else:
-                now_text = datetime.now().strftime("%H:%M")
-                if current_text != now_text:
-                    self.time_edit.setText(now_text)
-                parsed_time = parse_time_input(now_text)
-        
-        # For balance check: if time ends with :00 (user entered HH:MM), check up to :59
-        # This handles purchases saved with full seconds in the same minute
-        balance_check_time = parsed_time or datetime.now().strftime("%H:%M:%S")
-        if balance_check_time and balance_check_time.endswith(":00"):
-            # Replace :00 with :59 to include all purchases in this minute
-            balance_check_time = balance_check_time[:-2] + "59"
+        lookup_time = parsed_time or datetime.now().strftime("%H:%M:%S")
+        if lookup_time and lookup_time.endswith(":00"):
+            lookup_time = lookup_time[:-2] + "59"
 
-        expected_total, _expected_redeem = self.facade.compute_expected_balances(
+        expected_total, expected_redeem = self.facade.compute_expected_balances(
             user_id=user_id,
             site_id=site_id,
             session_date=parsed_date or date.today(),
-            session_time=balance_check_time,
+            session_time=lookup_time,
         )
-        site = self.facade.get_site(site_id)
-        sc_rate = Decimal(str(site.sc_rate if site else 1.0))
-        freebies_sc = max(0.0, float(result) - float(expected_total))
-        missing_sc = max(0.0, float(expected_total) - float(result))
-        freebies_dollar = float(Decimal(str(freebies_sc)) * sc_rate)
-        if freebies_sc > 0:
-            self.balance_check_display.setProperty("status", "positive")
-            self.balance_check_display.setText(
-                f"+ {freebies_sc:.2f} SC extra (${freebies_dollar:.2f})"
-            )
-        elif missing_sc > 0:
-            self.balance_check_display.setProperty("status", "negative")
-            self.balance_check_display.setText(
-                f"- {missing_sc:.2f} SC less than expected"
-            )
-        else:
+        return expected_total, expected_redeem
+
+    def _on_start_redeem_edited(self, text: str):
+        if self._programmatic_start_redeem_update:
+            return
+        self._start_redeem_manual_override = bool(text.strip())
+        self._set_start_field_autofill_visual(self.start_redeem_edit, False)
+
+    def _on_start_total_edited(self, text: str):
+        if self._programmatic_start_total_update:
+            return
+        self._start_total_manual_override = bool(text.strip())
+        self._set_start_field_autofill_visual(self.start_total_edit, False)
+
+    def _set_start_field_autofill_visual(self, field: QLineEdit, is_autofilled: bool) -> None:
+        field.setStyleSheet("color: #8c8c8c;" if is_autofilled else "")
+
+    def _refresh_start_total_if_auto(self):
+        if self._start_total_manual_override:
+            return
+        expected = self._compute_expected_start_balances()
+        if expected is None:
+            self._set_start_field_autofill_visual(self.start_total_edit, False)
+            return
+        expected_total, _expected_redeem = expected
+        expected_text = f"{float(expected_total):.2f}"
+        if self.start_total_edit.text().strip() != expected_text:
+            self._programmatic_start_total_update = True
+            self.start_total_edit.setText(expected_text)
+            self._programmatic_start_total_update = False
+        self._set_start_field_autofill_visual(self.start_total_edit, True)
+
+    def _refresh_start_redeemable_if_auto(self):
+        if self._start_redeem_manual_override:
+            return
+        expected = self._compute_expected_start_balances()
+        if expected is None:
+            self._set_start_field_autofill_visual(self.start_redeem_edit, False)
+            return
+        _expected_total, expected_redeem = expected
+        expected_text = f"{float(expected_redeem):.2f}"
+        if self.start_redeem_edit.text().strip() != expected_text:
+            self._programmatic_start_redeem_update = True
+            self.start_redeem_edit.setText(expected_text)
+            self._programmatic_start_redeem_update = False
+        self._set_start_field_autofill_visual(self.start_redeem_edit, True)
+
+    def _update_balance_check(self):
+        """Show expected balances with independent per-line match/mismatch formatting."""
+        expected = self._compute_expected_start_balances()
+        if expected is None:
+            self.balance_check_display.setText("Starting SC: —\nStarting Redeemable: —")
             self.balance_check_display.setProperty("status", "neutral")
-            self.balance_check_display.setText(f"Matches expected ({float(expected_total):.2f} SC)")
+        else:
+            expected_total, expected_redeem = expected
+            def _format_line(label: str, expected_value: Decimal, entered_text: str) -> str:
+                text = entered_text.strip()
+                if not text:
+                    return f"{label}: —"
+                valid, parsed = validate_currency(text)
+                if not valid:
+                    return f"<span style='color: #b26a00;'>⚠️ {label}: Invalid entry</span>"
+                delta = Decimal(str(parsed)) - Decimal(str(expected_value))
+                if delta == Decimal("0"):
+                    return f"✅ {label}"
+                return (
+                    f"<span style='color: #b26a00;'>⚠️ {label}: "
+                    f"Expected {float(expected_value):.2f} ({float(delta):+.2f})"
+                    f"</span>"
+                )
+
+            total_line = _format_line("Starting SC", expected_total, self.start_total_edit.text())
+            redeem_line = _format_line("Starting Redeemable", expected_redeem, self.start_redeem_edit.text())
+            self.balance_check_display.setText(f"{total_line}<br/>{redeem_line}")
+            self.balance_check_display.setProperty("status", "neutral")
         self.balance_check_display.style().unpolish(self.balance_check_display)
         self.balance_check_display.style().polish(self.balance_check_display)
 
@@ -1926,6 +1931,10 @@ class StartSessionDialog(QDialog):
         self.start_total_edit.setText(str(self.session.starting_balance))
         start_redeem = self.session.starting_redeemable
         self.start_redeem_edit.setText(str(start_redeem))
+        self._start_total_manual_override = True
+        self._start_redeem_manual_override = True
+        self._set_start_field_autofill_visual(self.start_total_edit, False)
+        self._set_start_field_autofill_visual(self.start_redeem_edit, False)
         self.notes_edit.setPlainText(self.session.notes or "")
 
         # Notes start collapsed even if notes exist (dialog opens compact).
@@ -1954,6 +1963,10 @@ class StartSessionDialog(QDialog):
                 combo.setCurrentIndex(0)
         self.start_total_edit.clear()
         self.start_redeem_edit.clear()
+        self._start_total_manual_override = False
+        self._start_redeem_manual_override = False
+        self._set_start_field_autofill_visual(self.start_total_edit, False)
+        self._set_start_field_autofill_visual(self.start_redeem_edit, False)
         self.notes_edit.clear()
         self._set_today()
         self._set_now()
@@ -2173,6 +2186,10 @@ class EditClosedSessionDialog(QDialog):
         super().__init__(parent)
         self.facade = facade
         self.session = session
+        self._start_total_manual_override = False
+        self._start_redeem_manual_override = False
+        self._programmatic_start_total_update = False
+        self._programmatic_start_redeem_update = False
         self._game_names_by_type = {}
         self._game_lookup = {}
         self._game_types_by_id = {}
@@ -2314,7 +2331,7 @@ class EditClosedSessionDialog(QDialog):
         self.balance_check_display = QLabel("—")
         self.balance_check_display.setObjectName("ValueChip")
         self.balance_check_display.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.balance_check_display.setFixedHeight(28)
+        self.balance_check_display.setFixedHeight(44)
         self.balance_check_display.setWordWrap(True)
         self.balance_check_display.setProperty("status", "neutral")
         self.balance_check_display.setToolTip(balance_tooltip)
@@ -2541,12 +2558,12 @@ class EditClosedSessionDialog(QDialog):
         row += 1
 
         # Right Column - Auto End Redeemable toggle
-        auto_redeem_label = QLabel("Auto End Redeemable:")
+        auto_redeem_label = QLabel("Auto-Calc Redeemable SC")
         auto_redeem_label.setObjectName("FieldLabel")
         auto_redeem_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         balance_grid.addWidget(auto_redeem_label, row, 2)
 
-        self.auto_redeem_check = QCheckBox("Auto-Calculate End Redeemable SC")
+        self.auto_redeem_check = QCheckBox()
         self.auto_redeem_check.setChecked(False)
         balance_grid.addWidget(self.auto_redeem_check, row, 3)
 
@@ -2637,9 +2654,20 @@ class EditClosedSessionDialog(QDialog):
         self.game_name_combo.currentTextChanged.connect(self._update_rtp_display)
         self.site_combo.currentTextChanged.connect(self._update_balance_check)
         self.user_combo.currentTextChanged.connect(self._update_balance_check)
+        self.site_combo.currentTextChanged.connect(self._refresh_start_total_if_auto)
+        self.user_combo.currentTextChanged.connect(self._refresh_start_total_if_auto)
+        self.site_combo.currentTextChanged.connect(self._refresh_start_redeemable_if_auto)
+        self.user_combo.currentTextChanged.connect(self._refresh_start_redeemable_if_auto)
         self.start_total_edit.textChanged.connect(self._update_balance_check)
+        self.start_redeem_edit.textChanged.connect(self._update_balance_check)
         self.date_edit.textChanged.connect(self._update_balance_check)
         self.time_edit.textChanged.connect(self._update_balance_check)
+        self.date_edit.textChanged.connect(self._refresh_start_total_if_auto)
+        self.time_edit.textChanged.connect(self._refresh_start_total_if_auto)
+        self.date_edit.textChanged.connect(self._refresh_start_redeemable_if_auto)
+        self.time_edit.textChanged.connect(self._refresh_start_redeemable_if_auto)
+        self.start_total_edit.textEdited.connect(self._on_start_total_edited)
+        self.start_redeem_edit.textEdited.connect(self._on_start_redeem_edited)
         self.date_edit.textChanged.connect(self._validate_inline)
         self.time_edit.textChanged.connect(self._validate_inline)
         self.user_combo.currentTextChanged.connect(self._validate_inline)
@@ -2693,6 +2721,8 @@ class EditClosedSessionDialog(QDialog):
         self.setTabOrder(self.save_btn, self.cancel_btn)
 
         self._load_session()
+        self._refresh_start_total_if_auto()
+        self._refresh_start_redeemable_if_auto()
         self._on_auto_redeem_toggled(self.auto_redeem_check.isChecked())
         self._validate_inline()
         self._update_start_timestamp_info()
@@ -2837,81 +2867,109 @@ class EditClosedSessionDialog(QDialog):
             self.rtp_display.setText("—")
     
     def _update_balance_check(self):
-        """Update balance check display with proper calculation"""
+        """Show expected balances with independent per-line match/mismatch formatting."""
+        expected = self._compute_expected_start_balances()
+        if expected is None:
+            self.balance_check_display.setText("Starting SC: —\nStarting Redeemable: —")
+            self.balance_check_display.setProperty("status", "neutral")
+        else:
+            expected_total, expected_redeem = expected
+            def _format_line(label: str, expected_value: Decimal, entered_text: str) -> str:
+                text = entered_text.strip()
+                if not text:
+                    return f"{label}: —"
+                valid, parsed = validate_currency(text)
+                if not valid:
+                    return f"<span style='color: #b26a00;'>⚠️ {label}: Invalid entry</span>"
+                delta = Decimal(str(parsed)) - Decimal(str(expected_value))
+                if delta == Decimal("0"):
+                    return f"✅ {label}"
+                return (
+                    f"<span style='color: #b26a00;'>⚠️ {label}: "
+                    f"Expected {float(expected_value):.2f} ({float(delta):+.2f})"
+                    f"</span>"
+                )
+
+            total_line = _format_line("Starting SC", expected_total, self.start_total_edit.text())
+            redeem_line = _format_line("Starting Redeemable", expected_redeem, self.start_redeem_edit.text())
+            self.balance_check_display.setText(f"{total_line}<br/>{redeem_line}")
+            self.balance_check_display.setProperty("status", "neutral")
+        self.balance_check_display.style().unpolish(self.balance_check_display)
+        self.balance_check_display.style().polish(self.balance_check_display)
+
+    def _compute_expected_start_balances(self):
         site_name = self.site_combo.currentText().strip()
         user_name = self.user_combo.currentText().strip()
-        start_total_text = self.start_total_edit.text().strip()
-        
-        if not site_name or not user_name or not start_total_text:
-            self.balance_check_display.setText("—")
-            self.balance_check_display.setProperty("status", "neutral")
-            self.balance_check_display.style().unpolish(self.balance_check_display)
-            self.balance_check_display.style().polish(self.balance_check_display)
-            return
-        
-        valid, result = validate_currency(start_total_text)
-        if not valid:
-            self.balance_check_display.setText("—")
-            self.balance_check_display.setProperty("status", "neutral")
-            self.balance_check_display.style().unpolish(self.balance_check_display)
-            self.balance_check_display.style().polish(self.balance_check_display)
-            return
-        
+        if not site_name or not user_name:
+            return None
+
         site_id, user_id = self._lookup_ids(site_name, user_name)
         if not site_id or not user_id:
-            self.balance_check_display.setText("—")
-            self.balance_check_display.setProperty("status", "neutral")
-            self.balance_check_display.style().unpolish(self.balance_check_display)
-            self.balance_check_display.style().polish(self.balance_check_display)
-            return
-        
+            return None
+
         session_date = self.date_edit.text().strip() or None
         session_time = self.time_edit.text().strip() or None
         try:
             parsed_date = parse_date_input(session_date) if session_date else None
             parsed_time = parse_time_input(session_time) if session_time else None
         except ValueError:
-            self.balance_check_display.setText("—")
-            self.balance_check_display.setProperty("status", "neutral")
-            self.balance_check_display.style().unpolish(self.balance_check_display)
-            self.balance_check_display.style().polish(self.balance_check_display)
+            return None
+
+        lookup_time = parsed_time or datetime.now().strftime("%H:%M:%S")
+        if lookup_time and lookup_time.endswith(":00"):
+            lookup_time = lookup_time[:-2] + "59"
+
+        return self.facade.compute_expected_balances(
+            user_id=user_id,
+            site_id=site_id,
+            session_date=parsed_date or date.today(),
+            session_time=lookup_time,
+        )
+
+    def _on_start_redeem_edited(self, text: str):
+        if self._programmatic_start_redeem_update:
             return
-        
-        try:
-            expected_total, _expected_redeem = self.facade.compute_expected_balances(
-                user_id=user_id,
-                site_id=site_id,
-                session_date=parsed_date or date.today(),
-                session_time=parsed_time or datetime.now().strftime("%H:%M:%S"),
-            )
-            site = self.facade.get_site(site_id)
-            sc_rate = Decimal(str(site.sc_rate if site else 1.0))
-            freebies_sc = max(0.0, float(result) - float(expected_total))
-            missing_sc = max(0.0, float(expected_total) - float(result))
-            freebies_dollar = float(Decimal(str(freebies_sc)) * sc_rate)
-            
-            if freebies_sc > 0:
-                self.balance_check_display.setProperty("status", "positive")
-                self.balance_check_display.setText(
-                    f"+ {freebies_sc:.2f} SC extra (${freebies_dollar:.2f})"
-                )
-            elif missing_sc > 0:
-                self.balance_check_display.setProperty("status", "negative")
-                self.balance_check_display.setText(
-                    f"- {missing_sc:.2f} SC less than expected"
-                )
-            else:
-                self.balance_check_display.setProperty("status", "neutral")
-                self.balance_check_display.setText(f"Matches expected ({float(expected_total):.2f} SC)")
-            
-            self.balance_check_display.style().unpolish(self.balance_check_display)
-            self.balance_check_display.style().polish(self.balance_check_display)
-        except Exception:
-            # If any error occurs, just show neutral
-            self.balance_check_display.setText("Balance check available")
-            self.balance_check_display.setProperty("status", "neutral")
-            self.balance_check_display.style().unpolish(self.balance_check_display)
-            self.balance_check_display.style().polish(self.balance_check_display)
+        self._start_redeem_manual_override = bool(text.strip())
+        self._set_start_field_autofill_visual(self.start_redeem_edit, False)
+
+    def _on_start_total_edited(self, text: str):
+        if self._programmatic_start_total_update:
+            return
+        self._start_total_manual_override = bool(text.strip())
+        self._set_start_field_autofill_visual(self.start_total_edit, False)
+
+    def _set_start_field_autofill_visual(self, field: QLineEdit, is_autofilled: bool) -> None:
+        field.setStyleSheet("color: #8c8c8c;" if is_autofilled else "")
+
+    def _refresh_start_total_if_auto(self):
+        if self._start_total_manual_override:
+            return
+        expected = self._compute_expected_start_balances()
+        if expected is None:
+            self._set_start_field_autofill_visual(self.start_total_edit, False)
+            return
+        expected_total, _expected_redeem = expected
+        expected_text = f"{float(expected_total):.2f}"
+        if self.start_total_edit.text().strip() != expected_text:
+            self._programmatic_start_total_update = True
+            self.start_total_edit.setText(expected_text)
+            self._programmatic_start_total_update = False
+        self._set_start_field_autofill_visual(self.start_total_edit, True)
+
+    def _refresh_start_redeemable_if_auto(self):
+        if self._start_redeem_manual_override:
+            return
+        expected = self._compute_expected_start_balances()
+        if expected is None:
+            self._set_start_field_autofill_visual(self.start_redeem_edit, False)
+            return
+        _expected_total, expected_redeem = expected
+        expected_text = f"{float(expected_redeem):.2f}"
+        if self.start_redeem_edit.text().strip() != expected_text:
+            self._programmatic_start_redeem_update = True
+            self.start_redeem_edit.setText(expected_text)
+            self._programmatic_start_redeem_update = False
+        self._set_start_field_autofill_visual(self.start_redeem_edit, True)
     
     def _lookup_ids(self, site_name, user_name):
         """Lookup site and user IDs by name"""
@@ -3378,6 +3436,10 @@ class EditClosedSessionDialog(QDialog):
 
         self.start_total_edit.setText(str(self.session.starting_balance))
         self.start_redeem_edit.setText(str(self.session.starting_redeemable))
+        self._start_total_manual_override = True
+        self._start_redeem_manual_override = True
+        self._set_start_field_autofill_visual(self.start_total_edit, False)
+        self._set_start_field_autofill_visual(self.start_redeem_edit, False)
         self.end_total_edit.setText(str(self.session.ending_balance or ""))
         self.end_redeem_edit.setText(str(self.session.ending_redeemable or ""))
         if getattr(self.session, "wager_amount", None) is not None:
@@ -4785,17 +4847,6 @@ class EndSessionDialog(QDialog):
         self.end_redeem_edit.setFixedWidth(140)
         balances_layout.addWidget(self.end_redeem_edit, row, 3)
 
-        # Auto-calc toggle for End Redeemable
-        row += 1
-        auto_redeem_label = QLabel("Auto End Redeemable:")
-        auto_redeem_label.setObjectName("FieldLabel")
-        auto_redeem_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        balances_layout.addWidget(auto_redeem_label, row, 2)
-
-        self.auto_redeem_check = QCheckBox("Auto-Calculate End Redeemable SC")
-        self.auto_redeem_check.setChecked(False)
-        balances_layout.addWidget(self.auto_redeem_check, row, 3)
-
         # Left: Wager Amount
         row += 1
         wager_label = QLabel("Wager Amount:")
@@ -4807,6 +4858,16 @@ class EndSessionDialog(QDialog):
         self.wager_edit.setPlaceholderText("0.00")
         self.wager_edit.setFixedWidth(140)
         balances_layout.addWidget(self.wager_edit, row, 1)
+
+        # Right: Auto-calc label + checkbox (under End Redeemable)
+        auto_redeem_label = QLabel("Auto-Calc Redeemable SC")
+        auto_redeem_label.setObjectName("FieldLabel")
+        auto_redeem_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        balances_layout.addWidget(auto_redeem_label, row, 2)
+
+        self.auto_redeem_check = QCheckBox()
+        self.auto_redeem_check.setChecked(False)
+        balances_layout.addWidget(self.auto_redeem_check, row, 3)
 
         balances_layout.setColumnStretch(1, 1)
         balances_layout.setColumnStretch(3, 1)
