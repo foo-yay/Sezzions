@@ -648,6 +648,7 @@ Session redeemable entry (Issue #160):
   - Formula:
     - `locked_start_sc = max(0, Start SC - Start Redeemable)`
     - `unlocked_from_wager_sc = Wager / playthrough_requirement`
+    - if `unlocked_from_wager_sc >= End SC`, set `Ending Redeemable SC = End SC` (hard-capped full unlock)
     - `unlocked_sc = min(locked_start_sc, unlocked_from_wager_sc)`
     - `provisional = Start Redeemable + unlocked_sc`
     - if `End SC < Start SC`, apply loss to provisional (`provisional += End SC - Start SC`)

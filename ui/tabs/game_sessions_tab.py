@@ -3496,6 +3496,8 @@ class EditClosedSessionDialog(QDialog):
 
         locked_start_sc = max(Decimal("0.00"), start_total - start_redeem)
         unlocked_from_wager = wager_amount / playthrough_requirement
+        if unlocked_from_wager >= end_total:
+            return end_total.quantize(Decimal("0.01"))
         unlocked_sc = min(locked_start_sc, max(Decimal("0.00"), unlocked_from_wager))
         net_delta = end_total - start_total
         provisional_redeem = start_redeem + unlocked_sc
@@ -5806,6 +5808,8 @@ class EndSessionDialog(QDialog):
 
         locked_start_sc = max(Decimal("0.00"), start_total - start_redeem)
         unlocked_from_wager = wager_amount / playthrough_requirement
+        if unlocked_from_wager >= end_total:
+            return end_total.quantize(Decimal("0.01"))
         unlocked_sc = min(locked_start_sc, max(Decimal("0.00"), unlocked_from_wager))
         net_delta = end_total - start_total
         provisional_redeem = start_redeem + unlocked_sc
