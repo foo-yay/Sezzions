@@ -156,6 +156,10 @@ When editing a purchase or creating/editing a game session, the system computes 
 - Sums all purchases/redemptions up to and including that timestamp
 - Uses the last closed session before the cutoff as a checkpoint (if available)
 - Returns (expected_total, expected_redeemable)
+- Unit semantics:
+  - Expected balances are tracked in **SC units**.
+  - Purchase SC inputs (`sc_received`, `starting_sc_balance`) are already SC and are applied directly.
+  - Redemption `amount` is stored in **$ units** and must be converted to SC as `amount_sc = amount_usd / site.sc_rate` before applying debit/credit events in expected-balance timelines.
 
 **Exclusion parameter (Issue #49, 2026-02-04):**
 - When editing a purchase, the system must exclude that purchase from its own expected balance calculation to avoid circular inclusion.

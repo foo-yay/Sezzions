@@ -177,3 +177,52 @@ def test_b4_uncancel_reintroduces_debit(facade, ctx):
     # Debit is back: status = PENDING, no credit event
     balance = _balance(facade, ctx, date.today() + timedelta(days=1))
     assert balance == Decimal("150.00"), f"Expected 150 after uncancel, got {balance}"
+
+
+def test_redemption_amount_converts_from_usd_to_sc_for_non_unit_rate(facade):
+    """At sc_rate=0.01, a $64.97 redemption must debit 6497 SC from expected balances."""
+    user = facade.create_user("Rate User")
+    site = facade.create_site("Rate Site", sc_rate=0.01)
+
+    # Anchor expected total at 7000 SC from a closed session.
+    sess = facade.create_game_session(
+        user_id=user.id,
+        site_id=site.id,
+        game_id=None,
+        session_date=date.today() - timedelta(days=3),
+        session_time="10:00:00",
+        starting_balance=Decimal("0.00"),
+        ending_balance=Decimal("7000.00"),
+        starting_redeemable=Decimal("0.00"),
+        ending_redeemable=Decimal("7000.00"),
+        calculate_pl=False,
+    )
+    facade.update_game_session(
+        session_id=sess.id,
+        ending_balance=Decimal("7000.00"),
+        ending_redeemable=Decimal("7000.00"),
+        end_date=date.today() - timedelta(days=3),
+        end_time="22:00:00",
+        status="Closed",
+        recalculate_pl=False,
+    )
+
+    facade.create_redemption(
+        user_id=user.id,
+        site_id=site.id,
+        amount=Decimal("64.97"),
+        redemption_date=date.today() - timedelta(days=2),
+        apply_fifo=True,
+        receipt_date=None,
+    )
+
+    total, redeem = facade.compute_expected_balances(
+        user_id=user.id,
+        site_id=site.id,
+        session_date=date.today(),
+        session_time="00:00:00",
+    )
+
+    # $64.97 / 0.01 = 6497 SC debit.
+    assert total == Decimal("503.00")
+    assert redeem == Decimal("503.00")
