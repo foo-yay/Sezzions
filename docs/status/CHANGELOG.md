@@ -12,6 +12,32 @@ Rules:
 ## 2026-03-10
 
 ```yaml
+id: 2026-03-10-05
+type: fix
+areas: [services, tests, docs]
+issue: null
+summary: "Convert redemption dollars to SC in expected-balance timeline math"
+details: >
+  Fixed unit mismatch in `GameSessionService.compute_expected_balances` where
+  redemption amounts (stored in dollars) were being applied as SC deltas.
+
+  Updated logic now converts redemption dollars to SC using site `sc_rate`
+  (`amount_sc = amount_usd / sc_rate`) before applying debit/credit events
+  for both pending and canceled redemption timeline events.
+
+  This resolves large false balance-check mismatches on non-unit-rate sites
+  (for example, `sc_rate=0.01` where `$64.97` equals `6497 SC`).
+
+  Validation:
+  - pytest -q tests/integration/test_compute_expected_balances_cancel.py
+files_changed:
+  - services/game_session_service.py
+  - tests/integration/test_compute_expected_balances_cancel.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-10-04
 type: fix
 areas: [ui, tests, docs]
