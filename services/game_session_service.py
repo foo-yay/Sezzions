@@ -525,6 +525,22 @@ class GameSessionService:
         expected_total = Decimal("0.00")
         expected_redeemable = Decimal("0.00")
 
+        # Redemptions are stored in dollar units; expected balances are in SC units.
+        # Convert redemption amount ($) -> SC via site.sc_rate ($ per SC).
+        site_sc_rate = Decimal("1.0")
+        if self.site_repo is not None:
+            site = self.site_repo.get_by_id(site_id)
+            if site is not None:
+                try:
+                    parsed_rate = Decimal(str(site.sc_rate))
+                    if parsed_rate > 0:
+                        site_sc_rate = parsed_rate
+                except Exception:
+                    pass
+
+        def redemption_amount_sc(amount: Decimal) -> Decimal:
+            return Decimal(str(amount)) / site_sc_rate
+
         def to_utc_dt(d: date, t: Optional[str], tz_name: Optional[str]) -> datetime:
             time_str = t or "00:00:00"
             if len(time_str) == 5:
@@ -615,7 +631,7 @@ class GameSessionService:
             # Event 1 — debit (all statuses contribute the original debit)
             if anchor_dt is None or r_dt > anchor_dt:
                 if r_dt < cutoff:
-                    amount = Decimal(str(r.amount))
+                    amount = redemption_amount_sc(r.amount)
                     expected_total -= amount
                     expected_redeemable -= amount
 
@@ -631,7 +647,7 @@ class GameSessionService:
                     if cancel_dt is not None:
                         if anchor_dt is None or cancel_dt > anchor_dt:
                             if cancel_dt < cutoff:
-                                amount = Decimal(str(r.amount))
+                                amount = redemption_amount_sc(r.amount)
                                 expected_total += amount
                                 expected_redeemable += amount
 
