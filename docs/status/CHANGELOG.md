@@ -12,6 +12,36 @@ Rules:
 ## 2026-03-10
 
 ```yaml
+id: 2026-03-10-04
+type: fix
+areas: [ui, tests, docs]
+issue: 162
+summary: "Auto-calc redeemable now returns full end balance when normalized wager covers ending SC"
+details: >
+  Updated End Session and Edit Closed Session auto-calc redeemable logic to
+  handle full-playthrough gain scenarios (e.g., ending balance fully redeemable
+  on site after sufficient wager).
+
+  Logic update:
+  - Added a hard-capped full-unlock branch:
+    if `(wager / playthrough_requirement) >= ending_total_sc`,
+    auto-calc sets `ending_redeemable_sc = ending_total_sc`.
+  - Existing conservative path remains for all other scenarios.
+
+  Tests:
+  - Added End Session regression test for full-unlock scenario.
+  - Added Edit Closed Session regression test for full-unlock scenario.
+
+  Validation:
+  - pytest -q tests/ui/test_end_session_auto_redeemable.py
+files_changed:
+  - ui/tabs/game_sessions_tab.py
+  - tests/ui/test_end_session_auto_redeemable.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-10-03
 type: feature
 areas: [ui, tests, docs]

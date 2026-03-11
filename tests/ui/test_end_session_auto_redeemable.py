@@ -93,6 +93,25 @@ def _build_history_for_starting_redeemable(facade: AppFacade):
     }
 
 
+def _build_open_session_full_unlock(facade: AppFacade):
+    user = facade.create_user("Full Unlock User")
+    site = facade.create_site("Spindoo", playthrough_requirement=1.0)
+    game_type = facade.create_game_type("Stake")
+    game = facade.create_game("Spindoo Stake", game_type.id, rtp=96.0)
+
+    return facade.create_game_session(
+        user_id=user.id,
+        site_id=site.id,
+        game_id=game.id,
+        session_date=date(2026, 3, 1),
+        session_time="10:00:00",
+        starting_balance=Decimal("201.70"),
+        ending_balance=Decimal("204.78"),
+        starting_redeemable=Decimal("0.00"),
+        ending_redeemable=Decimal("0.00"),
+    )
+
+
 def test_end_session_auto_calc_toggle_locks_and_updates_redeemable(qapp, facade):
     session = _build_open_session(facade)
 
@@ -222,6 +241,48 @@ def test_edit_closed_session_auto_mode_requires_wager(qapp, facade):
 
     _data, error = dialog.collect_data()
     assert error == "Please enter Wager Amount when Auto-Calculate End Redeemable SC is enabled."
+
+    dialog.close()
+
+
+def test_end_session_auto_calc_sets_full_end_total_when_wager_covers_end_balance(qapp, facade):
+    session = _build_open_session_full_unlock(facade)
+
+    dialog = EndSessionDialog(facade=facade, session=session, parent=None)
+    dialog.show()
+    qapp.processEvents()
+
+    dialog.auto_redeem_check.setChecked(True)
+    dialog.wager_edit.setText("211.20")
+    dialog.end_total_edit.setText("204.78")
+    qapp.processEvents()
+
+    assert dialog.end_redeem_edit.text() == "204.78"
+
+    dialog.close()
+
+
+def test_edit_closed_auto_calc_sets_full_end_total_when_wager_covers_end_balance(qapp, facade):
+    open_session = _build_open_session_full_unlock(facade)
+    session = facade.update_game_session(
+        open_session.id,
+        status="Closed",
+        end_date=open_session.session_date,
+        end_time="11:00:00",
+        ending_balance=Decimal("204.78"),
+        ending_redeemable=Decimal("0.00"),
+    )
+
+    dialog = EditClosedSessionDialog(facade=facade, session=session, parent=None)
+    dialog.show()
+    qapp.processEvents()
+
+    dialog.auto_redeem_check.setChecked(True)
+    dialog.wager_edit.setText("211.20")
+    dialog.end_total_edit.setText("204.78")
+    qapp.processEvents()
+
+    assert dialog.end_redeem_edit.text() == "204.78"
 
     dialog.close()
 
