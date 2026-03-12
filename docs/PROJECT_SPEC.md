@@ -98,6 +98,36 @@ Default manifest host:
 - This allows update checks/downloads for end users while the primary `Sezzions` source
   repository remains private.
 
+Release automation command (Issue #174):
+- Sezzions includes `tools/release_update.py` for one-command updater publishing.
+- Canonical usage:
+  - `python3 tools/release_update.py --version X.Y.Z`
+- Default behavior:
+  - Build macOS arm64 app bundle via PyInstaller,
+  - zip artifact as `sezzions-macos-arm64.zip`,
+  - generate `latest.json` with SHA-256 and release URLs,
+  - create/update release `vX.Y.Z` in `foo-yay/sezzions-updates`,
+  - upload binary asset(s) + manifest with `--clobber` semantics.
+- Optional flags:
+  - `--next-patch` (reads `__version__`, increments patch, writes back),
+  - `--version-file` (override file used by `--next-patch`, default `__init__.py`),
+  - `--dry-run` (prints commands only),
+  - `--asset-path` (reuse prebuilt zip),
+  - `--extra-asset PLATFORM=/path/to/asset.zip` (repeatable multi-platform publish),
+  - `--publish-source-release` (creates source release tag when missing),
+  - `--sync-local-main` (post-release sync local checkout to current `main`),
+  - `--sync-branch <name>` (override branch used by `--sync-local-main`).
+
+Cross-platform binary publish workflow:
+- `.github/workflows/release-binaries.yml` supports manual dispatch to build and publish
+  both `macos-arm64` and `windows-x64` assets in one run.
+- Workflow supports explicit version input or automatic patch bump behavior.
+- Windows builds are generated on GitHub-hosted Windows runners (no local Windows machine required).
+
+Release page/source archive policy:
+- GitHub release source archives (`zip`/`tar.gz`) are auto-generated and cannot be removed.
+- End-user distribution should use direct binary asset links (or in-app updater) as the single download path.
+
 MVP scope implemented:
 - `services/update_service.py` provides update-check + download/verify logic.
 - `AppFacade` exposes:
@@ -167,6 +197,7 @@ Update infrastructure is exposed to users through three desktop entry points:
 - **Help menu**:
   - Adds `Help -> Check for Updates...` action.
   - Invokes a manual update check against the configured manifest URL.
+  - When an update is found via manual check, dialog includes `Update Now` option.
 
 - **Settings (gear) dialog**:
   - Displays current software version in the Display section.
@@ -179,6 +210,19 @@ Update infrastructure is exposed to users through three desktop entry points:
   - Periodic checks can create an `app_update_available` notification when a newer version is detected.
   - Notification action key `open_updates` routes to the same manual update-check flow.
   - Existing stale update notifications are dismissed automatically when no update is available.
+
+`Update Now` install semantics:
+- Always downloads and verifies the update asset first.
+- If app is running from source/development runtime (`python3 sezzions.py`):
+  - `Update Now` is not offered,
+  - dialog explains that development builds should sync via git or manual release install.
+- If app is running from packaged macOS `.app` and asset is zip containing `.app` bundle:
+  - updater stages extraction,
+  - spawns background apply script,
+  - quits app,
+  - replaces app bundle and relaunches automatically.
+- If running from source/dev mode (`python3 sezzions.py`) or asset type is not auto-installable:
+  - updater falls back to manual install guidance and opens download folder.
 
 Update-check scheduling semantics:
 - Startup no longer forces an immediate network check.

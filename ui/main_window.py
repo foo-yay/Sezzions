@@ -3,6 +3,12 @@ Main application window with tab navigation
 """
 from PySide6 import QtWidgets, QtCore, QtGui
 from datetime import datetime, timedelta
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import zipfile
 from app_facade import AppFacade
 from ui.tabs.purchases_tab import PurchasesTab
 from ui.tabs.redemptions_tab import RedemptionsTab
@@ -1013,7 +1019,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         for notification in notifications:
             if notification.type == 'app_update_available':
-                self.facade.notification_service.dismiss(notification.id)
+                self.facade.notification_service.delete(notification.id, cooldown_days=0)
 
     def _perform_update_check(self, show_messages: bool):
         manifest_url = (self.settings.get("update_manifest_url", "") or "").strip()
@@ -1044,12 +1050,7 @@ class MainWindow(QtWidgets.QMainWindow):
             )
 
             if show_messages:
-                QtWidgets.QMessageBox.information(
-                    self,
-                    "Update Available",
-                    f"Sezzions v{latest_version} is available.\n\n"
-                    "A notification has been added to the bell so you can review and download it.",
-                )
+                self._show_update_available_dialog(result)
         else:
             self._dismiss_update_notifications()
             if show_messages:
@@ -1058,6 +1059,146 @@ class MainWindow(QtWidgets.QMainWindow):
                     "Up to Date",
                     "You are running the latest available version.",
                 )
+
+    def _show_update_available_dialog(self, result: dict):
+        latest_version = result.get("latest_version") or "unknown"
+
+        if self._is_development_runtime():
+            QtWidgets.QMessageBox.information(
+                self,
+                "Update Available",
+                f"Sezzions v{latest_version} is available.\n\n"
+                "You are running a development build from source, so auto-update is disabled. "
+                "Use your normal git workflow to sync local code, or install from the published release.",
+            )
+            return
+
+        dialog = QtWidgets.QMessageBox(self)
+        dialog.setIcon(QtWidgets.QMessageBox.Icon.Information)
+        dialog.setWindowTitle("Update Available")
+        dialog.setText(
+            f"Sezzions v{latest_version} is available.\n\n"
+            "Do you want to download and install it now?"
+        )
+        update_now_btn = dialog.addButton("Update Now", QtWidgets.QMessageBox.ButtonRole.AcceptRole)
+        dialog.addButton("Later", QtWidgets.QMessageBox.ButtonRole.RejectRole)
+        dialog.exec()
+
+        if dialog.clickedButton() == update_now_btn:
+            self._update_now(result)
+
+    def _update_now(self, result: dict):
+        asset = result.get("asset")
+        latest_version = str(result.get("latest_version") or "unknown")
+
+        if not asset:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Update Error",
+                "No downloadable update asset was provided for this platform.",
+            )
+            return
+
+        download_dir = Path.home() / "Downloads" / "Sezzions Updates" / f"v{latest_version}"
+
+        try:
+            downloaded_file = Path(self.facade.download_app_update(asset, str(download_dir)))
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Download Failed",
+                f"Could not download update:\n\n{exc}",
+            )
+            return
+
+        if self._try_auto_install_downloaded_update(downloaded_file):
+            QtWidgets.QMessageBox.information(
+                self,
+                "Installing Update",
+                "Sezzions will now close to complete the update. It will relaunch automatically.",
+            )
+            QtCore.QTimer.singleShot(300, QtWidgets.QApplication.quit)
+            return
+
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(downloaded_file.parent)))
+        QtWidgets.QMessageBox.information(
+            self,
+            "Update Downloaded",
+            "Update downloaded successfully.\n\n"
+            f"File: {downloaded_file.name}\n"
+            f"Location: {downloaded_file.parent}\n\n"
+            "Install manually from this folder.",
+        )
+
+    def _try_auto_install_downloaded_update(self, downloaded_file: Path) -> bool:
+        running_app_bundle = self._running_app_bundle_path()
+        if running_app_bundle is None:
+            return False
+
+        if downloaded_file.suffix.lower() != ".zip":
+            return False
+
+        try:
+            extract_dir = downloaded_file.parent / f"_extract_{downloaded_file.stem}"
+            if extract_dir.exists():
+                shutil.rmtree(extract_dir)
+            extract_dir.mkdir(parents=True, exist_ok=True)
+
+            with zipfile.ZipFile(downloaded_file, "r") as archive:
+                archive.extractall(extract_dir)
+
+            app_candidates = sorted(extract_dir.rglob("*.app"))
+            if not app_candidates:
+                return False
+
+            candidate = None
+            for app_path in app_candidates:
+                if app_path.name == running_app_bundle.name:
+                    candidate = app_path
+                    break
+            if candidate is None:
+                candidate = app_candidates[0]
+
+            script_path = extract_dir / "apply_update.sh"
+            script_path.write_text(
+                "#!/bin/bash\n"
+                "set -e\n"
+                "NEW_APP=\"$1\"\n"
+                "TARGET_APP=\"$2\"\n"
+                "APP_PID=\"$3\"\n"
+                "while kill -0 \"$APP_PID\" >/dev/null 2>&1; do sleep 1; done\n"
+                "rm -rf \"$TARGET_APP\"\n"
+                "ditto \"$NEW_APP\" \"$TARGET_APP\"\n"
+                "open \"$TARGET_APP\"\n",
+                encoding="utf-8",
+            )
+            script_path.chmod(0o755)
+
+            subprocess.Popen(
+                [
+                    "/bin/bash",
+                    str(script_path),
+                    str(candidate),
+                    str(running_app_bundle),
+                    str(os.getpid()),
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            return True
+        except Exception:
+            return False
+
+    def _running_app_bundle_path(self) -> Path | None:
+        executable = Path(sys.executable).resolve()
+        for parent in executable.parents:
+            if parent.suffix.lower() == ".app":
+                return parent
+        return None
+
+    def _is_development_runtime(self) -> bool:
+        return self._running_app_bundle_path() is None
 
     def _refresh_notification_badge(self):
         """Update the bell badge from current notification state (no rule evaluation)."""

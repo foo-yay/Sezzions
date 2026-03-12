@@ -7,6 +7,7 @@ all backend services while maintaining backward compatibility during migration.
 from dataclasses import asdict
 from decimal import Decimal
 from datetime import date, datetime
+from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple, Callable
 import threading
 
@@ -186,7 +187,8 @@ class AppFacade:
         self.csv_export_service = CSVExportService(self.db)
         
         # Notification services
-        self.notification_repo = NotificationRepository()
+        notification_settings_path = str(Path(self.db_path).parent / "settings.json")
+        self.notification_repo = NotificationRepository(settings_file=notification_settings_path)
         self.notification_service = NotificationService(self.notification_repo)
         self.notification_rules_service = NotificationRulesService(
             self.notification_service,

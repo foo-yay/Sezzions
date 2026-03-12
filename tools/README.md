@@ -6,6 +6,66 @@ Note: These scripts live in `tools/`. The in-app Tools functionality is implemen
 
 ## Supported Utilities
 
+### Release Update Automation (Issue #174)
+```bash
+python3 tools/release_update.py --version 1.0.1
+```
+
+Builds and publishes updater assets with a single command:
+- builds macOS arm64 app artifact via PyInstaller,
+- zips the app bundle,
+- generates `latest.json` with SHA-256,
+- uploads assets + manifest to `foo-yay/sezzions-updates` release `v<version>`.
+
+Binary-only distribution note:
+- GitHub auto-generates source archives for every release and they cannot be removed.
+- For end users, share direct binary asset URLs (or app in-product updater) rather than the generic release page.
+
+Useful options:
+```bash
+# Preview commands without executing
+python3 tools/release_update.py --version 1.0.1 --dry-run
+
+# Reuse existing asset zip instead of building
+python3 tools/release_update.py --version 1.0.1 --asset-path /path/to/sezzions-macos-arm64.zip
+
+# Publish both macOS + Windows assets in one release (Windows asset prebuilt)
+python3 tools/release_update.py --version 1.0.1 \
+	--asset-path /path/to/sezzions-macos-arm64.zip \
+	--extra-asset windows-x64=/path/to/sezzions-windows-x64.zip
+
+# Auto-increment from current __version__ patch (e.g. 1.0.0 -> 1.0.1)
+python3 tools/release_update.py --next-patch \
+	--asset-path /path/to/sezzions-macos-arm64.zip \
+	--extra-asset windows-x64=/path/to/sezzions-windows-x64.zip
+
+# Also create source release tag in Sezzions repo if missing
+python3 tools/release_update.py --version 1.0.1 --publish-source-release
+
+# After release publish, sync local checkout to latest main
+python3 tools/release_update.py --version 1.0.1 --sync-local-main
+
+# Sync a different branch instead of main
+python3 tools/release_update.py --version 1.0.1 --sync-local-main --sync-branch release
+```
+
+Windows build note:
+- PyInstaller does not reliably cross-compile Windows executables from macOS.
+- Build `sezzions-windows-x64.zip` on Windows (local machine or CI runner), then pass it with `--extra-asset windows-x64=...`.
+
+### GitHub Actions Cross-Platform Release (macOS + Windows)
+
+Workflow file: `.github/workflows/release-binaries.yml`
+
+What it does:
+- builds macOS arm64 zip on `macos-14`,
+- builds Windows x64 zip on `windows-latest`,
+- publishes both assets in one release update flow,
+- supports explicit version input or automatic patch bump.
+
+Prerequisite:
+- Configure repository secret `SEZZIONS_UPDATES_TOKEN` with a PAT that can create/update releases in `foo-yay/sezzions-updates`.
+
 ### Schema Validation
 ```bash
 python3 tools/validate_schema.py [path/to/db]

@@ -12,6 +12,214 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-14
+type: feature
+areas: [tools, release, ci, docs, tests]
+issue: 174
+summary: "Add next-patch version bump and CI workflow for macOS+Windows release assets"
+details: >
+  Expanded release automation to support patch-version auto-increment and
+  cross-platform binary publishing from a macOS-only development setup.
+
+  Implemented:
+  - `tools/release_update.py --next-patch` to read `__version__`, increment patch,
+    and write updated version back to `__init__.py` (or `--version-file`).
+  - Added helpers and tests for reading/updating version file semantics.
+  - Added GitHub Actions workflow `.github/workflows/release-binaries.yml` to:
+    build macOS + Windows artifacts on hosted runners and publish both assets in
+    one updater release flow.
+
+  Operational note:
+  - Workflow uses `SEZZIONS_UPDATES_TOKEN` secret for write access to
+    `foo-yay/sezzions-updates` releases.
+
+  Validation:
+  - pytest -q tests/unit/test_release_update_tool.py
+files_changed:
+  - tools/release_update.py
+  - tests/unit/test_release_update_tool.py
+  - .github/workflows/release-binaries.yml
+  - tools/README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-12-13
+type: feature
+areas: [tools, updater, docs, tests, release]
+issue: 174
+summary: "Support multi-platform binary asset publishing in one release run"
+details: >
+  Extended `tools/release_update.py` to publish multiple updater assets in one
+  release by adding repeatable `--extra-asset PLATFORM=/path/to/asset.zip`.
+
+  Behavior:
+  - `latest.json` now includes all provided platform assets (for example,
+    `macos-arm64` + `windows-x64`) so each runtime selects its exact binary.
+  - Release upload now includes all staged assets plus `latest.json`.
+  - Added validation for malformed extra-asset inputs and duplicate platform
+    keys.
+  - Updated default `notes_url` to point to the public updates release page.
+
+  Policy/docs:
+  - Documented that GitHub auto-generated source archives cannot be removed.
+  - Documented binary-first distribution via direct asset links and in-app updater.
+
+  Validation:
+  - pytest -q tests/unit/test_release_update_tool.py
+files_changed:
+  - tools/release_update.py
+  - tests/unit/test_release_update_tool.py
+  - tools/README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-12-12
+type: feature
+areas: [tools, tests, docs, workflow]
+issue: 174
+summary: "Add optional local branch sync after release automation publish"
+details: >
+  Extended `tools/release_update.py` with optional post-publish local branch sync
+  so development environments can be aligned immediately after release.
+
+  Implemented:
+  - `--sync-local-main` to fetch/switch/pull the local checkout after publish.
+  - `--sync-branch <name>` to target a branch other than `main`.
+  - dirty-worktree safety guard that aborts sync when uncommitted changes exist.
+
+  Added unit tests for dirty-worktree rejection and command sequencing
+  (with and without branch checkout), and updated release tool docs/spec.
+
+  Validation:
+  - pytest -q tests/unit/test_release_update_tool.py
+files_changed:
+  - tools/release_update.py
+  - tests/unit/test_release_update_tool.py
+  - tools/README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-12-11
+type: fix
+areas: [ui, updater, tests, docs]
+issue: null
+summary: "Disable Update Now while running from source/development runtime"
+details: >
+  Added a development-runtime guard so accidental auto-update from local source
+  execution is prevented.
+
+  Behavior:
+  - When Sezzions runs from source (`python3 sezzions.py`), update checks still
+    report availability, but `Update Now` auto-install is not offered.
+  - Dialog explains that developers should sync via git or install from release
+    artifacts manually.
+  - Packaged app runtime keeps existing auto-install behavior.
+
+  Validation:
+  - pytest -q tests/ui/test_update_ui.py tests/unit/test_app_update_facade.py tests/unit/test_update_service.py
+files_changed:
+  - ui/main_window.py
+  - tests/ui/test_update_ui.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-12-10
+type: feature
+areas: [ui, updater, tests, docs]
+issue: null
+summary: "Add Update Now action with auto-install for packaged macOS app"
+details: >
+  Added `Update Now` flow to manual update checks.
+
+  Behavior:
+  - Manual update check now prompts with `Update Now` when a newer version exists.
+  - Update asset is downloaded and checksum-verified before install logic.
+  - If running from packaged `.app` and update asset is zip containing app bundle,
+    Sezzions can auto-apply update by quitting, replacing app bundle, and relaunching.
+  - If running from source/dev mode, updater falls back to manual install guidance
+    and opens the downloaded file location.
+
+  Validation:
+  - pytest -q tests/ui/test_update_ui.py tests/unit/test_app_update_facade.py tests/unit/test_update_service.py
+files_changed:
+  - ui/main_window.py
+  - tests/ui/test_update_ui.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-12-09
+type: fix
+areas: [ui, facade, tests]
+issue: null
+summary: "Prevent stale/fake app-update notifications from persisting across contexts"
+details: >
+  Fixed a mismatch where notification center could show a stale
+  `app_update_available` item (for example `9.9.9`) while manual check reported
+  "Up to Date".
+
+  Root causes and fixes:
+  - Notification persistence was global (`settings.json`) and UI tests using
+    temporary databases could leak fake update rows into real local settings.
+  - `AppFacade` now scopes `NotificationRepository` settings file to the active
+    database directory (`<db_dir>/settings.json`) so test runs stay isolated.
+  - Up-to-date path now clears update notifications by deleting stale
+    `app_update_available` records rather than only dismissing.
+  - Added UI regression test ensuring a previously-created update notification is
+    cleared when a subsequent check returns no update.
+
+  Validation:
+  - pytest -q tests/ui/test_update_ui.py tests/unit/test_app_update_facade.py tests/unit/test_update_service.py
+files_changed:
+  - app_facade.py
+  - ui/main_window.py
+  - tests/ui/test_update_ui.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-12-08
+type: feature
+areas: [tools, tests, docs, release]
+issue: 174
+summary: "Add one-command release automation tool for updater publishing"
+details: >
+  Added `tools/release_update.py` to make updater publishing a single-command flow.
+
+  Implemented:
+  - semantic version validation (`X.Y.Z`),
+  - optional `v` prefix normalization,
+  - automated build path for macOS arm64 via PyInstaller,
+  - app-bundle zip packaging,
+  - SHA-256 generation,
+  - `latest.json` manifest generation,
+  - release create/upload automation for `foo-yay/sezzions-updates`,
+  - optional source release creation in `foo-yay/Sezzions`,
+  - `--dry-run` and `--asset-path` support.
+
+  Added unit tests for release helper semantics and updated docs.
+
+  Validation:
+  - pytest -q tests/unit/test_release_update_tool.py
+files_changed:
+  - tools/release_update.py
+  - tests/unit/test_release_update_tool.py
+  - tools/README.md
+  - .gitignore
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-07
 type: feature
 areas: [distribution, services, docs]
