@@ -1,5 +1,6 @@
 import pytest
 import tools.release_update as release_update
+import json
 
 from tools.release_update import build_manifest, normalize_version, release_tag
 
@@ -86,6 +87,34 @@ def test_parse_extra_asset_spec_rejects_invalid_values(value):
 
 def test_bump_patch_version_increments_patch_component():
     assert release_update.bump_patch_version("1.0.0") == "1.0.1"
+
+
+def test_pick_highest_version_prefers_newer_release_version():
+    assert release_update.pick_highest_version("1.0.0", "1.0.1") == "1.0.1"
+
+
+def test_pick_highest_version_keeps_local_when_newer():
+    assert release_update.pick_highest_version("1.0.2", "1.0.1") == "1.0.2"
+
+
+def test_read_latest_release_version_parses_tag(monkeypatch: pytest.MonkeyPatch):
+    class _Result:
+        returncode = 0
+        stdout = json.dumps({"tagName": "v1.0.9"})
+
+    monkeypatch.setattr(release_update.subprocess, "run", lambda *args, **kwargs: _Result())
+
+    assert release_update.read_latest_release_version("foo-yay/sezzions-updates") == "1.0.9"
+
+
+def test_read_latest_release_version_returns_none_on_missing_release(monkeypatch: pytest.MonkeyPatch):
+    class _Result:
+        returncode = 1
+        stdout = ""
+
+    monkeypatch.setattr(release_update.subprocess, "run", lambda *args, **kwargs: _Result())
+
+    assert release_update.read_latest_release_version("foo-yay/sezzions-updates") is None
 
 
 def test_read_repo_version_reads_semver(tmp_path):

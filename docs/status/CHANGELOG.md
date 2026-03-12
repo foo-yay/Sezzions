@@ -12,6 +12,36 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-16
+type: fix
+areas: [tools, release, ci, tests, docs]
+issue: 174
+summary: "Fix next-patch release flow to increment beyond latest published tag"
+details: >
+  Corrected `tools/release_update.py --next-patch` behavior so repeated release
+  runs do not overwrite the same tag when local `__version__` is behind already
+  published updates.
+
+  Implemented:
+  - Added latest published updates-release tag lookup via GitHub CLI.
+  - `--next-patch` now uses the higher of:
+    - local `__version__` from `--version-file`, and
+    - latest published `foo-yay/sezzions-updates` release version,
+    then increments patch from that base.
+  - Added unit tests for highest-version selection and release-tag parsing.
+  - Updated docs to clarify next-patch semantics.
+
+  Validation:
+  - pytest -q tests/unit/test_release_update_tool.py
+files_changed:
+  - tools/release_update.py
+  - tests/unit/test_release_update_tool.py
+  - tools/README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-15
 type: fix
 areas: [packaging, startup, docs, tests]

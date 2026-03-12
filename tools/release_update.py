@@ -39,6 +39,36 @@ def bump_patch_version(version: str) -> str:
     return f"{major}.{minor}.{int(patch) + 1}"
 
 
+def _version_tuple(version: str) -> tuple[int, int, int]:
+    major, minor, patch = normalize_version(version).split(".")
+    return int(major), int(minor), int(patch)
+
+
+def pick_highest_version(a: str, b: str | None) -> str:
+    base_a = normalize_version(a)
+    if not b:
+        return base_a
+    base_b = normalize_version(b)
+    return base_b if _version_tuple(base_b) > _version_tuple(base_a) else base_a
+
+
+def read_latest_release_version(repo: str) -> str | None:
+    result = subprocess.run(
+        ["gh", "release", "view", "--repo", repo, "--json", "tagName"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+
+    payload = json.loads(result.stdout or "{}")
+    tag = payload.get("tagName")
+    if not tag:
+        return None
+    return normalize_version(str(tag))
+
+
 def read_repo_version(version_file: Path) -> str:
     if not version_file.exists():
         raise FileNotFoundError(f"Version file not found: {version_file}")
@@ -298,7 +328,9 @@ def main() -> int:
     version_file = Path(args.version_file)
     if args.next_patch:
         current_version = read_repo_version(version_file)
-        version = bump_patch_version(current_version)
+        latest_published_version = read_latest_release_version(args.updates_repo)
+        base_version = pick_highest_version(current_version, latest_published_version)
+        version = bump_patch_version(base_version)
         write_repo_version(version_file, version, dry_run=args.dry_run)
     else:
         version = normalize_version(args.version)

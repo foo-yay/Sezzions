@@ -112,7 +112,8 @@ Release automation command (Issue #174):
   - create/update release `vX.Y.Z` in `foo-yay/sezzions-updates`,
   - upload binary asset(s) + manifest with `--clobber` semantics.
 - Optional flags:
-  - `--next-patch` (reads `__version__`, increments patch, writes back),
+  - `--next-patch` (uses highest of local `__version__` and latest published
+    updates-release version, then increments patch),
   - `--version-file` (override file used by `--next-patch`, default `__init__.py`),
   - `--dry-run` (prints commands only),
   - `--asset-path` (reuse prebuilt zip),

@@ -34,7 +34,8 @@ python3 tools/release_update.py --version 1.0.1 \
 	--asset-path /path/to/sezzions-macos-arm64.zip \
 	--extra-asset windows-x64=/path/to/sezzions-windows-x64.zip
 
-# Auto-increment from current __version__ patch (e.g. 1.0.0 -> 1.0.1)
+# Auto-increment patch from highest of local __version__ and latest published release
+# (e.g. local 1.0.0 + latest release 1.0.1 -> publishes 1.0.2)
 python3 tools/release_update.py --next-patch \
 	--asset-path /path/to/sezzions-macos-arm64.zip \
 	--extra-asset windows-x64=/path/to/sezzions-windows-x64.zip
