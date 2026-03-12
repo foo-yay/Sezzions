@@ -12,6 +12,38 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-13
+type: feature
+areas: [tools, updater, docs, tests, release]
+issue: 174
+summary: "Support multi-platform binary asset publishing in one release run"
+details: >
+  Extended `tools/release_update.py` to publish multiple updater assets in one
+  release by adding repeatable `--extra-asset PLATFORM=/path/to/asset.zip`.
+
+  Behavior:
+  - `latest.json` now includes all provided platform assets (for example,
+    `macos-arm64` + `windows-x64`) so each runtime selects its exact binary.
+  - Release upload now includes all staged assets plus `latest.json`.
+  - Added validation for malformed extra-asset inputs and duplicate platform
+    keys.
+  - Updated default `notes_url` to point to the public updates release page.
+
+  Policy/docs:
+  - Documented that GitHub auto-generated source archives cannot be removed.
+  - Documented binary-first distribution via direct asset links and in-app updater.
+
+  Validation:
+  - pytest -q tests/unit/test_release_update_tool.py
+files_changed:
+  - tools/release_update.py
+  - tests/unit/test_release_update_tool.py
+  - tools/README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-12
 type: feature
 areas: [tools, tests, docs, workflow]

@@ -15,7 +15,11 @@ Builds and publishes updater assets with a single command:
 - builds macOS arm64 app artifact via PyInstaller,
 - zips the app bundle,
 - generates `latest.json` with SHA-256,
-- uploads both files to `foo-yay/sezzions-updates` release `v<version>`.
+- uploads assets + manifest to `foo-yay/sezzions-updates` release `v<version>`.
+
+Binary-only distribution note:
+- GitHub auto-generates source archives for every release and they cannot be removed.
+- For end users, share direct binary asset URLs (or app in-product updater) rather than the generic release page.
 
 Useful options:
 ```bash
@@ -24,6 +28,11 @@ python3 tools/release_update.py --version 1.0.1 --dry-run
 
 # Reuse existing asset zip instead of building
 python3 tools/release_update.py --version 1.0.1 --asset-path /path/to/sezzions-macos-arm64.zip
+
+# Publish both macOS + Windows assets in one release (Windows asset prebuilt)
+python3 tools/release_update.py --version 1.0.1 \
+	--asset-path /path/to/sezzions-macos-arm64.zip \
+	--extra-asset windows-x64=/path/to/sezzions-windows-x64.zip
 
 # Also create source release tag in Sezzions repo if missing
 python3 tools/release_update.py --version 1.0.1 --publish-source-release
@@ -34,6 +43,10 @@ python3 tools/release_update.py --version 1.0.1 --sync-local-main
 # Sync a different branch instead of main
 python3 tools/release_update.py --version 1.0.1 --sync-local-main --sync-branch release
 ```
+
+Windows build note:
+- PyInstaller does not reliably cross-compile Windows executables from macOS.
+- Build `sezzions-windows-x64.zip` on Windows (local machine or CI runner), then pass it with `--extra-asset windows-x64=...`.
 
 ### Schema Validation
 ```bash

@@ -44,9 +44,7 @@ def build_manifest(
     *,
     version: str,
     updates_repo: str,
-    asset_name: str,
-    asset_sha256: str,
-    platform_key: str,
+    assets: list[dict[str, str]],
     notes_url: str,
 ) -> dict[str, Any]:
     tag = release_tag(version)
@@ -56,13 +54,31 @@ def build_manifest(
         "notes_url": notes_url,
         "assets": [
             {
-                "platform": platform_key,
-                "url": f"https://github.com/{updates_repo}/releases/download/{tag}/{asset_name}",
-                "sha256": asset_sha256,
-                "name": asset_name,
+                "platform": asset["platform"],
+                "url": f"https://github.com/{updates_repo}/releases/download/{tag}/{asset['name']}",
+                "sha256": asset["sha256"],
+                "name": asset["name"],
             }
+            for asset in assets
         ],
     }
+
+
+def parse_extra_asset_spec(spec: str) -> tuple[str, Path]:
+    value = (spec or "").strip()
+    if "=" not in value:
+        raise ValueError(
+            "Invalid --extra-asset value. Use format PLATFORM=/path/to/asset.zip"
+        )
+
+    platform_key, path_value = value.split("=", 1)
+    platform_key = platform_key.strip()
+    path_value = path_value.strip()
+    if not platform_key or not path_value:
+        raise ValueError(
+            "Invalid --extra-asset value. Use format PLATFORM=/path/to/asset.zip"
+        )
+    return platform_key, Path(path_value)
 
 
 def run_command(command: list[str], dry_run: bool = False) -> None:
@@ -196,6 +212,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--asset-name", default="sezzions-macos-arm64.zip")
     parser.add_argument("--asset-path", default="", help="Use an existing zip file instead of building.")
     parser.add_argument(
+        "--extra-asset",
+        action="append",
+        default=[],
+        help=(
+            "Additional prebuilt asset mapping in format PLATFORM=/path/to/asset.zip. "
+            "Repeat for multiple assets (for example windows-x64=...)."
+        ),
+    )
+    parser.add_argument(
         "--release-dir",
         default="release",
         help="Directory where generated release assets are staged.",
@@ -230,6 +255,8 @@ def main() -> int:
     staged_release_dir = Path(args.release_dir) / tag
     staged_release_dir.mkdir(parents=True, exist_ok=True)
     asset_output_path = staged_release_dir / args.asset_name
+    upload_paths: list[Path] = []
+    manifest_assets: list[dict[str, str]] = []
 
     if args.asset_path:
         source_asset = Path(args.asset_path)
@@ -247,13 +274,47 @@ def main() -> int:
         zip_macos_app(app_bundle_path=app_bundle_path, zip_output_path=asset_output_path, dry_run=args.dry_run)
 
     asset_digest = "0" * 64 if args.dry_run else sha256_file(asset_output_path)
-    notes_url = f"https://github.com/{args.source_repo}/releases/tag/{tag}"
+    upload_paths.append(asset_output_path)
+    manifest_assets.append(
+        {
+            "platform": args.platform,
+            "name": asset_output_path.name,
+            "sha256": asset_digest,
+        }
+    )
+
+    for extra_asset_spec in args.extra_asset:
+        platform_key, source_path = parse_extra_asset_spec(extra_asset_spec)
+        if not args.dry_run and not source_path.exists():
+            raise FileNotFoundError(f"Extra asset path not found: {source_path}")
+
+        target_path = staged_release_dir / source_path.name
+        print(f"Using extra asset for {platform_key}: {source_path}")
+        if not args.dry_run:
+            shutil.copy2(source_path, target_path)
+
+        target_digest = "0" * 64 if args.dry_run else sha256_file(target_path)
+        upload_paths.append(target_path)
+        manifest_assets.append(
+            {
+                "platform": platform_key,
+                "name": target_path.name,
+                "sha256": target_digest,
+            }
+        )
+
+    seen_platforms: set[str] = set()
+    for item in manifest_assets:
+        key = item["platform"].lower()
+        if key in seen_platforms:
+            raise ValueError(f"Duplicate platform specified for manifest assets: {item['platform']}")
+        seen_platforms.add(key)
+
+    notes_url = f"https://github.com/{args.updates_repo}/releases/tag/{tag}"
     manifest = build_manifest(
         version=version,
         updates_repo=args.updates_repo,
-        asset_name=args.asset_name,
-        asset_sha256=asset_digest,
-        platform_key=args.platform,
+        assets=manifest_assets,
         notes_url=notes_url,
     )
 
@@ -269,7 +330,7 @@ def main() -> int:
             tag,
             "--repo",
             args.updates_repo,
-            str(asset_output_path),
+            *[str(path) for path in upload_paths],
             str(manifest_path),
             "--clobber",
         ],
@@ -300,7 +361,9 @@ def main() -> int:
     print(f"- Version: {version}")
     print(f"- Updates repo: {args.updates_repo}")
     print(f"- Manifest URL: https://github.com/{args.updates_repo}/releases/latest/download/latest.json")
-    print(f"- Asset URL: {manifest['assets'][0]['url']}")
+    print("- Asset URLs:")
+    for asset in manifest["assets"]:
+        print(f"  - {asset['platform']}: {asset['url']}")
     if args.sync_local_main:
         print(f"- Local branch synced: {args.sync_branch}")
     return 0

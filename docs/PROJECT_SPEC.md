@@ -107,13 +107,18 @@ Release automation command (Issue #174):
   - zip artifact as `sezzions-macos-arm64.zip`,
   - generate `latest.json` with SHA-256 and release URLs,
   - create/update release `vX.Y.Z` in `foo-yay/sezzions-updates`,
-  - upload zip + manifest with `--clobber` semantics.
+  - upload binary asset(s) + manifest with `--clobber` semantics.
 - Optional flags:
   - `--dry-run` (prints commands only),
   - `--asset-path` (reuse prebuilt zip),
+  - `--extra-asset PLATFORM=/path/to/asset.zip` (repeatable multi-platform publish),
   - `--publish-source-release` (creates source release tag when missing),
   - `--sync-local-main` (post-release sync local checkout to current `main`),
   - `--sync-branch <name>` (override branch used by `--sync-local-main`).
+
+Release page/source archive policy:
+- GitHub release source archives (`zip`/`tar.gz`) are auto-generated and cannot be removed.
+- End-user distribution should use direct binary asset links (or in-app updater) as the single download path.
 
 MVP scope implemented:
 - `services/update_service.py` provides update-check + download/verify logic.

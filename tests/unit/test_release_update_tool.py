@@ -26,9 +26,13 @@ def test_build_manifest_uses_updates_repo_asset_url():
     manifest = build_manifest(
         version="1.0.1",
         updates_repo="foo-yay/sezzions-updates",
-        asset_name="sezzions-macos-arm64.zip",
-        asset_sha256="abc123",
-        platform_key="macos-arm64",
+        assets=[
+            {
+                "platform": "macos-arm64",
+                "name": "sezzions-macos-arm64.zip",
+                "sha256": "abc123",
+            }
+        ],
         notes_url="https://github.com/foo-yay/Sezzions/releases/tag/v1.0.1",
     )
 
@@ -39,6 +43,45 @@ def test_build_manifest_uses_updates_repo_asset_url():
         "sezzions-macos-arm64.zip"
     )
     assert manifest["assets"][0]["sha256"] == "abc123"
+
+
+def test_build_manifest_supports_multiple_platform_assets():
+    manifest = build_manifest(
+        version="1.0.1",
+        updates_repo="foo-yay/sezzions-updates",
+        assets=[
+            {
+                "platform": "macos-arm64",
+                "name": "sezzions-macos-arm64.zip",
+                "sha256": "macsha",
+            },
+            {
+                "platform": "windows-x64",
+                "name": "sezzions-windows-x64.zip",
+                "sha256": "winsha",
+            },
+        ],
+        notes_url="https://github.com/foo-yay/sezzions-updates/releases/tag/v1.0.1",
+    )
+
+    assert len(manifest["assets"]) == 2
+    assert manifest["assets"][1]["platform"] == "windows-x64"
+    assert manifest["assets"][1]["url"].endswith("/sezzions-windows-x64.zip")
+
+
+def test_parse_extra_asset_spec_accepts_platform_equals_path():
+    platform_key, asset_path = release_update.parse_extra_asset_spec(
+        "windows-x64=/tmp/sezzions-windows-x64.zip"
+    )
+
+    assert platform_key == "windows-x64"
+    assert str(asset_path).endswith("sezzions-windows-x64.zip")
+
+
+@pytest.mark.parametrize("value", ["", "windows-x64", "=/tmp/file.zip", "windows-x64="])
+def test_parse_extra_asset_spec_rejects_invalid_values(value):
+    with pytest.raises(ValueError, match="extra-asset"):
+        release_update.parse_extra_asset_spec(value)
 
 
 def test_sync_local_branch_raises_if_worktree_dirty(monkeypatch: pytest.MonkeyPatch):
