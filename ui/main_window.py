@@ -1013,7 +1013,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         for notification in notifications:
             if notification.type == 'app_update_available':
-                self.facade.notification_service.dismiss(notification.id)
+                self.facade.notification_service.delete(notification.id, cooldown_days=0)
 
     def _perform_update_check(self, show_messages: bool):
         manifest_url = (self.settings.get("update_manifest_url", "") or "").strip()

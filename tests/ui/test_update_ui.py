@@ -67,3 +67,51 @@ def test_periodic_update_check_creates_bell_notification(tmp_path):
     window.close()
     facade.db.close()
     app.processEvents()
+
+
+def test_up_to_date_check_clears_existing_update_notification(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    facade = AppFacade(str(tmp_path / "ui_updates_clear.db"))
+    window = MainWindow(facade)
+
+    facade.check_for_app_updates = lambda manifest_url=None: {
+        "current_version": "1.0.0",
+        "latest_version": "9.9.9",
+        "update_available": True,
+        "asset": {"platform": "macos-arm64", "url": "https://example.com/update.zip", "sha256": "abc"},
+        "notes_url": "https://example.com/notes",
+        "published_at": "2026-03-12T00:00:00Z",
+        "error": None,
+    }
+    window._perform_update_check(show_messages=False)
+
+    facade.check_for_app_updates = lambda manifest_url=None: {
+        "current_version": "1.0.0",
+        "latest_version": "1.0.0",
+        "update_available": False,
+        "asset": None,
+        "notes_url": None,
+        "published_at": None,
+        "error": None,
+    }
+    window._perform_update_check(show_messages=False)
+
+    active = facade.notification_service.get_all(
+        include_dismissed=False,
+        include_deleted=False,
+        include_snoozed=True,
+    )
+    assert all(n.type != "app_update_available" for n in active)
+
+    all_notifications = facade.notification_service.get_all(
+        include_dismissed=True,
+        include_deleted=True,
+        include_snoozed=True,
+    )
+    update_rows = [n for n in all_notifications if n.type == "app_update_available"]
+    assert len(update_rows) == 1
+    assert update_rows[0].is_deleted
+
+    window.close()
+    facade.db.close()
+    app.processEvents()

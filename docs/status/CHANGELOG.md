@@ -12,6 +12,36 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-09
+type: fix
+areas: [ui, facade, tests]
+issue: null
+summary: "Prevent stale/fake app-update notifications from persisting across contexts"
+details: >
+  Fixed a mismatch where notification center could show a stale
+  `app_update_available` item (for example `9.9.9`) while manual check reported
+  "Up to Date".
+
+  Root causes and fixes:
+  - Notification persistence was global (`settings.json`) and UI tests using
+    temporary databases could leak fake update rows into real local settings.
+  - `AppFacade` now scopes `NotificationRepository` settings file to the active
+    database directory (`<db_dir>/settings.json`) so test runs stay isolated.
+  - Up-to-date path now clears update notifications by deleting stale
+    `app_update_available` records rather than only dismissing.
+  - Added UI regression test ensuring a previously-created update notification is
+    cleared when a subsequent check returns no update.
+
+  Validation:
+  - pytest -q tests/ui/test_update_ui.py tests/unit/test_app_update_facade.py tests/unit/test_update_service.py
+files_changed:
+  - app_facade.py
+  - ui/main_window.py
+  - tests/ui/test_update_ui.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-08
 type: feature
 areas: [tools, tests, docs, release]
