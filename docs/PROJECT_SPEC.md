@@ -88,6 +88,63 @@ Key rules:
 ### Repo Workflow (Source of Truth)
 This spec defines the canonical workflow expectations and documentation policy (see §8). Keep the repo lean: update this spec + changelog rather than creating new one-off docs.
 
+### Application Update Infrastructure (Issue #171, MVP)
+
+Sezzions update discovery/download is implemented as a service-layer workflow sourced from GitHub Releases artifacts (not Git operations).
+
+MVP scope implemented:
+- `services/update_service.py` provides update-check + download/verify logic.
+- `AppFacade` exposes:
+  - `check_for_app_updates(manifest_url: Optional[str] = None) -> Dict[str, Any]`
+  - `download_app_update(asset: Dict[str, Any], destination_dir: str) -> str`
+- No automatic install/restart orchestration yet; MVP ends at verified artifact staging.
+
+Manifest contract (`latest.json`):
+- Required:
+  - `version` (string)
+  - `assets` (list)
+- Optional:
+  - `published_at` (string timestamp)
+  - `notes_url` (string URL)
+- Asset object:
+  - `platform` (e.g., `macos-arm64`)
+  - `url` (download URL)
+  - `sha256` (hex digest)
+  - optional: `name`, `size`
+
+Version comparison semantics:
+- Uses numeric semantic comparison from version strings.
+- Supports optional `v` prefix (`v1.2.3` equals `1.2.3`).
+- Update is available only if manifest version is strictly newer than current app version.
+
+Platform selection semantics:
+- Default platform key is detected from host OS/arch:
+  - Apple Silicon macOS -> `macos-arm64`
+  - Intel macOS -> `macos-x64`
+  - Windows -> `windows-x64`
+  - Linux -> `linux-x64`
+- Update availability requires a matching asset for the detected platform.
+
+Integrity semantics:
+- Downloaded artifact is written to caller-supplied destination directory.
+- SHA-256 of downloaded bytes must match manifest `sha256`.
+- On mismatch, download is rejected with a checksum error.
+
+Reproducible MVP validation scenario:
+- Current version: `1.1.9`
+- Manifest version: `1.2.0`
+- Platform: `macos-arm64`
+- Manifest includes matching asset URL + SHA-256
+- Expected outcome:
+  - check reports `update_available=True`
+  - download writes artifact file
+  - checksum verification passes and returns staged file path
+
+Failure scenarios covered:
+- Manifest missing `version` or malformed `assets` -> check result includes error.
+- Newer version with no platform-matching asset -> check reports no installable update with error.
+- Checksum mismatch -> download raises checksum error and blocks artifact acceptance.
+
 ### Portability / Web Porting Contract (Doctrinal)
 
 Even though “web deployment” is a current non-goal, this section defines the **canonical intent** required to port Sezzions (e.g., to a web app) while keeping the results predominantly faithful.
