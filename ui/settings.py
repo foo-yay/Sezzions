@@ -51,6 +51,11 @@ class Settings:
                 'notify_when_overdue': True,
                 'overdue_threshold_days': 1
             },
+            # Update checking settings (Issue #171)
+            'update_check_enabled': True,
+            'update_check_interval_hours': 24,
+            'last_update_check_at': None,
+            'update_manifest_url': '',
             # Repair Mode settings (Issue #55)
             'repair_mode_enabled': False,
             'repair_mode_stale_pairs': {}

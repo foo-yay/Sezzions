@@ -12,6 +12,46 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-03
+type: feature
+areas: [ui, services, tests, docs]
+issue: 171
+summary: "Add desktop update UX: Help action, Settings controls, and periodic bell notifications"
+details: >
+  Completed the user-facing integration for the updater MVP by wiring update
+  checks into the desktop shell.
+
+  Implemented:
+  - Help menu action: `Check for Updates...`.
+  - Settings dialog additions:
+    - software version display,
+    - `Check for Updates Now` action,
+    - persisted update-check settings (`enabled`, interval hours).
+  - Main-window periodic update check flow using persisted settings and
+    `update_last_checked_at` gating.
+  - Notification bell integration:
+    - create `app_update_available` notification when new version is detected,
+    - route notification action `open_updates` to manual check flow,
+    - dismiss stale update notifications when app is up to date.
+
+  Test coverage:
+  - Added UI tests validating menu action presence, settings controls, and
+    update-notification creation path.
+
+  Validation:
+  - pytest -q tests/ui/test_update_ui.py tests/unit/test_update_service.py tests/unit/test_app_update_facade.py
+  - pytest -q tests/ui/test_issue_92_ui_smoke.py tests/ui/test_settings_undo_retention_ui.py tests/integration/test_notification_cooldown.py
+files_changed:
+  - ui/main_window.py
+  - ui/settings.py
+  - ui/settings_dialog.py
+  - ui/notification_widgets.py
+  - tests/ui/test_update_ui.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-02
 type: feature
 areas: [services, facade, tests, docs]

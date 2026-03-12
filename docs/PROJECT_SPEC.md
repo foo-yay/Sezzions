@@ -145,6 +145,39 @@ Failure scenarios covered:
 - Newer version with no platform-matching asset -> check reports no installable update with error.
 - Checksum mismatch -> download raises checksum error and blocks artifact acceptance.
 
+### Application Update UX Surfaces (Issue #171, UI Integration)
+
+Update infrastructure is exposed to users through three desktop entry points:
+
+- **Help menu**:
+  - Adds `Help -> Check for Updates...` action.
+  - Invokes a manual update check against the configured manifest URL.
+
+- **Settings (gear) dialog**:
+  - Displays current software version in the Display section.
+  - Adds `Check for Updates Now` button to run an immediate manual check.
+  - Adds update-check controls in Notifications:
+    - `Enable update checks` (boolean)
+    - `Update check interval (hours)` (positive integer)
+
+- **Notification bell**:
+  - Periodic checks can create an `app_update_available` notification when a newer version is detected.
+  - Notification action key `open_updates` routes to the same manual update-check flow.
+  - Existing stale update notifications are dismissed automatically when no update is available.
+
+Update-check scheduling semantics:
+- Startup no longer forces an immediate network check.
+- A periodic timer evaluates settings and runs checks only when:
+  - update checks are enabled, and
+  - elapsed time since `update_last_checked_at` is at least the configured interval.
+- Manual checks (Help menu / Settings button / bell action) bypass interval gating.
+
+Settings keys:
+- `update_check_enabled` (default: `True`)
+- `update_check_interval_hours` (default: `24`)
+- `update_last_checked_at` (default: `""`)
+- `update_manifest_url` (default: GitHub raw `latest.json` URL)
+
 ### Portability / Web Porting Contract (Doctrinal)
 
 Even though “web deployment” is a current non-goal, this section defines the **canonical intent** required to port Sezzions (e.g., to a web app) while keeping the results predominantly faithful.

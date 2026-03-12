@@ -2,6 +2,7 @@
 Main application window with tab navigation
 """
 from PySide6 import QtWidgets, QtCore, QtGui
+from datetime import datetime, timedelta
 from app_facade import AppFacade
 from ui.tabs.purchases_tab import PurchasesTab
 from ui.tabs.redemptions_tab import RedemptionsTab
@@ -18,7 +19,9 @@ from ui.settings_dialog import SettingsDialog
 from ui.maintenance_mode_dialog import MaintenanceModeDialog
 from services.data_integrity_service import DataIntegrityService
 from services.repair_mode_service import RepairModeService
+from models.notification import NotificationSeverity
 from tools.timezone_utils import set_active_settings
+import __init__ as sezzions_package
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -545,6 +548,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         help_menu.addSeparator()
 
+        self.check_updates_action = QtGui.QAction("Check for &Updates…", self)
+        try:
+            self.check_updates_action.setMenuRole(QtGui.QAction.MenuRole.ApplicationSpecificRole)
+        except Exception:
+            pass
+        self.check_updates_action.triggered.connect(self._manual_check_for_updates)
+        help_menu.addAction(self.check_updates_action)
+
+        help_menu.addSeparator()
+
         about_action = QtGui.QAction("&About", self)
         # On macOS this may be promoted to the application menu automatically.
         try:
@@ -927,12 +940,13 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def _show_about(self):
         """Show about dialog"""
+        app_version = getattr(sezzions_package, "__version__", "0.1.0")
         QtWidgets.QMessageBox.about(
             self,
             "About Sezzions",
             "<h2>Sezzions</h2>"
             "<p>Casino Session Tracker with FIFO Cost Basis Accounting</p>"
-            "<p>Version 2.0 - OOP Backend</p>"
+            f"<p>Version {app_version}</p>"
             "<p>© 2026 Carolina Edge Gaming</p>"
         )
     
@@ -942,13 +956,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self.facade, 'notification_rules_service'):
             self.facade.notification_rules_service.settings = self.settings
         
-        # Evaluate immediately on startup
-        self._evaluate_notifications()
+        # Evaluate core notification rules immediately on startup (no network update check yet)
+        self._evaluate_notifications(include_update_checks=False)
         
         # Set up periodic evaluation timer (every hour)
         self._notification_timer = QtCore.QTimer(self)
         self._notification_timer.setInterval(3600000)  # 1 hour in ms
-        self._notification_timer.timeout.connect(self._evaluate_notifications)
+        self._notification_timer.timeout.connect(lambda: self._evaluate_notifications(include_update_checks=True))
         self._notification_timer.start()
         
         # Also evaluate after Tools operations
@@ -956,12 +970,94 @@ class MainWindow(QtWidgets.QMainWindow):
             # Connect to backup completion signal if it exists
             pass  # Tools tab will call on_backup_completed
     
-    def _evaluate_notifications(self):
+    def _evaluate_notifications(self, include_update_checks: bool = True):
         """Evaluate notification rules and update badge"""
         if hasattr(self.facade, 'notification_rules_service') and self.facade.notification_rules_service.settings is not None:
             self.facade.notification_rules_service.evaluate_all_rules()
 
+        if include_update_checks:
+            self._run_periodic_update_check()
+
         self._refresh_notification_badge()
+
+    def _run_periodic_update_check(self):
+        """Run periodic update checks based on user settings and configured interval."""
+        if not self.settings.get("update_check_enabled", True):
+            return
+
+        interval_hours = int(self.settings.get("update_check_interval_hours", 24) or 24)
+        interval_hours = max(1, interval_hours)
+
+        last_check_raw = self.settings.get("last_update_check_at")
+        if last_check_raw:
+            try:
+                last_check_dt = datetime.fromisoformat(last_check_raw)
+                if datetime.now() - last_check_dt < timedelta(hours=interval_hours):
+                    return
+            except Exception:
+                pass
+
+        self._perform_update_check(show_messages=False)
+        self.settings.set("last_update_check_at", datetime.now().isoformat())
+
+    def _manual_check_for_updates(self):
+        """Manual menu/settings-triggered update check."""
+        self._perform_update_check(show_messages=True)
+        self.settings.set("last_update_check_at", datetime.now().isoformat())
+
+    def _dismiss_update_notifications(self):
+        notifications = self.facade.notification_service.get_all(
+            include_dismissed=True,
+            include_deleted=False,
+            include_snoozed=True,
+        )
+        for notification in notifications:
+            if notification.type == 'app_update_available':
+                self.facade.notification_service.dismiss(notification.id)
+
+    def _perform_update_check(self, show_messages: bool):
+        manifest_url = (self.settings.get("update_manifest_url", "") or "").strip()
+        if not manifest_url:
+            manifest_url = None
+
+        result = self.facade.check_for_app_updates(manifest_url=manifest_url)
+        if result.get("error"):
+            if show_messages:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Update Check Failed",
+                    f"Unable to check for updates:\n\n{result['error']}",
+                )
+            return
+
+        if result.get("update_available"):
+            latest_version = result.get("latest_version") or "unknown"
+            self._dismiss_update_notifications()
+            self.facade.notification_service.create_or_update(
+                type='app_update_available',
+                title=f'Update Available: v{latest_version}',
+                body='A newer version of Sezzions is available. Open update details and download from the notification action.',
+                severity=NotificationSeverity.INFO,
+                subject_id=str(latest_version),
+                action_key='open_updates',
+                action_payload={'latest_version': latest_version},
+            )
+
+            if show_messages:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Update Available",
+                    f"Sezzions v{latest_version} is available.\n\n"
+                    "A notification has been added to the bell so you can review and download it.",
+                )
+        else:
+            self._dismiss_update_notifications()
+            if show_messages:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Up to Date",
+                    "You are running the latest available version.",
+                )
 
     def _refresh_notification_badge(self):
         """Update the bell badge from current notification state (no rule evaluation)."""
@@ -974,7 +1070,7 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog.exec()
         
         # Refresh badge after dialog closes
-        self._evaluate_notifications()
+        self._evaluate_notifications(include_update_checks=False)
     
     def _show_settings_dialog(self):
         """Show Settings dialog (Issue #31)"""
@@ -982,7 +1078,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             # Settings were saved; optionally trigger re-evaluation of notification rules
             # if threshold changed
-            self._evaluate_notifications()
+            self._evaluate_notifications(include_update_checks=False)
 
             # Update travel mode banner if time zone settings changed
             self._update_travel_mode_banner()
