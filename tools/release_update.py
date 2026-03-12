@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import platform as host_platform
+import re
 import shutil
 import subprocess
 import sys
@@ -15,6 +16,7 @@ DEFAULT_SOURCE_REPO = "foo-yay/Sezzions"
 DEFAULT_UPDATES_REPO = "foo-yay/sezzions-updates"
 DEFAULT_PLATFORM_KEY = "macos-arm64"
 DEFAULT_BINARY_BASENAME = "sezzions-macos-arm64"
+DEFAULT_VERSION_FILE = "__init__.py"
 
 
 def normalize_version(version: str) -> str:
@@ -30,6 +32,42 @@ def normalize_version(version: str) -> str:
 
 def release_tag(version: str) -> str:
     return f"v{normalize_version(version)}"
+
+
+def bump_patch_version(version: str) -> str:
+    major, minor, patch = normalize_version(version).split(".")
+    return f"{major}.{minor}.{int(patch) + 1}"
+
+
+def read_repo_version(version_file: Path) -> str:
+    if not version_file.exists():
+        raise FileNotFoundError(f"Version file not found: {version_file}")
+
+    content = version_file.read_text(encoding="utf-8")
+    match = re.search(r'__version__\s*=\s*["\']([0-9]+\.[0-9]+\.[0-9]+)["\']', content)
+    if not match:
+        raise ValueError(
+            f"Could not find __version__ semantic value in {version_file}"
+        )
+    return normalize_version(match.group(1))
+
+
+def write_repo_version(version_file: Path, version: str, dry_run: bool = False) -> None:
+    normalized = normalize_version(version)
+    content = version_file.read_text(encoding="utf-8")
+    updated_content, count = re.subn(
+        r'(__version__\s*=\s*["\'])([0-9]+\.[0-9]+\.[0-9]+)(["\'])',
+        rf"\g<1>{normalized}\g<3>",
+        content,
+        count=1,
+    )
+    if count != 1:
+        raise ValueError(f"Could not update __version__ in {version_file}")
+
+    print(f"Updating {version_file} to version {normalized}")
+    if dry_run:
+        return
+    version_file.write_text(updated_content, encoding="utf-8")
 
 
 def sha256_file(path: Path) -> str:
@@ -203,7 +241,18 @@ def write_manifest_file(manifest_path: Path, manifest: dict[str, Any], dry_run: 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build and publish Sezzions update assets.")
-    parser.add_argument("--version", required=True, help="Semantic version, e.g. 1.0.1")
+    version_group = parser.add_mutually_exclusive_group(required=True)
+    version_group.add_argument("--version", help="Semantic version, e.g. 1.0.1")
+    version_group.add_argument(
+        "--next-patch",
+        action="store_true",
+        help="Increment patch version from __version__ in --version-file.",
+    )
+    parser.add_argument(
+        "--version-file",
+        default=DEFAULT_VERSION_FILE,
+        help="Path to file containing __version__ assignment (default: __init__.py).",
+    )
     parser.add_argument("--source-repo", default=DEFAULT_SOURCE_REPO)
     parser.add_argument("--updates-repo", default=DEFAULT_UPDATES_REPO)
     parser.add_argument("--platform", default=DEFAULT_PLATFORM_KEY)
@@ -246,7 +295,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    version = normalize_version(args.version)
+    version_file = Path(args.version_file)
+    if args.next_patch:
+        current_version = read_repo_version(version_file)
+        version = bump_patch_version(current_version)
+        write_repo_version(version_file, version, dry_run=args.dry_run)
+    else:
+        version = normalize_version(args.version)
     tag = release_tag(version)
 
     if shutil.which("gh") is None:

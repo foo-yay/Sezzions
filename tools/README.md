@@ -34,6 +34,11 @@ python3 tools/release_update.py --version 1.0.1 \
 	--asset-path /path/to/sezzions-macos-arm64.zip \
 	--extra-asset windows-x64=/path/to/sezzions-windows-x64.zip
 
+# Auto-increment from current __version__ patch (e.g. 1.0.0 -> 1.0.1)
+python3 tools/release_update.py --next-patch \
+	--asset-path /path/to/sezzions-macos-arm64.zip \
+	--extra-asset windows-x64=/path/to/sezzions-windows-x64.zip
+
 # Also create source release tag in Sezzions repo if missing
 python3 tools/release_update.py --version 1.0.1 --publish-source-release
 
@@ -47,6 +52,19 @@ python3 tools/release_update.py --version 1.0.1 --sync-local-main --sync-branch 
 Windows build note:
 - PyInstaller does not reliably cross-compile Windows executables from macOS.
 - Build `sezzions-windows-x64.zip` on Windows (local machine or CI runner), then pass it with `--extra-asset windows-x64=...`.
+
+### GitHub Actions Cross-Platform Release (macOS + Windows)
+
+Workflow file: `.github/workflows/release-binaries.yml`
+
+What it does:
+- builds macOS arm64 zip on `macos-14`,
+- builds Windows x64 zip on `windows-latest`,
+- publishes both assets in one release update flow,
+- supports explicit version input or automatic patch bump.
+
+Prerequisite:
+- Configure repository secret `SEZZIONS_UPDATES_TOKEN` with a PAT that can create/update releases in `foo-yay/sezzions-updates`.
 
 ### Schema Validation
 ```bash

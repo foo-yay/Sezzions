@@ -109,12 +109,20 @@ Release automation command (Issue #174):
   - create/update release `vX.Y.Z` in `foo-yay/sezzions-updates`,
   - upload binary asset(s) + manifest with `--clobber` semantics.
 - Optional flags:
+  - `--next-patch` (reads `__version__`, increments patch, writes back),
+  - `--version-file` (override file used by `--next-patch`, default `__init__.py`),
   - `--dry-run` (prints commands only),
   - `--asset-path` (reuse prebuilt zip),
   - `--extra-asset PLATFORM=/path/to/asset.zip` (repeatable multi-platform publish),
   - `--publish-source-release` (creates source release tag when missing),
   - `--sync-local-main` (post-release sync local checkout to current `main`),
   - `--sync-branch <name>` (override branch used by `--sync-local-main`).
+
+Cross-platform binary publish workflow:
+- `.github/workflows/release-binaries.yml` supports manual dispatch to build and publish
+  both `macos-arm64` and `windows-x64` assets in one run.
+- Workflow supports explicit version input or automatic patch bump behavior.
+- Windows builds are generated on GitHub-hosted Windows runners (no local Windows machine required).
 
 Release page/source archive policy:
 - GitHub release source archives (`zip`/`tar.gz`) are auto-generated and cannot be removed.

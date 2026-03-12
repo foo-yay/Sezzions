@@ -84,6 +84,36 @@ def test_parse_extra_asset_spec_rejects_invalid_values(value):
         release_update.parse_extra_asset_spec(value)
 
 
+def test_bump_patch_version_increments_patch_component():
+    assert release_update.bump_patch_version("1.0.0") == "1.0.1"
+
+
+def test_read_repo_version_reads_semver(tmp_path):
+    version_file = tmp_path / "__init__.py"
+    version_file.write_text('__version__ = "2.3.4"\n', encoding="utf-8")
+
+    assert release_update.read_repo_version(version_file) == "2.3.4"
+
+
+def test_write_repo_version_updates_semver(tmp_path):
+    version_file = tmp_path / "__init__.py"
+    version_file.write_text('__version__ = "2.3.4"\n', encoding="utf-8")
+
+    release_update.write_repo_version(version_file, "2.3.5", dry_run=False)
+
+    assert '__version__ = "2.3.5"' in version_file.read_text(encoding="utf-8")
+
+
+def test_write_repo_version_dry_run_leaves_file_unchanged(tmp_path):
+    version_file = tmp_path / "__init__.py"
+    original_content = '__version__ = "3.0.0"\n'
+    version_file.write_text(original_content, encoding="utf-8")
+
+    release_update.write_repo_version(version_file, "3.0.1", dry_run=True)
+
+    assert version_file.read_text(encoding="utf-8") == original_content
+
+
 def test_sync_local_branch_raises_if_worktree_dirty(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(release_update, "_git_current_branch", lambda: "feature/x")
     monkeypatch.setattr(release_update, "_git_status_porcelain", lambda: " M tools/release_update.py")

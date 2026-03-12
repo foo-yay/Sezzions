@@ -12,6 +12,39 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-14
+type: feature
+areas: [tools, release, ci, docs, tests]
+issue: 174
+summary: "Add next-patch version bump and CI workflow for macOS+Windows release assets"
+details: >
+  Expanded release automation to support patch-version auto-increment and
+  cross-platform binary publishing from a macOS-only development setup.
+
+  Implemented:
+  - `tools/release_update.py --next-patch` to read `__version__`, increment patch,
+    and write updated version back to `__init__.py` (or `--version-file`).
+  - Added helpers and tests for reading/updating version file semantics.
+  - Added GitHub Actions workflow `.github/workflows/release-binaries.yml` to:
+    build macOS + Windows artifacts on hosted runners and publish both assets in
+    one updater release flow.
+
+  Operational note:
+  - Workflow uses `SEZZIONS_UPDATES_TOKEN` secret for write access to
+    `foo-yay/sezzions-updates` releases.
+
+  Validation:
+  - pytest -q tests/unit/test_release_update_tool.py
+files_changed:
+  - tools/release_update.py
+  - tests/unit/test_release_update_tool.py
+  - .github/workflows/release-binaries.yml
+  - tools/README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-13
 type: feature
 areas: [tools, updater, docs, tests, release]
