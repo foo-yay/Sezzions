@@ -12,6 +12,34 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-12
+type: feature
+areas: [tools, tests, docs, workflow]
+issue: 174
+summary: "Add optional local branch sync after release automation publish"
+details: >
+  Extended `tools/release_update.py` with optional post-publish local branch sync
+  so development environments can be aligned immediately after release.
+
+  Implemented:
+  - `--sync-local-main` to fetch/switch/pull the local checkout after publish.
+  - `--sync-branch <name>` to target a branch other than `main`.
+  - dirty-worktree safety guard that aborts sync when uncommitted changes exist.
+
+  Added unit tests for dirty-worktree rejection and command sequencing
+  (with and without branch checkout), and updated release tool docs/spec.
+
+  Validation:
+  - pytest -q tests/unit/test_release_update_tool.py
+files_changed:
+  - tools/release_update.py
+  - tests/unit/test_release_update_tool.py
+  - tools/README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-11
 type: fix
 areas: [ui, updater, tests, docs]

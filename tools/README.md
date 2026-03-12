@@ -27,6 +27,12 @@ python3 tools/release_update.py --version 1.0.1 --asset-path /path/to/sezzions-m
 
 # Also create source release tag in Sezzions repo if missing
 python3 tools/release_update.py --version 1.0.1 --publish-source-release
+
+# After release publish, sync local checkout to latest main
+python3 tools/release_update.py --version 1.0.1 --sync-local-main
+
+# Sync a different branch instead of main
+python3 tools/release_update.py --version 1.0.1 --sync-local-main --sync-branch release
 ```
 
 ### Schema Validation

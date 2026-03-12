@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import platform as host_platform
 import shutil
@@ -72,6 +71,38 @@ def run_command(command: list[str], dry_run: bool = False) -> None:
     if dry_run:
         return
     subprocess.run(command, check=True)
+
+
+def _run_capture(command: list[str]) -> str:
+    result = subprocess.run(command, check=True, capture_output=True, text=True)
+    return (result.stdout or "").strip()
+
+
+def _git_status_porcelain() -> str:
+    return _run_capture(["git", "status", "--porcelain"])
+
+
+def _git_current_branch() -> str:
+    return _run_capture(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+
+
+def sync_local_branch(branch: str, dry_run: bool = False) -> None:
+    current_branch = _git_current_branch()
+    if not dry_run and _git_status_porcelain():
+        raise RuntimeError(
+            "Cannot sync local branch with uncommitted changes present. "
+            "Commit or stash your work, then run release again."
+        )
+
+    run_command(["git", "fetch", "origin", branch], dry_run=dry_run)
+    if current_branch != branch:
+        run_command(["git", "checkout", branch], dry_run=dry_run)
+    run_command(["git", "pull", "--ff-only", "origin", branch], dry_run=dry_run)
+
+    if current_branch != branch:
+        print(
+            f"Synced local branch '{branch}' (previous branch was '{current_branch}')."
+        )
 
 
 def release_exists(repo: str, tag: str) -> bool:
@@ -174,6 +205,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Also create a source-repo GitHub release tag if missing.",
     )
+    parser.add_argument(
+        "--sync-local-main",
+        action="store_true",
+        help="After release publish, switch/sync local checkout to up-to-date main.",
+    )
+    parser.add_argument(
+        "--sync-branch",
+        default="main",
+        help="Branch name used by --sync-local-main (default: main).",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -252,11 +293,16 @@ def main() -> int:
             dry_run=args.dry_run,
         )
 
+    if args.sync_local_main:
+        sync_local_branch(args.sync_branch, dry_run=args.dry_run)
+
     print("\nRelease update flow completed.")
     print(f"- Version: {version}")
     print(f"- Updates repo: {args.updates_repo}")
     print(f"- Manifest URL: https://github.com/{args.updates_repo}/releases/latest/download/latest.json")
     print(f"- Asset URL: {manifest['assets'][0]['url']}")
+    if args.sync_local_main:
+        print(f"- Local branch synced: {args.sync_branch}")
     return 0
 
 

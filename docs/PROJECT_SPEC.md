@@ -111,7 +111,9 @@ Release automation command (Issue #174):
 - Optional flags:
   - `--dry-run` (prints commands only),
   - `--asset-path` (reuse prebuilt zip),
-  - `--publish-source-release` (creates source release tag when missing).
+  - `--publish-source-release` (creates source release tag when missing),
+  - `--sync-local-main` (post-release sync local checkout to current `main`),
+  - `--sync-branch <name>` (override branch used by `--sync-local-main`).
 
 MVP scope implemented:
 - `services/update_service.py` provides update-check + download/verify logic.

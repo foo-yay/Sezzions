@@ -1,4 +1,5 @@
 import pytest
+import tools.release_update as release_update
 
 from tools.release_update import build_manifest, normalize_version, release_tag
 
@@ -38,3 +39,50 @@ def test_build_manifest_uses_updates_repo_asset_url():
         "sezzions-macos-arm64.zip"
     )
     assert manifest["assets"][0]["sha256"] == "abc123"
+
+
+def test_sync_local_branch_raises_if_worktree_dirty(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(release_update, "_git_current_branch", lambda: "feature/x")
+    monkeypatch.setattr(release_update, "_git_status_porcelain", lambda: " M tools/release_update.py")
+
+    with pytest.raises(RuntimeError, match="uncommitted changes"):
+        release_update.sync_local_branch("main", dry_run=False)
+
+
+def test_sync_local_branch_switches_then_pulls(monkeypatch: pytest.MonkeyPatch):
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(release_update, "_git_current_branch", lambda: "feature/174-release-automation")
+    monkeypatch.setattr(release_update, "_git_status_porcelain", lambda: "")
+
+    def _record(command: list[str], dry_run: bool = False) -> None:
+        commands.append(command)
+
+    monkeypatch.setattr(release_update, "run_command", _record)
+
+    release_update.sync_local_branch("main", dry_run=False)
+
+    assert commands == [
+        ["git", "fetch", "origin", "main"],
+        ["git", "checkout", "main"],
+        ["git", "pull", "--ff-only", "origin", "main"],
+    ]
+
+
+def test_sync_local_branch_skips_checkout_if_already_on_target(monkeypatch: pytest.MonkeyPatch):
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(release_update, "_git_current_branch", lambda: "main")
+    monkeypatch.setattr(release_update, "_git_status_porcelain", lambda: "")
+
+    def _record(command: list[str], dry_run: bool = False) -> None:
+        commands.append(command)
+
+    monkeypatch.setattr(release_update, "run_command", _record)
+
+    release_update.sync_local_branch("main", dry_run=False)
+
+    assert commands == [
+        ["git", "fetch", "origin", "main"],
+        ["git", "pull", "--ff-only", "origin", "main"],
+    ]
