@@ -12,6 +12,32 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-06
+type: release
+areas: [versioning, distribution, docs]
+issue: 171
+summary: "Prepare and publish Sezzions v1.0.0 release"
+details: >
+  Promoted the app version to `1.0.0` and published the first release-oriented
+  updater distribution contract.
+
+  Release packaging includes:
+  - version bump in application metadata,
+  - macOS arm64 artifact upload,
+  - `latest.json` release manifest with SHA-256 integrity metadata.
+
+  Outcome:
+  - In-app update checks now resolve against a published release artifact path
+    rather than returning 404 for missing manifest.
+
+  Validation:
+  - pytest -q tests/unit/test_update_service.py tests/unit/test_app_update_facade.py tests/ui/test_update_ui.py
+files_changed:
+  - __init__.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-05
 type: fix
 areas: [services, tests, docs]
