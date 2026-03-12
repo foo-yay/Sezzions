@@ -92,6 +92,12 @@ This spec defines the canonical workflow expectations and documentation policy (
 
 Sezzions update discovery/download is implemented as a service-layer workflow sourced from GitHub Releases artifacts (not Git operations).
 
+Default manifest host:
+- Production default points to a dedicated **public updates repository** release asset:
+  - `https://github.com/foo-yay/sezzions-updates/releases/latest/download/latest.json`
+- This allows update checks/downloads for end users while the primary `Sezzions` source
+  repository remains private.
+
 MVP scope implemented:
 - `services/update_service.py` provides update-check + download/verify logic.
 - `AppFacade` exposes:
@@ -185,7 +191,7 @@ Settings keys:
 - `update_check_enabled` (default: `True`)
 - `update_check_interval_hours` (default: `24`)
 - `update_last_checked_at` (default: `""`)
-- `update_manifest_url` (default: GitHub raw `latest.json` URL)
+- `update_manifest_url` (default: empty string; app uses `DEFAULT_UPDATE_MANIFEST_URL`)
 
 ### Portability / Web Porting Contract (Doctrinal)
 

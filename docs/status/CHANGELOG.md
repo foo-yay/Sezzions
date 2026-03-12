@@ -12,6 +12,33 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-07
+type: feature
+areas: [distribution, services, docs]
+issue: 171
+summary: "Move updater default manifest to public sezzions-updates release channel"
+details: >
+  Completed a public update-distribution path so update checks work while the
+  primary Sezzions source repository remains private.
+
+  Changes:
+  - Created public companion repository `foo-yay/sezzions-updates`.
+  - Published `v1.0.0` release assets there:
+    - `sezzions-macos-arm64.zip`
+    - `latest.json`
+  - Updated `DEFAULT_UPDATE_MANIFEST_URL` to point at the public release manifest.
+  - Updated project spec to document private-source/public-update hosting model.
+
+  Validation:
+  - `curl -sSfL https://github.com/foo-yay/sezzions-updates/releases/latest/download/latest.json`
+  - `gh release view v1.0.0 --repo foo-yay/sezzions-updates`
+files_changed:
+  - services/update_service.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-06
 type: release
 areas: [versioning, distribution, docs]
