@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 import platform
 import re
+import ssl
 from typing import Callable, Optional
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 
@@ -177,5 +179,45 @@ class UpdateService:
 
     @staticmethod
     def _default_fetcher(url: str, timeout: int) -> bytes:
-        with urlopen(url, timeout=timeout) as response:
-            return response.read()
+        try:
+            with urlopen(url, timeout=timeout) as response:
+                return response.read()
+        except HTTPError as exc:
+            if exc.code == 404:
+                raise RuntimeError(
+                    "Update manifest not found (HTTP 404). "
+                    "Publish a GitHub Release with a `latest.json` asset, then try again."
+                ) from exc
+            raise
+        except Exception as exc:
+            if not UpdateService._is_certificate_verify_error(exc):
+                raise
+
+            certifi_context = UpdateService._build_certifi_ssl_context()
+            if certifi_context is None:
+                raise RuntimeError(
+                    "SSL certificate verification failed while checking for updates. "
+                    "Install Python certificates for your environment and try again."
+                ) from exc
+
+            with urlopen(url, timeout=timeout, context=certifi_context) as response:
+                return response.read()
+
+    @staticmethod
+    def _build_certifi_ssl_context() -> Optional[ssl.SSLContext]:
+        try:
+            import certifi  # type: ignore
+
+            return ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            return None
+
+    @staticmethod
+    def _is_certificate_verify_error(exc: Exception) -> bool:
+        if isinstance(exc, ssl.SSLCertVerificationError):
+            return True
+
+        if isinstance(exc, URLError) and isinstance(getattr(exc, "reason", None), ssl.SSLCertVerificationError):
+            return True
+
+        return "CERTIFICATE_VERIFY_FAILED" in str(exc)

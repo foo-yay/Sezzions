@@ -12,6 +12,58 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-05
+type: fix
+areas: [services, tests, docs]
+issue: 171
+summary: "Show actionable updater error when release manifest is missing (HTTP 404)"
+details: >
+  Improved update-check error handling for repositories without published releases.
+
+  Changes:
+  - `UpdateService` now converts manifest HTTP 404 responses into a clear message:
+    publish a GitHub Release with `latest.json` asset.
+  - Added unit regression test for the 404 error path.
+
+  Validation:
+  - pytest -q tests/unit/test_update_service.py tests/unit/test_app_update_facade.py tests/ui/test_update_ui.py
+files_changed:
+  - services/update_service.py
+  - tests/unit/test_update_service.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-12-04
+type: fix
+areas: [services, tests, dependencies, docs]
+issue: 171
+summary: "Harden updater HTTPS checks on macOS cert-store failures using certifi fallback"
+details: >
+  Fixed update-check failures caused by Python SSL trust-store issues
+  (`CERTIFICATE_VERIFY_FAILED`) on some macOS environments.
+
+  Changes:
+  - `UpdateService._default_fetcher` now detects certificate-verification errors
+    and retries the HTTPS request using a `certifi` CA bundle SSL context.
+  - If no trusted context can be established, updater returns a clear, actionable
+    certificate error without disabling TLS verification.
+  - Added unit tests for cert-failure retry path and no-cert-store fallback path.
+  - Added `certifi` to runtime dependencies.
+
+  Validation:
+  - pytest -q tests/unit/test_update_service.py tests/unit/test_app_update_facade.py
+  - pytest -q tests/ui/test_update_ui.py
+files_changed:
+  - services/update_service.py
+  - tests/unit/test_update_service.py
+  - requirements.txt
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-03
 type: feature
 areas: [ui, services, tests, docs]

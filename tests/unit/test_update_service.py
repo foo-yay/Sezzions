@@ -1,4 +1,6 @@
 from pathlib import Path
+import ssl
+from urllib.error import HTTPError, URLError
 
 from services.update_service import UpdateAsset, UpdateService
 
@@ -103,3 +105,65 @@ def test_download_and_verify_raises_on_checksum_mismatch(tmp_path):
         assert False, "Expected checksum mismatch"
     except ValueError as exc:
         assert "Checksum mismatch" in str(exc)
+
+
+class _FakeResponse:
+    def __init__(self, payload: bytes):
+        self._payload = payload
+
+    def read(self) -> bytes:
+        return self._payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+def test_default_fetcher_retries_with_certifi_on_cert_verify_error(monkeypatch):
+    calls = {"count": 0}
+    certifi_context = object()
+
+    def fake_urlopen(url, timeout=10, context=None):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise URLError(ssl.SSLCertVerificationError("certificate verify failed"))
+        assert context is certifi_context
+        return _FakeResponse(b"ok")
+
+    monkeypatch.setattr("services.update_service.urlopen", fake_urlopen)
+    monkeypatch.setattr(UpdateService, "_build_certifi_ssl_context", staticmethod(lambda: certifi_context))
+
+    payload = UpdateService._default_fetcher("https://example.com/latest.json", timeout=10)
+
+    assert payload == b"ok"
+    assert calls["count"] == 2
+
+
+def test_default_fetcher_raises_clear_error_when_cert_store_unavailable(monkeypatch):
+    def fake_urlopen(url, timeout=10, context=None):
+        raise URLError(ssl.SSLCertVerificationError("certificate verify failed"))
+
+    monkeypatch.setattr("services.update_service.urlopen", fake_urlopen)
+    monkeypatch.setattr(UpdateService, "_build_certifi_ssl_context", staticmethod(lambda: None))
+
+    try:
+        UpdateService._default_fetcher("https://example.com/latest.json", timeout=10)
+        assert False, "Expected certificate verification failure"
+    except RuntimeError as exc:
+        assert "Install Python certificates" in str(exc)
+
+
+def test_default_fetcher_raises_actionable_message_for_manifest_404(monkeypatch):
+    def fake_urlopen(url, timeout=10, context=None):
+        raise HTTPError(url, 404, "Not Found", hdrs=None, fp=None)
+
+    monkeypatch.setattr("services.update_service.urlopen", fake_urlopen)
+
+    try:
+        UpdateService._default_fetcher("https://example.com/latest.json", timeout=10)
+        assert False, "Expected manifest 404 failure"
+    except RuntimeError as exc:
+        assert "Update manifest not found" in str(exc)
+        assert "latest.json" in str(exc)

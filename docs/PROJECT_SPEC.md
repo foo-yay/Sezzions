@@ -130,6 +130,13 @@ Integrity semantics:
 - SHA-256 of downloaded bytes must match manifest `sha256`.
 - On mismatch, download is rejected with a checksum error.
 
+TLS/certificate behavior:
+- Update manifest/asset fetch uses verified HTTPS.
+- If the runtime cert store is missing/invalid (common on some macOS Python installs),
+  fetch retries using a `certifi` CA bundle context.
+- If certificate verification still cannot be established, update check fails with a
+  certificate-specific error message (no insecure TLS bypass).
+
 Reproducible MVP validation scenario:
 - Current version: `1.1.9`
 - Manifest version: `1.2.0`
@@ -144,6 +151,8 @@ Failure scenarios covered:
 - Manifest missing `version` or malformed `assets` -> check result includes error.
 - Newer version with no platform-matching asset -> check reports no installable update with error.
 - Checksum mismatch -> download raises checksum error and blocks artifact acceptance.
+- Manifest URL returns HTTP 404 (no release manifest published yet) -> check result includes
+  actionable message to publish a GitHub Release with `latest.json` asset.
 
 ### Application Update UX Surfaces (Issue #171, UI Integration)
 
