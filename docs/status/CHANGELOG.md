@@ -12,6 +12,48 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-02
+type: feature
+areas: [services, facade, tests, docs]
+issue: 171
+summary: "Add updater service MVP for GitHub-release manifest checks and verified downloads"
+details: >
+  Added MVP auto-update backend primitives to support release-based updates
+  without using git operations on end-user installs.
+
+  Implemented:
+  - `UpdateService` (`services/update_service.py`) with:
+    - manifest fetch/parse (`latest.json` contract),
+    - semantic version comparison,
+    - platform-specific asset selection,
+    - artifact download + SHA-256 verification.
+  - `AppFacade` wiring:
+    - `check_for_app_updates(...)`
+    - `download_app_update(...)`
+
+  MVP boundaries:
+  - Includes update discovery, download, and integrity verification.
+  - Does not yet implement installer handoff or automatic restart/install flow.
+
+  Test-first evidence:
+  - Added new unit suites covering:
+    - update available/up-to-date outcomes,
+    - invalid manifest handling,
+    - checksum pass/fail behavior,
+    - facade integration path for check + download.
+
+  Validation:
+  - pytest -q tests/unit/test_update_service.py tests/unit/test_app_update_facade.py
+files_changed:
+  - services/update_service.py
+  - app_facade.py
+  - tests/unit/test_update_service.py
+  - tests/unit/test_app_update_facade.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-01
 type: fix
 areas: [services, tests, docs]
