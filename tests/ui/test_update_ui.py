@@ -159,3 +159,36 @@ def test_running_app_bundle_path_none_when_running_from_source(tmp_path):
     window.close()
     facade.db.close()
     app.processEvents()
+
+
+def test_update_now_disabled_in_development_runtime(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    facade = AppFacade(str(tmp_path / "ui_updates_dev_guard.db"))
+    window = MainWindow(facade)
+
+    monkeypatch.setattr(window, "_is_development_runtime", lambda: True)
+
+    info_calls = {}
+
+    def _fake_info(parent, title, text):
+        info_calls["title"] = title
+        info_calls["text"] = text
+
+    monkeypatch.setattr("ui.main_window.QtWidgets.QMessageBox.information", _fake_info)
+
+    update_now_called = {"called": False}
+
+    def _fake_update_now(result):
+        update_now_called["called"] = True
+
+    monkeypatch.setattr(window, "_update_now", _fake_update_now)
+
+    window._show_update_available_dialog({"latest_version": "1.0.1"})
+
+    assert info_calls["title"] == "Update Available"
+    assert "development build" in info_calls["text"]
+    assert update_now_called["called"] is False
+
+    window.close()
+    facade.db.close()
+    app.processEvents()

@@ -12,6 +12,32 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-11
+type: fix
+areas: [ui, updater, tests, docs]
+issue: null
+summary: "Disable Update Now while running from source/development runtime"
+details: >
+  Added a development-runtime guard so accidental auto-update from local source
+  execution is prevented.
+
+  Behavior:
+  - When Sezzions runs from source (`python3 sezzions.py`), update checks still
+    report availability, but `Update Now` auto-install is not offered.
+  - Dialog explains that developers should sync via git or install from release
+    artifacts manually.
+  - Packaged app runtime keeps existing auto-install behavior.
+
+  Validation:
+  - pytest -q tests/ui/test_update_ui.py tests/unit/test_app_update_facade.py tests/unit/test_update_service.py
+files_changed:
+  - ui/main_window.py
+  - tests/ui/test_update_ui.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-10
 type: feature
 areas: [ui, updater, tests, docs]

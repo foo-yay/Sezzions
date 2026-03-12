@@ -198,6 +198,9 @@ Update infrastructure is exposed to users through three desktop entry points:
 
 `Update Now` install semantics:
 - Always downloads and verifies the update asset first.
+- If app is running from source/development runtime (`python3 sezzions.py`):
+  - `Update Now` is not offered,
+  - dialog explains that development builds should sync via git or manual release install.
 - If app is running from packaged macOS `.app` and asset is zip containing `.app` bundle:
   - updater stages extraction,
   - spawns background apply script,

@@ -1063,6 +1063,16 @@ class MainWindow(QtWidgets.QMainWindow):
     def _show_update_available_dialog(self, result: dict):
         latest_version = result.get("latest_version") or "unknown"
 
+        if self._is_development_runtime():
+            QtWidgets.QMessageBox.information(
+                self,
+                "Update Available",
+                f"Sezzions v{latest_version} is available.\n\n"
+                "You are running a development build from source, so auto-update is disabled. "
+                "Use your normal git workflow to sync local code, or install from the published release.",
+            )
+            return
+
         dialog = QtWidgets.QMessageBox(self)
         dialog.setIcon(QtWidgets.QMessageBox.Icon.Information)
         dialog.setWindowTitle("Update Available")
@@ -1186,6 +1196,9 @@ class MainWindow(QtWidgets.QMainWindow):
             if parent.suffix.lower() == ".app":
                 return parent
         return None
+
+    def _is_development_runtime(self) -> bool:
+        return self._running_app_bundle_path() is None
 
     def _refresh_notification_badge(self):
         """Update the bell badge from current notification state (no rule evaluation)."""
