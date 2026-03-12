@@ -153,13 +153,30 @@ When editing a purchase or creating/editing a game session, the system computes 
 
 **Balance computation logic (`GameSessionService.compute_expected_balances`):**
 - Takes a user/site/timestamp cutoff (and optionally an `exclude_purchase_id`)
-- Sums all purchases/redemptions up to and including that timestamp
+- Applies a single chronological event timeline up to the cutoff timestamp (across purchase snapshots and redemption deltas)
 - Uses the last closed session before the cutoff as a checkpoint (if available)
 - Returns (expected_total, expected_redeemable)
 - Unit semantics:
   - Expected balances are tracked in **SC units**.
   - Purchase SC inputs (`sc_received`, `starting_sc_balance`) are already SC and are applied directly.
   - Redemption `amount` is stored in **$ units** and must be converted to SC as `amount_sc = amount_usd / site.sc_rate` before applying debit/credit events in expected-balance timelines.
+
+**Chronological timeline invariant (Issue #169, 2026-03-12):**
+- Expected balances must represent the most recent effective state at the cutoff by applying event effects in timestamp order, regardless of event type.
+- Purchase snapshots are authoritative at their purchase timestamp (`starting_sc_balance` and, when present, `starting_redeemable_balance`).
+- Redemptions that occur **after** a purchase and **before** the cutoff must reduce the expected balances and must not be erased by later non-chronological overwrite behavior.
+- Deterministic same-timestamp ordering is required:
+  - Purchases are ordered by `(timestamp, purchase_id)` for edit/exclusion stability.
+  - Redemption cancel model remains two-event (`debit@redemption_date`, `credit@canceled_at`) and both events are inserted in the chronological timeline.
+
+**Reproducible validation scenario (Issue #169):**
+- Setup: site `sc_rate=0.01`, closed session anchor = `1000 total / 1000 redeemable`.
+- Event 1 (purchase): snapshot `starting_sc_balance=1300`.
+- Event 2 (redemption): `$5.00` after purchase and before cutoff (`500 SC` at `sc_rate=0.01`).
+- Expected at cutoff after both events:
+  - `expected_total = 1300 - 500 = 800`
+  - `expected_redeemable = 1000 - 500 = 500`
+- Regression guard: `tests/integration/test_compute_expected_balances_cancel.py::test_redemption_after_purchase_before_cutoff_is_applied_chronologically`.
 
 **Exclusion parameter (Issue #49, 2026-02-04):**
 - When editing a purchase, the system must exclude that purchase from its own expected balance calculation to avoid circular inclusion.
