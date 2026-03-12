@@ -12,6 +12,36 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-15
+type: fix
+areas: [packaging, startup, docs, tests]
+issue: null
+summary: "Fix packaged macOS app immediate exit by moving default DB path to writable user directory"
+details: >
+  Fixed a packaged-runtime startup failure where Sezzions attempted to use a
+  default database path inside the `.app` bundle location. On downloaded builds,
+  this could fail with `sqlite3.OperationalError: unable to open database file`,
+  causing the app to appear to open and then immediately close.
+
+  Implemented:
+  - Added runtime DB path resolver in `sezzions.py`.
+  - Source runtime keeps existing default (`./sezzions.db`).
+  - Frozen/packaged runtime now defaults to:
+    `~/Library/Application Support/Sezzions/sezzions.db`.
+  - Ensured parent directory is created before opening the DB.
+  - Added unit tests covering env override, frozen-path resolution, and parent
+    directory creation.
+
+  Validation:
+  - pytest -q tests/unit/test_sezzions_runtime_paths.py
+files_changed:
+  - sezzions.py
+  - tests/unit/test_sezzions_runtime_paths.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-14
 type: feature
 areas: [tools, release, ci, docs, tests]

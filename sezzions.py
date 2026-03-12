@@ -14,6 +14,24 @@ from app_facade import AppFacade
 from ui.main_window import MainWindow
 
 
+def resolve_db_path() -> str:
+    configured = os.environ.get("SEZZIONS_DB_PATH")
+    if configured:
+        return configured
+
+    if getattr(sys, "frozen", False):
+        app_support_dir = Path.home() / "Library" / "Application Support" / "Sezzions"
+        return str(app_support_dir / "sezzions.db")
+
+    project_root = Path(__file__).resolve().parent
+    return str(project_root / "sezzions.db")
+
+
+def ensure_db_parent_exists(db_path: str) -> None:
+    path = Path(db_path).expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
 def main():
     """Initialize and run the Qt application"""
     # Create Qt application
@@ -133,12 +151,8 @@ def main():
     # Set application style
     app.setStyle("Fusion")
     
-    # Initialize backend facade with production database
-    # Use a stable path so launching from different CWDs doesn't create a new empty DB.
-    db_path = os.environ.get("SEZZIONS_DB_PATH")
-    if not db_path:
-        project_root = Path(__file__).resolve().parent
-        db_path = str(project_root / "sezzions.db")
+    db_path = resolve_db_path()
+    ensure_db_parent_exists(db_path)
 
     facade = AppFacade(db_path)
     

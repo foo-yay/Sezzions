@@ -40,6 +40,8 @@ python3 sezzions.py
 Database path rules:
 - Default: `./sezzions.db` (repo root)
 - Override: `SEZZIONS_DB_PATH=/path/to/your.db python3 sezzions.py`
+- Packaged macOS app default: `~/Library/Application Support/Sezzions/sezzions.db`
+  (avoids writing inside the `.app` bundle)
 
 ### Test
 ```bash
@@ -82,7 +84,8 @@ Key rules:
 
 ### Primary Entrypoint
 - Run the app via `python3 sezzions.py` (repo root)
-- The app uses `./sezzions.db` by default, or `SEZZIONS_DB_PATH` override.
+- Source runtime uses `./sezzions.db` by default (or `SEZZIONS_DB_PATH` override).
+- Packaged runtime uses `~/Library/Application Support/Sezzions/sezzions.db` by default.
 - **Startup Safety**: If data integrity violations or loading errors occur during startup, the app automatically enters maintenance mode (Setup tab only) to allow database repair via Tools without crashing.
 
 ### Repo Workflow (Source of Truth)
