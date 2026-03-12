@@ -9,6 +9,49 @@ Rules:
 
 ---
 
+## 2026-03-12
+
+```yaml
+id: 2026-03-12-01
+type: fix
+areas: [services, tests, docs]
+issue: 169
+summary: "Apply expected balances from a single chronological event timeline"
+details: >
+  Fixed expected-balance chronology drift in `GameSessionService.compute_expected_balances`
+  where redemptions were applied in a separate pass and then purchase snapshot assignment
+  could overwrite their effect.
+
+  Root cause:
+  - Historical logic applied all redemption deltas first.
+  - Purchase application then reassigned expected totals from purchase snapshots.
+  - In timelines where a redemption occurred after a purchase but before cutoff,
+    expected balances could incorrectly reflect pre-redemption values.
+
+  Fix behavior:
+  - Build one merged, deterministic timeline of events after anchor and before cutoff.
+  - Apply purchase snapshot events and redemption debit/credit events in chronological order.
+  - Preserve existing semantics:
+    - purchase exclusion during edit (`exclude_purchase_id`)
+    - redemption unit conversion (`$ -> SC` via `sc_rate`)
+    - canceled redemption two-event model (debit + credit)
+
+  Repro scenario now covered:
+  - Anchor: 1000 total / 1000 redeemable
+  - Purchase snapshot: 1300
+  - Redemption after purchase before cutoff: $5.00 at sc_rate=0.01 (=500 SC)
+  - Correct expected balances at cutoff: total=800, redeemable=500
+
+  Validation:
+  - pytest -q tests/integration/test_compute_expected_balances_cancel.py
+  - pytest -q tests/integration/test_issue_49_purchase_exclusion.py tests/integration/test_expected_balance_entry_timezone_ordering.py tests/integration/test_expected_redeemable_not_from_purchases.py
+files_changed:
+  - services/game_session_service.py
+  - tests/integration/test_compute_expected_balances_cancel.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
 ## 2026-03-10
 
 ```yaml

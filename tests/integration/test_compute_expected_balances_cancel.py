@@ -226,3 +226,64 @@ def test_redemption_amount_converts_from_usd_to_sc_for_non_unit_rate(facade):
     # $64.97 / 0.01 = 6497 SC debit.
     assert total == Decimal("503.00")
     assert redeem == Decimal("503.00")
+
+
+def test_redemption_after_purchase_before_cutoff_is_applied_chronologically(facade):
+    """A redemption after a purchase (both before cutoff) must reduce expected balances."""
+    user = facade.create_user("Chronology User")
+    site = facade.create_site("Chronology Site", sc_rate=0.01)
+
+    # Anchor at 1000/1000 from a closed session.
+    sess = facade.create_game_session(
+        user_id=user.id,
+        site_id=site.id,
+        game_id=None,
+        session_date=date.today() - timedelta(days=3),
+        session_time="10:00:00",
+        starting_balance=Decimal("0.00"),
+        ending_balance=Decimal("1000.00"),
+        starting_redeemable=Decimal("0.00"),
+        ending_redeemable=Decimal("1000.00"),
+        calculate_pl=False,
+    )
+    facade.update_game_session(
+        session_id=sess.id,
+        ending_balance=Decimal("1000.00"),
+        ending_redeemable=Decimal("1000.00"),
+        end_date=date.today() - timedelta(days=3),
+        end_time="22:00:00",
+        status="Closed",
+        recalculate_pl=False,
+    )
+
+    # Purchase snapshot is post-purchase balance.
+    facade.create_purchase(
+        user_id=user.id,
+        site_id=site.id,
+        amount=Decimal("3.00"),
+        sc_received=Decimal("300.00"),
+        starting_sc_balance=Decimal("1300.00"),
+        purchase_date=date.today() - timedelta(days=2),
+        purchase_time="10:00:00",
+    )
+
+    # $5.00 at sc_rate=0.01 => 500 SC redemption, after purchase and before cutoff.
+    facade.create_redemption(
+        user_id=user.id,
+        site_id=site.id,
+        amount=Decimal("5.00"),
+        redemption_date=date.today() - timedelta(days=2),
+        redemption_time="11:00:00",
+        apply_fifo=True,
+        receipt_date=None,
+    )
+
+    total, redeem = facade.compute_expected_balances(
+        user_id=user.id,
+        site_id=site.id,
+        session_date=date.today() - timedelta(days=2),
+        session_time="12:00:00",
+    )
+
+    assert total == Decimal("800.00")
+    assert redeem == Decimal("500.00")

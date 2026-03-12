@@ -615,41 +615,7 @@ class GameSessionService:
             ),
         )
 
-        # Apply redemptions (delta-based) first by walking time; purchases will overwrite total.
-        # This is safe because purchase.starting_sc_balance is authoritative post-purchase.
-        #
-        # Two-event delta model (Issue #148):
-        #   PENDING / PENDING_CANCEL: one debit event at redemption_date
-        #   CANCELED: debit at redemption_date + credit at canceled_at
-        for r in redemptions_sorted:
-            r_status = getattr(r, 'status', 'PENDING') or 'PENDING'
-            r_dt = to_utc_dt(
-                r.redemption_date,
-                r.redemption_time,
-                r.redemption_entry_time_zone or get_accounting_timezone_name(),
-            )
-            # Event 1 — debit (all statuses contribute the original debit)
-            if anchor_dt is None or r_dt > anchor_dt:
-                if r_dt < cutoff:
-                    amount = redemption_amount_sc(r.amount)
-                    expected_total -= amount
-                    expected_redeemable -= amount
-
-            # Event 2 — credit back at canceled_at (CANCELED only)
-            if r_status == 'CANCELED':
-                canceled_at_str = getattr(r, 'canceled_at', None)
-                if canceled_at_str:
-                    try:
-                        # canceled_at is stored as UTC ISO datetime string
-                        cancel_dt = datetime.strptime(canceled_at_str[:19], "%Y-%m-%d %H:%M:%S")
-                    except (ValueError, TypeError):
-                        cancel_dt = None
-                    if cancel_dt is not None:
-                        if anchor_dt is None or cancel_dt > anchor_dt:
-                            if cancel_dt < cutoff:
-                                amount = redemption_amount_sc(r.amount)
-                                expected_total += amount
-                                expected_redeemable += amount
+        timeline_events = []
 
         for p in purchases_sorted:
             p_dt = to_utc_dt(
@@ -672,12 +638,52 @@ class GameSessionService:
             if exclude_purchase_id is not None and p.id == exclude_purchase_id:
                 continue
 
-            expected_total = Decimal(str(p.starting_sc_balance))
-            # Use stored redeemable snapshot from purchase if available (Issue #130)
-            if hasattr(p, 'starting_redeemable_balance') and p.starting_redeemable_balance is not None:
-                expected_redeemable = Decimal(str(p.starting_redeemable_balance))
-            # Otherwise purchases do not increase expected redeemable; redeemable is earned via play-through
-            # captured in sessions/checkpoints.
+            timeline_events.append((p_dt, 0, int(p.id or 0), "purchase", p))
+
+        # Two-event delta model (Issue #148):
+        #   PENDING / PENDING_CANCEL: one debit event at redemption_date
+        #   CANCELED: debit at redemption_date + credit at canceled_at
+        for r in redemptions_sorted:
+            r_status = getattr(r, 'status', 'PENDING') or 'PENDING'
+            r_dt = to_utc_dt(
+                r.redemption_date,
+                r.redemption_time,
+                r.redemption_entry_time_zone or get_accounting_timezone_name(),
+            )
+            if (anchor_dt is None or r_dt > anchor_dt) and r_dt < cutoff:
+                timeline_events.append((r_dt, 1, int(r.id or 0), "redemption_debit", r))
+
+            if r_status == 'CANCELED':
+                canceled_at_str = getattr(r, 'canceled_at', None)
+                if canceled_at_str:
+                    try:
+                        # canceled_at is stored as UTC ISO datetime string
+                        cancel_dt = datetime.strptime(canceled_at_str[:19], "%Y-%m-%d %H:%M:%S")
+                    except (ValueError, TypeError):
+                        cancel_dt = None
+                    if (cancel_dt is not None
+                            and (anchor_dt is None or cancel_dt > anchor_dt)
+                            and cancel_dt < cutoff):
+                        timeline_events.append((cancel_dt, 2, int(r.id or 0), "redemption_credit", r))
+
+        timeline_events.sort(key=lambda event: (event[0], event[1], event[2]))
+
+        for _, _, _, event_type, record in timeline_events:
+            if event_type == "purchase":
+                expected_total = Decimal(str(record.starting_sc_balance))
+                # Use stored redeemable snapshot from purchase if available (Issue #130)
+                if hasattr(record, 'starting_redeemable_balance') and record.starting_redeemable_balance is not None:
+                    expected_redeemable = Decimal(str(record.starting_redeemable_balance))
+                # Otherwise purchases do not increase expected redeemable; redeemable is earned via play-through
+                # captured in sessions/checkpoints.
+            elif event_type == "redemption_debit":
+                amount = redemption_amount_sc(record.amount)
+                expected_total -= amount
+                expected_redeemable -= amount
+            elif event_type == "redemption_credit":
+                amount = redemption_amount_sc(record.amount)
+                expected_total += amount
+                expected_redeemable += amount
 
         expected_total = max(Decimal("0.00"), expected_total)
         expected_redeemable = max(Decimal("0.00"), expected_redeemable)
