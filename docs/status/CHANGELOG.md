@@ -12,6 +12,166 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-06
+type: release
+areas: [versioning, distribution, docs]
+issue: 171
+summary: "Prepare and publish Sezzions v1.0.0 release"
+details: >
+  Promoted the app version to `1.0.0` and published the first release-oriented
+  updater distribution contract.
+
+  Release packaging includes:
+  - version bump in application metadata,
+  - macOS arm64 artifact upload,
+  - `latest.json` release manifest with SHA-256 integrity metadata.
+
+  Outcome:
+  - In-app update checks now resolve against a published release artifact path
+    rather than returning 404 for missing manifest.
+
+  Validation:
+  - pytest -q tests/unit/test_update_service.py tests/unit/test_app_update_facade.py tests/ui/test_update_ui.py
+files_changed:
+  - __init__.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-12-05
+type: fix
+areas: [services, tests, docs]
+issue: 171
+summary: "Show actionable updater error when release manifest is missing (HTTP 404)"
+details: >
+  Improved update-check error handling for repositories without published releases.
+
+  Changes:
+  - `UpdateService` now converts manifest HTTP 404 responses into a clear message:
+    publish a GitHub Release with `latest.json` asset.
+  - Added unit regression test for the 404 error path.
+
+  Validation:
+  - pytest -q tests/unit/test_update_service.py tests/unit/test_app_update_facade.py tests/ui/test_update_ui.py
+files_changed:
+  - services/update_service.py
+  - tests/unit/test_update_service.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-12-04
+type: fix
+areas: [services, tests, dependencies, docs]
+issue: 171
+summary: "Harden updater HTTPS checks on macOS cert-store failures using certifi fallback"
+details: >
+  Fixed update-check failures caused by Python SSL trust-store issues
+  (`CERTIFICATE_VERIFY_FAILED`) on some macOS environments.
+
+  Changes:
+  - `UpdateService._default_fetcher` now detects certificate-verification errors
+    and retries the HTTPS request using a `certifi` CA bundle SSL context.
+  - If no trusted context can be established, updater returns a clear, actionable
+    certificate error without disabling TLS verification.
+  - Added unit tests for cert-failure retry path and no-cert-store fallback path.
+  - Added `certifi` to runtime dependencies.
+
+  Validation:
+  - pytest -q tests/unit/test_update_service.py tests/unit/test_app_update_facade.py
+  - pytest -q tests/ui/test_update_ui.py
+files_changed:
+  - services/update_service.py
+  - tests/unit/test_update_service.py
+  - requirements.txt
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-12-03
+type: feature
+areas: [ui, services, tests, docs]
+issue: 171
+summary: "Add desktop update UX: Help action, Settings controls, and periodic bell notifications"
+details: >
+  Completed the user-facing integration for the updater MVP by wiring update
+  checks into the desktop shell.
+
+  Implemented:
+  - Help menu action: `Check for Updates...`.
+  - Settings dialog additions:
+    - software version display,
+    - `Check for Updates Now` action,
+    - persisted update-check settings (`enabled`, interval hours).
+  - Main-window periodic update check flow using persisted settings and
+    `update_last_checked_at` gating.
+  - Notification bell integration:
+    - create `app_update_available` notification when new version is detected,
+    - route notification action `open_updates` to manual check flow,
+    - dismiss stale update notifications when app is up to date.
+
+  Test coverage:
+  - Added UI tests validating menu action presence, settings controls, and
+    update-notification creation path.
+
+  Validation:
+  - pytest -q tests/ui/test_update_ui.py tests/unit/test_update_service.py tests/unit/test_app_update_facade.py
+  - pytest -q tests/ui/test_issue_92_ui_smoke.py tests/ui/test_settings_undo_retention_ui.py tests/integration/test_notification_cooldown.py
+files_changed:
+  - ui/main_window.py
+  - ui/settings.py
+  - ui/settings_dialog.py
+  - ui/notification_widgets.py
+  - tests/ui/test_update_ui.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-12-02
+type: feature
+areas: [services, facade, tests, docs]
+issue: 171
+summary: "Add updater service MVP for GitHub-release manifest checks and verified downloads"
+details: >
+  Added MVP auto-update backend primitives to support release-based updates
+  without using git operations on end-user installs.
+
+  Implemented:
+  - `UpdateService` (`services/update_service.py`) with:
+    - manifest fetch/parse (`latest.json` contract),
+    - semantic version comparison,
+    - platform-specific asset selection,
+    - artifact download + SHA-256 verification.
+  - `AppFacade` wiring:
+    - `check_for_app_updates(...)`
+    - `download_app_update(...)`
+
+  MVP boundaries:
+  - Includes update discovery, download, and integrity verification.
+  - Does not yet implement installer handoff or automatic restart/install flow.
+
+  Test-first evidence:
+  - Added new unit suites covering:
+    - update available/up-to-date outcomes,
+    - invalid manifest handling,
+    - checksum pass/fail behavior,
+    - facade integration path for check + download.
+
+  Validation:
+  - pytest -q tests/unit/test_update_service.py tests/unit/test_app_update_facade.py
+files_changed:
+  - services/update_service.py
+  - app_facade.py
+  - tests/unit/test_update_service.py
+  - tests/unit/test_app_update_facade.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-01
 type: fix
 areas: [services, tests, docs]

@@ -512,6 +512,10 @@ class NotificationCenterDialog(QDialog):
                             pass
                     break
 
+        elif notification.action_key == 'open_updates':
+            if hasattr(main_window, '_manual_check_for_updates'):
+                main_window._manual_check_for_updates()
+
     def _select_redemption_row(self, redemptions_tab, redemption_id: int, _retried_all_time: bool = False):
         """Select and highlight a specific redemption row.
 

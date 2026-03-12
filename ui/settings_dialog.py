@@ -6,6 +6,7 @@ Provides a centralized Settings UI with sections:
 - Taxes (placeholder for Issue #29 tax withholding)
 """
 from PySide6 import QtWidgets, QtCore, QtGui
+import __init__ as sezzions_package
 
 
 class AccountingTimeZoneChangeDialog(QtWidgets.QDialog):
@@ -200,6 +201,31 @@ class SettingsDialog(QtWidgets.QDialog):
         
         # Spacer
         layout.addRow(QtWidgets.QLabel(""))
+
+        # --- App Update Notifications ---
+        update_section_label = QtWidgets.QLabel("<b>App Update Notifications</b>")
+        update_section_label.setObjectName("SectionLabel")
+        layout.addRow(update_section_label)
+
+        update_enabled_label = QtWidgets.QLabel("Check for updates automatically:")
+        update_enabled_label.setToolTip("Periodically check for newer Sezzions releases.")
+        update_enabled_label.setObjectName("FieldLabel")
+        update_enabled_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.update_check_enabled_checkbox = QtWidgets.QCheckBox()
+        self.update_check_enabled_checkbox.toggled.connect(self._on_update_auto_toggle)
+        layout.addRow(update_enabled_label, self.update_check_enabled_checkbox)
+
+        update_interval_label = QtWidgets.QLabel("Update check interval:")
+        update_interval_label.setToolTip("How often automatic update checks should run.")
+        update_interval_label.setObjectName("FieldLabel")
+        update_interval_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.update_check_interval_spin = QtWidgets.QSpinBox()
+        self.update_check_interval_spin.setMinimum(1)
+        self.update_check_interval_spin.setMaximum(168)
+        self.update_check_interval_spin.setSuffix(" hour(s)")
+        layout.addRow(update_interval_label, self.update_check_interval_spin)
+        layout.setAlignment(update_interval_label, QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        layout.setAlignment(self.update_check_interval_spin, QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter)
         
         # --- Backup Notifications ---
         backup_section_label = QtWidgets.QLabel("<b>Backup Notifications</b>")
@@ -252,6 +278,10 @@ class SettingsDialog(QtWidgets.QDialog):
     def _on_backup_overdue_toggle(self, checked):
         """Enable/disable overdue threshold spinbox based on checkbox state."""
         self.backup_overdue_threshold_spin.setEnabled(checked)
+
+    def _on_update_auto_toggle(self, checked):
+        """Enable/disable automatic update-check interval control."""
+        self.update_check_interval_spin.setEnabled(bool(checked))
     
     def _build_display_section(self):
         """Build Display settings section (theme selection)."""
@@ -285,6 +315,18 @@ class SettingsDialog(QtWidgets.QDialog):
         info_label.setWordWrap(True)
         info_label.setObjectName("HelperText")
         layout.addRow(info_label)
+
+        # Software version + update action
+        version_label = QtWidgets.QLabel("Software Version:")
+        version_label.setObjectName("FieldLabel")
+        version_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
+        self.software_version_value_label = QtWidgets.QLabel(getattr(sezzions_package, "__version__", "0.1.0"))
+        self.software_version_value_label.setObjectName("HelperText")
+        layout.addRow(version_label, self.software_version_value_label)
+
+        self.check_updates_now_button = QtWidgets.QPushButton("Check for Updates Now")
+        self.check_updates_now_button.clicked.connect(self._on_check_updates_clicked)
+        layout.addRow("", self.check_updates_now_button)
         
         return widget
 
@@ -505,6 +547,11 @@ class SettingsDialog(QtWidgets.QDialog):
         if parent and hasattr(parent, "switch_to_tab"):
             parent.switch_to_tab("Tools")
 
+    def _on_check_updates_clicked(self):
+        parent = self.parent()
+        if parent and hasattr(parent, "_manual_check_for_updates"):
+            parent._manual_check_for_updates()
+
     def _on_accounting_tz_change_clicked(self):
         current_tz = self.accounting_tz_combo.currentText().strip()
         dialog = AccountingTimeZoneChangeDialog(
@@ -540,6 +587,13 @@ class SettingsDialog(QtWidgets.QDialog):
         self.backup_notify_overdue_checkbox.setChecked(notify_overdue)
         self.backup_overdue_threshold_spin.setValue(overdue_threshold)
         self.backup_overdue_threshold_spin.setEnabled(notify_overdue)
+
+        # Update check settings
+        update_check_enabled = self.settings.settings.get("update_check_enabled", True)
+        update_check_interval_hours = int(self.settings.settings.get("update_check_interval_hours", 24) or 24)
+        self.update_check_enabled_checkbox.setChecked(update_check_enabled)
+        self.update_check_interval_spin.setValue(max(1, update_check_interval_hours))
+        self.update_check_interval_spin.setEnabled(update_check_enabled)
         
         # Theme selection
         current_theme = self.settings.settings.get("theme", "Light")
@@ -609,6 +663,10 @@ class SettingsDialog(QtWidgets.QDialog):
         backup_config['notify_when_overdue'] = self.backup_notify_overdue_checkbox.isChecked()
         backup_config['overdue_threshold_days'] = self.backup_overdue_threshold_spin.value()
         self.settings.set_automatic_backup_config(backup_config)
+
+        # Write update check settings
+        self.settings.settings["update_check_enabled"] = self.update_check_enabled_checkbox.isChecked()
+        self.settings.settings["update_check_interval_hours"] = self.update_check_interval_spin.value()
         
         # Write display settings
         selected_theme = self.theme_combo.currentText()

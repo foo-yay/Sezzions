@@ -57,7 +57,9 @@ from services.repair_mode_service import RepairModeService
 from services.timestamp_service import TimestampService
 from services.audit_service import AuditService
 from services.undo_redo_service import UndoRedoService
+from services.update_service import UpdateService, UpdateAsset, DEFAULT_UPDATE_MANIFEST_URL
 from repositories.notification_repository import NotificationRepository
+import __init__ as sezzions_package
 
 from models.user import User
 from models.site import Site
@@ -190,6 +192,12 @@ class AppFacade:
             self.notification_service,
             None,  # Will be set from MainWindow
             self.db
+        )
+
+        app_version = getattr(sezzions_package, "__version__", "0.1.0")
+        self.update_service = UpdateService(
+            current_version=app_version,
+            manifest_url=DEFAULT_UPDATE_MANIFEST_URL,
         )
         
         # Repair Mode service (Issue #55)
@@ -2316,6 +2324,29 @@ class AppFacade:
     def get_data_summary(self) -> Dict[str, int]:
         """Get counts of all records in system."""
         return self.validation_service.get_data_summary()
+
+    # ==========================================================================
+    # App Update Checks / Downloads (Issue #171)
+    # ==========================================================================
+
+    def check_for_app_updates(self, manifest_url: Optional[str] = None) -> Dict[str, Any]:
+        if manifest_url:
+            self.update_service.manifest_url = manifest_url
+        return asdict(self.update_service.check_for_updates())
+
+    def download_app_update(
+        self,
+        asset: Dict[str, Any],
+        destination_dir: str,
+    ) -> str:
+        update_asset = UpdateAsset(
+            platform=str(asset["platform"]),
+            url=str(asset["url"]),
+            sha256=str(asset["sha256"]),
+            name=asset.get("name"),
+            size=int(asset["size"]) if asset.get("size") is not None else None,
+        )
+        return self.update_service.download_and_verify(update_asset, destination_dir)
     
     # ==========================================================================
     # Unrealized Positions (Open Positions)
