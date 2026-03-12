@@ -182,6 +182,7 @@ Update infrastructure is exposed to users through three desktop entry points:
 - **Help menu**:
   - Adds `Help -> Check for Updates...` action.
   - Invokes a manual update check against the configured manifest URL.
+  - When an update is found via manual check, dialog includes `Update Now` option.
 
 - **Settings (gear) dialog**:
   - Displays current software version in the Display section.
@@ -194,6 +195,16 @@ Update infrastructure is exposed to users through three desktop entry points:
   - Periodic checks can create an `app_update_available` notification when a newer version is detected.
   - Notification action key `open_updates` routes to the same manual update-check flow.
   - Existing stale update notifications are dismissed automatically when no update is available.
+
+`Update Now` install semantics:
+- Always downloads and verifies the update asset first.
+- If app is running from packaged macOS `.app` and asset is zip containing `.app` bundle:
+  - updater stages extraction,
+  - spawns background apply script,
+  - quits app,
+  - replaces app bundle and relaunches automatically.
+- If running from source/dev mode (`python3 sezzions.py`) or asset type is not auto-installable:
+  - updater falls back to manual install guidance and opens download folder.
 
 Update-check scheduling semantics:
 - Startup no longer forces an immediate network check.

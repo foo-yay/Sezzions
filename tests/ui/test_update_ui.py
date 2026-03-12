@@ -115,3 +115,47 @@ def test_up_to_date_check_clears_existing_update_notification(tmp_path):
     window.close()
     facade.db.close()
     app.processEvents()
+
+
+def test_manual_update_check_routes_to_update_now_dialog(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    facade = AppFacade(str(tmp_path / "ui_updates_dialog.db"))
+    window = MainWindow(facade)
+
+    captured = {}
+
+    def _capture_dialog(result):
+        captured["result"] = result
+
+    monkeypatch.setattr(window, "_show_update_available_dialog", _capture_dialog)
+
+    facade.check_for_app_updates = lambda manifest_url=None: {
+        "current_version": "1.0.0",
+        "latest_version": "1.0.1",
+        "update_available": True,
+        "asset": {"platform": "macos-arm64", "url": "https://example.com/update.zip", "sha256": "abc"},
+        "notes_url": "https://example.com/notes",
+        "published_at": "2026-03-12T00:00:00Z",
+        "error": None,
+    }
+
+    window._perform_update_check(show_messages=True)
+
+    assert "result" in captured
+    assert captured["result"]["latest_version"] == "1.0.1"
+
+    window.close()
+    facade.db.close()
+    app.processEvents()
+
+
+def test_running_app_bundle_path_none_when_running_from_source(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    facade = AppFacade(str(tmp_path / "ui_updates_bundle_detect.db"))
+    window = MainWindow(facade)
+
+    assert window._running_app_bundle_path() is None
+
+    window.close()
+    facade.db.close()
+    app.processEvents()

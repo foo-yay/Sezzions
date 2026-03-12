@@ -12,6 +12,32 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-10
+type: feature
+areas: [ui, updater, tests, docs]
+issue: null
+summary: "Add Update Now action with auto-install for packaged macOS app"
+details: >
+  Added `Update Now` flow to manual update checks.
+
+  Behavior:
+  - Manual update check now prompts with `Update Now` when a newer version exists.
+  - Update asset is downloaded and checksum-verified before install logic.
+  - If running from packaged `.app` and update asset is zip containing app bundle,
+    Sezzions can auto-apply update by quitting, replacing app bundle, and relaunching.
+  - If running from source/dev mode, updater falls back to manual install guidance
+    and opens the downloaded file location.
+
+  Validation:
+  - pytest -q tests/ui/test_update_ui.py tests/unit/test_app_update_facade.py tests/unit/test_update_service.py
+files_changed:
+  - ui/main_window.py
+  - tests/ui/test_update_ui.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-09
 type: fix
 areas: [ui, facade, tests]
