@@ -6,6 +6,29 @@ Note: These scripts live in `tools/`. The in-app Tools functionality is implemen
 
 ## Supported Utilities
 
+### Release Update Automation (Issue #174)
+```bash
+python3 tools/release_update.py --version 1.0.1
+```
+
+Builds and publishes updater assets with a single command:
+- builds macOS arm64 app artifact via PyInstaller,
+- zips the app bundle,
+- generates `latest.json` with SHA-256,
+- uploads both files to `foo-yay/sezzions-updates` release `v<version>`.
+
+Useful options:
+```bash
+# Preview commands without executing
+python3 tools/release_update.py --version 1.0.1 --dry-run
+
+# Reuse existing asset zip instead of building
+python3 tools/release_update.py --version 1.0.1 --asset-path /path/to/sezzions-macos-arm64.zip
+
+# Also create source release tag in Sezzions repo if missing
+python3 tools/release_update.py --version 1.0.1 --publish-source-release
+```
+
 ### Schema Validation
 ```bash
 python3 tools/validate_schema.py [path/to/db]

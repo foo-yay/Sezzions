@@ -98,6 +98,21 @@ Default manifest host:
 - This allows update checks/downloads for end users while the primary `Sezzions` source
   repository remains private.
 
+Release automation command (Issue #174):
+- Sezzions includes `tools/release_update.py` for one-command updater publishing.
+- Canonical usage:
+  - `python3 tools/release_update.py --version X.Y.Z`
+- Default behavior:
+  - Build macOS arm64 app bundle via PyInstaller,
+  - zip artifact as `sezzions-macos-arm64.zip`,
+  - generate `latest.json` with SHA-256 and release URLs,
+  - create/update release `vX.Y.Z` in `foo-yay/sezzions-updates`,
+  - upload zip + manifest with `--clobber` semantics.
+- Optional flags:
+  - `--dry-run` (prints commands only),
+  - `--asset-path` (reuse prebuilt zip),
+  - `--publish-source-release` (creates source release tag when missing).
+
 MVP scope implemented:
 - `services/update_service.py` provides update-check + download/verify logic.
 - `AppFacade` exposes:

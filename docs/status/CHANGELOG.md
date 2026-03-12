@@ -12,6 +12,39 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-08
+type: feature
+areas: [tools, tests, docs, release]
+issue: 174
+summary: "Add one-command release automation tool for updater publishing"
+details: >
+  Added `tools/release_update.py` to make updater publishing a single-command flow.
+
+  Implemented:
+  - semantic version validation (`X.Y.Z`),
+  - optional `v` prefix normalization,
+  - automated build path for macOS arm64 via PyInstaller,
+  - app-bundle zip packaging,
+  - SHA-256 generation,
+  - `latest.json` manifest generation,
+  - release create/upload automation for `foo-yay/sezzions-updates`,
+  - optional source release creation in `foo-yay/Sezzions`,
+  - `--dry-run` and `--asset-path` support.
+
+  Added unit tests for release helper semantics and updated docs.
+
+  Validation:
+  - pytest -q tests/unit/test_release_update_tool.py
+files_changed:
+  - tools/release_update.py
+  - tests/unit/test_release_update_tool.py
+  - tools/README.md
+  - .gitignore
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-07
 type: feature
 areas: [distribution, services, docs]

@@ -43,3 +43,9 @@ settings.json
 
 # Temporary files
 *.txt
+
+# Release/build artifacts
+build/
+dist/
+release/
+*.spec
