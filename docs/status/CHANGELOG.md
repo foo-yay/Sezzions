@@ -12,6 +12,24 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-23
+type: release
+areas: [release, versioning, updater]
+issue: null
+summary: "Release v1.0.4 after updater channel consolidation to Sezzions"
+details: >
+  Bumped application version to `1.0.4` after merging updater/release channel
+  consolidation so default manifests and release automation target
+  `foo-yay/Sezzions`.
+
+  Validation:
+  - pytest -q
+files_changed:
+  - __init__.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-22
 type: fix
 areas: [updater, release, docs, ci, tests]
