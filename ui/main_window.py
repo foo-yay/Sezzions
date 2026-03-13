@@ -1150,6 +1150,22 @@ class MainWindow(QtWidgets.QMainWindow):
         with log_path.open("a", encoding="utf-8") as fh:
             fh.write(details.rstrip() + "\n")
 
+    def _ensure_macos_bundle_launch_permissions(self, app_bundle: Path) -> None:
+        if sys.platform != "darwin":
+            return
+
+        macos_dir = app_bundle / "Contents" / "MacOS"
+        if not macos_dir.exists() or not macos_dir.is_dir():
+            return
+
+        for binary_path in macos_dir.iterdir():
+            if not binary_path.is_file():
+                continue
+            current_mode = binary_path.stat().st_mode
+            executable_mode = current_mode | 0o111
+            if executable_mode != current_mode:
+                binary_path.chmod(executable_mode)
+
     def _try_auto_install_downloaded_update(self, downloaded_file: Path) -> bool:
         running_app_bundle = self._running_app_bundle_path()
         if running_app_bundle is None:
@@ -1205,6 +1221,8 @@ class MainWindow(QtWidgets.QMainWindow):
             if candidate is None:
                 candidate = app_candidates[0]
 
+            self._ensure_macos_bundle_launch_permissions(candidate)
+
             script_path = extract_dir / "apply_update.sh"
             log_path = self._update_install_log_path()
             script_path.write_text(
@@ -1222,6 +1240,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 "echo \"[Sezzions Updater] Installing update to $TARGET_APP\"\n"
                 "rm -rf \"$TMP_APP\"\n"
                 "ditto \"$NEW_APP\" \"$TMP_APP\"\n"
+                "if [ -d \"$TMP_APP/Contents/MacOS\" ]; then\n"
+                "  chmod -R u+rwx,go+rx \"$TMP_APP/Contents/MacOS\" >/dev/null 2>&1 || true\n"
+                "fi\n"
                 "xattr -dr com.apple.quarantine \"$TMP_APP\" >/dev/null 2>&1 || true\n"
                 "rm -rf \"$TARGET_APP\"\n"
                 "mv \"$TMP_APP\" \"$TARGET_APP\"\n"

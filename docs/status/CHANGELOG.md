@@ -9,6 +9,37 @@ Rules:
 
 ---
 
+## 2026-03-13
+
+```yaml
+id: 2026-03-13-01
+type: fix
+areas: [updater, macos, tests, versioning]
+issue: null
+summary: "Repair macOS app-bundle launch permissions during auto-update and release v1.0.11"
+details: >
+  Fixed a macOS auto-update failure where the updated app bundle could not be
+  opened because the binary under `Contents/MacOS/` lost executable permissions,
+  causing relaunch to fail with launchd spawn errors.
+
+  Implemented:
+  - Updater now enforces execute permissions on extracted app binaries before apply.
+  - Apply script now also repairs `Contents/MacOS` permissions on the staged app
+    before swapping into the target path.
+  - Added regression assertions to ensure the script includes permission repair
+    and extracted candidate binaries are executable.
+  - Bumped application version to `1.0.11`.
+
+  Validation:
+  - /usr/local/bin/python3 -m pytest -q tests/ui/test_update_ui.py -k "translocated or script_clears_quarantine or ditto_extraction"
+files_changed:
+  - ui/main_window.py
+  - tests/ui/test_update_ui.py
+  - __init__.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
 ## 2026-03-12
 
 ```yaml

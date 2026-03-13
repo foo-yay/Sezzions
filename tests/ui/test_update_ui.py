@@ -380,6 +380,7 @@ def test_auto_install_script_clears_quarantine_and_retries_open(tmp_path, monkey
 
     assert "xattr -dr com.apple.quarantine" in script_content
     assert "TMP_APP=\"${TARGET_APP}.updating\"" in script_content
+    assert "chmod -R u+rwx,go+rx \"$TMP_APP/Contents/MacOS\"" in script_content
     assert "open -n \"$TARGET_APP\"" in script_content
 
     window.close()
@@ -436,6 +437,8 @@ def test_auto_install_uses_ditto_extraction_on_macos(tmp_path, monkeypatch):
     assert window._try_auto_install_downloaded_update(downloaded_zip) is True
     assert run_calls["args"][:3] == ["ditto", "-x", "-k"]
     assert "args" in popen_calls
+    extracted_candidate = Path(popen_calls["args"][2])
+    assert extracted_candidate.stat().st_mode & 0o111
 
     window.close()
     facade.db.close()
