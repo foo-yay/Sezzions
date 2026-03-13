@@ -12,6 +12,24 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-21
+type: release
+areas: [release, versioning]
+issue: 182
+summary: "Release v1.0.3 with local working-directory settings persistence"
+details: >
+  Bumped application version to `1.0.3` after merging Issue #182 changes.
+  This release includes local `settings.json` default persistence behavior
+  (colocated with working directory) and associated tests/docs updates.
+
+  Validation:
+  - pytest -q
+files_changed:
+  - __init__.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-20
 type: fix
 areas: [settings, startup, tests, docs]
