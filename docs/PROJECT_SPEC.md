@@ -242,6 +242,7 @@ Update infrastructure is exposed to users through three desktop entry points:
     - normal packaged runtime: existing app bundle path,
     - App Translocation runtime: `/Applications/<App>.app` with fallback to `~/Applications/<App>.app`,
   - spawns background apply script that:
+    - extracts update archive using metadata-safe tooling on macOS (`ditto -x -k`),
     - copies to a temporary target path and swaps atomically,
     - removes `com.apple.quarantine` attribute from staged app bundle (best-effort),
     - attempts relaunch via `open`, then retries with `open -n` if needed,

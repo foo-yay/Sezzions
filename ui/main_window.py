@@ -1170,8 +1170,27 @@ class MainWindow(QtWidgets.QMainWindow):
                 shutil.rmtree(extract_dir)
             extract_dir.mkdir(parents=True, exist_ok=True)
 
-            with zipfile.ZipFile(downloaded_file, "r") as archive:
-                archive.extractall(extract_dir)
+            if sys.platform == "darwin" and shutil.which("ditto"):
+                extract_result = subprocess.run(
+                    ["ditto", "-x", "-k", str(downloaded_file), str(extract_dir)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if extract_result.returncode != 0:
+                    self._record_update_install_error(
+                        "Failed to extract update archive.",
+                        details=(
+                            "[Sezzions Updater] ditto extraction failed\n"
+                            f"exit_code={extract_result.returncode}\n"
+                            f"stdout={extract_result.stdout}\n"
+                            f"stderr={extract_result.stderr}"
+                        ),
+                    )
+                    return False
+            else:
+                with zipfile.ZipFile(downloaded_file, "r") as archive:
+                    archive.extractall(extract_dir)
 
             app_candidates = sorted(extract_dir.rglob("*.app"))
             if not app_candidates:

@@ -12,6 +12,32 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-31
+type: fix
+areas: [updater, macos, tests, versioning]
+issue: null
+summary: "Use metadata-safe archive extraction for macOS auto-update and release v1.0.10"
+details: >
+  Fixed macOS auto-update installs producing non-launchable app bundles by
+  switching updater extraction from Python `zipfile` to `ditto -x -k` on macOS,
+  which preserves required app bundle metadata and executable permissions.
+
+  Implemented:
+  - Auto-updater extraction now uses `ditto` on macOS with fallback to `zipfile`
+    on non-macOS environments.
+  - Added UI regression test asserting `ditto` extraction path is used.
+  - Bumped application version to `1.0.10`.
+
+  Validation:
+  - QT_QPA_PLATFORM=offscreen pytest -q tests/ui/test_update_ui.py -k "translocated or script_clears_quarantine or ditto_extraction"
+files_changed:
+  - ui/main_window.py
+  - tests/ui/test_update_ui.py
+  - __init__.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-30
 type: fix
 areas: [updater, ui, macos, tests, versioning]

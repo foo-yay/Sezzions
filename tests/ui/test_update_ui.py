@@ -385,3 +385,58 @@ def test_auto_install_script_clears_quarantine_and_retries_open(tmp_path, monkey
     window.close()
     facade.db.close()
     app.processEvents()
+
+
+def test_auto_install_uses_ditto_extraction_on_macos(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    facade = AppFacade(str(tmp_path / "ui_updates_ditto_extract.db"))
+    window = MainWindow(facade)
+
+    downloaded_zip = tmp_path / "sezzions-macos-arm64.zip"
+    downloaded_zip.write_bytes(b"placeholder")
+
+    app_bundle = tmp_path / "sezzions-macos-arm64.app"
+    monkeypatch.setattr(window, "_running_app_bundle_path", lambda: app_bundle)
+    monkeypatch.setattr(window, "_update_install_log_path", lambda: tmp_path / "update-installer.log")
+    monkeypatch.setattr("ui.main_window.sys.platform", "darwin")
+    monkeypatch.setattr("ui.main_window.shutil.which", lambda cmd: "/usr/bin/ditto" if cmd == "ditto" else None)
+    monkeypatch.setattr(
+        "ui.main_window.os.access",
+        lambda p, mode: str(p) == str(app_bundle.parent),
+    )
+
+    run_calls = {}
+
+    class _RunResult:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def _fake_run(args, **kwargs):
+        run_calls["args"] = args
+        extract_dir = Path(args[-1])
+        extracted_app = extract_dir / "sezzions-macos-arm64.app" / "Contents" / "MacOS"
+        extracted_app.mkdir(parents=True, exist_ok=True)
+        (extracted_app / "sezzions").write_text("bin", encoding="utf-8")
+        return _RunResult()
+
+    monkeypatch.setattr("ui.main_window.subprocess.run", _fake_run)
+
+    popen_calls = {}
+
+    class _DummyProcess:
+        pass
+
+    def _fake_popen(args, **kwargs):
+        popen_calls["args"] = args
+        return _DummyProcess()
+
+    monkeypatch.setattr("ui.main_window.subprocess.Popen", _fake_popen)
+
+    assert window._try_auto_install_downloaded_update(downloaded_zip) is True
+    assert run_calls["args"][:3] == ["ditto", "-x", "-k"]
+    assert "args" in popen_calls
+
+    window.close()
+    facade.db.close()
+    app.processEvents()
