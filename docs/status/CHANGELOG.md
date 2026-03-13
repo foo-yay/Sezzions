@@ -12,6 +12,24 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-29
+type: release
+areas: [release, versioning, updater]
+issue: null
+summary: "Release v1.0.8 with packaged theme resource bundling fix"
+details: >
+  Bumped application version to `1.0.8` and published cross-platform updater
+  assets so packaged runtimes include `resources/theme.qss` and related SVG
+  assets, restoring full UI styling in installed binaries.
+
+  Validation:
+  - pytest -q tests/unit/test_release_update_tool.py
+files_changed:
+  - __init__.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-28
 type: fix
 areas: [ui, themes, packaging, release, ci, tests]
