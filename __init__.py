@@ -1,3 +1,3 @@
 """Sezzions - Casino Accounting Application (OOP Architecture)."""
 
-__version__ = "1.0.12"
+__version__ = "1.0.13"

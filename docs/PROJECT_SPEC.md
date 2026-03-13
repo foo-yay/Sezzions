@@ -117,6 +117,7 @@ Release automation command (Issue #174):
 - Default behavior:
   - Build macOS arm64 app bundle via PyInstaller,
   - set macOS bundle display metadata (`CFBundleName` and `CFBundleDisplayName`) to `Sezzions`,
+  - re-sign macOS bundle after metadata edits to keep signature valid,
   - zip artifact as `sezzions-macos-arm64.zip`,
   - generate `latest.json` with SHA-256 and release URLs,
   - create/update release `vX.Y.Z` in `foo-yay/sezzions-updates`,

@@ -12,6 +12,36 @@ Rules:
 ## 2026-03-13
 
 ```yaml
+id: 2026-03-13-03
+type: fix
+areas: [release, macos, packaging, signing, tests, versioning]
+issue: null
+summary: "Fix macOS damaged-app gatekeeper failures after menu-name metadata update and release v1.0.13"
+details: >
+  Fixed a regression where macOS app bundles were reported as damaged because
+  `Info.plist` metadata edits were applied after bundle signing, invalidating
+  the signature.
+
+  Implemented:
+  - Re-sign macOS app bundle (`codesign --force --deep --sign -`) after
+    setting `CFBundleName`/`CFBundleDisplayName`.
+  - Applied the same re-sign step in local release tooling and GitHub Actions
+    release workflow.
+  - Updated release tool unit test expectations.
+  - Bumped application version to `1.0.13`.
+
+  Validation:
+  - /usr/local/bin/python3 -m pytest -q tests/unit/test_release_update_tool.py
+files_changed:
+  - tools/release_update.py
+  - .github/workflows/release-binaries.yml
+  - tests/unit/test_release_update_tool.py
+  - __init__.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-13-02
 type: fix
 areas: [release, macos, packaging, tests, versioning]

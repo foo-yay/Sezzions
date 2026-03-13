@@ -287,6 +287,17 @@ def build_macos_artifact(binary_basename: str, app_entrypoint: str, dry_run: boo
         ],
         dry_run=dry_run,
     )
+    run_command(
+        [
+            "codesign",
+            "--force",
+            "--deep",
+            "--sign",
+            "-",
+            str(Path("dist") / f"{binary_basename}.app"),
+        ],
+        dry_run=dry_run,
+    )
 
     return Path("dist") / f"{binary_basename}.app"
 
