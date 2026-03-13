@@ -12,6 +12,32 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-26
+type: fix
+areas: [settings, notifications, ui, startup, tests]
+issue: null
+summary: "Unify settings persistence path to prevent split-state config saves"
+details: >
+  Fixed inconsistent settings persistence where some components wrote to
+  working-directory `settings.json` while others wrote to a different path,
+  causing theme and related preferences to appear non-persistent.
+
+  Implemented:
+  - `ui/settings.py` now resolves defaults via `services.db_location_service.settings_file_path()`.
+  - `app_facade.py` notification repository now uses the same canonical settings path.
+  - Updated unit tests and spec documentation to reflect the canonical path behavior.
+
+  Validation:
+  - pytest -q tests/unit/test_settings_paths.py tests/unit/test_update_service.py tests/unit/test_release_update_tool.py
+files_changed:
+  - ui/settings.py
+  - app_facade.py
+  - tests/unit/test_settings_paths.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-25
 type: release
 areas: [release, versioning, updater]

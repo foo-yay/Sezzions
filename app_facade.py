@@ -59,6 +59,7 @@ from services.timestamp_service import TimestampService
 from services.audit_service import AuditService
 from services.undo_redo_service import UndoRedoService
 from services.update_service import UpdateService, UpdateAsset, DEFAULT_UPDATE_MANIFEST_URL
+from services.db_location_service import settings_file_path
 from repositories.notification_repository import NotificationRepository
 import __init__ as sezzions_package
 
@@ -187,7 +188,7 @@ class AppFacade:
         self.csv_export_service = CSVExportService(self.db)
         
         # Notification services
-        notification_settings_path = str(Path(self.db_path).parent / "settings.json")
+        notification_settings_path = str(settings_file_path())
         self.notification_repo = NotificationRepository(settings_file=notification_settings_path)
         self.notification_service = NotificationService(self.notification_repo)
         self.notification_rules_service = NotificationRulesService(

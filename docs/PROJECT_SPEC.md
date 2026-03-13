@@ -1287,8 +1287,10 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 
 **Settings Persistence Architecture:**
 - Settings stored in `settings.json` with nested structure (e.g., `automatic_backup` object)
-- Settings default path is local to current working directory: `./settings.json`
-- This keeps DB/settings discoverable and colocated for local-run workflows.
+- Settings default path is runtime-resolved via canonical config location:
+  - source/dev: project-root `settings.json`
+  - packaged runtime: `~/Library/Application Support/Sezzions/settings.json`
+- Components that persist settings must share this same path to avoid split state.
 - Each `Settings()` instantiation loads fresh from disk—no singleton pattern currently
 - **Critical Pattern**: Components that partially update settings.json must reload from disk first
   - Example: `MainWindow.closeEvent()` reloads settings before saving window geometry to avoid overwriting other components' changes (e.g., ToolsTab's automatic_backup config)

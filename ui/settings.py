@@ -7,11 +7,12 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Dict
+from services.db_location_service import settings_file_path
 
 
 def default_settings_file() -> str:
-    """Return default settings file path in current working directory."""
-    return "settings.json"
+    """Return canonical settings file path for the current runtime."""
+    return str(settings_file_path())
 
 
 class Settings:
