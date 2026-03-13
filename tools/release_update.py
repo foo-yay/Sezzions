@@ -16,6 +16,7 @@ DEFAULT_SOURCE_REPO = "foo-yay/Sezzions"
 DEFAULT_UPDATES_REPO = "foo-yay/sezzions-updates"
 DEFAULT_PLATFORM_KEY = "macos-arm64"
 DEFAULT_BINARY_BASENAME = "sezzions-macos-arm64"
+DEFAULT_MACOS_DISPLAY_NAME = "Sezzions"
 DEFAULT_VERSION_FILE = "__init__.py"
 
 
@@ -263,6 +264,26 @@ def build_macos_artifact(binary_basename: str, app_entrypoint: str, dry_run: boo
             "--add-data",
             "resources:resources",
             app_entrypoint,
+        ],
+        dry_run=dry_run,
+    )
+
+    info_plist_path = Path("dist") / f"{binary_basename}.app" / "Contents" / "Info.plist"
+    run_command(
+        [
+            "/usr/libexec/PlistBuddy",
+            "-c",
+            f"Set :CFBundleName {DEFAULT_MACOS_DISPLAY_NAME}",
+            str(info_plist_path),
+        ],
+        dry_run=dry_run,
+    )
+    run_command(
+        [
+            "/usr/libexec/PlistBuddy",
+            "-c",
+            f"Set :CFBundleDisplayName {DEFAULT_MACOS_DISPLAY_NAME}",
+            str(info_plist_path),
         ],
         dry_run=dry_run,
     )

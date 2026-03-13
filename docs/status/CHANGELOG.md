@@ -12,6 +12,35 @@ Rules:
 ## 2026-03-13
 
 ```yaml
+id: 2026-03-13-02
+type: fix
+areas: [release, macos, packaging, tests, versioning]
+issue: null
+summary: "Set macOS app menu-bar name to Sezzions and release v1.0.12"
+details: >
+  Fixed packaged macOS runtime branding where the system menu bar showed the
+  binary build name (`sezzions-macos-arm64`) instead of the product name.
+
+  Implemented:
+  - Release packaging now sets `CFBundleName=Sezzions` and
+    `CFBundleDisplayName=Sezzions` in the macOS app bundle Info.plist.
+  - Applied the same behavior in both local release tooling and GitHub Actions
+    release workflow.
+  - Updated unit tests for release build command expectations.
+  - Bumped application version to `1.0.12`.
+
+  Validation:
+  - /usr/local/bin/python3 -m pytest -q tests/unit/test_release_update_tool.py
+files_changed:
+  - tools/release_update.py
+  - tests/unit/test_release_update_tool.py
+  - .github/workflows/release-binaries.yml
+  - __init__.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-13-01
 type: fix
 areas: [updater, macos, tests, versioning]

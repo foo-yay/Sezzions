@@ -233,7 +233,10 @@ def test_build_macos_artifact_includes_resources_data(monkeypatch: pytest.Monkey
     )
 
     assert output.as_posix().endswith("dist/sezzions-macos-arm64.app")
-    assert len(commands) == 1
+    assert len(commands) == 3
     assert "--add-data" in commands[0]
     add_data_index = commands[0].index("--add-data")
     assert commands[0][add_data_index + 1] == "resources:resources"
+    assert commands[1][0] == "/usr/libexec/PlistBuddy"
+    assert commands[1][2] == "Set :CFBundleName Sezzions"
+    assert commands[2][2] == "Set :CFBundleDisplayName Sezzions"

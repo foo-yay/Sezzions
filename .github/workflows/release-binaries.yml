@@ -39,6 +39,8 @@ jobs:
       - name: Build macOS app bundle
         run: |
           python -m PyInstaller --noconfirm --clean --name sezzions-macos-arm64 --windowed --add-data "resources:resources" sezzions.py
+          /usr/libexec/PlistBuddy -c "Set :CFBundleName Sezzions" dist/sezzions-macos-arm64.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Sezzions" dist/sezzions-macos-arm64.app/Contents/Info.plist
 
       - name: Zip macOS bundle
         run: |

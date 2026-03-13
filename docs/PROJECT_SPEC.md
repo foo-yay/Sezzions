@@ -116,6 +116,7 @@ Release automation command (Issue #174):
   - `python3 tools/release_update.py --version X.Y.Z`
 - Default behavior:
   - Build macOS arm64 app bundle via PyInstaller,
+  - set macOS bundle display metadata (`CFBundleName` and `CFBundleDisplayName`) to `Sezzions`,
   - zip artifact as `sezzions-macos-arm64.zip`,
   - generate `latest.json` with SHA-256 and release URLs,
   - create/update release `vX.Y.Z` in `foo-yay/sezzions-updates`,
