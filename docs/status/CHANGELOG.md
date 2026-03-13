@@ -12,6 +12,32 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-20
+type: fix
+areas: [settings, startup, tests, docs]
+issue: 182
+summary: "Consolidate default settings path to local working-directory settings.json"
+details: >
+  Updated default settings storage to always use local `settings.json` in the
+  current working directory, matching DB locality and local-run expectations.
+
+  Implemented:
+  - `ui/settings.py` now resolves default settings path to local
+    working-directory `settings.json` for all runtimes.
+  - `Settings.save()` now ensures the parent directory exists before writing.
+  - Added/updated unit tests to validate local default path behavior and
+    default-path save path creation.
+
+  Validation:
+  - /usr/local/bin/python3 -m pytest -q tests/unit/test_settings_paths.py tests/unit/test_backup_notification_settings.py
+files_changed:
+  - ui/settings.py
+  - tests/unit/test_settings_paths.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-19
 type: fix
 areas: [updater, ui, tests, docs]
