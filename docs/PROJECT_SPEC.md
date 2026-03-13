@@ -238,6 +238,9 @@ Update infrastructure is exposed to users through three desktop entry points:
   - dialog explains that development builds should sync via git or manual release install.
 - If app is running from packaged macOS `.app` and asset is zip containing `.app` bundle:
   - updater stages extraction,
+  - resolves install destination:
+    - normal packaged runtime: existing app bundle path,
+    - App Translocation runtime: `/Applications/<App>.app` with fallback to `~/Applications/<App>.app`,
   - spawns background apply script,
   - quits app,
   - replaces app bundle and relaunches automatically.

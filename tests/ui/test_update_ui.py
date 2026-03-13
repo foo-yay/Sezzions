@@ -1,4 +1,6 @@
 from PySide6.QtWidgets import QApplication
+from pathlib import Path
+import zipfile
 
 import __init__ as sezzions_package
 from app_facade import AppFacade
@@ -252,6 +254,92 @@ def test_record_update_install_error_writes_details_to_log(tmp_path, monkeypatch
     assert window._last_update_install_error == "test failure"
     assert log_file.exists()
     assert "trace line 1" in log_file.read_text(encoding="utf-8")
+
+    window.close()
+    facade.db.close()
+    app.processEvents()
+
+
+def test_auto_install_uses_system_applications_when_translocated(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    facade = AppFacade(str(tmp_path / "ui_updates_translocated_system.db"))
+    window = MainWindow(facade)
+
+    downloaded_zip = tmp_path / "sezzions-macos-arm64.zip"
+    with zipfile.ZipFile(downloaded_zip, "w") as archive:
+        archive.writestr("sezzions-macos-arm64.app/Contents/MacOS/sezzions", "bin")
+
+    translocated_bundle = Path(
+        "/private/var/folders/test/AppTranslocation/random/d/sezzions-macos-arm64.app"
+    )
+    monkeypatch.setattr(window, "_running_app_bundle_path", lambda: translocated_bundle)
+
+    log_file = tmp_path / "update-installer.log"
+    monkeypatch.setattr(window, "_update_install_log_path", lambda: log_file)
+
+    popen_calls = {}
+
+    class _DummyProcess:
+        pass
+
+    def _fake_popen(args, **kwargs):
+        popen_calls["args"] = args
+        return _DummyProcess()
+
+    monkeypatch.setattr("ui.main_window.subprocess.Popen", _fake_popen)
+    monkeypatch.setattr(
+        "ui.main_window.os.access",
+        lambda p, mode: str(p) == "/Applications",
+    )
+
+    assert window._try_auto_install_downloaded_update(downloaded_zip) is True
+    assert "args" in popen_calls
+    assert popen_calls["args"][3] == "/Applications/sezzions-macos-arm64.app"
+
+    window.close()
+    facade.db.close()
+    app.processEvents()
+
+
+def test_auto_install_falls_back_to_user_applications_when_translocated(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    facade = AppFacade(str(tmp_path / "ui_updates_translocated_user.db"))
+    window = MainWindow(facade)
+
+    downloaded_zip = tmp_path / "sezzions-macos-arm64.zip"
+    with zipfile.ZipFile(downloaded_zip, "w") as archive:
+        archive.writestr("sezzions-macos-arm64.app/Contents/MacOS/sezzions", "bin")
+
+    translocated_bundle = Path(
+        "/private/var/folders/test/AppTranslocation/random/d/sezzions-macos-arm64.app"
+    )
+    monkeypatch.setattr(window, "_running_app_bundle_path", lambda: translocated_bundle)
+
+    fake_home = tmp_path / "fake-home"
+    expected_parent = fake_home / "Applications"
+    expected_target = expected_parent / "sezzions-macos-arm64.app"
+
+    monkeypatch.setattr("ui.main_window.Path.home", staticmethod(lambda: fake_home))
+    monkeypatch.setattr(
+        "ui.main_window.os.access",
+        lambda p, mode: str(p) == str(expected_parent),
+    )
+
+    popen_calls = {}
+
+    class _DummyProcess:
+        pass
+
+    def _fake_popen(args, **kwargs):
+        popen_calls["args"] = args
+        return _DummyProcess()
+
+    monkeypatch.setattr("ui.main_window.subprocess.Popen", _fake_popen)
+    monkeypatch.setattr(window, "_update_install_log_path", lambda: tmp_path / "update-installer.log")
+
+    assert window._try_auto_install_downloaded_update(downloaded_zip) is True
+    assert "args" in popen_calls
+    assert popen_calls["args"][3] == str(expected_target)
 
     window.close()
     facade.db.close()

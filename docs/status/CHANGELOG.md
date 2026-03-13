@@ -12,6 +12,35 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-27
+type: fix
+areas: [updater, ui, macos, tests, versioning]
+issue: null
+summary: "Make auto-update install translocation-safe and bump version to 1.0.7"
+details: >
+  Fixed macOS packaged auto-install failures when Sezzions runs from Gatekeeper
+  App Translocation paths (`/private/var/.../AppTranslocation/...`).
+
+  Implemented:
+  - Auto-installer now resolves install target via stable application locations
+    when runtime bundle is translocated:
+    - `/Applications/<App>.app`
+    - fallback `~/Applications/<App>.app`
+  - Added regression tests for translocated runtime destination selection and
+    user-Applications fallback.
+  - Bumped application version to `1.0.7`.
+
+  Validation:
+  - QT_QPA_PLATFORM=offscreen pytest -q tests/ui/test_update_ui.py -k translocated
+files_changed:
+  - ui/main_window.py
+  - tests/ui/test_update_ui.py
+  - __init__.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-26
 type: fix
 areas: [settings, notifications, ui, startup, tests]

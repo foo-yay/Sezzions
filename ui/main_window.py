@@ -1160,10 +1160,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._record_update_install_error("Downloaded update is not a zip archive.")
             return False
 
-        if not os.access(str(running_app_bundle.parent), os.W_OK):
-            self._record_update_install_error(
-                f"No write permission for app destination: {running_app_bundle.parent}"
-            )
+        target_app_bundle = self._resolve_auto_install_target_bundle(running_app_bundle)
+        if target_app_bundle is None:
             return False
 
         try:
@@ -1213,7 +1211,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     "/bin/bash",
                     str(script_path),
                     str(candidate),
-                    str(running_app_bundle),
+                    str(target_app_bundle),
                     str(os.getpid()),
                     str(log_path),
                 ],
@@ -1228,6 +1226,49 @@ class MainWindow(QtWidgets.QMainWindow):
                 details=traceback.format_exc(),
             )
             return False
+
+    def _is_translocated_app_bundle(self, app_bundle: Path) -> bool:
+        return "AppTranslocation" in str(app_bundle)
+
+    def _candidate_auto_install_targets(self, running_app_bundle: Path) -> list[Path]:
+        if self._is_translocated_app_bundle(running_app_bundle):
+            return [
+                Path("/Applications") / running_app_bundle.name,
+                Path.home() / "Applications" / running_app_bundle.name,
+            ]
+        return [running_app_bundle]
+
+    def _can_write_app_target(self, app_bundle: Path) -> bool:
+        try:
+            app_bundle.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return False
+
+        if app_bundle.exists():
+            return os.access(str(app_bundle.parent), os.W_OK)
+
+        return os.access(str(app_bundle.parent), os.W_OK)
+
+    def _resolve_auto_install_target_bundle(self, running_app_bundle: Path) -> Path | None:
+        candidates = self._candidate_auto_install_targets(running_app_bundle)
+        for candidate in candidates:
+            if self._can_write_app_target(candidate):
+                return candidate
+
+        if self._is_translocated_app_bundle(running_app_bundle):
+            candidate_dirs = ", ".join(str(path.parent) for path in candidates)
+            self._record_update_install_error(
+                "No write permission for app destination",
+                details=(
+                    f"Running app appears translocated: {running_app_bundle}\n"
+                    f"Checked destinations: {candidate_dirs}"
+                ),
+            )
+        else:
+            self._record_update_install_error(
+                f"No write permission for app destination: {running_app_bundle.parent}"
+            )
+        return None
 
     def _running_app_bundle_path(self) -> Path | None:
         executable = Path(sys.executable).resolve()
