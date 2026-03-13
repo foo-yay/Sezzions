@@ -5,15 +5,12 @@ Stores user preferences like theme selection in a JSON file.
 """
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Any, Dict
 
 
 def default_settings_file() -> str:
-    """Return default settings file path for current runtime."""
-    if getattr(sys, "frozen", False):
-        return str(Path.home() / "Library" / "Application Support" / "Sezzions" / "settings.json")
+    """Return default settings file path in current working directory."""
     return "settings.json"
 
 
