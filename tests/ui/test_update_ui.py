@@ -192,3 +192,67 @@ def test_update_now_disabled_in_development_runtime(tmp_path, monkeypatch):
     window.close()
     facade.db.close()
     app.processEvents()
+
+
+def test_update_now_fallback_includes_failure_reason_and_log_path(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    facade = AppFacade(str(tmp_path / "ui_updates_fallback.db"))
+    window = MainWindow(facade)
+
+    downloaded_zip = tmp_path / "Downloads" / "Sezzions Updates" / "v1.0.3" / "sezzions-macos-arm64.zip"
+    downloaded_zip.parent.mkdir(parents=True, exist_ok=True)
+    downloaded_zip.write_bytes(b"fake")
+
+    facade.download_app_update = lambda asset, destination_dir: str(downloaded_zip)
+
+    monkeypatch.setattr(window, "_try_auto_install_downloaded_update", lambda path: False)
+    window._last_update_install_error = "No write permission for app destination"
+
+    open_calls = {}
+    monkeypatch.setattr(
+        "ui.main_window.QtGui.QDesktopServices.openUrl",
+        lambda url: open_calls.setdefault("url", str(url.toString())),
+    )
+
+    info_calls = {}
+
+    def _fake_info(parent, title, text):
+        info_calls["title"] = title
+        info_calls["text"] = text
+
+    monkeypatch.setattr("ui.main_window.QtWidgets.QMessageBox.information", _fake_info)
+
+    window._update_now(
+        {
+            "asset": {"platform": "macos-arm64", "url": "https://example.com/app.zip", "sha256": "abc"},
+            "latest_version": "1.0.3",
+        }
+    )
+
+    assert "Update Downloaded" == info_calls["title"]
+    assert "No write permission for app destination" in info_calls["text"]
+    assert "update-installer.log" in info_calls["text"]
+    assert "url" in open_calls
+
+    window.close()
+    facade.db.close()
+    app.processEvents()
+
+
+def test_record_update_install_error_writes_details_to_log(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    facade = AppFacade(str(tmp_path / "ui_updates_log.db"))
+    window = MainWindow(facade)
+
+    log_file = tmp_path / "update-installer.log"
+    monkeypatch.setattr(window, "_update_install_log_path", lambda: log_file)
+
+    window._record_update_install_error("test failure", details="trace line 1")
+
+    assert window._last_update_install_error == "test failure"
+    assert log_file.exists()
+    assert "trace line 1" in log_file.read_text(encoding="utf-8")
+
+    window.close()
+    facade.db.close()
+    app.processEvents()

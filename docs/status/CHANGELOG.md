@@ -12,6 +12,36 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-19
+type: fix
+areas: [updater, ui, tests, docs]
+issue: 179
+summary: "Improve packaged auto-update fallback diagnostics and installer logging"
+details: >
+  Hardened packaged auto-update install flow so failures are diagnosable and
+  manual fallback is more actionable.
+
+  Implemented:
+  - `ui/main_window.py` now records auto-install failure reasons for fallback UI.
+  - Added installer log path helper: `~/Library/Application Support/Sezzions/update-installer.log`.
+  - Background apply script now appends output to installer log file.
+  - Manual fallback dialog now includes:
+    - auto-install failure reason,
+    - installer log location,
+    - existing downloaded file/folder guidance.
+  - Added preflight diagnostic checks for common failure causes (e.g., non-zip,
+    missing app bundle, destination write permission).
+
+  Validation:
+  - /usr/local/bin/python3 -m pytest -q tests/ui/test_update_ui.py
+files_changed:
+  - ui/main_window.py
+  - tests/ui/test_update_ui.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-18
 type: fix
 areas: [startup, settings, tools, release, tests, docs]
