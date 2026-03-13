@@ -12,6 +12,24 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-25
+type: release
+areas: [release, versioning, updater]
+issue: null
+summary: "Release v1.0.5 with split updates channel policy restored"
+details: >
+  Bumped source/dev version to `1.0.5` after merging split-repo updater
+  channel restoration. Development/source remains in `foo-yay/Sezzions` while
+  updater manifest and binaries are published to `foo-yay/sezzions-updates`.
+
+  Validation:
+  - pytest -q
+files_changed:
+  - __init__.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-24
 type: fix
 areas: [updater, release, docs, ci, tests]
