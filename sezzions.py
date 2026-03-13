@@ -12,6 +12,12 @@ import traceback
 from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
 from ui.main_window import MainWindow
+from services.db_location_service import (
+    default_db_path,
+    has_persisted_db_path,
+    load_persisted_db_path,
+    persist_db_path,
+)
 
 
 def resolve_db_path() -> str:
@@ -19,17 +25,53 @@ def resolve_db_path() -> str:
     if configured:
         return configured
 
-    if getattr(sys, "frozen", False):
-        app_support_dir = Path.home() / "Library" / "Application Support" / "Sezzions"
-        return str(app_support_dir / "sezzions.db")
+    persisted = load_persisted_db_path()
+    if persisted:
+        return persisted
 
-    project_root = Path(__file__).resolve().parent
-    return str(project_root / "sezzions.db")
+    return default_db_path()
 
 
 def ensure_db_parent_exists(db_path: str) -> None:
     path = Path(db_path).expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def prompt_for_initial_db_path(parent=None) -> str | None:
+    recommended = default_db_path()
+
+    message = QtWidgets.QMessageBox(parent)
+    message.setIcon(QtWidgets.QMessageBox.Icon.Question)
+    message.setWindowTitle("Choose Database Location")
+    message.setText(
+        "Sezzions needs a database location before startup.\n\n"
+        f"Recommended: {recommended}"
+    )
+
+    use_recommended = message.addButton("Use Recommended", QtWidgets.QMessageBox.ButtonRole.AcceptRole)
+    choose_custom = message.addButton("Choose Custom Location...", QtWidgets.QMessageBox.ButtonRole.ActionRole)
+    cancel_button = message.addButton(QtWidgets.QMessageBox.StandardButton.Cancel)
+    message.setDefaultButton(use_recommended)
+    message.exec()
+
+    clicked = message.clickedButton()
+    if clicked == use_recommended:
+        return recommended
+
+    if clicked == choose_custom:
+        selected, _ = QtWidgets.QFileDialog.getSaveFileName(
+            parent,
+            "Choose Database File",
+            recommended,
+            "SQLite Database (*.db);;All Files (*)",
+        )
+        selected_path = (selected or "").strip()
+        return selected_path or None
+
+    if clicked == cancel_button:
+        return None
+
+    return None
 
 
 def main():
@@ -150,9 +192,20 @@ def main():
     
     # Set application style
     app.setStyle("Fusion")
+
+    env_db_path = os.environ.get("SEZZIONS_DB_PATH")
+    if not env_db_path and not has_persisted_db_path():
+        chosen_db_path = prompt_for_initial_db_path()
+        if not chosen_db_path:
+            return
+        ensure_db_parent_exists(chosen_db_path)
+        persist_db_path(chosen_db_path)
     
     db_path = resolve_db_path()
     ensure_db_parent_exists(db_path)
+
+    if not env_db_path:
+        persist_db_path(db_path)
 
     facade = AppFacade(db_path)
     

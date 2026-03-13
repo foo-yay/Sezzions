@@ -12,6 +12,51 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-17
+type: feature
+areas: [startup, settings, data, tests, docs]
+issue: 176
+summary: "Add first-run DB location chooser and Settings-based safe DB relocation"
+details: >
+  Implemented Issue #176 to give users explicit control over database location
+  at startup and from Settings.
+
+  Implemented:
+  - Added `services/db_location_service.py` for runtime DB path persistence and
+    relocation helpers.
+  - Startup now resolves DB path as:
+    env override -> persisted runtime config -> runtime default.
+  - Added first-run modal chooser before app initialization when no path is
+    configured yet.
+  - Added Settings -> Data "Database Location" UI with current path display and
+    `Change Database Location...` action.
+  - Added guided relocation modes:
+    - Copy and Switch (recommended/default)
+    - Move and Switch
+  - Added overwrite confirmation for existing destination files.
+  - Added controlled app restart after successful relocation so next launch uses
+    the new DB immediately.
+
+  Safety semantics:
+  - DB path persistence only updates after successful relocation.
+  - Copy failures leave source DB/path unchanged.
+  - Move mode deletes source only after successful copy + verification.
+
+  Validation:
+  - /usr/local/bin/python3 -m pytest -q tests/unit/test_db_location_service.py tests/unit/test_sezzions_runtime_paths.py tests/ui/test_settings_undo_retention_ui.py
+files_changed:
+  - services/db_location_service.py
+  - sezzions.py
+  - ui/settings_dialog.py
+  - ui/main_window.py
+  - tests/unit/test_db_location_service.py
+  - tests/unit/test_sezzions_runtime_paths.py
+  - tests/ui/test_settings_undo_retention_ui.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-16
 type: fix
 areas: [tools, release, ci, tests, docs]

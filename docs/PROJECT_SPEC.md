@@ -38,10 +38,14 @@ python3 sezzions.py
 ```
 
 Database path rules:
-- Default: `./sezzions.db` (repo root)
-- Override: `SEZZIONS_DB_PATH=/path/to/your.db python3 sezzions.py`
+- Resolution order:
+  1. `SEZZIONS_DB_PATH` environment variable (if set)
+  2. Persisted runtime config path (`runtime_config.json`)
+  3. Runtime default (`./sezzions.db` for source, app-support path for packaged app)
 - Packaged macOS app default: `~/Library/Application Support/Sezzions/sezzions.db`
   (avoids writing inside the `.app` bundle)
+- First launch with no env override and no persisted DB path shows a startup chooser
+  before main window initialization.
 
 ### Test
 ```bash
@@ -84,8 +88,13 @@ Key rules:
 
 ### Primary Entrypoint
 - Run the app via `python3 sezzions.py` (repo root)
-- Source runtime uses `./sezzions.db` by default (or `SEZZIONS_DB_PATH` override).
-- Packaged runtime uses `~/Library/Application Support/Sezzions/sezzions.db` by default.
+- Source runtime default is `./sezzions.db`.
+- Packaged runtime default is `~/Library/Application Support/Sezzions/sezzions.db`.
+- DB location is resolved in this order: env override, persisted runtime config, runtime default.
+- On first launch without env/persisted config, startup prompts user to:
+  - use the recommended default location, or
+  - choose a custom `.db` path.
+- Canceling this first-run prompt aborts startup without creating/changing a database path.
 - **Startup Safety**: If data integrity violations or loading errors occur during startup, the app automatically enters maintenance mode (Setup tab only) to allow database repair via Tools without crashing.
 
 ### Repo Workflow (Source of Truth)
@@ -1660,6 +1669,20 @@ Provide a first-class, always-available Settings entry point for managing notifi
 - MainWindow creates gear button after notification bell
 - Gear click calls `_show_settings_dialog()` → opens Settings dialog
 - After Save, calls `_evaluate_notifications()` to refresh notification rules (in case threshold changed)
+
+**Database Location UX (Issue #176):**
+- Settings → Data includes a Database Location section.
+- Shows current active DB path in a read-only, copyable field.
+- `Change Database Location...` launches guided relocation:
+  - `Copy and Switch (Recommended)`
+  - `Move and Switch`
+- If destination file exists, explicit overwrite confirmation is required.
+- Safety invariants:
+  - Active DB path is only persisted after successful relocation.
+  - Relocation failure leaves the current DB path unchanged.
+  - Copy mode preserves source DB.
+  - Move mode deletes source only after successful copy + verification.
+- After successful relocation, app prompts and performs a controlled restart to load the new DB path.
 
 **Tests:**
 - 1 headless UI smoke test in `tests/integration/test_settings_dialog_smoke.py`:

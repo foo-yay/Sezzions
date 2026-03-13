@@ -11,6 +11,13 @@ def test_resolve_db_path_uses_env_override(monkeypatch):
     assert sezzions.resolve_db_path() == "/tmp/custom-sezzions.db"
 
 
+def test_resolve_db_path_uses_persisted_path_when_no_env(monkeypatch):
+    monkeypatch.delenv("SEZZIONS_DB_PATH", raising=False)
+    monkeypatch.setattr(sezzions, "load_persisted_db_path", lambda: "/tmp/persisted.db")
+
+    assert sezzions.resolve_db_path() == "/tmp/persisted.db"
+
+
 def test_resolve_db_path_uses_app_support_when_frozen(monkeypatch, tmp_path):
     monkeypatch.delenv("SEZZIONS_DB_PATH", raising=False)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
