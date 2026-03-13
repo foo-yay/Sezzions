@@ -1227,6 +1227,19 @@ class MainWindow(QtWidgets.QMainWindow):
             # Rebuild Daily Sessions columns if tax withholding settings changed
             if hasattr(self, 'daily_sessions_tab') and hasattr(self.daily_sessions_tab, 'rebuild_columns'):
                 self.daily_sessions_tab.rebuild_columns()
+
+    def restart_application(self):
+        """Relaunch Sezzions and quit the current process."""
+        try:
+            QtCore.QProcess.startDetached(sys.executable, sys.argv)
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Restart Failed",
+                f"Could not restart Sezzions automatically.\n\n{exc}",
+            )
+            return
+        QtWidgets.QApplication.quit()
     
     def on_backup_completed(self):
         """Called by Tools tab after backup completion"""

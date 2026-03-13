@@ -87,6 +87,19 @@ def test_settings_dialog_data_section_has_max_undo_control(main_window):
     dialog.close()
 
 
+def test_settings_dialog_data_section_shows_database_location_controls(main_window):
+    """Test that Data section includes database path display and relocation action."""
+    dialog = SettingsDialog(main_window.settings, main_window)
+    dialog.nav_list.setCurrentRow(4)
+
+    assert hasattr(dialog, "db_path_value")
+    assert hasattr(dialog, "change_db_location_button")
+    assert str(main_window.facade.db_path) in dialog.db_path_value.toPlainText()
+    assert dialog.change_db_location_button.text() == "Change Database Location..."
+
+    dialog.close()
+
+
 def test_settings_dialog_loads_current_max_undo_value(main_window):
     """Test that Data section loads current max undo operations from service"""
     # Set a known value

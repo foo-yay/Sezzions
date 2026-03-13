@@ -7,6 +7,7 @@ Provides a centralized Settings UI with sections:
 """
 from PySide6 import QtWidgets, QtCore, QtGui
 import __init__ as sezzions_package
+from services.db_location_service import persist_db_path, relocate_database
 
 
 class AccountingTimeZoneChangeDialog(QtWidgets.QDialog):
@@ -458,6 +459,32 @@ class SettingsDialog(QtWidgets.QDialog):
         title = QtWidgets.QLabel("💾 Data Settings")
         title.setObjectName("PageTitle")
         form_layout.addRow(title)
+
+        # Database location section (Issue #176)
+        db_section_label = QtWidgets.QLabel("<b>Database Location</b>")
+        form_layout.addRow(db_section_label)
+
+        db_path_label = QtWidgets.QLabel("Current database path:")
+        db_path_label.setObjectName("FieldLabel")
+        db_path_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignTop)
+        self.db_path_value = QtWidgets.QPlainTextEdit()
+        self.db_path_value.setReadOnly(True)
+        self.db_path_value.setFixedHeight(52)
+        self.db_path_value.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
+        form_layout.addRow(db_path_label, self.db_path_value)
+
+        self.change_db_location_button = QtWidgets.QPushButton("Change Database Location...")
+        self.change_db_location_button.clicked.connect(self._on_change_database_location_clicked)
+        form_layout.addRow("", self.change_db_location_button)
+
+        db_info = QtWidgets.QLabel(
+            "<i>Recommended: Copy and Switch. Sezzions will restart after a successful database location change.</i>"
+        )
+        db_info.setWordWrap(True)
+        db_info.setObjectName("HelperText")
+        form_layout.addRow(db_info)
+
+        form_layout.addRow(QtWidgets.QLabel(""))
         
         # Undo/Redo retention section
         section_label = QtWidgets.QLabel("<b>Undo/Redo History</b>")
@@ -570,9 +597,93 @@ class SettingsDialog(QtWidgets.QDialog):
                 "effective_date": effective_date,
                 "effective_time": effective_time,
             }
+
+    def _refresh_db_path_display(self):
+        parent = self.parent()
+        db_path = ""
+        if parent and hasattr(parent, "facade") and hasattr(parent.facade, "db_path"):
+            db_path = str(parent.facade.db_path)
+        self.db_path_value.setPlainText(db_path)
+
+    def _on_change_database_location_clicked(self):
+        parent = self.parent()
+        if not parent or not hasattr(parent, "facade"):
+            return
+
+        source_db_path = str(parent.facade.db_path)
+        destination_db_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "Choose New Database File",
+            source_db_path,
+            "SQLite Database (*.db);;All Files (*)",
+        )
+        destination_db_path = (destination_db_path or "").strip()
+        if not destination_db_path:
+            return
+
+        mode_dialog = QtWidgets.QMessageBox(self)
+        mode_dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
+        mode_dialog.setWindowTitle("Choose Migration Mode")
+        mode_dialog.setText("How should Sezzions migrate your database to the new location?")
+        copy_btn = mode_dialog.addButton("Copy and Switch (Recommended)", QtWidgets.QMessageBox.ButtonRole.AcceptRole)
+        move_btn = mode_dialog.addButton("Move and Switch", QtWidgets.QMessageBox.ButtonRole.ActionRole)
+        mode_dialog.addButton(QtWidgets.QMessageBox.StandardButton.Cancel)
+        mode_dialog.setDefaultButton(copy_btn)
+        mode_dialog.exec()
+
+        clicked = mode_dialog.clickedButton()
+        if clicked not in (copy_btn, move_btn):
+            return
+
+        move_mode = clicked == move_btn
+
+        overwrite = False
+        if QtCore.QFileInfo(destination_db_path).exists():
+            overwrite_reply = QtWidgets.QMessageBox.question(
+                self,
+                "Destination Exists",
+                "The destination database file already exists. Overwrite it?",
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                QtWidgets.QMessageBox.StandardButton.No,
+            )
+            if overwrite_reply != QtWidgets.QMessageBox.StandardButton.Yes:
+                return
+            overwrite = True
+
+        try:
+            new_db_path = relocate_database(
+                source_db_path,
+                destination_db_path,
+                move=move_mode,
+                overwrite=overwrite,
+            )
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Database Relocation Failed",
+                f"Database location was not changed.\n\n{exc}",
+            )
+            return
+
+        persist_db_path(new_db_path)
+        self.db_path_value.setPlainText(new_db_path)
+
+        restart_reply = QtWidgets.QMessageBox.information(
+            self,
+            "Database Location Updated",
+            "Database migration completed successfully.\n\n"
+            "Sezzions must restart to use the new database location.",
+            QtWidgets.QMessageBox.StandardButton.Ok,
+        )
+        if restart_reply == QtWidgets.QMessageBox.StandardButton.Ok:
+            self.accept()
+            if hasattr(parent, "restart_application"):
+                parent.restart_application()
     
     def _load_settings(self):
         """Load current settings values into UI controls."""
+        self._refresh_db_path_display()
+
         # Redemption pending-receipt threshold
         threshold_days = self.settings.settings.get("redemption_pending_receipt_threshold_days", 14)
         self.redemption_threshold_spin.setValue(threshold_days)
