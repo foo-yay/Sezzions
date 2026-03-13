@@ -12,6 +12,40 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-24
+type: fix
+areas: [updater, release, docs, ci, tests]
+issue: null
+summary: "Reinstate split-repo updater channel and enforce release guardrails"
+details: >
+  Reverted updater/release defaults back to the dedicated public updates repo
+  (`foo-yay/sezzions-updates`) so source development remains in private
+  `foo-yay/Sezzions` while binaries/manifests publish to the public updates channel.
+
+  Implemented:
+  - Restored default manifest URL to `sezzions-updates`.
+  - Restored release automation default updates repo to `sezzions-updates`.
+  - Added tooling guardrail: `tools/release_update.py` now fails when updates
+    repo equals source repo.
+  - Restored workflow publishing via `SEZZIONS_UPDATES_TOKEN` for cross-repo release writes.
+  - Updated README/tools/spec docs with canonical split-repo policy.
+  - Updated/added unit tests for defaults and repo-separation guard.
+
+  Validation:
+  - pytest -q tests/unit/test_update_service.py tests/unit/test_release_update_tool.py
+files_changed:
+  - services/update_service.py
+  - tools/release_update.py
+  - .github/workflows/release-binaries.yml
+  - README.md
+  - tools/README.md
+  - docs/PROJECT_SPEC.md
+  - tests/unit/test_update_service.py
+  - tests/unit/test_release_update_tool.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-23
 type: release
 areas: [release, versioning, updater]

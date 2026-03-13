@@ -105,9 +105,10 @@ This spec defines the canonical workflow expectations and documentation policy (
 Sezzions update discovery/download is implemented as a service-layer workflow sourced from GitHub Releases artifacts (not Git operations).
 
 Default manifest host:
-- Production default points to Sezzions release assets:
-  - `https://github.com/foo-yay/Sezzions/releases/latest/download/latest.json`
-- This keeps source and update channels in one repository.
+- Production default points to a dedicated **public updates repository** release asset:
+  - `https://github.com/foo-yay/sezzions-updates/releases/latest/download/latest.json`
+- This allows update checks/downloads for end users while the primary `Sezzions` source
+  repository remains private.
 
 Release automation command (Issue #174):
 - Sezzions includes `tools/release_update.py` for one-command updater publishing.
@@ -117,7 +118,7 @@ Release automation command (Issue #174):
   - Build macOS arm64 app bundle via PyInstaller,
   - zip artifact as `sezzions-macos-arm64.zip`,
   - generate `latest.json` with SHA-256 and release URLs,
-  - create/update release `vX.Y.Z` in `foo-yay/Sezzions`,
+  - create/update release `vX.Y.Z` in `foo-yay/sezzions-updates`,
   - upload binary asset(s) + manifest with `--clobber` semantics.
 - Optional flags:
   - `--next-patch` (uses highest of local `__version__` and latest published
@@ -137,6 +138,11 @@ Cross-platform binary publish workflow:
   both `macos-arm64` and `windows-x64` assets in one run.
 - Workflow supports explicit version input or automatic patch bump behavior.
 - Windows builds are generated on GitHub-hosted Windows runners (no local Windows machine required).
+
+Canonical release channel policy (guardrail):
+- `foo-yay/Sezzions` is development/source-of-truth and may publish source tags.
+- `foo-yay/sezzions-updates` is the only public updater channel for `latest.json` + binaries.
+- Update publishing to source repo is disallowed by tooling (`tools/release_update.py`).
 
 Release page/source archive policy:
 - GitHub release source archives (`zip`/`tar.gz`) are auto-generated and cannot be removed.

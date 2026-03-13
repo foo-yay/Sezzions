@@ -15,7 +15,7 @@ Builds and publishes updater assets with a single command:
 - builds macOS arm64 app artifact via PyInstaller,
 - zips the app bundle,
 - generates `latest.json` with SHA-256,
-- uploads assets + manifest to `foo-yay/Sezzions` release `v<version>`.
+- uploads assets + manifest to `foo-yay/sezzions-updates` release `v<version>`.
 
 Binary-only distribution note:
 - GitHub auto-generates source archives for every release and they cannot be removed.
@@ -68,8 +68,12 @@ What it does:
 - supports explicit version input or automatic patch bump.
 
 Prerequisite:
-- No separate cross-repo PAT is required when publishing to the same repository.
-- Workflow uses GitHub Actions `GITHUB_TOKEN` with `contents: write` permission.
+- Configure repository secret `SEZZIONS_UPDATES_TOKEN` with a PAT that can create/update releases in `foo-yay/sezzions-updates`.
+
+Canonical release guardrail:
+- Development/source tags remain in `foo-yay/Sezzions`.
+- Updater manifest + binary assets are published only to `foo-yay/sezzions-updates`.
+- `tools/release_update.py` enforces repo separation and fails if `--updates-repo` equals source repo.
 
 ### Schema Validation
 ```bash
