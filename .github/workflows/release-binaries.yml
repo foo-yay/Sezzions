@@ -14,7 +14,7 @@ on:
         default: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-macos:
@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-macos, build-windows]
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Checkout
@@ -122,8 +122,13 @@ jobs:
 
       - name: Publish update assets
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.SEZZIONS_UPDATES_TOKEN }}
         run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "SEZZIONS_UPDATES_TOKEN secret is required" >&2
+            exit 1
+          fi
+
           VERSION_INPUT="${{ github.event.inputs.version }}"
           NEXT_PATCH_INPUT="${{ github.event.inputs.next_patch }}"
 

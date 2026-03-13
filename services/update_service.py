@@ -12,7 +12,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
 
-DEFAULT_UPDATE_MANIFEST_URL = "https://github.com/foo-yay/Sezzions/releases/latest/download/latest.json"
+DEFAULT_UPDATE_MANIFEST_URL = "https://github.com/foo-yay/sezzions-updates/releases/latest/download/latest.json"
 
 
 @dataclass(frozen=True)

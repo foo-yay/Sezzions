@@ -24,7 +24,16 @@ def test_release_tag_uses_normalized_version():
 
 
 def test_default_updates_repo_points_to_sezzions_repo():
-    assert release_update.DEFAULT_UPDATES_REPO == "foo-yay/Sezzions"
+    assert release_update.DEFAULT_UPDATES_REPO == "foo-yay/sezzions-updates"
+
+
+def test_ensure_updates_repo_is_separate_allows_split_repos():
+    release_update.ensure_updates_repo_is_separate("foo-yay/Sezzions", "foo-yay/sezzions-updates")
+
+
+def test_ensure_updates_repo_is_separate_rejects_same_repo():
+    with pytest.raises(RuntimeError, match="must be separate"):
+        release_update.ensure_updates_repo_is_separate("foo-yay/Sezzions", "foo-yay/Sezzions")
 
 
 def test_build_manifest_uses_updates_repo_asset_url():

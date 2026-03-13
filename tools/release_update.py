@@ -13,10 +13,22 @@ from typing import Any
 
 
 DEFAULT_SOURCE_REPO = "foo-yay/Sezzions"
-DEFAULT_UPDATES_REPO = "foo-yay/Sezzions"
+DEFAULT_UPDATES_REPO = "foo-yay/sezzions-updates"
 DEFAULT_PLATFORM_KEY = "macos-arm64"
 DEFAULT_BINARY_BASENAME = "sezzions-macos-arm64"
 DEFAULT_VERSION_FILE = "__init__.py"
+
+
+def _normalize_repo_name(repo: str) -> str:
+    return (repo or "").strip().lower()
+
+
+def ensure_updates_repo_is_separate(source_repo: str, updates_repo: str) -> None:
+    if _normalize_repo_name(source_repo) == _normalize_repo_name(updates_repo):
+        raise RuntimeError(
+            "Updates repo must be separate from source repo. "
+            "Publish updater binaries/manifest to foo-yay/sezzions-updates."
+        )
 
 
 def normalize_version(version: str) -> str:
@@ -344,6 +356,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    ensure_updates_repo_is_separate(args.source_repo, args.updates_repo)
     version_file = Path(args.version_file)
     latest_published_version = read_latest_release_version(args.updates_repo)
 
