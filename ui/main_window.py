@@ -1195,13 +1195,22 @@ class MainWindow(QtWidgets.QMainWindow):
                 "TARGET_APP=\"$2\"\n"
                 "APP_PID=\"$3\"\n"
                 "LOG_FILE=\"$4\"\n"
+                "TMP_APP=\"${TARGET_APP}.updating\"\n"
                 "mkdir -p \"$(dirname \"$LOG_FILE\")\"\n"
                 "exec >> \"$LOG_FILE\" 2>&1\n"
                 "echo \"[Sezzions Updater] Starting apply script\"\n"
                 "while kill -0 \"$APP_PID\" >/dev/null 2>&1; do sleep 1; done\n"
+                "echo \"[Sezzions Updater] Installing update to $TARGET_APP\"\n"
+                "rm -rf \"$TMP_APP\"\n"
+                "ditto \"$NEW_APP\" \"$TMP_APP\"\n"
+                "xattr -dr com.apple.quarantine \"$TMP_APP\" >/dev/null 2>&1 || true\n"
                 "rm -rf \"$TARGET_APP\"\n"
-                "ditto \"$NEW_APP\" \"$TARGET_APP\"\n"
-                "open \"$TARGET_APP\"\n",
+                "mv \"$TMP_APP\" \"$TARGET_APP\"\n"
+                "if ! open \"$TARGET_APP\"; then\n"
+                "  echo \"[Sezzions Updater] open failed, retrying with -n\"\n"
+                "  sleep 1\n"
+                "  open -n \"$TARGET_APP\"\n"
+                "fi\n",
                 encoding="utf-8",
             )
             script_path.chmod(0o755)

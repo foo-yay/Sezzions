@@ -344,3 +344,44 @@ def test_auto_install_falls_back_to_user_applications_when_translocated(tmp_path
     window.close()
     facade.db.close()
     app.processEvents()
+
+
+def test_auto_install_script_clears_quarantine_and_retries_open(tmp_path, monkeypatch):
+    app = QApplication.instance() or QApplication([])
+    facade = AppFacade(str(tmp_path / "ui_updates_script_resilience.db"))
+    window = MainWindow(facade)
+
+    downloaded_zip = tmp_path / "sezzions-macos-arm64.zip"
+    with zipfile.ZipFile(downloaded_zip, "w") as archive:
+        archive.writestr("sezzions-macos-arm64.app/Contents/MacOS/sezzions", "bin")
+
+    app_bundle = tmp_path / "sezzions-macos-arm64.app"
+    monkeypatch.setattr(window, "_running_app_bundle_path", lambda: app_bundle)
+    monkeypatch.setattr(
+        "ui.main_window.os.access",
+        lambda p, mode: str(p) == str(app_bundle.parent),
+    )
+    monkeypatch.setattr(window, "_update_install_log_path", lambda: tmp_path / "update-installer.log")
+
+    popen_calls = {}
+
+    class _DummyProcess:
+        pass
+
+    def _fake_popen(args, **kwargs):
+        popen_calls["args"] = args
+        return _DummyProcess()
+
+    monkeypatch.setattr("ui.main_window.subprocess.Popen", _fake_popen)
+
+    assert window._try_auto_install_downloaded_update(downloaded_zip) is True
+    script_path = Path(popen_calls["args"][1])
+    script_content = script_path.read_text(encoding="utf-8")
+
+    assert "xattr -dr com.apple.quarantine" in script_content
+    assert "TMP_APP=\"${TARGET_APP}.updating\"" in script_content
+    assert "open -n \"$TARGET_APP\"" in script_content
+
+    window.close()
+    facade.db.close()
+    app.processEvents()

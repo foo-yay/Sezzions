@@ -241,7 +241,10 @@ Update infrastructure is exposed to users through three desktop entry points:
   - resolves install destination:
     - normal packaged runtime: existing app bundle path,
     - App Translocation runtime: `/Applications/<App>.app` with fallback to `~/Applications/<App>.app`,
-  - spawns background apply script,
+  - spawns background apply script that:
+    - copies to a temporary target path and swaps atomically,
+    - removes `com.apple.quarantine` attribute from staged app bundle (best-effort),
+    - attempts relaunch via `open`, then retries with `open -n` if needed,
   - quits app,
   - replaces app bundle and relaunches automatically.
 - Auto-install diagnostics/fallback:

@@ -12,6 +12,34 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-30
+type: fix
+areas: [updater, ui, macos, tests, versioning]
+issue: null
+summary: "Harden auto-update relaunch flow and release v1.0.9"
+details: >
+  Fixed macOS auto-update cases where install completed but relaunch failed with
+  launchd spawn errors after app quit.
+
+  Implemented:
+  - Auto-installer now performs staged swap via temporary app path before replacing target.
+  - Clears quarantine xattr on staged app bundle before relaunch attempt.
+  - Adds relaunch retry (`open` then `open -n`) and richer installer log breadcrumbs.
+  - Added UI regression test validating generated updater script includes quarantine
+    cleanup and retry logic.
+  - Bumped application version to `1.0.9`.
+
+  Validation:
+  - QT_QPA_PLATFORM=offscreen pytest -q tests/ui/test_update_ui.py -k "translocated or script_clears_quarantine"
+files_changed:
+  - ui/main_window.py
+  - tests/ui/test_update_ui.py
+  - __init__.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-29
 type: release
 areas: [release, versioning, updater]
