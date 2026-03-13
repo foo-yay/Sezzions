@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import traceback
 import zipfile
 from app_facade import AppFacade
 from ui.tabs.purchases_tab import PurchasesTab
@@ -1121,21 +1122,48 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(downloaded_file.parent)))
+        failure_reason = getattr(self, "_last_update_install_error", "Automatic install could not be started.")
+        log_path = self._update_install_log_path()
         QtWidgets.QMessageBox.information(
             self,
             "Update Downloaded",
             "Update downloaded successfully.\n\n"
             f"File: {downloaded_file.name}\n"
             f"Location: {downloaded_file.parent}\n\n"
+            f"Auto-install status: {failure_reason}\n"
+            f"Installer log: {log_path}\n\n"
             "Install manually from this folder.",
         )
+
+    def _update_install_log_path(self) -> Path:
+        return Path.home() / "Library" / "Application Support" / "Sezzions" / "update-installer.log"
+
+    def _record_update_install_error(self, message: str, details: str | None = None) -> None:
+        self._last_update_install_error = message
+        if not details:
+            return
+        self._append_update_install_log(details)
+
+    def _append_update_install_log(self, details: str) -> None:
+        log_path = self._update_install_log_path()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as fh:
+            fh.write(details.rstrip() + "\n")
 
     def _try_auto_install_downloaded_update(self, downloaded_file: Path) -> bool:
         running_app_bundle = self._running_app_bundle_path()
         if running_app_bundle is None:
+            self._record_update_install_error("Packaged app bundle was not detected.")
             return False
 
         if downloaded_file.suffix.lower() != ".zip":
+            self._record_update_install_error("Downloaded update is not a zip archive.")
+            return False
+
+        if not os.access(str(running_app_bundle.parent), os.W_OK):
+            self._record_update_install_error(
+                f"No write permission for app destination: {running_app_bundle.parent}"
+            )
             return False
 
         try:
@@ -1149,6 +1177,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
             app_candidates = sorted(extract_dir.rglob("*.app"))
             if not app_candidates:
+                self._record_update_install_error("No .app bundle found in downloaded update archive.")
                 return False
 
             candidate = None
@@ -1160,12 +1189,17 @@ class MainWindow(QtWidgets.QMainWindow):
                 candidate = app_candidates[0]
 
             script_path = extract_dir / "apply_update.sh"
+            log_path = self._update_install_log_path()
             script_path.write_text(
                 "#!/bin/bash\n"
                 "set -e\n"
                 "NEW_APP=\"$1\"\n"
                 "TARGET_APP=\"$2\"\n"
                 "APP_PID=\"$3\"\n"
+                "LOG_FILE=\"$4\"\n"
+                "mkdir -p \"$(dirname \"$LOG_FILE\")\"\n"
+                "exec >> \"$LOG_FILE\" 2>&1\n"
+                "echo \"[Sezzions Updater] Starting apply script\"\n"
                 "while kill -0 \"$APP_PID\" >/dev/null 2>&1; do sleep 1; done\n"
                 "rm -rf \"$TARGET_APP\"\n"
                 "ditto \"$NEW_APP\" \"$TARGET_APP\"\n"
@@ -1181,13 +1215,18 @@ class MainWindow(QtWidgets.QMainWindow):
                     str(candidate),
                     str(running_app_bundle),
                     str(os.getpid()),
+                    str(log_path),
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
             return True
-        except Exception:
+        except Exception as exc:
+            self._record_update_install_error(
+                f"Automatic install failed to start: {exc}",
+                details=traceback.format_exc(),
+            )
             return False
 
     def _running_app_bundle_path(self) -> Path | None:

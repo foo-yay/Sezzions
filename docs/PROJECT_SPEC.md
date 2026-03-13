@@ -236,6 +236,10 @@ Update infrastructure is exposed to users through three desktop entry points:
   - spawns background apply script,
   - quits app,
   - replaces app bundle and relaunches automatically.
+- Auto-install diagnostics/fallback:
+  - apply script writes output to `~/Library/Application Support/Sezzions/update-installer.log`,
+  - if auto-install cannot be started (for example permission denied or invalid archive),
+    manual install fallback dialog includes actionable failure reason + log path.
 - If running from source/dev mode (`python3 sezzions.py`) or asset type is not auto-installable:
   - updater falls back to manual install guidance and opens download folder.
 
