@@ -2,7 +2,11 @@ from pathlib import Path
 import ssl
 from urllib.error import HTTPError, URLError
 
-from services.update_service import UpdateAsset, UpdateService
+from services.update_service import DEFAULT_UPDATE_MANIFEST_URL, UpdateAsset, UpdateService
+
+
+def test_default_manifest_url_points_to_sezzions_repo():
+    assert DEFAULT_UPDATE_MANIFEST_URL == "https://github.com/foo-yay/Sezzions/releases/latest/download/latest.json"
 
 
 def _make_fetcher(payloads: dict[str, bytes]):

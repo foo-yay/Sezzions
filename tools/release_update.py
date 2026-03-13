@@ -13,7 +13,7 @@ from typing import Any
 
 
 DEFAULT_SOURCE_REPO = "foo-yay/Sezzions"
-DEFAULT_UPDATES_REPO = "foo-yay/sezzions-updates"
+DEFAULT_UPDATES_REPO = "foo-yay/Sezzions"
 DEFAULT_PLATFORM_KEY = "macos-arm64"
 DEFAULT_BINARY_BASENAME = "sezzions-macos-arm64"
 DEFAULT_VERSION_FILE = "__init__.py"

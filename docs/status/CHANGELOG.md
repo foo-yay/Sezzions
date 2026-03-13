@@ -12,6 +12,38 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-22
+type: fix
+areas: [updater, release, docs, ci, tests]
+issue: null
+summary: "Consolidate updater and release automation defaults to Sezzions repository"
+details: >
+  Moved update manifest/release defaults from `foo-yay/sezzions-updates` to
+  `foo-yay/Sezzions` to simplify release operations and avoid cross-repo publish
+  confusion.
+
+  Implemented:
+  - `services/update_service.py` default manifest URL now points to Sezzions releases.
+  - `tools/release_update.py` default updates repo now points to `foo-yay/Sezzions`.
+  - Release workflow now uses repository `GITHUB_TOKEN` with `contents: write`
+    (no separate `SEZZIONS_UPDATES_TOKEN` requirement).
+  - Updated README/tools/spec docs and added regression tests for new defaults.
+
+  Validation:
+  - pytest -q tests/unit/test_update_service.py tests/unit/test_release_update_tool.py
+files_changed:
+  - services/update_service.py
+  - tools/release_update.py
+  - .github/workflows/release-binaries.yml
+  - README.md
+  - tools/README.md
+  - docs/PROJECT_SPEC.md
+  - tests/unit/test_update_service.py
+  - tests/unit/test_release_update_tool.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-21
 type: release
 areas: [release, versioning]
