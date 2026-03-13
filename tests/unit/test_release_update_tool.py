@@ -23,6 +23,10 @@ def test_release_tag_uses_normalized_version():
     assert release_tag("v1.0.0") == "v1.0.0"
 
 
+def test_default_updates_repo_points_to_sezzions_repo():
+    assert release_update.DEFAULT_UPDATES_REPO == "foo-yay/Sezzions"
+
+
 def test_build_manifest_uses_updates_repo_asset_url():
     manifest = build_manifest(
         version="1.0.1",

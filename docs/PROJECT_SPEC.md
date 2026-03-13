@@ -105,10 +105,9 @@ This spec defines the canonical workflow expectations and documentation policy (
 Sezzions update discovery/download is implemented as a service-layer workflow sourced from GitHub Releases artifacts (not Git operations).
 
 Default manifest host:
-- Production default points to a dedicated **public updates repository** release asset:
-  - `https://github.com/foo-yay/sezzions-updates/releases/latest/download/latest.json`
-- This allows update checks/downloads for end users while the primary `Sezzions` source
-  repository remains private.
+- Production default points to Sezzions release assets:
+  - `https://github.com/foo-yay/Sezzions/releases/latest/download/latest.json`
+- This keeps source and update channels in one repository.
 
 Release automation command (Issue #174):
 - Sezzions includes `tools/release_update.py` for one-command updater publishing.
@@ -118,7 +117,7 @@ Release automation command (Issue #174):
   - Build macOS arm64 app bundle via PyInstaller,
   - zip artifact as `sezzions-macos-arm64.zip`,
   - generate `latest.json` with SHA-256 and release URLs,
-  - create/update release `vX.Y.Z` in `foo-yay/sezzions-updates`,
+  - create/update release `vX.Y.Z` in `foo-yay/Sezzions`,
   - upload binary asset(s) + manifest with `--clobber` semantics.
 - Optional flags:
   - `--next-patch` (uses highest of local `__version__` and latest published

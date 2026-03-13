@@ -22,14 +22,14 @@ python3 sezzions.py
 
 ## Download (Latest Executables)
 
-Direct binary downloads (public updates repo):
+Direct binary downloads:
 
-- macOS (Apple Silicon): https://github.com/foo-yay/sezzions-updates/releases/latest/download/sezzions-macos-arm64.zip
-- Windows (x64): https://github.com/foo-yay/sezzions-updates/releases/latest/download/sezzions-windows-x64.zip
+- macOS (Apple Silicon): https://github.com/foo-yay/Sezzions/releases/latest/download/sezzions-macos-arm64.zip
+- Windows (x64): https://github.com/foo-yay/Sezzions/releases/latest/download/sezzions-windows-x64.zip
 
 Manifest used by in-app updater:
 
-- https://github.com/foo-yay/sezzions-updates/releases/latest/download/latest.json
+- https://github.com/foo-yay/Sezzions/releases/latest/download/latest.json
 
 ## Database Location
 
