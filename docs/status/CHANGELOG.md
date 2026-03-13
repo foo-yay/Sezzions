@@ -12,6 +12,39 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-18
+type: fix
+areas: [startup, settings, tools, release, tests, docs]
+issue: 178
+summary: "Consolidate DB path persistence into settings.json and add release version-sync validation"
+details: >
+  Follow-up to Issue #176 to reduce config sprawl and provide a testable guard
+  against local source version drift behind published updater releases.
+
+  Implemented:
+  - `services/db_location_service.py` now persists `db_path` in `settings.json`
+    instead of a separate `runtime_config.json` file.
+  - Added legacy migration fallback: if old `runtime_config.json` contains
+    `db_path`, the value is imported into `settings.json` on read.
+  - Added `tools/release_update.py --check-version-sync` to validate local
+    `__version__` is not behind latest published updates release.
+  - Added explicit version guard helper so older explicit release versions fail
+    with actionable messaging.
+  - Added/updated unit tests for both behaviors.
+
+  Validation:
+  - /usr/local/bin/python3 -m pytest -q tests/unit/test_db_location_service.py tests/unit/test_release_update_tool.py
+files_changed:
+  - services/db_location_service.py
+  - tools/release_update.py
+  - tests/unit/test_db_location_service.py
+  - tests/unit/test_release_update_tool.py
+  - tools/README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-17
 type: feature
 areas: [startup, settings, data, tests, docs]

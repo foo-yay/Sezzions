@@ -40,7 +40,7 @@ python3 sezzions.py
 Database path rules:
 - Resolution order:
   1. `SEZZIONS_DB_PATH` environment variable (if set)
-  2. Persisted runtime config path (`runtime_config.json`)
+  2. Persisted app settings key `db_path` in `settings.json`
   3. Runtime default (`./sezzions.db` for source, app-support path for packaged app)
 - Packaged macOS app default: `~/Library/Application Support/Sezzions/sezzions.db`
   (avoids writing inside the `.app` bundle)
@@ -123,6 +123,8 @@ Release automation command (Issue #174):
 - Optional flags:
   - `--next-patch` (uses highest of local `__version__` and latest published
     updates-release version, then increments patch),
+  - `--check-version-sync` (validates local `__version__` is not behind latest
+    published updates release),
   - `--version-file` (override file used by `--next-patch`, default `__init__.py`),
   - `--dry-run` (prints commands only),
   - `--asset-path` (reuse prebuilt zip),

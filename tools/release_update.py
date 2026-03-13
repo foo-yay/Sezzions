@@ -52,6 +52,20 @@ def pick_highest_version(a: str, b: str | None) -> str:
     return base_b if _version_tuple(base_b) > _version_tuple(base_a) else base_a
 
 
+def ensure_local_version_not_behind(local_version: str, published_version: str | None) -> None:
+    if not published_version:
+        return
+
+    local_normalized = normalize_version(local_version)
+    published_normalized = normalize_version(published_version)
+    if _version_tuple(local_normalized) < _version_tuple(published_normalized):
+        raise RuntimeError(
+            "Local source version is behind latest published updates release "
+            f"({local_normalized} < {published_normalized}). "
+            "Update __version__ before publishing."
+        )
+
+
 def read_latest_release_version(repo: str) -> str | None:
     result = subprocess.run(
         ["gh", "release", "view", "--repo", repo, "--json", "tagName"],
@@ -278,6 +292,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Increment patch version from __version__ in --version-file.",
     )
+    version_group.add_argument(
+        "--check-version-sync",
+        action="store_true",
+        help="Validate local __version__ is not behind latest published updates release.",
+    )
     parser.add_argument(
         "--version-file",
         default=DEFAULT_VERSION_FILE,
@@ -326,14 +345,26 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     version_file = Path(args.version_file)
+    latest_published_version = read_latest_release_version(args.updates_repo)
+
+    if args.check_version_sync:
+        local_version = read_repo_version(version_file)
+        ensure_local_version_not_behind(local_version, latest_published_version)
+        print(
+            "Version sync check passed: "
+            f"local={local_version}, latest_published={latest_published_version or 'none'}"
+        )
+        return 0
+
     if args.next_patch:
         current_version = read_repo_version(version_file)
-        latest_published_version = read_latest_release_version(args.updates_repo)
         base_version = pick_highest_version(current_version, latest_published_version)
         version = bump_patch_version(base_version)
         write_repo_version(version_file, version, dry_run=args.dry_run)
     else:
         version = normalize_version(args.version)
+
+    ensure_local_version_not_behind(version, latest_published_version)
     tag = release_tag(version)
 
     if shutil.which("gh") is None:

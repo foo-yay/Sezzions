@@ -40,6 +40,9 @@ python3 tools/release_update.py --next-patch \
 	--asset-path /path/to/sezzions-macos-arm64.zip \
 	--extra-asset windows-x64=/path/to/sezzions-windows-x64.zip
 
+# Verify local __version__ is not behind latest published updates release
+python3 tools/release_update.py --check-version-sync
+
 # Also create source release tag in Sezzions repo if missing
 python3 tools/release_update.py --version 1.0.1 --publish-source-release
 

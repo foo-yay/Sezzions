@@ -19,7 +19,16 @@ def default_db_path() -> str:
     return str(project_root / "sezzions.db")
 
 
-def db_location_config_path() -> Path:
+def settings_file_path() -> Path:
+    if getattr(sys, "frozen", False):
+        config_dir = Path.home() / "Library" / "Application Support" / "Sezzions"
+        return config_dir / "settings.json"
+
+    project_root = Path(__file__).resolve().parent.parent
+    return project_root / "settings.json"
+
+
+def legacy_runtime_config_path() -> Path:
     if getattr(sys, "frozen", False):
         config_dir = Path.home() / "Library" / "Application Support" / "Sezzions"
         return config_dir / "runtime_config.json"
@@ -28,25 +37,37 @@ def db_location_config_path() -> Path:
     return project_root / "runtime_config.json"
 
 
-def load_persisted_db_path() -> str | None:
-    config_path = db_location_config_path()
-    if not config_path.exists():
-        return None
+def _load_json(path: Path) -> dict:
+    if not path.exists():
+        return {}
 
     try:
-        payload = json.loads(config_path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
+        return {}
+
+
+def load_persisted_db_path() -> str | None:
+    payload = _load_json(settings_file_path())
+    raw_path = str(payload.get("db_path", "")).strip()
+    if raw_path:
+        return raw_path
+
+    legacy_path = str(_load_json(legacy_runtime_config_path()).get("db_path", "")).strip()
+    if not legacy_path:
         return None
 
-    raw_path = str(payload.get("db_path", "")).strip()
-    return raw_path or None
+    persist_db_path(legacy_path)
+    return str(Path(legacy_path).expanduser().resolve())
 
 
 def persist_db_path(db_path: str) -> None:
     path = Path(db_path).expanduser().resolve()
-    config_path = db_location_config_path()
+    config_path = settings_file_path()
+    payload = _load_json(config_path)
+    payload["db_path"] = str(path)
+
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"db_path": str(path)}
     config_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 

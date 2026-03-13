@@ -29,13 +29,29 @@ def _row_count(db_path: Path) -> int:
 
 
 def test_persist_and_load_db_path(tmp_path, monkeypatch):
-    config_file = tmp_path / "runtime_config.json"
-    monkeypatch.setattr(db_location_service, "db_location_config_path", lambda: config_file)
+    settings_file = tmp_path / "settings.json"
+    monkeypatch.setattr(db_location_service, "settings_file_path", lambda: settings_file)
 
     db_location_service.persist_db_path(str(tmp_path / "a" / "sezzions.db"))
 
     loaded = db_location_service.load_persisted_db_path()
     assert loaded == str((tmp_path / "a" / "sezzions.db").resolve())
+
+
+def test_load_persisted_db_path_migrates_legacy_runtime_config(tmp_path, monkeypatch):
+    settings_file = tmp_path / "settings.json"
+    legacy_file = tmp_path / "runtime_config.json"
+    legacy_file.write_text('{"db_path": "/tmp/legacy.db"}', encoding="utf-8")
+
+    monkeypatch.setattr(db_location_service, "settings_file_path", lambda: settings_file)
+    monkeypatch.setattr(db_location_service, "legacy_runtime_config_path", lambda: legacy_file)
+
+    loaded = db_location_service.load_persisted_db_path()
+
+    assert loaded == str(Path("/tmp/legacy.db").resolve())
+    persisted = settings_file.read_text(encoding="utf-8")
+    assert "db_path" in persisted
+    assert str(Path("/tmp/legacy.db").resolve()) in persisted
 
 
 def test_relocate_database_copy_and_switch_preserves_source(tmp_path):
