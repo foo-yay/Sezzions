@@ -5,14 +5,23 @@ Stores user preferences like theme selection in a JSON file.
 """
 import json
 import os
+import sys
+from pathlib import Path
 from typing import Any, Dict
+
+
+def default_settings_file() -> str:
+    """Return default settings file path for current runtime."""
+    if getattr(sys, "frozen", False):
+        return str(Path.home() / "Library" / "Application Support" / "Sezzions" / "settings.json")
+    return "settings.json"
 
 
 class Settings:
     """Manage application settings"""
     
-    def __init__(self, settings_file: str = "settings.json"):
-        self.settings_file = settings_file
+    def __init__(self, settings_file: str | None = None):
+        self.settings_file = settings_file or default_settings_file()
         self.settings = self._load_settings()
     
     def _load_settings(self) -> Dict[str, Any]:
@@ -65,6 +74,7 @@ class Settings:
     def save(self):
         """Save settings to file"""
         try:
+            Path(self.settings_file).parent.mkdir(parents=True, exist_ok=True)
             with open(self.settings_file, 'w') as f:
                 json.dump(self.settings, f, indent=2)
                 f.flush()  # Ensure data is written to disk

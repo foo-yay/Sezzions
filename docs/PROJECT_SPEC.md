@@ -1282,6 +1282,10 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 
 **Settings Persistence Architecture:**
 - Settings stored in `settings.json` with nested structure (e.g., `automatic_backup` object)
+- Settings file location is runtime-aware:
+  - Source/dev default: `./settings.json` (repo/application working directory)
+  - Packaged macOS default: `~/Library/Application Support/Sezzions/settings.json`
+  - This keeps user-customizable settings outside the replaceable `.app` bundle.
 - Each `Settings()` instantiation loads fresh from disk—no singleton pattern currently
 - **Critical Pattern**: Components that partially update settings.json must reload from disk first
   - Example: `MainWindow.closeEvent()` reloads settings before saving window geometry to avoid overwriting other components' changes (e.g., ToolsTab's automatic_backup config)

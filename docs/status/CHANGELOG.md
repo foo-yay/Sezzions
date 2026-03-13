@@ -12,6 +12,33 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-20
+type: fix
+areas: [settings, packaged-app, tests, docs]
+issue: 182
+summary: "Persist packaged-app settings in App Support instead of bundle-adjacent paths"
+details: >
+  Hardened default settings storage for frozen runtime so user-customizable
+  preferences persist across in-app updates and app bundle replacement.
+
+  Implemented:
+  - `ui/settings.py` now resolves default settings path by runtime:
+    - source/dev: `settings.json`
+    - frozen macOS app: `~/Library/Application Support/Sezzions/settings.json`
+  - `Settings.save()` now ensures the parent directory exists before writing.
+  - Added unit tests to validate both frozen and non-frozen default path behavior
+    and default-path save path creation.
+
+  Validation:
+  - /usr/local/bin/python3 -m pytest -q tests/unit/test_settings_paths.py tests/unit/test_backup_notification_settings.py
+files_changed:
+  - ui/settings.py
+  - tests/unit/test_settings_paths.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-19
 type: fix
 areas: [updater, ui, tests, docs]
