@@ -117,6 +117,19 @@ def test_read_latest_release_version_returns_none_on_missing_release(monkeypatch
     assert release_update.read_latest_release_version("foo-yay/sezzions-updates") is None
 
 
+def test_ensure_local_version_not_behind_allows_equal_version():
+    release_update.ensure_local_version_not_behind("1.0.2", "1.0.2")
+
+
+def test_ensure_local_version_not_behind_allows_newer_local_version():
+    release_update.ensure_local_version_not_behind("1.0.3", "1.0.2")
+
+
+def test_ensure_local_version_not_behind_raises_when_local_is_older():
+    with pytest.raises(RuntimeError, match="behind"):
+        release_update.ensure_local_version_not_behind("1.0.0", "1.0.2")
+
+
 def test_read_repo_version_reads_semver(tmp_path):
     version_file = tmp_path / "__init__.py"
     version_file.write_text('__version__ = "2.3.4"\n', encoding="utf-8")
