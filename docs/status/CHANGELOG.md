@@ -12,6 +12,31 @@ Rules:
 ## 2026-03-12
 
 ```yaml
+id: 2026-03-12-28
+type: fix
+areas: [ui, themes, packaging, release, ci, tests]
+issue: null
+summary: "Include theme resources in packaged binaries to restore full UI styling"
+details: >
+  Fixed packaged-app styling regression where buttons/hover/rounded controls
+  appeared plain because `resources/theme.qss` and related SVG assets were not
+  included in PyInstaller release builds.
+
+  Implemented:
+  - Added PyInstaller data inclusion for `resources/` in local release tooling.
+  - Added same inclusion in GitHub Actions macOS and Windows release builds.
+  - Added unit test asserting the release tool emits `--add-data resources:resources`.
+
+  Validation:
+  - pytest -q tests/unit/test_release_update_tool.py
+files_changed:
+  - tools/release_update.py
+  - .github/workflows/release-binaries.yml
+  - tests/unit/test_release_update_tool.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-12-27
 type: fix
 areas: [updater, ui, macos, tests, versioning]

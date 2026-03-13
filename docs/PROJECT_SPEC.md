@@ -251,6 +251,12 @@ Update infrastructure is exposed to users through three desktop entry points:
 - If running from source/dev mode (`python3 sezzions.py`) or asset type is not auto-installable:
   - updater falls back to manual install guidance and opens download folder.
 
+Packaged theming requirement:
+- Release binaries must include `resources/` (including `theme.qss` and SVG assets)
+  in the PyInstaller bundle (`--add-data resources:resources` on macOS/Linux,
+  `--add-data resources;resources` on Windows) so full UI stylesheet behavior
+  (rounded controls, hover states, header/icon styling) is preserved in packaged runtimes.
+
 Update-check scheduling semantics:
 - Startup no longer forces an immediate network check.
 - A periodic timer evaluates settings and runs checks only when:

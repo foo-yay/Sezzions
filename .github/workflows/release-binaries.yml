@@ -38,7 +38,7 @@ jobs:
 
       - name: Build macOS app bundle
         run: |
-          python -m PyInstaller --noconfirm --clean --name sezzions-macos-arm64 --windowed sezzions.py
+          python -m PyInstaller --noconfirm --clean --name sezzions-macos-arm64 --windowed --add-data "resources:resources" sezzions.py
 
       - name: Zip macOS bundle
         run: |
@@ -73,7 +73,7 @@ jobs:
       - name: Build Windows app
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --name sezzions-windows-x64 --windowed sezzions.py
+          python -m PyInstaller --noconfirm --clean --name sezzions-windows-x64 --windowed --add-data "resources;resources" sezzions.py
 
       - name: Zip Windows bundle
         shell: pwsh

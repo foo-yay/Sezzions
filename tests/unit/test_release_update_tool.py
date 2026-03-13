@@ -214,3 +214,26 @@ def test_sync_local_branch_skips_checkout_if_already_on_target(monkeypatch: pyte
         ["git", "fetch", "origin", "main"],
         ["git", "pull", "--ff-only", "origin", "main"],
     ]
+
+
+def test_build_macos_artifact_includes_resources_data(monkeypatch: pytest.MonkeyPatch):
+    commands: list[list[str]] = []
+
+    monkeypatch.setattr(release_update.host_platform, "system", lambda: "Darwin")
+
+    def _record(command: list[str], dry_run: bool = False) -> None:
+        commands.append(command)
+
+    monkeypatch.setattr(release_update, "run_command", _record)
+
+    output = release_update.build_macos_artifact(
+        binary_basename="sezzions-macos-arm64",
+        app_entrypoint="sezzions.py",
+        dry_run=True,
+    )
+
+    assert output.as_posix().endswith("dist/sezzions-macos-arm64.app")
+    assert len(commands) == 1
+    assert "--add-data" in commands[0]
+    add_data_index = commands[0].index("--add-data")
+    assert commands[0][add_data_index + 1] == "resources:resources"

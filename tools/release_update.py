@@ -260,6 +260,8 @@ def build_macos_artifact(binary_basename: str, app_entrypoint: str, dry_run: boo
             "--name",
             binary_basename,
             "--windowed",
+            "--add-data",
+            "resources:resources",
             app_entrypoint,
         ],
         dry_run=dry_run,
