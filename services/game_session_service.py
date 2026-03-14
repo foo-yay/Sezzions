@@ -220,12 +220,36 @@ class GameSessionService:
             if active is not None and active.id != session.id:
                 raise ValueError("An active session already exists for this User/Site.")
 
-        updated = self.session_repo.update(session)
-        
-        # Log update to audit and undo/redo stack
+        just_closed = target_status == "Closed" and old_status != "Closed"
         group_id = str(uuid.uuid4())
-        if self.audit_service:
-            self.audit_service.log_update('game_sessions', session.id, old_data, asdict(updated), group_id=group_id)
+
+        if just_closed:
+            with self.session_repo.db.transaction():
+                updated = self.session_repo.update_no_commit(session)
+
+                # Process any PENDING_CANCEL redemptions before returning so facade-level
+                # rebuilds see the final post-close state.
+                if self.redemption_service is not None:
+                    self.redemption_service.process_pending_cancels(
+                        session.user_id,
+                        session.site_id,
+                        group_id=group_id,
+                        push_undo=False,
+                        auto_commit=False,
+                    )
+
+                if self.audit_service:
+                    self.audit_service.log_update(
+                        'game_sessions', session.id, old_data, asdict(updated),
+                        group_id=group_id,
+                        auto_commit=False,
+                    )
+        else:
+            updated = self.session_repo.update(session)
+
+            # Log update to audit and undo/redo stack
+            if self.audit_service:
+                self.audit_service.log_update('game_sessions', session.id, old_data, asdict(updated), group_id=group_id)
         
         if self.undo_redo_service:
             self.undo_redo_service.push_operation(
@@ -318,18 +342,6 @@ class GameSessionService:
                 )
                 return refreshed
             return updated
-
-        # Process any PENDING_CANCEL redemptions now that the session is closed
-        # (Issue #148 — fires regardless of recalculate_pl flag so deferred cancels
-        # always execute when a session transitions Active → Closed.)
-        if target_status == "Closed" and old_status != "Closed" and self.redemption_service is not None:
-            try:
-                self.redemption_service.process_pending_cancels(
-                    session.user_id,
-                    session.site_id,
-                )
-            except Exception as exc:
-                print(f"Warning: process_pending_cancels failed: {exc}")
 
         return updated
     
@@ -710,9 +722,60 @@ class GameSessionService:
             time_str = f"{time_str}:00"
         return datetime.combine(d, datetime.strptime(time_str, "%H:%M:%S").time())
 
+    def _get_site_sc_rate(self, site_id: int) -> Decimal:
+        sc_rate = Decimal("1.00")
+        if self.site_repo:
+            site = self.site_repo.get_by_id(site_id)
+            if site:
+                try:
+                    parsed = Decimal(str(getattr(site, "sc_rate", "1.0")))
+                    if parsed > 0:
+                        sc_rate = parsed
+                except Exception:
+                    pass
+        return sc_rate
+
+    def _load_redemption_balance_events(self, user_id: int, site_id: int):
+        """Load signed redemption balance events in SC units.
+
+        Debit events are positive amounts consumed by the recalculation formulas,
+        which subtract `red_between`. Canceled credit events are therefore
+        represented as negative amounts.
+        """
+        events = []
+        if self.redemption_repo is None:
+            return events
+
+        sc_rate = self._get_site_sc_rate(site_id)
+        for r in self.redemption_repo.get_by_user_and_site(user_id, site_id):
+            amount_sc = Decimal(str(r.amount)) / sc_rate
+            r_dt = self._to_dt(r.redemption_date, r.redemption_time)
+            if r_dt is not None:
+                events.append((r_dt, amount_sc))
+
+            if getattr(r, "status", "PENDING") == "CANCELED":
+                canceled_at = getattr(r, "canceled_at", None)
+                if canceled_at:
+                    try:
+                        canceled_utc = datetime.strptime(canceled_at[:19], "%Y-%m-%d %H:%M:%S")
+                    except (TypeError, ValueError):
+                        canceled_utc = None
+                    if canceled_utc is not None:
+                        local_cancel_date, local_cancel_time = utc_date_time_to_accounting_local(
+                            self.session_repo.db,
+                            canceled_utc.date(),
+                            canceled_utc.strftime("%H:%M:%S"),
+                        )
+                        cancel_dt = self._to_dt(local_cancel_date, local_cancel_time)
+                    if cancel_dt is not None:
+                        events.append((cancel_dt, -amount_sc))
+
+        events.sort(key=lambda x: x[0] or datetime.min)
+        return events
+
     def _load_pair_events(self, user_id: int, site_id: int):
         purchases = []
-        redemptions = []
+        redemptions = self._load_redemption_balance_events(user_id, site_id)
 
         if self.purchase_repo is not None:
             for p in self.purchase_repo.get_by_user_and_site(user_id, site_id):
@@ -721,14 +784,7 @@ class GameSessionService:
                 sc_amt = Decimal(str(p.sc_received))
                 purchases.append((dt, cash_amt, sc_amt))
 
-        if self.redemption_repo is not None:
-            for r in self.redemption_repo.get_by_user_and_site(user_id, site_id):
-                dt = self._to_dt(r.redemption_date, r.redemption_time)
-                amt = Decimal(str(r.amount))
-                redemptions.append((dt, amt))
-
         purchases.sort(key=lambda x: (x[0] or datetime.min))
-        redemptions.sort(key=lambda x: (x[0] or datetime.min))
         return purchases, redemptions
 
     def _recalculate_closed_sessions_for_pair(self, user_id: int, site_id: int) -> None:
@@ -957,6 +1013,8 @@ class GameSessionService:
             WHERE gsel.game_session_id = ? 
               AND gsel.event_type = 'redemption'
               AND gsel.relation = 'DURING'
+                            AND r.deleted_at IS NULL
+                            AND COALESCE(r.status, 'PENDING') NOT IN ('CANCELED', 'PENDING_CANCEL')
         """, (session_id,)).fetchone()
         return Decimal(str(row['total'])) if row else Decimal("0.00")
 

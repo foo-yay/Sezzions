@@ -9,7 +9,162 @@ Rules:
 
 ---
 
+## 2026-03-14
+
+```yaml
+id: 2026-03-14-02
+type: fix
+areas: [undo-redo, purchases, redemptions, tests]
+issue: 187
+summary: "Close red-team gaps in purchase undo reconstruction and queued cancel cleanup"
+details: >
+  Follow-up adversarial replay uncovered two more integrity holes in chained
+  undo/cancel flows. Undoing a deleted purchase could fail while reconstructing
+  the audited snapshot because `starting_redeemable_balance` was not coerced
+  back to `Decimal`. Separately, queued cancel completion could leave a stale
+  `realized_transactions` row behind for zero-basis/full redemptions that never
+  had FIFO allocation rows.
+
+  Implemented:
+  - undo/redo snapshot preparation now restores the missing purchase decimal
+    field (and normalizes common boolean flags) before rebuilding models
+  - queued and immediate cancel completion now always delete the realized row,
+    even when no FIFO allocation rows exist
+  - added regression coverage for purchase delete undo/redo round-trips and the
+    historical queued-cancel stale-realized-row scenario
+
+  Validation:
+  - /usr/local/bin/python3 -m pytest tests/integration/test_purchase_undo_redo.py -q
+  - /usr/local/bin/python3 -m pytest tests/integration/test_redemption_cancel_uncancel.py -q -k 'queued_historical_zero_basis_cancel_clears_realized_row_on_close'
+files_changed:
+  - services/undo_redo_service.py
+  - services/redemption_service.py
+  - tests/integration/test_purchase_undo_redo.py
+  - tests/integration/test_redemption_cancel_uncancel.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-14-01
+type: fix
+areas: [redemptions, undo-redo, audit, tests]
+issue: 187
+summary: "Audit and undo full redemption reprocess edits"
+details: >
+  Fixed an accounting integrity gap where `update_redemption_reprocess()` wrote
+  direct redemption updates without creating an audit snapshot or undoable
+  operation. That allowed full accounting edits to change redemption amounts in
+  the database with no matching row-level audit trail, and undo could not
+  restore the prior value.
+
+  Implemented:
+  - full redemption reprocess updates now log an audited `UPDATE` snapshot
+  - the same operation now pushes a dedicated undo/redo entry
+  - added regression coverage proving the reprocess path records the old/new
+    amount and undo restores the original amount
+
+  Validation:
+  - /usr/local/bin/python3 -m pytest tests/integration/test_issue_40_redemption_receipt_date.py -q
+files_changed:
+  - app_facade.py
+  - tests/integration/test_issue_40_redemption_receipt_date.py
+  - docs/status/CHANGELOG.md
+```
+
 ## 2026-03-13
+
+```yaml
+id: 2026-03-13-05
+type: fix
+areas: [redemptions, sessions, undo-redo, tests, docs]
+issue: 187
+summary: "Close recursive cancel-pipeline drift found by deep war-game replay"
+details: >
+  Follow-up red-team simulation for Issue #187 compared live cancel/uncancel
+  state against canonical `recalculate_everything()` output under nested
+  purchase/redemption/cancel/delete/session/undo/redo chains.
+
+  Implemented:
+  - FIFO rebuilds now ignore soft-deleted purchases and clear stale derived rows
+    for deleted/canceled redemptions within the affected pair scope.
+  - Scoped FIFO seeding now ignores deleted/canceled predecessor redemptions so
+    undo/delete chains cannot leak orphan allocation history forward.
+  - Queued `PENDING_CANCEL` transitions now rebuild immediately so prior closed
+    sessions stop counting the redemption in links and `redemptions_during`.
+  - Post-change session links and closed-session totals now rebuild for the
+    whole pair after scoped FIFO correction, eliminating suffix-only drift from
+    nested cancel/delete/undo sequences.
+  - Added regression coverage for queued-cancel deletion keeping closed-session
+    totals clean alongside the new artifact-cleanup tests.
+
+  Validation:
+  - python3 tools/issue_187_wargame.py
+    - Result: NO_FINDINGS
+files_changed:
+  - services/recalculation_service.py
+  - app_facade.py
+  - tests/integration/test_redemption_cancel_uncancel.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-13-04
+type: fix
+areas: [redemptions, sessions, undo-redo, ui, tests, docs]
+issue: 187
+summary: "Align redemption cancel semantics across session recalculation, event links, undo/redo, and UI gating"
+details: >
+  Fixed Issue #187 where redemption cancellation updated the row lifecycle and
+  expected-balance timeline, but left downstream accounting and UI behavior out
+  of sync.
+
+  Implemented:
+  - Closed-session recalculation now uses cancellation-aware redemption balance
+    events, including canceled credit events and SC-rate conversion parity.
+  - Session-event link rebuilds now exclude canceled redemptions so
+    `redemptions_during` and related session views do not keep counting canceled
+    rows.
+  - Cancel / uncancel flows now apply FIFO, realized-transaction, and status
+    changes atomically.
+  - Uncancel now restores row lifecycle first and rebuilds FIFO from the
+    original redemption timestamp, preventing later redemptions from keeping
+    stale post-cancel allocations.
+  - FIFO rebuilds now keep `PENDING_CANCEL` rows in allocation / realized
+    rebuilds until queued cancellation completes, preventing rebuilds from
+    corrupting queued state or breaking later session close.
+  - Session close now commits queued-cancel completion atomically with the
+    session status update, preventing partial close / partial cancel outcomes
+    when one queued cancellation fails mid-batch.
+  - The full `recalculate_everything()` path now uses the current rebuild API
+    and re-syncs links/session fields in the correct order.
+  - Undo/redo now reconciles redemption physical state after snapshot restore so
+    cancellation-related statuses do not leave missing allocations or other
+    impossible states.
+  - Added delete/undo regression coverage for queued and canceled redemption
+    lifecycle restoration.
+  - Redemptions tab action gating now hides Cancel for received rows and locks
+    `PENDING_CANCEL` rows from editing.
+
+  Validation:
+  - pytest -q tests/integration/test_redemption_cancel_uncancel.py -k "uncancel_rebuilds_fifo_chronologically_when_later_redemption_exists or nested_cancel_uncancel_sequence_stays_rebuild_stable or recalculate_everything_preserves_pending_cancel_accounting_state"
+  - pytest -q tests/integration/test_redemption_cancel_uncancel.py -k "pending_cancel_batch_failure_rolls_back_all_and_session_close or undo_delete_pending_cancel_restores_queued_state_with_fifo or undo_delete_canceled_redemption_restores_canceled_without_fifo"
+  - pytest -q tests/integration/test_redemption_cancel_uncancel.py tests/ui/test_redemption_cancel_visibility.py tests/integration/test_issue_40_redemption_receipt_date.py tests/unit/test_redemption_service.py
+  - pytest -q tests/integration/test_redemption_cancel_uncancel.py tests/ui/test_redemption_cancel_visibility.py
+  - pytest -q
+files_changed:
+  - services/game_session_service.py
+  - services/game_session_event_link_service.py
+  - services/redemption_service.py
+  - repositories/game_session_repository.py
+  - services/recalculation_service.py
+  - app_facade.py
+  - ui/tabs/redemptions_tab.py
+  - tests/integration/test_redemption_cancel_uncancel.py
+  - tests/ui/test_redemption_cancel_visibility.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
 
 ```yaml
 id: 2026-03-13-03

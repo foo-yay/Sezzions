@@ -613,12 +613,20 @@ class RedemptionsTab(QtWidgets.QWidget):
             len(selected_redemptions) == 1
             and getattr(selected_redemptions[0], 'status', 'PENDING') == 'PENDING'
         )
+        single_cancellable = (
+            single_pending
+            and getattr(selected_redemptions[0], 'receipt_date', None) is None
+        )
         single_canceled = (
             len(selected_redemptions) == 1
             and getattr(selected_redemptions[0], 'status', 'PENDING') == 'CANCELED'
         )
+        single_pending_cancel = (
+            len(selected_redemptions) == 1
+            and getattr(selected_redemptions[0], 'status', 'PENDING') == 'PENDING_CANCEL'
+        )
 
-        self.edit_btn.setVisible(len(selected_rows) == 1 and not single_canceled)
+        self.edit_btn.setVisible(len(selected_rows) == 1 and not single_canceled and not single_pending_cancel)
         self.delete_btn.setVisible(len(selected_rows) > 0)
         # Bulk actions: only for PENDING rows
         pending_count = sum(
@@ -629,7 +637,7 @@ class RedemptionsTab(QtWidgets.QWidget):
         self.mark_processed_btn.setVisible(pending_count > 0)
 
         # Cancel / Uncancel (Issue #148)
-        self.cancel_btn.setVisible(single_pending)
+        self.cancel_btn.setVisible(single_cancellable)
         self.uncancel_btn.setVisible(single_canceled)
 
         # Update spreadsheet stats bar
@@ -817,6 +825,13 @@ class RedemptionsTab(QtWidgets.QWidget):
 
         redemption = self.facade.get_redemption(redemption_id)
         if not redemption:
+            return
+        if getattr(redemption, 'status', 'PENDING') != 'PENDING':
+            QtWidgets.QMessageBox.information(
+                self,
+                "Edit Locked",
+                "Only PENDING redemptions can be edited.",
+            )
             return
 
         dialog = RedemptionDialog(self.facade, self, redemption)

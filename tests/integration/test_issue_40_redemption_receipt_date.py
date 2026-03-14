@@ -149,6 +149,60 @@ def test_accounting_field_update_still_validates(app_facade):
     assert updated_redemption.amount == Decimal("75.00")
 
 
+def test_accounting_reprocess_update_is_audited_and_undoable(app_facade):
+    """Accounting reprocess edits must hit audit/undo so values can be restored."""
+    user = app_facade.create_user("TestUser")
+    site = app_facade.create_site("TestSite", sc_rate=1.0)
+
+    app_facade.create_purchase(
+        user_id=user.id,
+        site_id=site.id,
+        amount=Decimal("1000.00"),
+        purchase_date=date.today() - timedelta(days=10),
+        sc_received=Decimal("1000.00"),
+    )
+
+    redemption = app_facade.create_redemption(
+        user_id=user.id,
+        site_id=site.id,
+        amount=Decimal("500.00"),
+        redemption_date=date.today() - timedelta(days=5),
+        apply_fifo=True,
+    )
+
+    # Isolate the reprocess edit as the only undoable operation.
+    app_facade.undo_redo_service.clear_stacks()
+
+    updated_redemption = app_facade.update_redemption_reprocess(
+        redemption.id,
+        amount=Decimal("250.00"),
+    )
+
+    assert updated_redemption.amount == Decimal("250.00")
+    assert app_facade.undo_redo_service.can_undo()
+
+    audit_row = app_facade.db.fetch_one(
+        """
+        SELECT old_data, new_data
+        FROM audit_log
+        WHERE action = 'UPDATE' AND table_name = 'redemptions' AND record_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (redemption.id,),
+    )
+
+    assert audit_row is not None
+    assert '"amount": "500.00"' in audit_row["old_data"] or '"amount": "500"' in audit_row["old_data"]
+    assert '"amount": "250.00"' in audit_row["new_data"] or '"amount": "250"' in audit_row["new_data"]
+
+    app_facade.undo_redo_service.undo()
+
+    reverted = app_facade.get_redemption(redemption.id)
+    assert reverted is not None
+    assert reverted.amount == Decimal("500.00")
+
+
 def test_processed_flag_only_update_no_rebuild(app_facade):
     """
     Verify that updating only the 'processed' flag (another metadata field)

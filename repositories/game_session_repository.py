@@ -225,6 +225,16 @@ class GameSessionRepository:
     
     def update(self, session: GameSession) -> GameSession:
         """Update an existing session"""
+        self._update_internal(session, auto_commit=True)
+        return session
+
+    def update_no_commit(self, session: GameSession) -> GameSession:
+        """Update an existing session without committing."""
+        self._update_internal(session, auto_commit=False)
+        return session
+
+    def _update_internal(self, session: GameSession, *, auto_commit: bool) -> None:
+        """Internal session update helper supporting explicit transaction control."""
         start_entry_tz = session.start_entry_time_zone or get_entry_timezone_name()
         utc_session_date, utc_session_time = local_date_time_to_utc(
             session.session_date,
@@ -254,34 +264,34 @@ class GameSessionRepository:
         """
         def str_or_none(val):
             return str(val) if val is not None else None
-        
-        self.db.execute(
-            query,
-            (
-                session.user_id, session.site_id, session.game_id, session.game_type_id,
-                utc_session_date, utc_session_time,
-                start_entry_tz,
-                utc_end_date,
-                utc_end_time,
-                end_entry_tz,
-                str(session.starting_balance), str(session.ending_balance),
-                str(session.starting_redeemable), str(session.ending_redeemable),
-                str(session.purchases_during), str(session.redemptions_during),
-                str(session.wager_amount), session.rtp,
-                str_or_none(session.expected_start_total),
-                str_or_none(session.expected_start_redeemable),
-                str_or_none(session.discoverable_sc),
-                str_or_none(session.delta_total),
-                str_or_none(session.delta_redeem),
-                str_or_none(session.session_basis),
-                str_or_none(session.basis_consumed),
-                str_or_none(session.net_taxable_pl),
-                session.status, session.notes, session.id
-            )
+
+        params = (
+            session.user_id, session.site_id, session.game_id, session.game_type_id,
+            utc_session_date, utc_session_time,
+            start_entry_tz,
+            utc_end_date,
+            utc_end_time,
+            end_entry_tz,
+            str(session.starting_balance), str(session.ending_balance),
+            str(session.starting_redeemable), str(session.ending_redeemable),
+            str(session.purchases_during), str(session.redemptions_during),
+            str(session.wager_amount), session.rtp,
+            str_or_none(session.expected_start_total),
+            str_or_none(session.expected_start_redeemable),
+            str_or_none(session.discoverable_sc),
+            str_or_none(session.delta_total),
+            str_or_none(session.delta_redeem),
+            str_or_none(session.session_basis),
+            str_or_none(session.basis_consumed),
+            str_or_none(session.net_taxable_pl),
+            session.status, session.notes, session.id
         )
+        if auto_commit:
+            self.db.execute(query, params)
+        else:
+            self.db.execute_no_commit(query, params)
         session.start_entry_time_zone = start_entry_tz
         session.end_entry_time_zone = end_entry_tz
-        return session
     
     def delete(self, session_id: int) -> None:
         """Soft delete a session by setting deleted_at timestamp"""

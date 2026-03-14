@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple, TYPE_CHECKING
 from decimal import Decimal
 from datetime import date, datetime, timezone
 from models.redemption import Redemption
-from tools.timezone_utils import get_entry_timezone_name
+from tools.timezone_utils import get_entry_timezone_name, local_date_time_to_utc
 from repositories.redemption_repository import RedemptionRepository
 from services.fifo_service import FIFOService
 
@@ -185,6 +185,20 @@ class RedemptionService:
         redemption = self.redemption_repo.get_by_id(redemption_id)
         if not redemption:
             raise ValueError(f"Redemption {redemption_id} not found")
+        if getattr(redemption, 'status', 'PENDING') != 'PENDING':
+            raise ValueError("Only PENDING redemptions may be updated through the lightweight update path.")
+
+        forbidden_fields = {
+            'status',
+            'canceled_at',
+            'cancel_reason',
+            'cost_basis',
+            'taxable_profit',
+        }
+        attempted_forbidden = sorted(field for field in kwargs if field in forbidden_fields)
+        if attempted_forbidden:
+            names = ", ".join(attempted_forbidden)
+            raise ValueError(f"Cancel lifecycle/accounting fields are not directly editable: {names}")
         
         # Capture old state for audit (BEFORE any modifications)
         old_data = asdict(redemption)
@@ -404,21 +418,11 @@ class RedemptionService:
         group_id: str,
         old_data: dict,
         notification_service=None,
+        push_undo: bool = True,
     ) -> None:
         """Inner helper that performs the actual FIFO reversal and status update."""
-        allocations = self._get_allocations(redemption.id)
-
-        if allocations:
-            self.fifo_service.reverse_allocation(allocations)
-            self._delete_allocations(redemption.id)
-            self._delete_realized_transaction(redemption.id)
-
-        # Mark canceled with UTC timestamp
-        canceled_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        redemption.status = 'CANCELED'
-        redemption.canceled_at = canceled_at
-        redemption.cancel_reason = reason
-        self.redemption_repo.update(redemption)
+        with self.db.transaction():
+            self._execute_cancel_no_commit(redemption, reason, group_id, old_data)
 
         # Dismiss any pending-receipt notification for this redemption
         if notification_service is not None:
@@ -430,22 +434,50 @@ class RedemptionService:
             except Exception:
                 pass
 
-        if self.audit_service:
-            self.audit_service.log_update(
-                'redemptions', redemption.id, old_data, asdict(redemption),
-                group_id=group_id,
-            )
-        if self.undo_redo_service:
+        if push_undo and self.undo_redo_service:
             self.undo_redo_service.push_operation(
                 group_id=group_id,
                 description=f"Cancel redemption #{redemption.id}",
                 timestamp=datetime.now().isoformat(),
             )
 
+    def _execute_cancel_no_commit(
+        self,
+        redemption: Redemption,
+        reason: str,
+        group_id: str,
+        old_data: dict,
+    ) -> None:
+        """Apply cancel accounting changes without committing."""
+        allocations = self._get_allocations(redemption.id)
+        if allocations:
+            self._reverse_allocations_no_commit(allocations)
+            self._delete_allocations_no_commit(redemption.id)
+
+        # Realized rows must be removed for every completed cancel, including
+        # zero-basis/full redemptions that never had FIFO allocation rows.
+        self._delete_realized_transaction_no_commit(redemption.id)
+
+        canceled_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        redemption.status = 'CANCELED'
+        redemption.canceled_at = canceled_at
+        redemption.cancel_reason = reason
+        redemption.cost_basis = None
+        redemption.taxable_profit = None
+        self._update_redemption_no_commit(redemption)
+
+        if self.audit_service:
+            self.audit_service.log_update(
+                'redemptions', redemption.id, old_data, asdict(redemption),
+                group_id=group_id,
+                auto_commit=False,
+            )
+
     def uncancel_redemption(
         self,
         redemption_id: int,
         group_id: Optional[str] = None,
+        restore_fifo: bool = True,
     ) -> Redemption:
         """Uncancel a previously canceled redemption, re-applying FIFO.
 
@@ -464,9 +496,204 @@ class RedemptionService:
         old_data = asdict(redemption)
         group_id = group_id or str(uuid.uuid4())
 
+        if not restore_fifo:
+            with self.db.transaction():
+                redemption.status = 'PENDING'
+                redemption.canceled_at = None
+                redemption.cancel_reason = None
+                redemption.receipt_date = None
+                redemption.cost_basis = None
+                redemption.taxable_profit = None
+                self._update_redemption_no_commit(redemption)
+
+                if self.audit_service:
+                    self.audit_service.log_update(
+                        'redemptions', redemption.id, old_data, asdict(redemption),
+                        group_id=group_id,
+                        auto_commit=False,
+                    )
+
+            if self.undo_redo_service:
+                self.undo_redo_service.push_operation(
+                    group_id=group_id,
+                    description=f"Uncancel redemption #{redemption_id}",
+                    timestamp=datetime.now().isoformat(),
+                )
+
+            refreshed = self.redemption_repo.get_by_id(redemption_id)
+            if refreshed is None:
+                raise ValueError(f"Redemption {redemption_id} not found after uncancel")
+            return refreshed
+
         # Re-apply FIFO — same logic as create_redemption
+        cost_basis, taxable_profit, allocations = self._calculate_fifo_for_redemption(redemption)
+
+        # Persist allocations and restore accounting records
+        with self.db.transaction():
+            self._save_allocations_no_commit(redemption.id, allocations)
+            self._apply_allocations_no_commit(allocations)
+            self._create_realized_transaction_no_commit(
+                redemption_id=redemption.id,
+                redemption_date=redemption.redemption_date,
+                user_id=redemption.user_id,
+                site_id=redemption.site_id,
+                cost_basis=cost_basis,
+                payout=Decimal(str(redemption.amount)),
+                net_pl=taxable_profit,
+            )
+
+            # Restore to PENDING
+            redemption.status = 'PENDING'
+            redemption.canceled_at = None
+            redemption.cancel_reason = None
+            redemption.receipt_date = None   # returning to pending state
+            redemption.cost_basis = cost_basis
+            redemption.taxable_profit = taxable_profit
+            self._update_redemption_no_commit(redemption)
+
+            if self.audit_service:
+                self.audit_service.log_update(
+                    'redemptions', redemption.id, old_data, asdict(redemption),
+                    group_id=group_id,
+                    auto_commit=False,
+                )
+
+        if self.undo_redo_service:
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Uncancel redemption #{redemption_id}",
+                timestamp=datetime.now().isoformat(),
+            )
+
+        return self.redemption_repo.get_by_id(redemption_id)
+
+    def process_pending_cancels(
+        self,
+        user_id: int,
+        site_id: int,
+        notification_service=None,
+        group_id: Optional[str] = None,
+        push_undo: bool = True,
+        auto_commit: bool = True,
+    ) -> List[int]:
+        """Complete all PENDING_CANCEL redemptions for a user/site after a session ends.
+
+        Called by GameSessionService.update_session() when status transitions
+        to 'Closed'.  Processes in chronological order of redemption_date so
+        FIFO reversal is applied in the correct sequence.
+
+        Returns:
+            List of redemption IDs that were fully canceled.
+        """
+        pending = self.redemption_repo.get_pending_cancel_for_user_site(user_id, site_id)
+        canceled_ids: List[int] = []
+        if not pending:
+            return canceled_ids
+
+        gid = group_id or str(uuid.uuid4())
+
+        def _run_batch() -> None:
+            for r in pending:
+                old_data = asdict(r)
+                old_data['status'] = 'PENDING'
+                old_data['canceled_at'] = None
+                old_data['cancel_reason'] = None
+                self._execute_cancel_no_commit(
+                    r,
+                    r.cancel_reason or "",
+                    gid,
+                    old_data,
+                )
+                canceled_ids.append(r.id)
+
+        if auto_commit:
+            with self.db.transaction():
+                _run_batch()
+        else:
+            _run_batch()
+
+        if notification_service is not None:
+            for redemption_id in canceled_ids:
+                try:
+                    notification_service.dismiss_by_type(
+                        'redemption_pending_receipt',
+                        subject_id=str(redemption_id),
+                    )
+                except Exception:
+                    pass
+
+        if push_undo and self.undo_redo_service:
+            count = len(canceled_ids)
+            noun = "redemption" if count == 1 else "redemptions"
+            self.undo_redo_service.push_operation(
+                group_id=gid,
+                description=f"Process pending cancel for {count} {noun}",
+                timestamp=datetime.now().isoformat(),
+            )
+        return canceled_ids
+
+    def reconcile_post_undo_redo(self, redemption_id: int, has_active_session: bool) -> Optional[Redemption]:
+        """Repair physical accounting state after an external snapshot restore.
+
+        Undo/redo restores row snapshots but does not restore related FIFO rows.
+        This helper brings allocations/realized rows back in sync with the
+        current redemption status.
+        """
+        redemption = self.redemption_repo.get_by_id(redemption_id)
+        if redemption is None:
+            return None
+
+        if redemption.status == 'PENDING_CANCEL' and not has_active_session:
+            redemption.status = 'PENDING'
+            redemption.canceled_at = None
+            redemption.cancel_reason = None
+            self.redemption_repo.update(redemption)
+            redemption = self.redemption_repo.get_by_id(redemption_id)
+            if redemption is None:
+                return None
+
+        allocations = self._get_allocations(redemption_id)
+        needs_fifo = (
+            redemption.status in ('PENDING', 'PENDING_CANCEL')
+            and redemption.receipt_date is None
+            and Decimal(str(redemption.amount or 0)) > 0
+        )
+
+        if redemption.status == 'CANCELED':
+            if allocations:
+                with self.db.transaction():
+                    self._reverse_allocations_no_commit(allocations)
+                    self._delete_allocations_no_commit(redemption_id)
+                    self._delete_realized_transaction_no_commit(redemption_id)
+            return self.redemption_repo.get_by_id(redemption_id)
+
+        if needs_fifo and not allocations:
+            cost_basis, taxable_profit, new_allocations = self._calculate_fifo_for_redemption(redemption)
+            with self.db.transaction():
+                self._save_allocations_no_commit(redemption_id, new_allocations)
+                self._apply_allocations_no_commit(new_allocations)
+                if not self._has_realized_transaction(redemption_id):
+                    self._create_realized_transaction_no_commit(
+                        redemption_id=redemption.id,
+                        redemption_date=redemption.redemption_date,
+                        user_id=redemption.user_id,
+                        site_id=redemption.site_id,
+                        cost_basis=cost_basis,
+                        payout=Decimal(str(redemption.amount)),
+                        net_pl=taxable_profit,
+                    )
+                redemption.cost_basis = cost_basis
+                redemption.taxable_profit = taxable_profit
+                self._update_redemption_no_commit(redemption)
+            return self.redemption_repo.get_by_id(redemption_id)
+
+        return redemption
+
+    def _calculate_fifo_for_redemption(
+        self,
+        redemption: Redemption,
+    ) -> Tuple[Decimal, Decimal, List[Tuple[int, Decimal]]]:
         if not redemption.more_remaining:
-            # Full redemption: consume ALL remaining basis as of original timestamp
             available = self.redemption_repo.db.fetch_one(
                 """
                 SELECT COALESCE(SUM(remaining_amount), 0) AS total_remaining
@@ -493,79 +720,16 @@ class RedemptionService:
                 redemption_entry_time_zone=redemption.redemption_entry_time_zone,
             )
             taxable_profit = Decimal(str(redemption.amount)) - cost_basis
-        else:
-            cost_basis, taxable_profit, allocations = self.fifo_service.calculate_cost_basis(
-                redemption.user_id,
-                redemption.site_id,
-                Decimal(str(redemption.amount)),
-                redemption.redemption_date,
-                redemption.redemption_time or "23:59:59",
-                redemption_entry_time_zone=redemption.redemption_entry_time_zone,
-            )
+            return cost_basis, taxable_profit, allocations
 
-        # Persist allocations and restore accounting records
-        self._save_allocations(redemption.id, allocations)
-        self.fifo_service.apply_allocation(allocations)
-        self._create_realized_transaction(
-            redemption_id=redemption.id,
-            redemption_date=redemption.redemption_date,
-            user_id=redemption.user_id,
-            site_id=redemption.site_id,
-            cost_basis=cost_basis,
-            payout=Decimal(str(redemption.amount)),
-            net_pl=taxable_profit,
+        return self.fifo_service.calculate_cost_basis(
+            redemption.user_id,
+            redemption.site_id,
+            Decimal(str(redemption.amount)),
+            redemption.redemption_date,
+            redemption.redemption_time or "23:59:59",
+            redemption_entry_time_zone=redemption.redemption_entry_time_zone,
         )
-
-        # Restore to PENDING
-        redemption.status = 'PENDING'
-        redemption.canceled_at = None
-        redemption.cancel_reason = None
-        redemption.receipt_date = None   # returning to pending state
-        redemption.cost_basis = cost_basis
-        redemption.taxable_profit = taxable_profit
-        self.redemption_repo.update(redemption)
-
-        if self.audit_service:
-            self.audit_service.log_update(
-                'redemptions', redemption.id, old_data, asdict(redemption),
-                group_id=group_id,
-            )
-        if self.undo_redo_service:
-            self.undo_redo_service.push_operation(
-                group_id=group_id,
-                description=f"Uncancel redemption #{redemption_id}",
-                timestamp=datetime.now().isoformat(),
-            )
-
-        return self.redemption_repo.get_by_id(redemption_id)
-
-    def process_pending_cancels(
-        self,
-        user_id: int,
-        site_id: int,
-        notification_service=None,
-    ) -> List[int]:
-        """Complete all PENDING_CANCEL redemptions for a user/site after a session ends.
-
-        Called by GameSessionService.update_session() when status transitions
-        to 'Closed'.  Processes in chronological order of redemption_date so
-        FIFO reversal is applied in the correct sequence.
-
-        Returns:
-            List of redemption IDs that were fully canceled.
-        """
-        pending = self.redemption_repo.get_pending_cancel_for_user_site(user_id, site_id)
-        canceled_ids: List[int] = []
-        for r in pending:
-            old_data = asdict(r)
-            gid = str(uuid.uuid4())
-            try:
-                self._execute_cancel(r, r.cancel_reason or "", gid, old_data, notification_service)
-                canceled_ids.append(r.id)
-            except Exception as exc:
-                # Don't let one failed cancel block the rest; log and continue
-                print(f"Warning: could not process pending cancel for redemption #{r.id}: {exc}")
-        return canceled_ids
     
     def list_redemptions(
         self, 
@@ -597,6 +761,18 @@ class RedemptionService:
                 VALUES (?, ?, ?)
             """
             self.db.execute(query, (redemption_id, purchase_id, str(amount)))
+
+    def _save_allocations_no_commit(self, redemption_id: int, allocations: List[Tuple[int, Decimal]]) -> None:
+        if not self.db:
+            return
+        for purchase_id, amount in allocations:
+            self.db.execute_no_commit(
+                """
+                INSERT INTO redemption_allocations (redemption_id, purchase_id, allocated_amount)
+                VALUES (?, ?, ?)
+                """,
+                (redemption_id, purchase_id, str(amount)),
+            )
     
     def _get_allocations(self, redemption_id: int) -> List[Tuple[int, Decimal]]:
         """Retrieve FIFO allocations from redemption_allocations table"""
@@ -618,6 +794,14 @@ class RedemptionService:
         
         query = "DELETE FROM redemption_allocations WHERE redemption_id = ?"
         self.db.execute(query, (redemption_id,))
+
+    def _delete_allocations_no_commit(self, redemption_id: int) -> None:
+        if not self.db:
+            return
+        self.db.execute_no_commit(
+            "DELETE FROM redemption_allocations WHERE redemption_id = ?",
+            (redemption_id,),
+        )
     
     def _create_realized_transaction(
         self, 
@@ -647,6 +831,35 @@ class RedemptionService:
             str(payout),
             str(net_pl)
         ))
+
+    def _create_realized_transaction_no_commit(
+        self,
+        redemption_id: int,
+        redemption_date,
+        user_id: int,
+        site_id: int,
+        cost_basis: Decimal,
+        payout: Decimal,
+        net_pl: Decimal,
+    ) -> None:
+        if not self.db:
+            return
+        self.db.execute_no_commit(
+            """
+            INSERT INTO realized_transactions
+            (redemption_id, redemption_date, user_id, site_id, cost_basis, payout, net_pl)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                redemption_id,
+                redemption_date.isoformat() if hasattr(redemption_date, 'isoformat') else redemption_date,
+                user_id,
+                site_id,
+                str(cost_basis),
+                str(payout),
+                str(net_pl),
+            ),
+        )
     
     def _delete_realized_transaction(self, redemption_id: int) -> None:
         """Delete realized_transaction record for a redemption"""
@@ -655,6 +868,93 @@ class RedemptionService:
         
         query = "DELETE FROM realized_transactions WHERE redemption_id = ?"
         self.db.execute(query, (redemption_id,))
+
+    def _delete_realized_transaction_no_commit(self, redemption_id: int) -> None:
+        if not self.db:
+            return
+        self.db.execute_no_commit(
+            "DELETE FROM realized_transactions WHERE redemption_id = ?",
+            (redemption_id,),
+        )
+
+    def _has_realized_transaction(self, redemption_id: int) -> bool:
+        if not self.db:
+            return False
+        row = self.db.fetch_one(
+            "SELECT 1 FROM realized_transactions WHERE redemption_id = ? LIMIT 1",
+            (redemption_id,),
+        )
+        return bool(row)
+
+    def _apply_allocations_no_commit(self, allocations: List[Tuple[int, Decimal]]) -> None:
+        for purchase_id, amount_allocated in allocations:
+            purchase = self.fifo_service.purchase_repo.get_by_id(purchase_id)
+            if not purchase:
+                raise ValueError(f"Purchase {purchase_id} not found")
+            new_remaining = purchase.remaining_amount - amount_allocated
+            if new_remaining < 0:
+                raise ValueError(
+                    f"Cannot allocate ${amount_allocated} from purchase {purchase_id}. "
+                    f"Only ${purchase.remaining_amount} remaining."
+                )
+            self.db.execute_no_commit(
+                "UPDATE purchases SET remaining_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (str(new_remaining), purchase_id),
+            )
+
+    def _reverse_allocations_no_commit(self, allocations: List[Tuple[int, Decimal]]) -> None:
+        for purchase_id, amount_allocated in allocations:
+            purchase = self.fifo_service.purchase_repo.get_by_id(purchase_id)
+            if not purchase:
+                raise ValueError(f"Purchase {purchase_id} not found")
+            new_remaining = purchase.remaining_amount + amount_allocated
+            if new_remaining > purchase.amount:
+                raise ValueError(
+                    f"Cannot restore ${amount_allocated} to purchase {purchase_id}. "
+                    f"Would exceed original amount ${purchase.amount}."
+                )
+            self.db.execute_no_commit(
+                "UPDATE purchases SET remaining_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (str(new_remaining), purchase_id),
+            )
+
+    def _update_redemption_no_commit(self, redemption: Redemption) -> None:
+        entry_tz = redemption.redemption_entry_time_zone or get_entry_timezone_name()
+        utc_date, utc_time = local_date_time_to_utc(
+            redemption.redemption_date,
+            redemption.redemption_time,
+            entry_tz,
+        )
+        self.db.execute_no_commit(
+            """
+            UPDATE redemptions
+            SET user_id = ?, site_id = ?, amount = ?, fees = ?, redemption_date = ?,
+                redemption_time = ?, redemption_entry_time_zone = ?, redemption_method_id = ?, is_free_sc = ?,
+                receipt_date = ?, processed = ?, more_remaining = ?,
+                notes = ?, status = ?, canceled_at = ?, cancel_reason = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                redemption.user_id,
+                redemption.site_id,
+                str(redemption.amount),
+                str(redemption.fees),
+                utc_date,
+                utc_time,
+                entry_tz,
+                redemption.redemption_method_id,
+                1 if redemption.is_free_sc else 0,
+                redemption.receipt_date.isoformat() if redemption.receipt_date else None,
+                1 if redemption.processed else 0,
+                1 if redemption.more_remaining else 0,
+                redemption.notes,
+                getattr(redemption, 'status', 'PENDING') or 'PENDING',
+                getattr(redemption, 'canceled_at', None),
+                getattr(redemption, 'cancel_reason', None),
+                redemption.id,
+            ),
+        )
 
     def get_deletion_impact(self, redemption_id: int) -> str:
         """
