@@ -535,7 +535,7 @@ class UndoRedoService:
                 else:
                     result[key] = value
             # Decimal fields: amount, fees, cost_basis, balances, etc.
-            elif key in {'amount', 'sc_received', 'starting_sc_balance', 'cashback_earned', 
+            elif key in {'amount', 'sc_received', 'starting_sc_balance', 'starting_redeemable_balance', 'cashback_earned', 
                         'remaining_amount', 'fees', 'cost_basis', 'taxable_profit',
                         'starting_balance', 'ending_balance', 'starting_redeemable', 'ending_redeemable',
                         'purchases_during', 'redemptions_during', 'wager_amount',
@@ -547,6 +547,11 @@ class UndoRedoService:
                     result[key] = Decimal(str(value))
                 else:
                     result[key] = value
+            elif key in {'cashback_is_manual', 'processed', 'more_remaining', 'is_free_sc'}:
+                if isinstance(value, str):
+                    result[key] = value.strip().lower() in {'1', 'true', 'yes', 'on'}
+                else:
+                    result[key] = bool(value)
             else:
                 result[key] = value
         

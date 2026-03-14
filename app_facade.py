@@ -479,19 +479,16 @@ class AppFacade:
                 _utc_date,
                 _utc_time
             )
-            # Rebuild session-event links to include newly added/edited events
-            self.game_session_event_link_service.rebuild_links_for_pair_from(
+            # Session links / closed-session fields are more sensitive to nested
+            # lifecycle edits (undo/delete/queued cancel). Rebuild them for the
+            # whole pair after FIFO is corrected to avoid suffix drift.
+            self.game_session_event_link_service.rebuild_links_for_pair(
                 site_id,
                 user_id,
-                _utc_date,
-                _utc_time
             )
-            # Recalculate session P/L fields (delta_redeem, basis_consumed, net_taxable_pl)
-            self.game_session_service._recalculate_closed_sessions_for_pair_from(
+            self.game_session_service.recalculate_closed_sessions_for_pair(
                 user_id,
                 site_id,
-                boundary_date,
-                boundary_time
             )
     
     def _handle_undo_redo_recalculation(self, operation: str, audit_entries: List[Dict]) -> None:
@@ -507,9 +504,18 @@ class AppFacade:
         """
         import json
         from datetime import datetime
+
+        def _parse_json(value):
+            if not value:
+                return None
+            try:
+                return json.loads(value) if isinstance(value, str) else value
+            except (json.JSONDecodeError, TypeError):
+                return None
         
         # Group affected records by (user_id, site_id)
         affected_pairs = {}  # (user_id, site_id) -> earliest (date, time)
+        affected_redemptions = set()
         
         for entry in audit_entries:
             table_name = entry.get('table_name')
@@ -525,9 +531,8 @@ class AppFacade:
             if not data_json:
                 continue
             
-            try:
-                data = json.loads(data_json) if isinstance(data_json, str) else data_json
-            except (json.JSONDecodeError, TypeError):
+            data = _parse_json(data_json)
+            if data is None:
                 continue
             
             user_id = data.get('user_id')
@@ -535,6 +540,16 @@ class AppFacade:
             
             if not user_id or not site_id:
                 continue
+
+            if table_name == 'redemptions' and entry.get('record_id') is not None:
+                old_snapshot = _parse_json(entry.get('old_data')) or {}
+                new_snapshot = _parse_json(entry.get('new_data')) or {}
+                statuses = {
+                    old_snapshot.get('status'),
+                    new_snapshot.get('status'),
+                }
+                if statuses & {'CANCELED', 'PENDING_CANCEL'}:
+                    affected_redemptions.add(int(entry['record_id']))
             
             # Get date/time based on table
             if table_name == 'purchases':
@@ -575,6 +590,16 @@ class AppFacade:
                 if (record_date, time_normalized) < (current_date, current_time):
                     affected_pairs[pair] = (record_date, time_normalized)
         
+        for redemption_id in sorted(affected_redemptions):
+            redemption = self.redemption_repo.get_by_id(redemption_id)
+            if redemption is None:
+                continue
+            has_active = (
+                self.game_session_service.get_active_session(redemption.user_id, redemption.site_id)
+                is not None
+            )
+            self.redemption_service.reconcile_post_undo_redo(redemption_id, has_active)
+
         # Trigger recalculation for each affected pair
         for (user_id, site_id), (boundary_date, boundary_time) in affected_pairs.items():
             # Use containing boundary logic to find actual rebuild point
@@ -1012,9 +1037,16 @@ class AppFacade:
 
     def recalculate_everything(self) -> Dict[str, Any]:
         """Full legacy-style rebuild: FIFO allocations + realized + session P/L."""
-        fifo_result = self.recalculation_service.rebuild_fifo_all()
+        fifo_result = self.recalculation_service.rebuild_all()
         pairs = self.recalculation_service.iter_pairs()
         sessions_recalculated = 0
+
+        # Rebuild explicit event links (legacy parity)
+        try:
+            self.game_session_event_link_service.rebuild_links_all()
+        except Exception:
+            pass
+
         for user_id, site_id in pairs:
             try:
                 self.game_session_service.recalculate_closed_sessions_for_pair(user_id, site_id)
@@ -1022,12 +1054,6 @@ class AppFacade:
             except Exception:
                 # Keep going; individual pairs may lack sessions or have data issues.
                 continue
-
-        # Rebuild explicit event links (legacy parity)
-        try:
-            self.game_session_event_link_service.rebuild_links_all()
-        except Exception:
-            pass
 
         # Recalculate game RTP aggregates for all games
         games_recalculated = 0
@@ -1384,6 +1410,9 @@ class AppFacade:
         old_redemption = self.redemption_repo.get_by_id(redemption_id)
         if not old_redemption:
             raise ValueError(f"Redemption {redemption_id} not found")
+        if getattr(old_redemption, 'status', 'PENDING') != 'PENDING':
+            raise ValueError("Only PENDING redemptions can be edited through accounting reprocess.")
+        old_data = asdict(old_redemption)
 
         # Ensure timestamp uniqueness if date/time is being changed
         was_adjusted = False
@@ -1419,15 +1448,40 @@ class AppFacade:
             fees=kwargs.get("fees", old_redemption.fees),
             redemption_date=kwargs.get("redemption_date", old_redemption.redemption_date),
             redemption_time=kwargs.get("redemption_time", old_redemption.redemption_time),
+            redemption_entry_time_zone=kwargs.get("redemption_entry_time_zone", old_redemption.redemption_entry_time_zone),
             redemption_method_id=kwargs.get("redemption_method_id", old_redemption.redemption_method_id),
             receipt_date=kwargs.get("receipt_date", old_redemption.receipt_date),
             processed=kwargs.get("processed", old_redemption.processed),
             more_remaining=kwargs.get("more_remaining", old_redemption.more_remaining),
             is_free_sc=kwargs.get("is_free_sc", old_redemption.is_free_sc),
             notes=kwargs.get("notes", old_redemption.notes),
+            cost_basis=old_redemption.cost_basis,
+            taxable_profit=old_redemption.taxable_profit,
+            status=old_redemption.status,
+            canceled_at=old_redemption.canceled_at,
+            cancel_reason=old_redemption.cancel_reason,
         )
         updated.__post_init__()
-        self.redemption_repo.update(updated)
+
+        group_id = self.audit_service.generate_group_id() if hasattr(self, "audit_service") else None
+        with self.db.transaction():
+            self.redemption_repo.update(updated)
+            if group_id and hasattr(self, "audit_service"):
+                self.audit_service.log_update(
+                    "redemptions",
+                    updated.id,
+                    old_data,
+                    asdict(updated),
+                    group_id=group_id,
+                    auto_commit=False,
+                )
+
+        if group_id and hasattr(self, "undo_redo_service"):
+            self.undo_redo_service.push_operation(
+                group_id=group_id,
+                description=f"Reprocess redemption #{updated.id}",
+                timestamp=datetime.now().isoformat(),
+            )
 
         old_pair = (old_redemption.user_id, old_redemption.site_id)
         new_pair = (updated.user_id, updated.site_id)
@@ -1838,21 +1892,22 @@ class AppFacade:
             notification_service=self.notification_rules_service,
         )
 
-        if not has_active:
-            # Full cancel happened — trigger FIFO + session recalculation
-            boundary_date, boundary_time = self._containing_boundary(
-                redemption.site_id,
-                redemption.user_id,
-                redemption.redemption_date,
-                redemption.redemption_time,
-            )
-            self._rebuild_or_mark_stale(
-                redemption.user_id,
-                redemption.site_id,
-                boundary_date,
-                boundary_time,
-                reason="redemption cancel",
-            )
+        # Rebuild after both immediate cancels and queued PENDING_CANCEL transitions.
+        # FIFO rebuilds preserve PENDING_CANCEL rows, while links/session totals
+        # must stop counting them immediately.
+        boundary_date, boundary_time = self._containing_boundary(
+            redemption.site_id,
+            redemption.user_id,
+            redemption.redemption_date,
+            redemption.redemption_time,
+        )
+        self._rebuild_or_mark_stale(
+            redemption.user_id,
+            redemption.site_id,
+            boundary_date,
+            boundary_time,
+            reason="redemption cancel",
+        )
 
         return canceled
 
@@ -1869,7 +1924,10 @@ class AppFacade:
         if not redemption:
             raise ValueError(f"Redemption {redemption_id} not found")
 
-        uncanceled = self.redemption_service.uncancel_redemption(redemption_id)
+        uncanceled = self.redemption_service.uncancel_redemption(
+            redemption_id,
+            restore_fifo=False,
+        )
 
         # Trigger FIFO + session recalculation from the original redemption timestamp
         boundary_date, boundary_time = self._containing_boundary(
@@ -1886,7 +1944,8 @@ class AppFacade:
             reason="redemption uncancel",
         )
 
-        return uncanceled
+        refreshed = self.redemption_repo.get_by_id(redemption_id)
+        return refreshed or uncanceled
 
     # ==========================================================================
     # Game Session Operations

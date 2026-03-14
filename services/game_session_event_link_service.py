@@ -98,6 +98,8 @@ class GameSessionEventLinkService:
             SELECT id, redemption_date, COALESCE(redemption_time, '00:00:00') as redemption_time
             FROM redemptions
             WHERE site_id = ? AND user_id = ?
+                            AND deleted_at IS NULL
+                                                        AND COALESCE(status, 'PENDING') NOT IN ('CANCELED', 'PENDING_CANCEL')
               AND redemption_date IS NOT NULL
             ORDER BY redemption_date ASC, COALESCE(redemption_time, '00:00:00') ASC, id ASC
             """,
@@ -260,6 +262,8 @@ class GameSessionEventLinkService:
             SELECT id, redemption_date, COALESCE(redemption_time, '00:00:00') as redemption_time
             FROM redemptions
             WHERE site_id = ? AND user_id = ?
+                            AND deleted_at IS NULL
+                                                        AND COALESCE(status, 'PENDING') NOT IN ('CANCELED', 'PENDING_CANCEL')
               AND redemption_date IS NOT NULL
               AND (redemption_date > ? OR (redemption_date = ? AND COALESCE(redemption_time, '00:00:00') > ?))
             ORDER BY redemption_date ASC, COALESCE(redemption_time, '00:00:00') ASC, id ASC

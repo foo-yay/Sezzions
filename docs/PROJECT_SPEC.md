@@ -761,31 +761,44 @@ PENDING_CANCEL → (session closes)        →  CANCELED
 - All `redemption_allocations` and `realized_transactions` rows for the canceled redemption are deleted.
 - If there is an **Active** game session for the same (user, site) pair, cancellation is deferred: status becomes `PENDING_CANCEL` and FIFO reversal is delayed.
 - When a session transitions Active → Closed, `process_pending_cancels` executes all `PENDING_CANCEL` redemptions for that pair, completing FIFO reversal in chronological order.
+- Session close + queued-cancel completion must commit atomically. If any queued cancel fails, the session must remain unclosed and all queued rows must retain their pre-close FIFO / realized state.
 - After cancel, `_rebuild_or_mark_stale` is called to recalculate all downstream FIFO and session P/L from the redemption's timestamp boundary.
+- Queued `PENDING_CANCEL` transitions must rebuild immediately so closed-session links / totals stop counting the redemption even before the later active session closes.
+- Cancel / uncancel writes must be atomic: FIFO reversal/restoration, realized-transaction changes, and redemption status updates commit as one transaction.
 
 #### Uncancel Semantics
 
 - Only CANCELED redemptions may be uncanceled (not PENDING_CANCEL).
 - Uncancel clears `canceled_at` and `cancel_reason`, sets status back to `PENDING`.
-- Re-applies FIFO allocation for the redemption.
+- Uncancel must rebuild FIFO from the original redemption timestamp so later redemptions are re-sequenced chronologically rather than keeping stale post-cancel allocations.
 - Triggers full `_rebuild_or_mark_stale` from the original redemption timestamp.
 
 #### Accounting Invariants
 
-- **FIFO exclusion rule:** `RecalculationService` excludes `CANCELED` and `PENDING_CANCEL` redemptions from all rebuild queries (`WHERE COALESCE(status, 'PENDING') NOT IN ('CANCELED', 'PENDING_CANCEL')`).
+- **FIFO rebuild rule:** `RecalculationService` excludes `CANCELED` redemptions from FIFO rebuild queries, but keeps `PENDING_CANCEL` rows in FIFO / realized rebuilds until the queued cancel actually completes on session close.
+- **Soft-delete rebuild rule:** FIFO rebuild inputs exclude soft-deleted purchases, and rebuild cleanup must remove stale allocation / realized rows for deleted or canceled redemptions inside the affected pair boundary.
+- **Closed-session parity rule:** closed-session recalculation must use the same effective redemption timeline as `compute_expected_balances`, including cancellation credit events and SC-rate conversion.
+- **Session-link exclusion rule:** session-event links and `redemptions_during` totals exclude `CANCELED` redemptions so closed-session views and aggregates do not keep counting canceled cashouts.
+- **Queued-cancel rebuild safety rule:** full/scoped rebuilds must preserve `PENDING_CANCEL` allocation + realized state so later session close can complete the queued cancel without over-restoring purchase basis.
+- **Queued-cancel batch atomicity rule:** queued cancels processed at session close must behave as one batch; no partial close/partial cancellation outcome is allowed.
+- **Scoped-rebuild robustness rule:** scoped FIFO rebuilds may start from the affected timestamp boundary, but session-event links and closed-session totals must be rebuilt for the whole (user, site) pair after nested cancel/delete/undo lifecycle changes so suffix-only session recalculation cannot drift.
 - **Notification exclusion rule:** `NotificationRulesService.evaluate_redemption_pending_rules` excludes non-PENDING rows (`AND COALESCE(r.status, 'PENDING') = 'PENDING'`).
 - **Bulk metadata update guard:** `bulk_update_redemption_metadata` skips CANCELED rows to prevent restoring already-canceled redemptions via bulk receipt entry.
 - **Two-event delta model for `compute_expected_balances`:** A CANCELED redemption contributes TWO events to the balance timeline:
   1. A debit at `redemption_date` (as if it happened when submitted).
   2. A credit at `canceled_at` (restoring the balance at the moment of cancellation).
   This preserves correct expected-balance continuity across the entire timeline without rewriting historical data.
+- **Undo/redo repair rule:** undo/redo that restores redemption snapshots must also reconcile FIFO allocations / realized rows so restored statuses never leave impossible physical states.
+- **Delete/undo lifecycle rule:** undo of deleting `PENDING_CANCEL` or `CANCELED` redemptions must restore the original lifecycle state and matching FIFO presence/absence.
+- **Timestamp persistence rule:** any no-commit redemption status update must continue storing `redemption_date` / `redemption_time` in UTC DB form, or later scoped rebuild boundaries become inconsistent.
 
 #### UI Behavior
 
-- Redemptions tab toolbar: "Cancel" button (shown for single-selected PENDING row), "Uncancel" button (shown for single-selected CANCELED row).
+- Redemptions tab toolbar: "Cancel" button (shown only for a single-selected PENDING row with no `receipt_date`), "Uncancel" button (shown for a single-selected CANCELED row).
 - Cancel dialog: warns if there is an Active session (cancel will be deferred), provides reason text input.
 - Table rendering: CANCELED rows shown in gray (#95a5a6); PENDING_CANCEL rows shown in purple (#8e44ad).
 - "Pending" quick filter: excludes CANCELED and PENDING_CANCEL rows.
+- Only PENDING redemptions are editable through the accounting reprocess path; `PENDING_CANCEL` and `CANCELED` rows are locked from in-place editing.
 
 #### Schema
 
