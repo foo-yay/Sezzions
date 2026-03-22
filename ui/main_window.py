@@ -1015,12 +1015,29 @@ class MainWindow(QtWidgets.QMainWindow):
     def _dismiss_update_notifications(self):
         notifications = self.facade.notification_service.get_all(
             include_dismissed=True,
-            include_deleted=False,
+            include_deleted=True,
             include_snoozed=True,
         )
-        for notification in notifications:
-            if notification.type == 'app_update_available':
-                self.facade.notification_service.delete(notification.id, cooldown_days=0)
+        update_notifications = [
+            notification
+            for notification in notifications
+            if notification.type == 'app_update_available'
+        ]
+        update_notifications.sort(
+            key=lambda notification: (
+                notification.created_at or datetime.min,
+                notification.id or 0,
+            ),
+            reverse=True,
+        )
+
+        for index, notification in enumerate(update_notifications):
+            if index == 0:
+                if not notification.is_deleted:
+                    self.facade.notification_service.delete(notification.id, cooldown_days=0)
+                continue
+
+            self.facade.notification_service.hard_delete(notification.id)
 
     def _perform_update_check(self, show_messages: bool):
         manifest_url = (self.settings.get("update_manifest_url", "") or "").strip()

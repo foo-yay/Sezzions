@@ -215,6 +215,14 @@ class NotificationService:
             
             return self.notification_repo.update(notification)
         return None
+
+    def hard_delete(self, notification_id: int) -> bool:
+        """Permanently delete a notification by ID."""
+        notification = self.notification_repo.get_by_id(notification_id)
+        if not notification:
+            return False
+        self.notification_repo.hard_delete(notification_id)
+        return True
     
     def clear_dismissed(self) -> int:
         """Permanently delete all dismissed notifications. Returns count deleted."""
