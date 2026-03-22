@@ -231,7 +231,7 @@ Update infrastructure is exposed to users through three desktop entry points:
 - **Notification bell**:
   - Periodic checks can create an `app_update_available` notification when a newer version is detected.
   - Notification action key `open_updates` routes to the same manual update-check flow.
-  - Existing stale update notifications are dismissed automatically when no update is available.
+  - Existing stale update notifications are cleaned up automatically: older persisted update rows are purged, and the newest row is deleted when no update is available.
 
 `Update Now` install semantics:
 - Always downloads and verifies the update asset first.
@@ -1536,12 +1536,14 @@ Provide passive, persistent notifications for important app events without inter
     - Respects user settings: only shown if `notify_when_overdue` enabled
     - Threshold configurable: `overdue_threshold_days` (default: 1 day)
     - Shows days overdue in notification body
+    - Successful backups clear the overdue notification immediately and refresh the bell state without waiting for the next hourly rules pass
   - `backup_failed`: automatic backup failed (error severity)
     - Respects user settings: only shown if `notify_on_failure` enabled
     - Dismisses on successful backup
   - Rules auto-dismiss when conditions resolve or backup completes
 - **Redemption pending-receipt rules**:
-  - Queries: `SELECT * FROM redemptions WHERE receipt_date IS NULL AND redemption_date <= ?`
+  - Queries: pending redemptions where `receipt_date IS NULL`, `amount > 0`, and `redemption_date <= ?`
+  - Synthetic zero-dollar loss / "Balance Closed" rows are excluded because they do not represent a payout awaiting receipt
   - Creates one notification per pending redemption (subject_id = redemption_id)
   - Severity: INFO if < 30 days, WARNING if ≥ 30 days
   - Auto-dismisses when redemption_service marks receipt_date

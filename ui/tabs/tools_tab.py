@@ -79,6 +79,25 @@ class ToolsTab(QWidget):
             widget = widget.parentWidget()
         return None
 
+    def _get_main_window(self):
+        """Walk parents to locate the owning main window, if present."""
+        widget = self
+        while widget:
+            if hasattr(widget, 'on_backup_completed') and hasattr(widget, '_refresh_notification_badge'):
+                return widget
+            widget = widget.parentWidget()
+        return None
+
+    def _notify_backup_completed(self):
+        """Clear backup notifications and refresh the visible notification state."""
+        main_window = self._get_main_window()
+        if main_window is not None:
+            main_window.on_backup_completed()
+            return
+
+        if hasattr(self.facade, 'notification_rules_service'):
+            self.facade.notification_rules_service.on_backup_completed()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, "backup_dir_input") and hasattr(self, "backup_dir"):
@@ -1667,6 +1686,8 @@ class ToolsTab(QWidget):
                     
                     # Update last backup display
                     self._update_last_backup_display()
+
+                    self._notify_backup_completed()
                     
                     QMessageBox.information(
                         self,
@@ -2431,8 +2452,7 @@ class ToolsTab(QWidget):
                 print(f"[Auto-Backup] Created: {filename} ({size_mb:.2f} MB)")
                 
                 # Notify notification rules service of successful backup
-                if hasattr(self.facade, 'notification_rules_service'):
-                    self.facade.notification_rules_service.on_backup_completed()
+                self._notify_backup_completed()
             else:
                 print(f"[Auto-Backup] Failed: {result.error}")
                 

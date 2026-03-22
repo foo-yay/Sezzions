@@ -164,6 +164,7 @@ class NotificationRulesService:
             JOIN users u ON r.user_id = u.id
             JOIN sites s ON r.site_id = s.id
             WHERE r.receipt_date IS NULL
+                            AND CAST(COALESCE(r.amount, 0) AS REAL) > 0
                             AND r.deleted_at IS NULL
                             AND COALESCE(r.status, 'PENDING') = 'PENDING'
                             AND (

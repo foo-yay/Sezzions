@@ -9,6 +9,45 @@ Rules:
 
 ---
 
+## 2026-03-22
+
+```yaml
+id: 2026-03-22-01
+type: fix
+areas: [notifications, redemptions, tools, ui, tests, docs]
+issue: 189
+summary: "Clear stale update alerts, exclude balance-close losses, and refresh backup alerts"
+details: >
+  Fixed the three notification false positives reported in Issue #189.
+
+  Implemented:
+  - periodic/manual update checks now prune older persisted `app_update_available`
+    rows so stale version alerts do not linger after the app is already current
+  - overdue pending-receipt rules now exclude zero-dollar loss / "Balance Closed"
+    redemptions so synthetic close-balance markers do not create payout-receipt
+    reminders
+  - backup success handling now routes through a shared Tools-tab completion path
+    that clears backup notifications and refreshes the visible bell state
+    immediately for both manual and automatic backups
+  - added integration coverage for excluding balance-close rows and a headless UI
+    regression proving backup completion clears the bell badge
+
+  Validation:
+  - pytest -q tests/ui/test_update_ui.py tests/integration/test_notification_rules_balance_closed.py tests/ui/test_backup_notification_ui.py
+  - pytest -q
+files_changed:
+  - services/notification_service.py
+  - services/notification_rules_service.py
+  - ui/main_window.py
+  - ui/tabs/tools_tab.py
+  - tests/integration/test_notification_rules_balance_closed.py
+  - tests/ui/test_backup_notification_ui.py
+  - tests/ui/test_update_ui.py
+  - docs/archive/2026-03-22-issue-notification-fixes.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
 ## 2026-03-14
 
 ```yaml
