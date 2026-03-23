@@ -9,6 +9,30 @@ Rules:
 
 ---
 
+## 2026-03-23
+
+```yaml
+id: 2026-03-23-01
+type: fix
+areas: [ui, maintenance, cleanup, tests]
+issue: null
+summary: "Remove the stale Validate Data menu action"
+details: >
+  Removed the legacy `Tools -> Validate Data` action, which still called an old
+  facade wrapper with a mismatched result shape and could crash with
+  `KeyError: 'total_checks'`. Current integrity protection already runs through
+  startup maintenance-mode checks, so the broken manual menu entry was retired
+  instead of being kept as a misleading duplicate path.
+
+  Validation:
+  - pytest -q tests/ui/test_issue_92_ui_smoke.py
+files_changed:
+  - ui/main_window.py
+  - app_facade.py
+  - tests/ui/test_issue_92_ui_smoke.py
+  - docs/status/CHANGELOG.md
+```
+
 ## 2026-03-22
 
 ```yaml

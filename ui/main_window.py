@@ -500,10 +500,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # Tools menu
         tools_menu = menubar.addMenu("&Tools")
         
-        validate_action = QtGui.QAction("&Validate Data", self)
-        validate_action.triggered.connect(self._validate_data)
-        tools_menu.addAction(validate_action)
-        
         summary_action = QtGui.QAction("Data &Summary", self)
         summary_action.triggered.connect(self._show_summary)
         tools_menu.addAction(summary_action)
@@ -790,30 +786,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.setup_tab.sub_tabs.setCurrentIndex(last_setup_subtab)
             # Reconnect signal handler after tab recreation
             self.setup_tab.sub_tabs.currentChanged.connect(self._on_setup_subtab_changed)
-    
-    def _validate_data(self):
-        """Run data validation"""
-        result = self.facade.validate_all_data()
-        
-        if result['is_valid']:
-            QtWidgets.QMessageBox.information(
-                self,
-                "Validation Complete",
-                f"✓ Data validation passed\n\n"
-                f"Checked: {result['total_checks']} items\n"
-                f"Errors: {len(result['errors'])}\n"
-                f"Warnings: {len(result['warnings'])}"
-            )
-        else:
-            error_text = "\n".join(result['errors'][:10])  # Show first 10
-            if len(result['errors']) > 10:
-                error_text += f"\n... and {len(result['errors']) - 10} more"
-            
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Validation Issues Found",
-                f"Found {len(result['errors'])} errors:\n\n{error_text}"
-            )
     
     def _show_summary(self):
         """Show data summary"""

@@ -63,8 +63,11 @@ def test_audit_log_menu_action_exists(main_window):
     
     assert tools_menu is not None, "Tools menu should exist"
     
-    # Find audit log action (simpler approach - just check tools_menu has actions)
-    assert len(tools_menu.actions()) > 0, "Tools menu should have actions"
+    action_texts = [action.text() for action in tools_menu.actions()]
+
+    assert len(action_texts) > 0, "Tools menu should have actions"
+    assert "View &Audit Log…" in action_texts
+    assert "&Validate Data" not in action_texts
 
 
 def test_undo_redo_state_updates(main_window):

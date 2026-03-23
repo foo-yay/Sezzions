@@ -2373,11 +2373,6 @@ class AppFacade:
     # Validation Operations
     # ==========================================================================
     
-    def validate_all_data(self, user_id: Optional[int] = None,
-                         site_id: Optional[int] = None) -> Dict[str, Any]:
-        """Run comprehensive data validation checks."""
-        return self.validation_service.validate_all(user_id, site_id)
-    
     def validate_fifo_allocations(self, user_id: Optional[int] = None,
                                  site_id: Optional[int] = None) -> Dict[str, Any]:
         """Validate FIFO allocation integrity."""
