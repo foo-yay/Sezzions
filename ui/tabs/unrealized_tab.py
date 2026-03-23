@@ -378,24 +378,34 @@ class UnrealizedTab(QtWidgets.QWidget):
         net_loss = total_basis
 
         if total_basis <= 0:
-            QtWidgets.QMessageBox.information(
-                self, "No Balance", "No active basis to close for this site/user."
+            message = (
+                f"Close balance for {pos.site_name} ({pos.user_name})?\n\n"
+                f"Current SC balance: {current_sc:.2f} SC (${current_value:.2f})\n"
+                f"Cost basis: ${total_basis:.2f}\n"
+                f"Net loss: ${net_loss:.2f}\n\n"
+                "This will:\n"
+                f"• Mark {current_sc:.2f} SC as dormant until later activity\n"
+                "• Remove from Unrealized tab\n"
+                "• Create a close marker only (no FIFO basis change)\n"
+                "• Record no cash flow loss in Realized\n"
+                "• Have NO tax impact\n"
+                "• Reactivate automatically if you play this site again\n\n"
+                "Continue?"
             )
-            return
-
-        message = (
-            f"Close balance for {pos.site_name} ({pos.user_name})?\n\n"
-            f"Current SC balance: {current_sc:.2f} SC (${current_value:.2f})\n"
-            f"Cost basis: ${total_basis:.2f}\n"
-            f"Net loss: ${net_loss:.2f} (abandoning all basis)\n\n"
-            "This will:\n"
-            f"• Mark {current_sc:.2f} SC as dormant (no basis attached)\n"
-            "• Remove from Unrealized tab\n"
-            f"• Show -${net_loss:.2f} cash flow loss in Realized tab\n"
-            "• NO tax impact (not a deduction)\n"
-            "• Dormant balance will reactivate if you play this site again\n\n"
-            "Continue?"
-        )
+        else:
+            message = (
+                f"Close balance for {pos.site_name} ({pos.user_name})?\n\n"
+                f"Current SC balance: {current_sc:.2f} SC (${current_value:.2f})\n"
+                f"Cost basis: ${total_basis:.2f}\n"
+                f"Net loss: ${net_loss:.2f} (abandoning all basis)\n\n"
+                "This will:\n"
+                f"• Mark {current_sc:.2f} SC as dormant (no basis attached)\n"
+                "• Remove from Unrealized tab\n"
+                f"• Show -${net_loss:.2f} cash flow loss in Realized tab\n"
+                "• NO tax impact (not a deduction)\n"
+                "• Dormant balance will reactivate if you play this site again\n\n"
+                "Continue?"
+            )
         confirm = QtWidgets.QMessageBox.question(self, "Close Balance", message)
         if confirm != QtWidgets.QMessageBox.Yes:
             return
@@ -413,15 +423,23 @@ class UnrealizedTab(QtWidgets.QWidget):
             return
 
         self.refresh_data()
-        QtWidgets.QMessageBox.information(
-            self,
-            "Success",
-            f"Balance closed for {pos.site_name} ({pos.user_name})\n\n"
-            f"Net cash flow loss: -${result['net_loss']:.2f}\n"
-            f"Dormant SC balance: {result['current_sc']:.2f} SC (${result['current_value']:.2f})\n\n"
-            f"The -${result['net_loss']:.2f} will show in Realized tab\n"
-            f"Dormant ${result['current_value']:.2f} will reactivate on next session",
-        )
+        if total_basis <= 0:
+            success_message = (
+                f"Balance closed for {pos.site_name} ({pos.user_name})\n\n"
+                f"Net loss: ${result['net_loss']:.2f}\n"
+                f"Dormant SC balance: {result['current_sc']:.2f} SC (${result['current_value']:.2f})\n\n"
+                "No cash flow loss recorded in Realized\n"
+                f"Dormant ${result['current_value']:.2f} will reactivate on next session"
+            )
+        else:
+            success_message = (
+                f"Balance closed for {pos.site_name} ({pos.user_name})\n\n"
+                f"Net cash flow loss: -${result['net_loss']:.2f}\n"
+                f"Dormant SC balance: {result['current_sc']:.2f} SC (${result['current_value']:.2f})\n\n"
+                f"The -${result['net_loss']:.2f} will show in Realized tab\n"
+                f"Dormant ${result['current_value']:.2f} will reactivate on next session"
+            )
+        QtWidgets.QMessageBox.information(self, "Success", success_message)
     
     def _add_notes(self):
         """Add/edit notes for position"""

@@ -117,6 +117,10 @@ def test_main_window_starts_cleanly(qapp, app_facade):
     # Window should be valid
     assert window is not None
     assert window.facade is app_facade  # Corrected: facade not app_facade
+    assert window.unrealized_tab is not None
+    window.stack.setCurrentWidget(window.unrealized_tab)
+    qapp.processEvents()
+    assert window.stack.currentWidget() is window.unrealized_tab
     
     # Clean up
     window.close()
