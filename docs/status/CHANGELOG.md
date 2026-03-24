@@ -12,6 +12,28 @@ Rules:
 ## 2026-03-23
 
 ```yaml
+id: 2026-03-23-03
+type: fix
+areas: [redemptions, unrealized, ui, tests, docs]
+issue: 191
+summary: "Label zero-basis close markers as closed instead of loss"
+details: >
+  Polished the Redemptions tab so zero-basis Unrealized close markers no longer
+  present as losses. These rows still use the existing `Balance Closed` marker
+  mechanism for Unrealized suppression, but when the marker records `Net Loss:
+  $0.00` it now appears as `Closed` in the Redemptions method column rather
+  than `Loss`, matching the underlying no-loss accounting behavior.
+
+  Validation:
+  - pytest -q tests/ui/test_issue_191_redemptions_close_marker_label.py tests/ui/test_issue_191_unrealized_zero_basis_close_ui.py tests/integration/test_issue_191_zero_basis_unrealized_close.py
+files_changed:
+  - ui/tabs/redemptions_tab.py
+  - tests/ui/test_issue_191_redemptions_close_marker_label.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-23-02
 type: feat
 areas: [unrealized, redemptions, ui, tests, docs]

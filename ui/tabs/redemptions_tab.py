@@ -70,6 +70,21 @@ def classify_redemption_confirmation(
 
 class RedemptionsTab(QtWidgets.QWidget):
     """Tab for managing redemptions"""
+
+    @staticmethod
+    def _is_zero_basis_close_marker(redemption: Redemption) -> bool:
+        """True when a $0 close marker is informational rather than a real loss."""
+        try:
+            amount = Decimal(str(redemption.amount or 0))
+        except Exception:
+            amount = Decimal("0.00")
+
+        notes = (redemption.notes or "").strip()
+        return (
+            amount == Decimal("0.00")
+            and notes.startswith("Balance Closed")
+            and "Net Loss: $0.00" in notes
+        )
     
     def __init__(self, facade: AppFacade, main_window=None):
         super().__init__()
@@ -328,6 +343,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                     date_time = f"{date_time} 🌐"
 
                 is_total_loss = float(redemption.amount) == 0
+                is_zero_basis_close_marker = self._is_zero_basis_close_marker(redemption)
                 r_status = getattr(redemption, 'status', 'PENDING') or 'PENDING'
                 receipt_date = redemption.receipt_date.isoformat() if redemption.receipt_date else ""
                 is_pending = receipt_date == ""
@@ -343,12 +359,17 @@ class RedemptionsTab(QtWidgets.QWidget):
                 else:
                     receipt_display = receipt_date
 
-                method_display = "Loss" if is_total_loss else (getattr(redemption, 'method_name', None) or "")
+                if is_zero_basis_close_marker:
+                    method_display = "Closed"
+                else:
+                    method_display = "Loss" if is_total_loss else (getattr(redemption, 'method_name', None) or "")
 
                 if r_status == 'CANCELED':
                     row_status = "canceled"
                 elif r_status == 'PENDING_CANCEL':
                     row_status = "pending_cancel"
+                elif is_zero_basis_close_marker:
+                    row_status = "closed_marker"
                 elif is_total_loss:
                     row_status = "total_loss"
                 elif is_pending:

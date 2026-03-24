@@ -423,6 +423,7 @@ When editing a purchase or creating/editing a game session, the system computes 
   - **Issue #191 (2026-03-23):** The Unrealized "Close Position" action now supports zero-basis profit-only positions in addition to basis-bearing positions.
     - If `Remaining Basis > $0.00`, close behavior is unchanged: Sezzions creates a `$0.00` close marker as a FULL redemption, consumes remaining basis via FIFO, and records the matching realized cashflow loss.
     - If `Remaining Basis = $0.00`, Sezzions creates only an explicit `Balance Closed` marker with `more_remaining=1`, does **not** run FIFO, does **not** create a realized cashflow loss row, and leaves historical purchase rows untouched.
+    - In the Redemptions tab, zero-basis close markers are labeled as `Closed` rather than `Loss` so UI wording matches the no-loss accounting outcome.
     - In both cases the position is hidden until later activity occurs after the close timestamp, at which point Unrealized reopens the position naturally.
   - **Recalculation invariant (Issue #156, 2026-03-09):** During FIFO rebuild, a close marker with parsable `Net Loss: $X.XX` is treated as basis-consuming closeout accounting for that timestamp window.
     - Rebuild allocates FIFO basis to the close marker redemption up to `min(parsed_loss, available_basis_at_or_before_close_time)`.
