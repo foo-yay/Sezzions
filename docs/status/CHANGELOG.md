@@ -16,13 +16,14 @@ id: 2026-03-23-03
 type: fix
 areas: [redemptions, unrealized, ui, tests, docs]
 issue: 191
-summary: "Label zero-basis close markers as closed instead of loss"
+summary: "Label all close markers as closed in Redemptions"
 details: >
-  Polished the Redemptions tab so zero-basis Unrealized close markers no longer
-  present as losses. These rows still use the existing `Balance Closed` marker
-  mechanism for Unrealized suppression, but when the marker records `Net Loss:
-  $0.00` it now appears as `Closed` in the Redemptions method column rather
-  than `Loss`, matching the underlying no-loss accounting behavior.
+  Polished the Redemptions tab so synthetic `Balance Closed` rows display as
+  `Closed` consistently, regardless of whether the underlying marker uses
+  `more_remaining = 0` or `more_remaining = 1`. These rows still use the
+  existing close-marker mechanism for Unrealized suppression and accounting,
+  but the UI now presents both the Type and Method columns as `Closed` instead
+  of mixing `Full`, `Partial`, or `Loss` labels for dormant-position markers.
 
   Validation:
   - pytest -q tests/ui/test_issue_191_redemptions_close_marker_label.py tests/ui/test_issue_191_unrealized_zero_basis_close_ui.py tests/integration/test_issue_191_zero_basis_unrealized_close.py

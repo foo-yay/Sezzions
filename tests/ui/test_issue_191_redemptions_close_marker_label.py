@@ -39,7 +39,7 @@ def _row_for_redemption(tab: RedemptionsTab, redemption_id: int) -> int:
 
 
 
-def test_zero_basis_close_marker_is_not_labeled_loss(qtbot, facade):
+def test_zero_basis_close_marker_shows_closed_labels(qtbot, facade):
     user, site = _seed_reference_data(facade)
     purchase_date = date.today() - timedelta(days=2)
     session_date = date.today() - timedelta(days=1)
@@ -86,12 +86,13 @@ def test_zero_basis_close_marker_is_not_labeled_loss(qtbot, facade):
     tab.refresh_data()
 
     row = _row_for_redemption(tab, redemption.id)
+    assert tab.table.item(row, 6).text() == "Closed"
     assert tab.table.item(row, 8).text() == "Closed"
     assert tab.table.item(row, 10).text().startswith("Balance Closed - Net Loss: $0.00")
 
 
 
-def test_basis_close_marker_still_shows_loss_label(qtbot, facade):
+def test_basis_close_marker_also_shows_closed_labels(qtbot, facade):
     user, site = _seed_reference_data(facade)
     purchase_date = date.today() - timedelta(days=2)
     session_date = date.today() - timedelta(days=1)
@@ -138,4 +139,5 @@ def test_basis_close_marker_still_shows_loss_label(qtbot, facade):
     tab.refresh_data()
 
     row = _row_for_redemption(tab, redemption.id)
-    assert tab.table.item(row, 8).text() == "Loss"
+    assert tab.table.item(row, 6).text() == "Closed"
+    assert tab.table.item(row, 8).text() == "Closed"

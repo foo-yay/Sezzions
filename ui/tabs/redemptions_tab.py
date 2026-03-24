@@ -72,8 +72,8 @@ class RedemptionsTab(QtWidgets.QWidget):
     """Tab for managing redemptions"""
 
     @staticmethod
-    def _is_zero_basis_close_marker(redemption: Redemption) -> bool:
-        """True when a $0 close marker is informational rather than a real loss."""
+    def _is_close_marker(redemption: Redemption) -> bool:
+        """True when a redemption row is a synthetic Balance Closed marker."""
         try:
             amount = Decimal(str(redemption.amount or 0))
         except Exception:
@@ -83,7 +83,6 @@ class RedemptionsTab(QtWidgets.QWidget):
         return (
             amount == Decimal("0.00")
             and notes.startswith("Balance Closed")
-            and "Net Loss: $0.00" in notes
         )
     
     def __init__(self, facade: AppFacade, main_window=None):
@@ -343,7 +342,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                     date_time = f"{date_time} 🌐"
 
                 is_total_loss = float(redemption.amount) == 0
-                is_zero_basis_close_marker = self._is_zero_basis_close_marker(redemption)
+                is_close_marker = self._is_close_marker(redemption)
                 r_status = getattr(redemption, 'status', 'PENDING') or 'PENDING'
                 receipt_date = redemption.receipt_date.isoformat() if redemption.receipt_date else ""
                 is_pending = receipt_date == ""
@@ -359,7 +358,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                 else:
                     receipt_display = receipt_date
 
-                if is_zero_basis_close_marker:
+                if is_close_marker:
                     method_display = "Closed"
                 else:
                     method_display = "Loss" if is_total_loss else (getattr(redemption, 'method_name', None) or "")
@@ -368,7 +367,7 @@ class RedemptionsTab(QtWidgets.QWidget):
                     row_status = "canceled"
                 elif r_status == 'PENDING_CANCEL':
                     row_status = "pending_cancel"
-                elif is_zero_basis_close_marker:
+                elif is_close_marker:
                     row_status = "closed_marker"
                 elif is_total_loss:
                     row_status = "total_loss"
@@ -473,7 +472,10 @@ class RedemptionsTab(QtWidgets.QWidget):
                 self.table.setItem(row, 5, unbased_item)
 
                 # Type (Full/Partial)
-                type_display = "Full" if not redemption.more_remaining else "Partial"
+                if is_close_marker:
+                    type_display = "Closed"
+                else:
+                    type_display = "Full" if not redemption.more_remaining else "Partial"
                 type_item = QtWidgets.QTableWidgetItem(type_display)
                 type_item.setTextAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter)
                 self.table.setItem(row, 6, type_item)
