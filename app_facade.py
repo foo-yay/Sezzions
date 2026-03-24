@@ -2618,38 +2618,49 @@ class AppFacade:
         if active_session:
             raise ValueError("Cannot close balance while a session is active for this site/user.")
 
-        # When closing position: cost basis is abandoned (total loss)
-        # current_value is irrelevant since we're not redeeming
-        net_loss = total_basis
+        now = datetime.now()
+        basis = Decimal(str(total_basis or 0))
+        net_loss = basis
         notes = (
             f"Balance Closed - Net Loss: ${net_loss:.2f} "
             f"(${current_sc:.2f} SC marked dormant)"
         )
 
-        now = datetime.now()
-        # Create $0 redemption as Full (more_remaining=False) to consume all basis
-        redemption = self.redemption_service.create_redemption(
-            user_id=user_id,
-            site_id=site_id,
-            amount=Decimal("0.00"),
-            redemption_date=date.today(),
-            redemption_time=now.strftime("%H:%M:%S"),
-            processed=True,
-            more_remaining=False,  # Full redemption - consume all basis
-            notes=notes,
-            apply_fifo=True,  # Apply FIFO to consume basis
-        )
+        if basis <= Decimal("0.00"):
+            self.redemption_service.create_redemption(
+                user_id=user_id,
+                site_id=site_id,
+                amount=Decimal("0.00"),
+                redemption_date=date.today(),
+                redemption_time=now.strftime("%H:%M:%S"),
+                processed=True,
+                more_remaining=True,
+                notes=notes,
+                apply_fifo=False,
+            )
+        else:
+            self.redemption_service.create_redemption(
+                user_id=user_id,
+                site_id=site_id,
+                amount=Decimal("0.00"),
+                redemption_date=date.today(),
+                redemption_time=now.strftime("%H:%M:%S"),
+                processed=True,
+                more_remaining=False,  # Full redemption - consume all basis
+                notes=notes,
+                apply_fifo=True,  # Apply FIFO to consume basis
+            )
 
-        # Mark purchases as dormant (FIFO already set remaining_amount to 0)
-        self.db.execute(
-            """
-            UPDATE purchases
-            SET status = 'dormant', updated_at = CURRENT_TIMESTAMP
-            WHERE site_id = ? AND user_id = ? AND remaining_amount = 0
-              AND (status IS NULL OR status = 'active')
-            """,
-            (site_id, user_id),
-        )
+            # Mark purchases as dormant (FIFO already set remaining_amount to 0)
+            self.db.execute(
+                """
+                UPDATE purchases
+                SET status = 'dormant', updated_at = CURRENT_TIMESTAMP
+                WHERE site_id = ? AND user_id = ? AND remaining_amount = 0
+                  AND (status IS NULL OR status = 'active')
+                """,
+                (site_id, user_id),
+            )
 
         return {
             "net_loss": net_loss,

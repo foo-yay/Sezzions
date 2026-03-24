@@ -12,6 +12,56 @@ Rules:
 ## 2026-03-23
 
 ```yaml
+id: 2026-03-23-03
+type: fix
+areas: [redemptions, unrealized, ui, tests, docs]
+issue: 191
+summary: "Label all close markers as closed in Redemptions"
+details: >
+  Polished the Redemptions tab so synthetic `Balance Closed` rows display as
+  `Closed` consistently, regardless of whether the underlying marker uses
+  `more_remaining = 0` or `more_remaining = 1`. These rows still use the
+  existing close-marker mechanism for Unrealized suppression and accounting,
+  but the UI now presents both the Type and Method columns as `Closed` instead
+  of mixing `Full`, `Partial`, or `Loss` labels for dormant-position markers.
+
+  Validation:
+  - pytest -q tests/ui/test_issue_191_redemptions_close_marker_label.py tests/ui/test_issue_191_unrealized_zero_basis_close_ui.py tests/integration/test_issue_191_zero_basis_unrealized_close.py
+files_changed:
+  - ui/tabs/redemptions_tab.py
+  - tests/ui/test_issue_191_redemptions_close_marker_label.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-23-02
+type: feat
+areas: [unrealized, redemptions, ui, tests, docs]
+issue: 191
+summary: "Allow closing zero-basis Unrealized positions without changing basis logic"
+details: >
+  Added a dedicated zero-basis Unrealized close path for profit-only balances
+  that are still visible on the site. When `Remaining Basis = $0.00`, closing
+  the position now writes only an explicit `Balance Closed` marker so the row
+  disappears from Unrealized until later activity resumes, without consuming
+  FIFO basis, mutating historical purchases, or creating a realized cashflow
+  loss. Existing basis-bearing close behavior remains unchanged.
+
+  Validation:
+  - pytest -q tests/integration/test_issue_191_zero_basis_unrealized_close.py tests/ui/test_issue_191_unrealized_zero_basis_close_ui.py tests/ui/test_issue_92_ui_smoke.py
+files_changed:
+  - app_facade.py
+  - ui/tabs/unrealized_tab.py
+  - tests/integration/test_issue_191_zero_basis_unrealized_close.py
+  - tests/ui/test_issue_191_unrealized_zero_basis_close_ui.py
+  - tests/ui/test_issue_92_ui_smoke.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+  - docs/archive/2026-03-23-issue-zero-basis-unrealized-close.md
+```
+
+```yaml
 id: 2026-03-23-01
 type: fix
 areas: [ui, maintenance, cleanup, tests]
