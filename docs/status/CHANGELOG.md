@@ -9,6 +9,37 @@ Rules:
 
 ---
 
+## 2026-03-25
+
+```yaml
+id: 2026-03-25-01
+type: feat
+areas: [sessions, unrealized, redemptions, ui, tests, docs]
+issue: 193
+summary: "Prompt to close low-balance positions after ending a session"
+details: >
+  Added a post-close prompt to the normal End Session flow when the saved ending
+  balance is worth less than $1.00 at the site's SC conversion rate. The prompt
+  uses dollar-equivalent value (`ending_total_sc × sc_rate`) so non-1:1 sites
+  behave consistently, and it reuses the existing Unrealized close semantics:
+  basis-bearing positions create the usual FIFO-backed realized loss while
+  zero-basis positions create only a dormant `Balance Closed` marker with no
+  FIFO change and no realized loss row. Declining the prompt leaves the session
+  closed and the position open, while `End & Start New` intentionally skips the
+  prompt to preserve the fast chained-session workflow.
+
+  Validation:
+  - QT_QPA_PLATFORM=offscreen pytest -q tests/integration/test_issue_193_low_balance_close_prompt.py tests/integration/test_issue_191_zero_basis_unrealized_close.py tests/ui/test_issue_191_unrealized_zero_basis_close_ui.py
+  - QT_QPA_PLATFORM=offscreen pytest -q
+files_changed:
+  - app_facade.py
+  - ui/tabs/game_sessions_tab.py
+  - tests/integration/test_issue_193_low_balance_close_prompt.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+  - docs/archive/2026-03-25-issue-low-balance-close-prompt.md
+```
+
 ## 2026-03-23
 
 ```yaml

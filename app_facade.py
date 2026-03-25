@@ -2437,6 +2437,54 @@ class AppFacade:
         """Get specific unrealized position for a site/user pair."""
         return self.unrealized_position_repo.get_position_by_site_user(site_id, user_id)
 
+    def get_low_balance_close_prompt_data(
+        self,
+        site_id: int,
+        user_id: int,
+        ending_total_sc: Decimal,
+    ) -> Optional[Dict[str, Any]]:
+        """Return close-prompt context for low-value ended sessions.
+
+        Prompts are based on dollar-equivalent value, not raw SC, so sites with
+        different `sc_rate` values use the same $1.00 threshold.
+        """
+        site = self.get_site(site_id)
+        user = self.get_user(user_id)
+        if not site or not user:
+            return None
+
+        current_sc = Decimal(str(ending_total_sc or 0))
+        sc_rate = Decimal(str(getattr(site, "sc_rate", 1.0) or 1.0))
+        current_value = current_sc * sc_rate
+        close_threshold = Decimal("1.00")
+        if current_value >= close_threshold:
+            return None
+
+        basis_row = self.db.fetch_one(
+            """
+            SELECT COALESCE(SUM(remaining_amount), 0) AS remaining_basis
+            FROM purchases
+            WHERE site_id = ? AND user_id = ?
+              AND deleted_at IS NULL
+              AND (status IS NULL OR status = 'active')
+            """,
+            (site_id, user_id),
+        )
+        total_basis = Decimal("0.00")
+        if basis_row:
+            total_basis = Decimal(str(basis_row["remaining_basis"] or 0))
+
+        return {
+            "site_id": site_id,
+            "user_id": user_id,
+            "site_name": site.name,
+            "user_name": user.name,
+            "current_sc": current_sc,
+            "current_value": current_value,
+            "total_basis": total_basis,
+            "close_threshold": close_threshold,
+        }
+
     def update_unrealized_notes(self, site_id: int, user_id: int, notes: str) -> None:
         self.unrealized_position_repo.update_notes(site_id, user_id, notes)
 

@@ -425,6 +425,11 @@ When editing a purchase or creating/editing a game session, the system computes 
     - If `Remaining Basis = $0.00`, Sezzions creates only an explicit `Balance Closed` marker with `more_remaining=1`, does **not** run FIFO, does **not** create a realized cashflow loss row, and leaves historical purchase rows untouched.
     - In the Redemptions tab, any synthetic `Balance Closed` marker is labeled as `Closed` rather than `Full`/`Partial` or `Loss`, so UI wording reflects close-marker intent instead of underlying redemption flags.
     - In both cases the position is hidden until later activity occurs after the close timestamp, at which point Unrealized reopens the position naturally.
+  - **Issue #193 (2026-03-25):** Ending a session through the normal **End Session** flow now checks whether the ending balance is below the `$1.00` equivalent close threshold using `ending_total_sc × sc_rate`.
+    - If the dollar-equivalent ending balance is `< $1.00`, Sezzions prompts the user to close the position immediately after the session is saved.
+    - The prompt reuses the same close semantics as the Unrealized tab: basis-bearing positions consume remaining FIFO basis and create the matching realized cashflow loss; zero-basis positions create only the dormant `Balance Closed` marker with no FIFO change and no realized loss row.
+    - The prompt is informational only; declining it leaves the session closed and leaves the position open.
+    - **End & Start New** intentionally skips this prompt so chained-session workflow stays uninterrupted.
   - **Recalculation invariant (Issue #156, 2026-03-09):** During FIFO rebuild, a close marker with parsable `Net Loss: $X.XX` is treated as basis-consuming closeout accounting for that timestamp window.
     - Rebuild allocates FIFO basis to the close marker redemption up to `min(parsed_loss, available_basis_at_or_before_close_time)`.
     - Allocations are written to `redemption_allocations`, and `purchases.remaining_amount` is reduced accordingly.
@@ -861,6 +866,7 @@ Game Sessions convenience:
 - Sezzions keeps **1 game per session** (accounting clarity), but provides a fast workflow to chain sessions across games:
   - End Session dialog: **"End & Start New"**
   - New Start Session dialog is prefilled with the ended session’s ending balances (same user/site); game selection is intentionally left blank.
+- Normal **End Session** may show a follow-up low-balance close prompt when the saved ending balance is worth `< $1.00` at the site’s `sc_rate`; choosing **End & Start New** skips that prompt.
 
 Session redeemable entry (Issue #160):
 - End Session and Edit Closed Session include an `Auto-Calc Redeemable SC` toggle (checkbox-only row; no extra label).
