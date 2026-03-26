@@ -9,6 +9,51 @@ Rules:
 
 ---
 
+## 2026-03-26
+
+```yaml
+id: 2026-03-26-01
+type: fix
+areas: [redemptions, fifo, unrealized, timezone, tests, docs]
+issue: 195
+summary: "Fix same-day full closeouts dropping basis because of local-vs-UTC cutoff drift"
+details: >
+  Fixed a data-correctness bug in basis-bearing `Balance Closed` / full-redemption
+  flows where the pre-FIFO "total remaining basis" query used the raw local
+  redemption date/time while purchases had already been stored in UTC. On
+  same-day entries from non-UTC entry timezones, that mismatch could exclude
+  purchases that really occurred before the close in local time, causing the
+  close marker to record too little `cost_basis`, leave stale
+  `purchases.remaining_amount`, and keep the position highlighted in Unrealized
+  after the user had explicitly closed it.
+
+  Implemented:
+  - centralized full-redemption remaining-basis lookup inside
+    `RedemptionService` so both initial creation and reprocess paths reuse the
+    same timezone-aware purchase windowing as FIFO allocation
+  - added a unit regression proving a same-day full redemption at `09:30` local
+    consumes a `09:00` local purchase but not a later `10:00` local purchase
+  - added an integration regression proving `close_unrealized_position()` now
+    fully consumes same-day local basis and writes the expected realized loss
+
+  Motivation / intent:
+  - explicit close markers must be trustworthy bookkeeping anchors
+  - a full closeout cannot leave stale orange basis merely because local clock
+    time was compared directly against UTC-stored purchase timestamps
+  - pre-calculation and allocation must share one timestamp semantics rule to
+    avoid path-dependent accounting drift
+
+  Validation:
+  - pytest -q tests/integration/test_issue_195_close_marker_timezone.py tests/unit/test_issue_195_full_redemption_timezone.py
+  - pytest -q (full suite hit one unrelated flaky failure in `tests/ui/test_expenses_autocomplete.py`; rerunning that file alone passed)
+files_changed:
+  - services/redemption_service.py
+  - tests/integration/test_issue_195_close_marker_timezone.py
+  - tests/unit/test_issue_195_full_redemption_timezone.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
 ## 2026-03-25
 
 ```yaml

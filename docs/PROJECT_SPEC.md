@@ -333,6 +333,10 @@ Derived invariants:
 #### Closeout vs Partial Redemption
 - `more_remaining = 0` (default behavior): treat redemption as a **closeout**; consume *all remaining basis* up to timestamp.
 - `more_remaining = 1`: treat redemption as **partial**; consume only the redemption amount.
+- **Issue #195 (2026-03-26): timezone-safe closeouts**
+  - The "all remaining basis up to timestamp" window must be evaluated in the **entry timezone**, then converted to UTC the same way repositories store purchase/redemption timestamps.
+  - Full-redemption pre-calculation and FIFO allocation must share the **same timestamp windowing rule**. Do not mix a local-time SQL cutoff for `SUM(remaining_amount)` with a UTC-aware FIFO allocator.
+  - Motivation: if a same-day purchase is entered in a non-UTC timezone (for example `America/New_York`), a local-time cutoff can incorrectly exclude that purchase after it has been stored as a later UTC clock time. That creates pathologically wrong full-close rows: understated `cost_basis`, stale `purchases.remaining_amount`, and Unrealized rows that stay orange even though the position was closed.
 
 This distinction is intentionally “business semantic” and must be preserved.
 
@@ -422,6 +426,7 @@ When editing a purchase or creating/editing a game session, the system computes 
   - **Semantics:** `more_remaining=0` means "I'm cashing out everything I want to/can; treat remaining balance as dormant." Position automatically reopens when new activity (purchases, sessions) occurs after closure datetime.
   - **Issue #191 (2026-03-23):** The Unrealized "Close Position" action now supports zero-basis profit-only positions in addition to basis-bearing positions.
     - If `Remaining Basis > $0.00`, close behavior is unchanged: Sezzions creates a `$0.00` close marker as a FULL redemption, consumes remaining basis via FIFO, and records the matching realized cashflow loss.
+    - **Issue #195 guardrail (2026-03-26):** For basis-bearing closes, the close-marker creation path must compute "remaining basis at close time" with the same entry-timezone→UTC conversion used by FIFO allocation itself. Same-day purchases entered before the close in local time must not be dropped merely because their stored UTC clock time is later than the naive local cutoff.
     - If `Remaining Basis = $0.00`, Sezzions creates only an explicit `Balance Closed` marker with `more_remaining=1`, does **not** run FIFO, does **not** create a realized cashflow loss row, and leaves historical purchase rows untouched.
     - In the Redemptions tab, any synthetic `Balance Closed` marker is labeled as `Closed` rather than `Full`/`Partial` or `Loss`, so UI wording reflects close-marker intent instead of underlying redemption flags.
     - In both cases the position is hidden until later activity occurs after the close timestamp, at which point Unrealized reopens the position naturally.

@@ -30,6 +30,23 @@ class RedemptionService:
         self.db = db_manager
         self.audit_service: Optional['AuditService'] = None
         self.undo_redo_service: Optional['UndoRedoService'] = None
+
+    def _get_total_remaining_basis_as_of(
+        self,
+        user_id: int,
+        site_id: int,
+        redemption_date: date,
+        redemption_time: Optional[str],
+        redemption_entry_time_zone: Optional[str],
+    ) -> Decimal:
+        purchases = self.fifo_service.purchase_repo.get_available_for_fifo_as_of(
+            user_id,
+            site_id,
+            redemption_date,
+            redemption_time or "23:59:59",
+            entry_time_zone=redemption_entry_time_zone,
+        )
+        return sum((purchase.remaining_amount for purchase in purchases), Decimal("0.00"))
     
     def create_redemption(
         self,
@@ -72,19 +89,13 @@ class RedemptionService:
         if apply_fifo:
             # For Full redemptions (more_remaining=False), consume ALL remaining basis
             if not more_remaining:
-                # Get total remaining basis for this site/user as of redemption timestamp
-                available_purchases = self.redemption_repo.db.fetch_one(
-                    """
-                    SELECT COALESCE(SUM(remaining_amount), 0) as total_remaining
-                    FROM purchases
-                    WHERE user_id = ? AND site_id = ? AND remaining_amount > 0
-                      AND (purchase_date < ? OR 
-                           (purchase_date = ? AND COALESCE(purchase_time,'00:00:00') <= ?))
-                    """,
-                    (user_id, site_id, redemption_date, redemption_date, redemption_time or "23:59:59")
+                total_remaining = self._get_total_remaining_basis_as_of(
+                    user_id,
+                    site_id,
+                    redemption_date,
+                    redemption_time,
+                    redemption.redemption_entry_time_zone,
                 )
-                
-                total_remaining = Decimal(str(available_purchases['total_remaining'])) if available_purchases else Decimal("0.00")
                 
                 # Calculate FIFO for ALL remaining basis (not just redemption amount)
                 cost_basis, taxable_profit, allocations = self.fifo_service.calculate_cost_basis(
@@ -694,23 +705,13 @@ class RedemptionService:
         redemption: Redemption,
     ) -> Tuple[Decimal, Decimal, List[Tuple[int, Decimal]]]:
         if not redemption.more_remaining:
-            available = self.redemption_repo.db.fetch_one(
-                """
-                SELECT COALESCE(SUM(remaining_amount), 0) AS total_remaining
-                FROM purchases
-                WHERE user_id = ? AND site_id = ? AND remaining_amount > 0
-                  AND (purchase_date < ?
-                       OR (purchase_date = ? AND COALESCE(purchase_time,'00:00:00') <= ?))
-                """,
-                (
-                    redemption.user_id,
-                    redemption.site_id,
-                    redemption.redemption_date,
-                    redemption.redemption_date,
-                    redemption.redemption_time or "23:59:59",
-                ),
+            total_remaining = self._get_total_remaining_basis_as_of(
+                redemption.user_id,
+                redemption.site_id,
+                redemption.redemption_date,
+                redemption.redemption_time,
+                redemption.redemption_entry_time_zone,
             )
-            total_remaining = Decimal(str(available['total_remaining'])) if available else Decimal("0.00")
             cost_basis, taxable_profit, allocations = self.fifo_service.calculate_cost_basis(
                 redemption.user_id,
                 redemption.site_id,
