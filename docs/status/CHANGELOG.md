@@ -12,6 +12,39 @@ Rules:
 ## 2026-03-26
 
 ```yaml
+id: 2026-03-26-02
+type: fix
+areas: [sessions, purchases, accounting, tests, docs]
+issue: 196
+summary: "Block closing sessions whose stored start already includes a later DURING purchase"
+details: >
+  Narrowed and fixed the Stake/Punt chronology bug without breaking legitimate
+  mid-session purchase workflows. Verified that true `DURING` purchases still
+  close correctly, then added a close-time consistency guard in
+  `GameSessionService`: when a session has linked purchases during the session,
+  the recorded starting total/redeemable balances must still match the
+  expected-balance calculation at the session start timestamp. If they do not,
+  close is rejected with a validation error instead of writing impossible
+  `session_basis`, `basis_consumed`, and `net_taxable_pl` values.
+
+  Implemented:
+  - added an integration regression proving a valid mid-session purchase can
+    still close normally
+  - added an integration regression proving close is blocked when the stored
+    session start already includes a later `DURING` purchase
+  - added a narrow service-layer close guard so inconsistent chronology is
+    rejected before the close transaction commits
+
+  Validation:
+  - pytest -q tests/ui/test_end_session_auto_redeemable.py tests/integration/test_issue_196_session_start_consistency.py tests/integration/test_purchase_active_session_link.py
+files_changed:
+  - services/game_session_service.py
+  - tests/integration/test_issue_196_session_start_consistency.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-26-01
 type: fix
 areas: [redemptions, fifo, unrealized, timezone, tests, docs]
