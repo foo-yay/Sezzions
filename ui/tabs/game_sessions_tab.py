@@ -237,6 +237,86 @@ class GameSessionsTab(QWidget):
             self.main_window.refresh_all_tabs()
         else:
             self.load_data()
+
+    def _format_low_balance_close_prompt(self, prompt_data: dict) -> str:
+        current_sc = Decimal(str(prompt_data["current_sc"]))
+        current_value = Decimal(str(prompt_data["current_value"]))
+        total_basis = Decimal(str(prompt_data["total_basis"]))
+        close_threshold = Decimal(str(prompt_data["close_threshold"]))
+
+        if total_basis <= Decimal("0.00"):
+            impact_lines = (
+                "This will:\n"
+                f"• Mark {current_sc:.2f} SC as dormant until later activity\n"
+                "• Remove the position from Unrealized\n"
+                "• Create a close marker only (No FIFO basis change)\n"
+                "• Record no cash flow loss in Realized\n"
+                "• Reactivate automatically if you play this site again"
+            )
+        else:
+            impact_lines = (
+                "This will:\n"
+                f"• Mark {current_sc:.2f} SC as dormant (no basis attached)\n"
+                "• Remove the position from Unrealized\n"
+                f"• Record a -${total_basis:.2f} cash flow loss in Realized\n"
+                "• Reactivate dormant SC automatically if you play this site again"
+            )
+
+        return (
+            f"Session closed for {prompt_data['site_name']} ({prompt_data['user_name']}).\n\n"
+            f"Ending balance: {current_sc:.2f} SC (${current_value:.2f})\n"
+            f"Remaining basis: ${total_basis:.2f}\n\n"
+            f"This balance is below the ${close_threshold:.2f} equivalent close threshold.\n\n"
+            f"{impact_lines}\n\n"
+            "Close the position now?"
+        )
+
+    def _format_low_balance_close_success(self, prompt_data: dict, result: dict) -> str:
+        total_basis = Decimal(str(prompt_data["total_basis"]))
+        if total_basis <= Decimal("0.00"):
+            return (
+                "Session closed successfully!\n\n"
+                f"Position also closed for {prompt_data['site_name']} ({prompt_data['user_name']})\n"
+                f"Dormant SC balance: {result['current_sc']:.2f} SC (${result['current_value']:.2f})\n\n"
+                "No cash flow loss recorded in Realized\n"
+                f"Dormant ${result['current_value']:.2f} will reactivate on next session"
+            )
+
+        return (
+            "Session closed successfully!\n\n"
+            f"Position also closed for {prompt_data['site_name']} ({prompt_data['user_name']})\n"
+            f"Net cash flow loss: -${result['net_loss']:.2f}\n"
+            f"Dormant SC balance: {result['current_sc']:.2f} SC (${result['current_value']:.2f})\n\n"
+            f"The -${result['net_loss']:.2f} will show in Realized tab\n"
+            f"Dormant ${result['current_value']:.2f} will reactivate on next session"
+        )
+
+    def _maybe_prompt_low_balance_close(self, prompt_data: dict | None) -> bool:
+        if prompt_data is None:
+            return False
+
+        confirm = QMessageBox.question(
+            self,
+            "Close Low Balance Position",
+            self._format_low_balance_close_prompt(prompt_data),
+        )
+        if confirm != QMessageBox.Yes:
+            return False
+
+        result = self.facade.close_unrealized_position(
+            prompt_data["site_id"],
+            prompt_data["user_id"],
+            current_sc=Decimal(str(prompt_data["current_sc"])),
+            current_value=Decimal(str(prompt_data["current_value"])),
+            total_basis=Decimal(str(prompt_data["total_basis"])),
+        )
+        self._refresh_after_mutation()
+        QMessageBox.information(
+            self,
+            "Success",
+            self._format_low_balance_close_success(prompt_data, result),
+        )
+        return True
     
     def _filter_sessions(self):
         """Filter sessions based on search text"""
@@ -857,6 +937,14 @@ class GameSessionsTab(QWidget):
                 QMessageBox.warning(self, "Invalid Entry", error)
                 return
             try:
+                low_balance_prompt_data = None
+                if not then_start_new:
+                    low_balance_prompt_data = self.facade.get_low_balance_close_prompt_data(
+                        site_id=session.site_id,
+                        user_id=session.user_id,
+                        ending_total_sc=data["ending_total_sc"],
+                    )
+
                 start_tz = session.start_entry_time_zone or get_accounting_timezone_name()
                 end_tz = get_entry_timezone_name() or get_accounting_timezone_name()
                 start_utc_date, start_utc_time = local_date_time_to_utc(
@@ -900,7 +988,8 @@ class GameSessionsTab(QWidget):
                 if then_start_new:
                     open_prefilled_next_session_dialog(data["ending_total_sc"], data["ending_redeemable_sc"])
                 else:
-                    QMessageBox.information(self, "Success", "Session closed successfully!")
+                    if not self._maybe_prompt_low_balance_close(low_balance_prompt_data):
+                        QMessageBox.information(self, "Success", "Session closed successfully!")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to close session: {e}")
 
