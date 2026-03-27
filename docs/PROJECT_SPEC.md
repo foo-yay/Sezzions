@@ -368,6 +368,12 @@ When editing a purchase or creating/editing a game session, the system computes 
 - Event 2 (redemption): `$5.00` after purchase and before cutoff (`500 SC` at `sc_rate=0.01`).
 - Expected at cutoff after both events:
   - `expected_total = 1300 - 500 = 800`
+
+**Close-time chronology guard (Issue #196, 2026-03-26):**
+- Legitimate mid-session purchases remain supported and continue to link as `DURING`.
+- When closing a session, if `DURING` purchases exist, the recorded session start balances must still match the expected balance check at the session start timestamp.
+- If the stored `starting_balance` / `starting_redeemable` already include a later `DURING` purchase, close must be blocked with a validation error instead of writing impossible session basis / taxable P&L.
+- User correction path: fix the session start balances or fix the purchase/session timestamps so the chronology is consistent, then close the session again.
   - `expected_redeemable = 1000 - 500 = 500`
 - Regression guard: `tests/integration/test_compute_expected_balances_cancel.py::test_redemption_after_purchase_before_cutoff_is_applied_chronologically`.
 
@@ -1368,6 +1374,7 @@ When derived data (FIFO allocations, cost basis, P/L) becomes corrupted, automat
 - Game session recalculation uses local timestamps converted to UTC when finding containing sessions.
 - Expected balance checks compare UTC instants across entry time zones to avoid out-of-order inclusion.
 - Session close validation blocks saves when end time is before start time after UTC conversion.
+- Session close validation also blocks saves when later `DURING` purchases make the recorded session start balances inconsistent with the session-start balance check.
 - Soft-deleted redemptions are excluded from FIFO rebuilds and realized transaction listings.
 - Expected redeemable balances are derived from sessions/checkpoints (purchases do not increase redeemable).
 - One-time migration converts existing local timestamps to UTC using the currently selected time zone.

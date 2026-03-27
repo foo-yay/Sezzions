@@ -47,6 +47,46 @@ class GameSessionService:
         self.redemption_service = redemption_service  # for PENDING_CANCEL processing
         self.audit_service: Optional['AuditService'] = None
         self.undo_redo_service: Optional['UndoRedoService'] = None
+
+    @staticmethod
+    def _rounded_money(value: Decimal) -> Decimal:
+        return Decimal(str(value or 0)).quantize(Decimal("0.01"))
+
+    def _validate_start_balance_consistency_on_close(self, session: GameSession) -> None:
+        """Block closing a session whose recorded start no longer matches chronology.
+
+        This guard is intentionally narrow: it only applies when purchases were
+        linked DURING the session. Valid mid-session purchases are allowed, but
+        a session must not be closed if its starting balances already include a
+        later DURING purchase, because that produces impossible basis math.
+        """
+        purchases_during_sc = self._sum_linked_purchases_during(session.id)
+        if purchases_during_sc <= Decimal("0.00"):
+            return
+
+        expected_total, expected_redeem = self.compute_expected_balances(
+            user_id=session.user_id,
+            site_id=session.site_id,
+            session_date=session.session_date,
+            session_time=session.session_time,
+        )
+        actual_total = Decimal(str(session.starting_balance or 0))
+        actual_redeem = Decimal(str(session.starting_redeemable or 0))
+
+        if (
+            self._rounded_money(actual_total) == self._rounded_money(expected_total)
+            and self._rounded_money(actual_redeem) == self._rounded_money(expected_redeem)
+        ):
+            return
+
+        raise ValueError(
+            "Cannot close session because the recorded starting balances no longer match the balance check at session start. "
+            f"Expected {expected_total:.2f} total / {expected_redeem:.2f} redeemable, but the session has "
+            f"{actual_total:.2f} / {actual_redeem:.2f}. "
+            f"This session also has {purchases_during_sc:.2f} SC linked as purchases during the session. "
+            "This usually means the session was started with balances that already included a later mid-session purchase. "
+            "Adjust the session start balances or timestamps so the chronology is consistent, then try closing again."
+        )
     
     def create_session(
         self,
@@ -224,6 +264,7 @@ class GameSessionService:
         group_id = str(uuid.uuid4())
 
         if just_closed:
+            self._validate_start_balance_consistency_on_close(session)
             with self.session_repo.db.transaction():
                 updated = self.session_repo.update_no_commit(session)
 
