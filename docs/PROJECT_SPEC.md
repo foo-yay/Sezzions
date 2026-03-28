@@ -100,6 +100,14 @@ Key rules:
 ### Repo Workflow (Source of Truth)
 This spec defines the canonical workflow expectations and documentation policy (see §8). Keep the repo lean: update this spec + changelog rather than creating new one-off docs.
 
+Canonical branch model:
+- `develop` is the integration/staging branch for normal implementation work.
+- `main` is the production/release branch.
+- New feature work should branch from `develop` and merge back into `develop` via PR.
+- Promotion to `main` is a separate approved release/hotfix step.
+- CI must run on pushes/PRs for both `develop` and `main`.
+- Production release publishing must run from `main` only.
+
 ### Application Update Infrastructure (Issue #171, MVP)
 
 Sezzions update discovery/download is implemented as a service-layer workflow sourced from GitHub Releases artifacts (not Git operations).

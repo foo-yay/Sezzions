@@ -27,13 +27,21 @@ You are assisting with **Sezzions**, the standalone desktop app in this reposito
 ## Required Workflow (Humans + AI)
 
 1. Start from a GitHub Issue.
-2. Implement changes with minimal, surgical edits.
-3. Update/add tests to match intended semantics.
-4. Update `docs/PROJECT_SPEC.md` when behavior/architecture/workflows change.
-5. Add a changelog entry to `docs/status/CHANGELOG.md` for noteworthy changes.
-6. Commit changes to a feature branch, push, and open a PR (Draft by default unless the owner requests otherwise).
-7. Move the item to "Ready for Review" and wait for owner approval.
-8. After approval/merge, close the Issue.
+2. For normal work, branch from `develop` using a feature branch (`issue-<id>-<slug>`, `feature/<slug>`, `bug/<slug>`, `chore/<slug>`).
+3. Implement changes with minimal, surgical edits.
+4. Update/add tests to match intended semantics.
+5. Update `docs/PROJECT_SPEC.md` when behavior/architecture/workflows change.
+6. Add a changelog entry to `docs/status/CHANGELOG.md` for noteworthy changes.
+7. Push the feature branch and open a PR into `develop` (Draft by default unless the owner requests otherwise).
+8. Merge `develop` into `main` only for approved release/hotfix promotion.
+9. Move the item to "Ready for Review" and wait for owner approval.
+10. After approval/merge, close the Issue.
+
+Branch policy:
+- `develop` is the integration/staging branch for ongoing work.
+- `main` is the protected production/release branch.
+- Unless the owner explicitly requests a production hotfix/release change, agents should target `develop`, not `main`.
+- Production release publishing must be run from `main`.
 
 ## Agent Quality Bar (Test-First + Headless Smoke + Pitfalls)
 

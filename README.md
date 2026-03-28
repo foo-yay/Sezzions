@@ -87,11 +87,14 @@ If you are implementing work (human or AI):
 
 ### Branching & PR Policy
 
-- Use the default branch (typically `main`) as the stable integration branch.
-- For any non-trivial change, work on a feature branch:
+
+- `develop` is the integration/staging branch for day-to-day work.
+- `main` is the production/release branch.
+- For any non-trivial change, work on a feature branch created from `develop`:
 	- Naming: `issue-<id>-<short-slug>` (preferred), or `bug/<slug>`, `feature/<slug>`, `chore/<slug>`.
 	- Make small, coherent commits as you go.
-	- Open a PR early (draft is fine) so CI runs and review can start.
-- Merge to the default branch via PR after CI is green and the owner approves.
+	- Open a PR early (draft is fine) into `develop` so CI runs and review can start.
+- Promote `develop` to `main` only for approved releases or hotfixes.
+- Release publishing workflows must be run from `main`.
 - Avoid rewriting published history (no force-push) unless explicitly coordinating a cleanup.
 

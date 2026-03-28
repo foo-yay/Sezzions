@@ -9,6 +9,35 @@ Rules:
 
 ---
 
+## 2026-03-28
+
+```yaml
+id: 2026-03-28-01
+type: chore
+areas: [workflow, ci, release, docs]
+issue: null
+summary: "Adopt develop-to-main workflow and guard production release publishing"
+details: >
+  Established `develop` as the integration/staging branch and `main` as the
+  production branch. CI now runs on pushes and pull requests for both branches,
+  and the release publishing workflow now refuses to run unless dispatched from
+  `main`. Updated the repository instructions, PR template, README, and project
+  spec so future human and AI work defaults to feature branches into `develop`
+  with explicit promotion to `main` only for approved releases or hotfixes.
+
+  Validation:
+  - YAML/workflow validation via editor diagnostics
+files_changed:
+  - .github/workflows/ci.yml
+  - .github/workflows/release-binaries.yml
+  - .github/copilot-instructions.md
+  - AGENTS.md
+  - README.md
+  - docs/PROJECT_SPEC.md
+  - .github/pull_request_template.md
+  - docs/status/CHANGELOG.md
+```
+
 ## 2026-03-26
 
 ```yaml
