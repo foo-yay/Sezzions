@@ -12,6 +12,39 @@ Rules:
 ## 2026-03-28
 
 ```yaml
+id: 2026-03-28-02
+type: feat
+areas: [workflow, deployment, docs, tools]
+issue: 199
+summary: "Add staged cPanel-compatible static deployment scaffold"
+details: >
+  Added a GitHub Actions deployment scaffold for future static web rollout.
+  Pushes to `develop` target the `development` environment and pushes to
+  `main` target `production`. Deployment uses SSH + rsync through a new helper
+  script and expects all hostnames, target paths, build commands, and SSH
+  credentials to come from GitHub environment variables/secrets. The workflow
+  skips cleanly until cPanel deployment config is actually provided.
+
+  Documented:
+  - required GitHub environment variables and secrets
+  - required cPanel setup steps for subdomains, SSH access, authorized keys,
+    and dedicated target paths
+  - static-only scope of the scaffold pending a real web build/API hosting plan
+
+  Validation:
+  - bash -n tools/deploy_cpanel_static.sh
+  - YAML/workflow validation via editor diagnostics
+files_changed:
+  - .github/workflows/deploy-static-web.yml
+  - tools/deploy_cpanel_static.sh
+  - README.md
+  - tools/README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+  - docs/archive/2026-03-28-issue-cpanel-deployment-workflow.md
+```
+
+```yaml
 id: 2026-03-28-01
 type: chore
 areas: [workflow, ci, release, docs]

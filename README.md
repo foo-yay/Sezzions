@@ -98,3 +98,52 @@ If you are implementing work (human or AI):
 - Release publishing workflows must be run from `main`.
 - Avoid rewriting published history (no force-push) unless explicitly coordinating a cleanup.
 
+## Staged Static Web Deploy
+
+The repository now includes a staged static-site deployment scaffold for future web rollout:
+
+- pushes to `develop` target the `development` GitHub environment
+- pushes to `main` target the `production` GitHub environment
+- deploys use `.github/workflows/deploy-static-web.yml`
+- publish uses SSH + `rsync` via `tools/deploy_cpanel_static.sh`
+
+This workflow is scaffold-only until a real web build exists. It skips cleanly when the required environment configuration has not been added yet.
+
+### GitHub Environment Variables
+
+Configure these variables separately in the `development` and `production` GitHub environments:
+
+- `CPANEL_HOST`: SSH host for the cPanel server
+- `CPANEL_PORT`: SSH port, usually `22`
+- `CPANEL_USERNAME`: cPanel SSH username
+- `CPANEL_TARGET_PATH`: remote directory to publish into, such as `public_html/dev` or `public_html/app`
+- `CPANEL_PUBLIC_URL`: public URL for the deployed site
+- `DEPLOY_SOURCE_DIR`: built static site directory, for example `web/dist`
+- `DEPLOY_BUILD_COMMAND`: optional build command, for example `npm ci && npm run build`
+
+### GitHub Environment Secrets
+
+Configure these secrets separately in the `development` and `production` GitHub environments:
+
+- `CPANEL_SSH_PRIVATE_KEY`: private key used by GitHub Actions to connect over SSH
+- `CPANEL_SSH_KNOWN_HOSTS`: output from `ssh-keyscan` for the cPanel host/port
+
+### What You Need To Do In cPanel
+
+1. Create the subdomains you want to use, such as `dev.yourdomain.com` and `app.yourdomain.com`.
+2. Note each subdomain's document root path. These become your `CPANEL_TARGET_PATH` values.
+3. Enable SSH access for the hosting account if your plan requires support to turn it on.
+4. Add and authorize an SSH key for deployment in cPanel.
+5. Make sure the deploy target directories are dedicated to this app, because the workflow uses `rsync --delete`.
+6. If you are using shared hosting, treat this workflow as static-site deployment only. A hosted Python API may need a separate platform unless your cPanel plan includes reliable Python app/process support.
+
+### How To Generate Known Hosts
+
+Run this locally after you know the SSH hostname and port:
+
+```bash
+ssh-keyscan -p 22 your-cpanel-host.example.com
+```
+
+Paste the full output into the `CPANEL_SSH_KNOWN_HOSTS` secret for the matching environment.
+
