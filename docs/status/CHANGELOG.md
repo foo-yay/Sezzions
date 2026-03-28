@@ -32,6 +32,8 @@ details: >
   - required cPanel setup steps for subdomains, SSH access, authorized keys,
     and dedicated target paths
   - static-only scope of the scaffold pending a real web build/API hosting plan
+  - added a minimal placeholder page under `web/static` so the development lane
+    can be verified end-to-end before the real frontend exists
 
   Validation:
   - bash -n tools/deploy_cpanel_static.sh
@@ -44,6 +46,7 @@ files_changed:
   - docs/PROJECT_SPEC.md
   - docs/status/CHANGELOG.md
   - docs/archive/2026-03-28-issue-cpanel-deployment-workflow.md
+  - web/static/index.html
 ```
 
 ```yaml

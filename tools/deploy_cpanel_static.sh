@@ -2,7 +2,7 @@
 set -euo pipefail
 
 deploy_enabled="${DEPLOY_ENABLED:-false}"
-source_dir="${DEPLOY_SOURCE_DIR:-web/dist}"
+source_dir="${DEPLOY_SOURCE_DIR:-web/static}"
 build_command="${DEPLOY_BUILD_COMMAND:-}"
 cpanel_host="${CPANEL_HOST:-}"
 cpanel_port="${CPANEL_PORT:-22}"

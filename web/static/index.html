@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sezzions Web Preview</title>
+  <style>
+    :root {
+      --bg: #f4efe4;
+      --surface: rgba(255, 251, 245, 0.9);
+      --ink: #1b1b18;
+      --muted: #5e5a52;
+      --accent: #b04a2f;
+      --accent-2: #1f5c4d;
+      --line: rgba(27, 27, 24, 0.12);
+      --shadow: 0 24px 60px rgba(38, 27, 18, 0.16);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Georgia, "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(176, 74, 47, 0.18), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(31, 92, 77, 0.15), transparent 28%),
+        linear-gradient(135deg, #f7f0e6 0%, #efe6d7 45%, #e8dcc8 100%);
+      display: grid;
+      place-items: center;
+      padding: 32px;
+    }
+
+    .card {
+      width: min(820px, 100%);
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      backdrop-filter: blur(10px);
+    }
+
+    .hero {
+      padding: 40px 40px 24px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      font-size: 0.82rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent-2);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2.2rem, 4vw, 4.4rem);
+      line-height: 0.95;
+      font-weight: 700;
+    }
+
+    .lede {
+      margin: 18px 0 0;
+      max-width: 38rem;
+      font-size: 1.08rem;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 18px;
+      padding: 28px 40px 40px;
+    }
+
+    .panel {
+      padding: 20px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.6);
+      border: 1px solid var(--line);
+    }
+
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 1rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    .panel p,
+    .panel li {
+      color: var(--muted);
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    .panel ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(31, 92, 77, 0.1);
+      color: var(--accent-2);
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-top: 20px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 0 6px rgba(31, 92, 77, 0.12);
+    }
+
+    @media (max-width: 640px) {
+      .hero,
+      .grid {
+        padding-left: 22px;
+        padding-right: 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <section class="hero">
+      <p class="eyebrow">Sezzions</p>
+      <h1>Web Preview Environment</h1>
+      <p class="lede">
+        This is the first hosted placeholder for the Sezzions web rollout. It confirms the
+        domain, GitHub deployment lane, and cPanel publish path are wired correctly before the
+        full application moves online.
+      </p>
+      <div class="status"><span class="dot"></span>Development deployment target is active</div>
+    </section>
+    <section class="grid">
+      <article class="panel">
+        <h2>Current Goal</h2>
+        <p>Verify that pushes promoted into the development branch publish static assets to the dev host.</p>
+      </article>
+      <article class="panel">
+        <h2>What Comes Next</h2>
+        <ul>
+          <li>Build the real web frontend.</li>
+          <li>Point that frontend at the hosted API.</li>
+          <li>Keep desktop and web aligned to the same backend.</li>
+        </ul>
+      </article>
+      <article class="panel">
+        <h2>Safety</h2>
+        <p>Production remains separate. Only the development lane should be enabled during this verification step.</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

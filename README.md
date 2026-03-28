@@ -119,7 +119,7 @@ Configure these variables separately in the `development` and `production` GitHu
 - `CPANEL_USERNAME`: cPanel SSH username
 - `CPANEL_TARGET_PATH`: remote directory to publish into, such as `public_html/dev` or `public_html/app`
 - `CPANEL_PUBLIC_URL`: public URL for the deployed site
-- `DEPLOY_SOURCE_DIR`: built static site directory, for example `web/dist`
+- `DEPLOY_SOURCE_DIR`: built static site directory, for example `web/static`
 - `DEPLOY_BUILD_COMMAND`: optional build command, for example `npm ci && npm run build`
 
 ### GitHub Environment Secrets
