@@ -108,6 +108,17 @@ Canonical branch model:
 - CI must run on pushes/PRs for both `develop` and `main`.
 - Production release publishing must run from `main` only.
 
+Static web deployment scaffold:
+- `.github/workflows/deploy-static-web.yml` is the canonical staged deployment workflow for future static web artifacts.
+- Pushes to `develop` target the GitHub `development` environment.
+- Pushes to `main` target the GitHub `production` environment.
+- Deployment transport is SSH + `rsync` using `tools/deploy_cpanel_static.sh`.
+- Deploy execution is gated by environment variable `DEPLOY_ENABLED=true` so environment values can be staged before first publish.
+- Environment-specific hostnames, target paths, URLs, build commands, and SSH credentials must come from GitHub environment variables/secrets, not from repository-tracked files.
+- If no deployment configuration is present yet, the workflow may skip without publishing; this is expected during pre-web scaffolding.
+- Because deploy mirrors the built directory with `rsync --delete`, each target path must be dedicated to the Sezzions web artifact for that environment.
+- This scaffold covers static web artifact delivery only. Hosted API/process deployment remains a separate concern unless the chosen cPanel plan explicitly supports managed Python application hosting.
+
 ### Application Update Infrastructure (Issue #171, MVP)
 
 Sezzions update discovery/download is implemented as a service-layer workflow sourced from GitHub Releases artifacts (not Git operations).

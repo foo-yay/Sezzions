@@ -1,0 +1,76 @@
+name: Deploy Static Web
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+    paths:
+      - .github/workflows/deploy-static-web.yml
+      - tools/deploy_cpanel_static.sh
+      - web/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-development:
+    if: github.ref_name == 'develop'
+    runs-on: ubuntu-latest
+    environment:
+      name: development
+      url: ${{ vars.CPANEL_PUBLIC_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install rsync
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rsync
+
+      - name: Deploy development static site
+        env:
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
+          DEPLOY_SOURCE_DIR: ${{ vars.DEPLOY_SOURCE_DIR }}
+          DEPLOY_BUILD_COMMAND: ${{ vars.DEPLOY_BUILD_COMMAND }}
+          CPANEL_HOST: ${{ vars.CPANEL_HOST }}
+          CPANEL_PORT: ${{ vars.CPANEL_PORT }}
+          CPANEL_USERNAME: ${{ vars.CPANEL_USERNAME }}
+          CPANEL_TARGET_PATH: ${{ vars.CPANEL_TARGET_PATH }}
+          CPANEL_PUBLIC_URL: ${{ vars.CPANEL_PUBLIC_URL }}
+          CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
+          CPANEL_SSH_KNOWN_HOSTS: ${{ secrets.CPANEL_SSH_KNOWN_HOSTS }}
+        run: bash tools/deploy_cpanel_static.sh
+
+  deploy-production:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.CPANEL_PUBLIC_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install rsync
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rsync
+
+      - name: Deploy production static site
+        env:
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
+          DEPLOY_SOURCE_DIR: ${{ vars.DEPLOY_SOURCE_DIR }}
+          DEPLOY_BUILD_COMMAND: ${{ vars.DEPLOY_BUILD_COMMAND }}
+          CPANEL_HOST: ${{ vars.CPANEL_HOST }}
+          CPANEL_PORT: ${{ vars.CPANEL_PORT }}
+          CPANEL_USERNAME: ${{ vars.CPANEL_USERNAME }}
+          CPANEL_TARGET_PATH: ${{ vars.CPANEL_TARGET_PATH }}
+          CPANEL_PUBLIC_URL: ${{ vars.CPANEL_PUBLIC_URL }}
+          CPANEL_SSH_PRIVATE_KEY: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
+          CPANEL_SSH_KNOWN_HOSTS: ${{ secrets.CPANEL_SSH_KNOWN_HOSTS }}
+        run: bash tools/deploy_cpanel_static.sh
