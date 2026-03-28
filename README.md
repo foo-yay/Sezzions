@@ -113,6 +113,7 @@ This workflow is scaffold-only until a real web build exists. It skips cleanly w
 
 Configure these variables separately in the `development` and `production` GitHub environments:
 
+- `DEPLOY_ENABLED`: set to `true` only after secrets and target paths are fully configured
 - `CPANEL_HOST`: SSH host for the cPanel server
 - `CPANEL_PORT`: SSH port, usually `22`
 - `CPANEL_USERNAME`: cPanel SSH username

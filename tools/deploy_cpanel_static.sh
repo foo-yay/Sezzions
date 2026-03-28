@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+deploy_enabled="${DEPLOY_ENABLED:-false}"
 source_dir="${DEPLOY_SOURCE_DIR:-web/dist}"
 build_command="${DEPLOY_BUILD_COMMAND:-}"
 cpanel_host="${CPANEL_HOST:-}"
@@ -10,6 +11,11 @@ cpanel_target_path="${CPANEL_TARGET_PATH:-}"
 cpanel_public_url="${CPANEL_PUBLIC_URL:-}"
 ssh_private_key="${CPANEL_SSH_PRIVATE_KEY:-}"
 ssh_known_hosts="${CPANEL_SSH_KNOWN_HOSTS:-}"
+
+if [[ "$deploy_enabled" != "true" ]]; then
+  echo "DEPLOY_ENABLED is not true for this environment yet; skipping deploy."
+  exit 0
+fi
 
 all_connection_values_empty=true
 for value in "$cpanel_host" "$cpanel_username" "$cpanel_target_path" "$ssh_private_key" "$ssh_known_hosts"; do

@@ -33,6 +33,7 @@ jobs:
 
       - name: Deploy development static site
         env:
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
           DEPLOY_SOURCE_DIR: ${{ vars.DEPLOY_SOURCE_DIR }}
           DEPLOY_BUILD_COMMAND: ${{ vars.DEPLOY_BUILD_COMMAND }}
           CPANEL_HOST: ${{ vars.CPANEL_HOST }}
@@ -62,6 +63,7 @@ jobs:
 
       - name: Deploy production static site
         env:
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
           DEPLOY_SOURCE_DIR: ${{ vars.DEPLOY_SOURCE_DIR }}
           DEPLOY_BUILD_COMMAND: ${{ vars.DEPLOY_BUILD_COMMAND }}
           CPANEL_HOST: ${{ vars.CPANEL_HOST }}

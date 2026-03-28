@@ -14,6 +14,7 @@ bash tools/deploy_cpanel_static.sh
 Helper used by `.github/workflows/deploy-static-web.yml` to publish a built static site to a cPanel host over SSH with `rsync`.
 
 Expected environment variables:
+- `DEPLOY_ENABLED`
 - `DEPLOY_SOURCE_DIR`
 - `DEPLOY_BUILD_COMMAND` (optional)
 - `CPANEL_HOST`
@@ -25,6 +26,7 @@ Expected environment variables:
 - `CPANEL_SSH_KNOWN_HOSTS`
 
 Behavior notes:
+- skips unless `DEPLOY_ENABLED=true`
 - skips cleanly when no cPanel deployment config exists yet
 - fails fast if only part of the config is present
 - mirrors the source directory with `rsync --delete`, so the target path must be dedicated to this app

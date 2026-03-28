@@ -22,8 +22,10 @@ details: >
   Pushes to `develop` target the `development` environment and pushes to
   `main` target `production`. Deployment uses SSH + rsync through a new helper
   script and expects all hostnames, target paths, build commands, and SSH
-  credentials to come from GitHub environment variables/secrets. The workflow
-  skips cleanly until cPanel deployment config is actually provided.
+  credentials to come from GitHub environment variables/secrets. Deployment is
+  further gated by `DEPLOY_ENABLED=true` so environment values can be staged in
+  GitHub before secrets are added. The workflow skips cleanly until cPanel
+  deployment config is actually enabled.
 
   Documented:
   - required GitHub environment variables and secrets
