@@ -153,6 +153,11 @@ The current desktop product still runs on local SQLite. The shared desktop + web
 - API layer: FastAPI scaffold under `api/`
 - first migration source: `sezzions.db`
 
+Current authenticated backend slice:
+- `GET /v1/session` is the first protected endpoint
+- it expects a Supabase bearer access token from the web client
+- the API verifies the token against Supabase JWKS before returning session identity details
+
 Important boundary:
 - the current SQLite `users` table is a business-domain entity, not the hosted auth/account model
 - hosted identity and ownership must live separately from the existing tracked-player records

@@ -17,7 +17,7 @@ class HostedBackendConfig:
     """Resolved hosted backend configuration derived from Supabase inputs."""
 
     supabase_url: str
-    supabase_db_password: str
+    supabase_db_password: Optional[str] = None
     db_user: str = "postgres"
     db_name: str = "postgres"
     db_port: int = 5432
@@ -30,11 +30,6 @@ class HostedBackendConfig:
             raise HostedConfigurationError(
                 "SUPABASE_URL must be a valid https URL."
             )
-        if not self.supabase_db_password:
-            raise HostedConfigurationError(
-                "SUPABASE_DB_PASSWORD is required for hosted database access."
-            )
-
     @property
     def project_ref(self) -> str:
         hostname = urlparse(self.supabase_url).hostname or ""
@@ -50,7 +45,19 @@ class HostedBackendConfig:
         return f"db.{self.project_ref}.supabase.co"
 
     @property
+    def supabase_issuer(self) -> str:
+        return f"{self.supabase_url.rstrip('/')}/auth/v1"
+
+    @property
+    def supabase_jwks_url(self) -> str:
+        return f"{self.supabase_issuer}/.well-known/jwks.json"
+
+    @property
     def sqlalchemy_url(self) -> str:
+        if not self.supabase_db_password:
+            raise HostedConfigurationError(
+                "SUPABASE_DB_PASSWORD is required for hosted database access."
+            )
         encoded_password = quote_plus(self.supabase_db_password)
         return (
             "postgresql+psycopg2://"
@@ -62,6 +69,7 @@ def load_hosted_backend_config(
     env: Optional[Mapping[str, str]] = None,
     *,
     required: bool = True,
+    require_db_password: bool = True,
 ) -> Optional[HostedBackendConfig]:
     """Build hosted configuration from environment variables.
 
@@ -84,7 +92,7 @@ def load_hosted_backend_config(
     if not supabase_url and not db_password and not required:
         return None
 
-    if not supabase_url or not db_password:
+    if not supabase_url or (require_db_password and not db_password):
         if required:
             raise HostedConfigurationError(
                 "SUPABASE_URL and SUPABASE_DB_PASSWORD must both be set."
@@ -109,7 +117,7 @@ def load_hosted_backend_config(
 
     return HostedBackendConfig(
         supabase_url=supabase_url,
-        supabase_db_password=db_password,
+        supabase_db_password=db_password or None,
         db_user=db_user,
         db_name=db_name,
         db_port=db_port,

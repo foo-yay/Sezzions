@@ -26,6 +26,7 @@ vi.mock("./lib/supabaseClient", () => ({
 
 describe("App", () => {
   beforeEach(() => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://api.sezzions.test");
     authMocks.getSession.mockReset();
     authMocks.onAuthStateChange.mockReset();
     authMocks.signInWithOAuth.mockReset();
@@ -42,6 +43,16 @@ describe("App", () => {
     });
     authMocks.signInWithOAuth.mockResolvedValue({ error: null });
     authMocks.signOut.mockResolvedValue({ error: null });
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        authenticated: true,
+        user_id: "user-123",
+        email: "owner@sezzions.com",
+        audience: "authenticated",
+        role: "authenticated"
+      })
+    });
   });
 
   it("shows the Sezzions web heading", async () => {
@@ -77,6 +88,7 @@ describe("App", () => {
     authMocks.getSession.mockResolvedValue({
       data: {
         session: {
+          access_token: "access-token-123",
           user: {
             email: "owner@sezzions.com"
           }
@@ -91,5 +103,15 @@ describe("App", () => {
       expect(screen.getByText("owner@sezzions.com")).toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith("https://api.sezzions.test/v1/session", {
+        headers: {
+          Authorization: "Bearer access-token-123"
+        }
+      });
+    });
+    expect(
+      screen.getByText(/protected api handshake ready for owner@sezzions.com/i)
+    ).toBeInTheDocument();
   });
 });
