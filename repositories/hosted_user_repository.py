@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 
 from services.hosted.models import HostedUser
 from services.hosted.persistence import HostedUserRecord
@@ -20,13 +20,32 @@ class HostedUserRepository:
             return None
         return self._record_to_model(record)
 
-    def list_by_workspace_id(self, session, workspace_id: str) -> list[HostedUser]:
-        records = session.scalars(
+    def list_by_workspace_id(
+        self,
+        session,
+        workspace_id: str,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[HostedUser]:
+        query = (
             select(HostedUserRecord)
             .where(HostedUserRecord.workspace_id == workspace_id)
             .order_by(HostedUserRecord.name.asc(), HostedUserRecord.id.asc())
-        ).all()
+            .offset(offset)
+        )
+        if limit is not None:
+            query = query.limit(limit)
+
+        records = session.scalars(query).all()
         return [self._record_to_model(record) for record in records]
+
+    def count_by_workspace_id(self, session, workspace_id: str) -> int:
+        return session.scalar(
+            select(func.count())
+            .select_from(HostedUserRecord)
+            .where(HostedUserRecord.workspace_id == workspace_id)
+        ) or 0
 
     def create(
         self,
@@ -89,6 +108,20 @@ class HostedUserRepository:
         session.delete(record)
         session.flush()
         return True
+
+    def delete_many(self, session, *, user_ids: list[str], workspace_id: str) -> int:
+        normalized_ids = list(dict.fromkeys(user_ids))
+        if not normalized_ids:
+            return 0
+
+        result = session.execute(
+            delete(HostedUserRecord).where(
+                HostedUserRecord.workspace_id == workspace_id,
+                HostedUserRecord.id.in_(normalized_ids),
+            )
+        )
+        session.flush()
+        return int(result.rowcount or 0)
 
     @staticmethod
     def _record_to_model(record: HostedUserRecord) -> HostedUser:

@@ -12,6 +12,36 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-15
+type: feat
+areas: [web, docs, tests]
+issue: 233
+summary: "Compact the hosted header into desktop-style utility controls"
+details: >
+  Reworked the hosted signed-in header again to reduce the oversized title and
+  chrome introduced in the prior shell pass. The header now uses a compact
+  product title and desktop-inspired utility controls for notifications,
+  status, account, and settings so the Setup content keeps visual priority.
+  Account details and other actions now live behind modal-style utility entry
+  points instead of always-visible header blocks.
+
+  Implemented:
+  - compact header title using the product name instead of a large workspace banner
+  - utility-icon pattern for notifications, status, account, and settings
+  - account/settings modal access in place of the prior prominent header summary
+  - updated frontend coverage for the compact header utilities
+
+  Validation:
+  - cd web && npm test
+files_changed:
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - web/src/styles.css
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-14
 type: feat
 areas: [web, docs, tests]

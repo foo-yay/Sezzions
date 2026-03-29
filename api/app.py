@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import Body, Depends, FastAPI, File, HTTPException, Path, Response, UploadFile, status
+from fastapi import Body, Depends, FastAPI, File, HTTPException, Path, Query, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -33,6 +33,10 @@ class HostedWorkspaceUserUpdateRequest(BaseModel):
     email: str | None = None
     notes: str | None = None
     is_active: bool = True
+
+
+class HostedWorkspaceUserBatchDeleteRequest(BaseModel):
+    user_ids: list[str]
 
 cors_config = load_hosted_backend_config(required=False, require_db_password=False)
 app.add_middleware(
@@ -125,16 +129,27 @@ def account_bootstrap(
 
 @app.get("/v1/workspace/users")
 def workspace_users_list(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     session: AuthenticatedSession = Depends(get_authenticated_session),
     service: HostedWorkspaceUserService = Depends(get_hosted_workspace_user_service),
 ) -> dict[str, object]:
     try:
-        users = service.list_users(supabase_user_id=session.user_id)
+        page = service.list_users_page(
+            supabase_user_id=session.user_id,
+            limit=limit,
+            offset=offset,
+        )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     return {
-        "users": [user.as_dict() if hasattr(user, "as_dict") else user for user in users],
+        "users": [user.as_dict() if hasattr(user, "as_dict") else user for user in page["users"]],
+        "offset": page["offset"],
+        "limit": page["limit"],
+        "next_offset": page["next_offset"],
+        "total_count": page["total_count"],
+        "has_more": page["has_more"],
     }
 
 
@@ -198,6 +213,25 @@ def workspace_users_delete(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/v1/workspace/users/batch-delete")
+def workspace_users_batch_delete(
+    payload: HostedWorkspaceUserBatchDeleteRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceUserService = Depends(get_hosted_workspace_user_service),
+) -> dict[str, int]:
+    try:
+        deleted_count = service.delete_users(
+            supabase_user_id=session.user_id,
+            user_ids=payload.user_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"deleted_count": deleted_count}
 
 
 @app.get("/v1/workspace/import-plan")

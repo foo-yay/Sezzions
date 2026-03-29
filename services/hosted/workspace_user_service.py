@@ -20,6 +20,33 @@ class HostedWorkspaceUserService:
             workspace = self._require_workspace(session, supabase_user_id)
             return self.user_repository.list_by_workspace_id(session, workspace.id)
 
+    def list_users_page(
+        self,
+        *,
+        supabase_user_id: str,
+        limit: int,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        with self.session_factory() as session:
+            workspace = self._require_workspace(session, supabase_user_id)
+            total_count = self.user_repository.count_by_workspace_id(session, workspace.id)
+            users = self.user_repository.list_by_workspace_id(
+                session,
+                workspace.id,
+                limit=limit,
+                offset=offset,
+            )
+            next_offset = offset + len(users)
+            has_more = next_offset < total_count
+            return {
+                "users": users,
+                "offset": offset,
+                "limit": limit,
+                "next_offset": next_offset,
+                "total_count": total_count,
+                "has_more": has_more,
+            }
+
     def create_user(
         self,
         *,
@@ -89,6 +116,29 @@ class HostedWorkspaceUserService:
                 raise LookupError("Hosted user was not found in the authenticated workspace.")
 
             session.commit()
+
+    def delete_users(
+        self,
+        *,
+        supabase_user_id: str,
+        user_ids: list[str],
+    ) -> int:
+        normalized_ids = list(dict.fromkeys(user_ids))
+        if not normalized_ids:
+            raise ValueError("At least one hosted user id is required.")
+
+        with self.session_factory() as session:
+            workspace = self._require_workspace(session, supabase_user_id)
+            deleted_count = self.user_repository.delete_many(
+                session,
+                user_ids=normalized_ids,
+                workspace_id=workspace.id,
+            )
+            if deleted_count != len(normalized_ids):
+                raise LookupError("One or more hosted users were not found in the authenticated workspace.")
+
+            session.commit()
+            return deleted_count
 
     def _require_workspace(self, session, supabase_user_id: str) -> HostedWorkspace:
         account = self.account_repository.get_by_supabase_user_id(session, supabase_user_id)
