@@ -39,13 +39,49 @@ const launchPlan = [
   "Port feature areas incrementally without rewriting accounting rules twice."
 ];
 
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || null;
-
 export default function App() {
   const [sessionEmail, setSessionEmail] = useState(null);
   const [authMessage, setAuthMessage] = useState(
     supabaseConfigured ? "Sign in with Google to activate the hosted web shell." : supabaseConfigError
   );
+  const [apiStatus, setApiStatus] = useState(
+    "Protected API handshake will run after Google sign-in."
+  );
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || null;
+
+  async function syncProtectedApi(nextSession) {
+    if (!nextSession?.access_token) {
+      setApiStatus("Protected API handshake will run after Google sign-in.");
+      return;
+    }
+
+    if (!apiBaseUrl) {
+      setApiStatus("Set VITE_API_BASE_URL to enable the protected API handshake.");
+      return;
+    }
+
+    setApiStatus("Calling the protected Render API with the Supabase session token...");
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/v1/session`, {
+        headers: {
+          Authorization: `Bearer ${nextSession.access_token}`
+        }
+      });
+
+      if (!response.ok) {
+        setApiStatus(`Protected API handshake failed (${response.status}).`);
+        return;
+      }
+
+      const data = await response.json();
+      setApiStatus(
+        `Protected API handshake ready for ${data.email || data.user_id}.`
+      );
+    } catch (error) {
+      setApiStatus(error instanceof Error ? error.message : "Protected API handshake failed.");
+    }
+  }
 
   useEffect(() => {
     if (!supabase) {
@@ -71,6 +107,7 @@ export default function App() {
           ? "Google session active. The web app is ready for the first authenticated API call."
           : "Sign in with Google to activate the hosted web shell."
       );
+      void syncProtectedApi(data.session || null);
     });
 
     const {
@@ -83,6 +120,7 @@ export default function App() {
           ? "Google session active. The web app is ready for the first authenticated API call."
           : "Sign in with Google to activate the hosted web shell."
       );
+      void syncProtectedApi(nextSession || null);
     });
 
     return () => {
@@ -122,6 +160,7 @@ export default function App() {
 
     setSessionEmail(null);
     setAuthMessage("Signed out. Sign in with Google to reactivate the hosted web shell.");
+    setApiStatus("Protected API handshake will run after Google sign-in.");
   }
 
   return (
@@ -162,6 +201,10 @@ export default function App() {
             <div>
               <dt>API host</dt>
               <dd>{apiBaseUrl || "Set VITE_API_BASE_URL"}</dd>
+            </div>
+            <div>
+              <dt>API handshake</dt>
+              <dd>{apiStatus}</dd>
             </div>
           </dl>
           {sessionEmail ? (

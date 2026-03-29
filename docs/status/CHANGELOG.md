@@ -12,6 +12,43 @@ Rules:
 ## 2026-03-28
 
 ```yaml
+id: 2026-03-28-06
+type: feat
+areas: [api, auth, frontend, docs, tests]
+issue: 203
+summary: "Add the first protected Supabase-to-Render API handshake"
+details: >
+  Extended the hosted foundation with the first authenticated API slice.
+  The FastAPI service now exposes `GET /v1/session`, which requires a bearer
+  token and verifies the Supabase access token against Supabase JWKS before
+  returning the authenticated identity summary. The web shell now uses the
+  signed-in Supabase session token to call that protected endpoint and displays
+  the Render handshake status in the UI.
+
+  Implemented:
+  - JWT/JWKS verification for Supabase access tokens in the API layer
+  - protected `GET /v1/session` endpoint
+  - web-side protected API call after Google sign-in
+  - focused tests for the protected endpoint and frontend handshake behavior
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/api/test_app.py tests/services/hosted/test_config.py
+  - cd web && npm test
+files_changed:
+  - requirements.txt
+  - api/auth.py
+  - api/app.py
+  - api/config.py
+  - tests/api/test_app.py
+  - tests/services/hosted/test_config.py
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-28-04
 type: feat
 areas: [api, auth, database, migration, docs, tests, tools]

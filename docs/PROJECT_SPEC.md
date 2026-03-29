@@ -133,6 +133,9 @@ Hosted backend foundation (Issue #203):
 - `tools/inspect_sqlite_for_hosted_import.py` is the read-only planning tool for inventorying a local SQLite file before hosted import work.
 - The web frontend consumes Supabase configuration through `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` and may optionally target the hosted API through `VITE_API_BASE_URL`.
 - Initial web auth flow is Google sign-in via Supabase; the first authenticated UI state must support sign-in, sign-out, and current session display.
+- The first protected hosted API endpoint is `GET /v1/session`.
+- `GET /v1/session` must require a bearer token, verify the Supabase access token against Supabase JWKS, and return the authenticated session identity summary.
+- After successful Google sign-in, the web shell should call `GET /v1/session` with the Supabase access token and reflect the protected API handshake status in the UI.
 
 ### Application Update Infrastructure (Issue #171, MVP)
 

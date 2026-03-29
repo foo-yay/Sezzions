@@ -27,3 +27,15 @@ def test_load_hosted_backend_config_can_skip_when_not_required() -> None:
 def test_load_hosted_backend_config_requires_url_and_password() -> None:
     with pytest.raises(HostedConfigurationError):
         load_hosted_backend_config({"SUPABASE_URL": "https://nztovvajnrokzsetliwz.supabase.co"})
+
+
+def test_load_hosted_backend_config_can_load_auth_only_settings() -> None:
+    config = load_hosted_backend_config(
+        {"SUPABASE_URL": "https://nztovvajnrokzsetliwz.supabase.co"},
+        require_db_password=False,
+    )
+
+    assert config is not None
+    assert config.supabase_db_password is None
+    assert config.supabase_issuer == "https://nztovvajnrokzsetliwz.supabase.co/auth/v1"
+    assert config.supabase_jwks_url.endswith("/.well-known/jwks.json")
