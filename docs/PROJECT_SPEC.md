@@ -140,9 +140,17 @@ Hosted backend foundation (Issue #203):
 - The first hosted persistence slice after auth is `POST /v1/account/bootstrap`.
 - `POST /v1/account/bootstrap` must require a bearer token and idempotently create or return the hosted account/workspace records for the authenticated Supabase user.
 - Hosted account identity is keyed by Supabase user id and tracks the owner email plus auth provider separately from the legacy SQLite business-domain `users` table.
+- Hosted account records must also carry an explicit account role and lifecycle status suitable for future authorization and admin operations.
+- The default self-serve hosted account role is `owner`, and the default lifecycle status is `active`.
+- The initial hosted account role set is intentionally small: `owner` for normal customer workspace ownership and `administrator` for Sezzions-controlled elevated administrative access.
+- The initial hosted account lifecycle statuses are `active`, `disabled`, and `deleted`.
 - Hosted workspace bootstrap must create one default workspace per hosted account when none exists yet, using `<owner email> Workspace` as the initial display name.
 - The hosted API persists account/workspace bootstrap state through the configured Supabase PostgreSQL SQLAlchemy connection.
 - After the protected session handshake succeeds, the web shell should call `POST /v1/account/bootstrap` with the same Supabase access token and render the hosted account owner, auth provider, workspace name, and bootstrap status in the UI.
+- The hosted bootstrap summary must also expose the hosted account role and lifecycle status so future clients can render/administer the account correctly.
+- Sezzions-controlled administrator accounts are a platform layer above normal workspace ownership and exist to support future account-level operations such as disable, restore, delete/correct, and administrative review.
+- Future hosted admin UI may include a Sezzions-only account dashboard and aggregate account visibility, but those capabilities must be built on the hosted account role/status model rather than on ad hoc customer-facing paths.
+- Future hosted bug reporting should be designed to attach the reporting account/workspace context and enough operational history for effective troubleshooting without exposing password data or requiring direct owner intervention for basic triage.
 - The first hosted business-domain data slice is a workspace-owned users directory exposed through `GET /v1/workspace/users` and `POST /v1/workspace/users`.
 - Hosted workspace users are business-domain players managed by the account owner and are distinct from the hosted auth/account identity.
 - A single hosted account/workspace may manage multiple hosted workspace users such as `fooyay` and `mrs. fooyay`, and those managed users are the future owners of cards, purchases, redemptions, sessions, and related accounting records.

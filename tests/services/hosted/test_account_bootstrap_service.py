@@ -27,6 +27,8 @@ def test_bootstrap_creates_account_and_workspace_for_first_time_user() -> None:
     assert summary.created_workspace is True
     assert summary.account.supabase_user_id == "user-123"
     assert summary.account.owner_email == "owner@sezzions.com"
+    assert summary.account.role == "owner"
+    assert summary.account.status == "active"
     assert summary.workspace.account_id == summary.account.id
     assert summary.workspace.name == "owner@sezzions.com Workspace"
 
@@ -50,4 +52,28 @@ def test_bootstrap_is_idempotent_for_existing_user() -> None:
     assert second.created_account is False
     assert second.created_workspace is False
     assert second.account.id == first.account.id
+    assert second.account.role == "owner"
+    assert second.account.status == "active"
     assert second.workspace.id == first.workspace.id
+
+
+def test_bootstrap_updates_owner_email_without_changing_role_or_status() -> None:
+    engine, session_factory = _session_factory()
+    service = HostedAccountBootstrapService(session_factory)
+
+    try:
+        first = service.bootstrap_account_workspace(
+            supabase_user_id="user-123",
+            owner_email="owner@sezzions.com",
+        )
+        second = service.bootstrap_account_workspace(
+            supabase_user_id="user-123",
+            owner_email="updated@sezzions.com",
+        )
+    finally:
+        engine.dispose()
+
+    assert second.account.id == first.account.id
+    assert second.account.owner_email == "updated@sezzions.com"
+    assert second.account.role == "owner"
+    assert second.account.status == "active"

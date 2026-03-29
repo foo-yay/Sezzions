@@ -12,6 +12,39 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-10
+type: feat
+areas: [api, database, docs, tests]
+issue: 224
+summary: "Add hosted account roles and lifecycle status foundation"
+details: >
+  Extended the hosted account model with explicit role and lifecycle status
+  fields so future Sezzions admin capabilities can be built on a real account
+  authorization foundation instead of inferred behavior. Self-serve hosted
+  sign-ups now default to the normal customer `owner` role and `active`
+  status, while the spec now documents the intended distinction between normal
+  workspace ownership and Sezzions-controlled elevated administrators.
+
+  Implemented:
+  - `role` and `status` fields on hosted account persistence/model records
+  - hosted account bootstrap summaries now include role and lifecycle status
+  - focused bootstrap/API tests for the new defaults and summary fields
+  - spec updates documenting future admin dashboard and bug-reporting direction
+
+  Validation:
+  - pytest -q tests/services/hosted/test_account_bootstrap_service.py tests/api/test_app.py
+files_changed:
+  - repositories/hosted_account_repository.py
+  - services/hosted/account_bootstrap_service.py
+  - services/hosted/models.py
+  - services/hosted/persistence.py
+  - tests/api/test_app.py
+  - tests/services/hosted/test_account_bootstrap_service.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-09
 type: feat
 areas: [database, services, docs, tests]

@@ -24,6 +24,8 @@ class HostedBootstrapSummary:
                 "id": self.account.id,
                 "owner_email": self.account.owner_email,
                 "auth_provider": self.account.auth_provider,
+                "role": self.account.role,
+                "status": self.account.status,
                 "supabase_user_id": self.account.supabase_user_id,
             },
             "workspace": {
@@ -59,6 +61,8 @@ class HostedAccountBootstrapService:
                     session,
                     owner_email=normalized_email,
                     supabase_user_id=supabase_user_id,
+                    role="owner",
+                    status="active",
                 )
                 created_account = True
             elif account.owner_email != normalized_email:
