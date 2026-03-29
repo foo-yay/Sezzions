@@ -58,6 +58,14 @@ function applyRoute(route) {
   }
 }
 
+function describeFetchFailure(error, fallback) {
+  if (error instanceof TypeError && /failed to fetch/i.test(error.message)) {
+    return `${fallback} Verify that the hosted API URL is reachable from the browser and that CORS is allowing this origin.`;
+  }
+
+  return error instanceof Error ? error.message : fallback;
+}
+
 function downloadUsersCsv(users) {
   const rows = [
     ["Name", "Email", "Status", "Notes"],
@@ -219,6 +227,12 @@ export default function App() {
   const [userSubmitError, setUserSubmitError] = useState(null);
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || null;
   const supabaseApiKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || null;
+  const hasAuthenticatedSession = Boolean(sessionEmail);
+  const hostedWorkspaceReady = Boolean(hostedSummary);
+  const workspaceName = hostedSummary?.workspace?.name || (sessionEmail ? `${sessionEmail} Workspace` : "Hosted Workspace");
+  const accountOwner = hostedSummary?.account?.owner_email || sessionEmail || "Not signed in";
+  const accountRole = hostedSummary?.account?.role || "Pending bootstrap";
+  const accountStatus = hostedSummary?.account?.status || "Pending bootstrap";
 
   const filteredUsers = useMemo(() => {
     const searchText = usersSearch.trim().toLowerCase();
@@ -293,7 +307,7 @@ export default function App() {
       setSelectedUserId((current) => ((payload.users || []).some((user) => user.id === current) ? current : null));
     } catch (error) {
       setUsers([]);
-      setUsersStatus(error instanceof Error ? error.message : "Hosted users failed to load.");
+      setUsersStatus(describeFetchFailure(error, "Hosted users failed to load."));
     }
   }
 
@@ -369,7 +383,7 @@ export default function App() {
       setUserForm(initialUserForm);
       setUserSubmitError(null);
     } catch (error) {
-      setUserSubmitError(error instanceof Error ? error.message : "Hosted users save failed.");
+      setUserSubmitError(describeFetchFailure(error, "Hosted users save failed."));
     }
   }
 
@@ -378,7 +392,7 @@ export default function App() {
       const accessToken = await getAccessToken();
       await loadUsers(accessToken);
     } catch (error) {
-      setUsersStatus(error instanceof Error ? error.message : "Hosted users failed to load.");
+      setUsersStatus(describeFetchFailure(error, "Hosted users failed to load."));
     }
   }
 
@@ -424,7 +438,7 @@ export default function App() {
       setUploadStatus(payload.detail || "Uploaded SQLite inventory is ready.");
     } catch (error) {
       setUploadSummary(null);
-      setUploadStatus(error instanceof Error ? error.message : "SQLite upload planning failed.");
+      setUploadStatus(describeFetchFailure(error, "SQLite upload planning failed."));
     }
   }
 
@@ -458,7 +472,7 @@ export default function App() {
       setImportPlanStatus(data.detail || "Hosted import planning is ready.");
     } catch (error) {
       setImportPlanSummary(null);
-      setImportPlanStatus(error instanceof Error ? error.message : "Hosted import planning failed.");
+      setImportPlanStatus(describeFetchFailure(error, "Hosted import planning failed."));
     }
   }
 
@@ -518,7 +532,7 @@ export default function App() {
       setUsers([]);
       setImportPlanStatus("Hosted import planning will run after workspace bootstrap.");
       setUsersStatus("Hosted users will load after workspace bootstrap.");
-      setHostedStatus(error instanceof Error ? error.message : "Hosted account bootstrap failed.");
+      setHostedStatus(describeFetchFailure(error, "Hosted account bootstrap could not reach the hosted API."));
     }
   }
 
@@ -566,7 +580,26 @@ export default function App() {
       setImportPlanStatus("Hosted import planning will run after workspace bootstrap.");
       setUsers([]);
       setUsersStatus("Sign in to load hosted users.");
-      setApiStatus(error instanceof Error ? error.message : "Protected API handshake failed.");
+      setApiStatus(describeFetchFailure(error, "Protected API handshake could not reach the hosted API."));
+    }
+  }
+
+  async function handleRetryHostedConnection() {
+    if (!supabase?.auth) {
+      setAuthMessage(supabaseConfigError);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        setApiStatus(error.message);
+        return;
+      }
+
+      await syncProtectedApi(data.session || null);
+    } catch (error) {
+      setApiStatus(describeFetchFailure(error, "Protected API handshake could not reach the hosted API."));
     }
   }
 
@@ -721,7 +754,7 @@ export default function App() {
       setUserModalMode(null);
       setUsersStatus("Hosted users ready.");
     } catch (error) {
-      setUsersStatus(error instanceof Error ? error.message : "Hosted users delete failed.");
+      setUsersStatus(describeFetchFailure(error, "Hosted users delete failed."));
     }
   }
 
@@ -791,7 +824,7 @@ export default function App() {
     );
   }
 
-  if (!sessionEmail || !hostedSummary) {
+  if (!sessionEmail) {
     return (
       <div className="marketing-shell">
         <header className="marketing-hero">
@@ -841,10 +874,10 @@ export default function App() {
 
         <div className="sidebar-footer">
           <dl className="detail-grid compact-grid">
-            <div><dt>Account</dt><dd>{hostedSummary.account.owner_email}</dd></div>
-            <div><dt>Role</dt><dd>{hostedSummary.account.role}</dd></div>
-            <div><dt>Status</dt><dd>{hostedSummary.account.status}</dd></div>
-            <div><dt>Workspace</dt><dd>{hostedSummary.workspace.name}</dd></div>
+            <div><dt>Account</dt><dd>{accountOwner}</dd></div>
+            <div><dt>Role</dt><dd>{accountRole}</dd></div>
+            <div><dt>Status</dt><dd>{accountStatus}</dd></div>
+            <div><dt>Workspace</dt><dd>{workspaceName}</dd></div>
           </dl>
           <button className="ghost-button full-width" type="button" onClick={handleSignOut}>Sign Out</button>
         </div>
@@ -855,12 +888,32 @@ export default function App() {
           <div>
             <p className="section-kicker">Setup</p>
             <h2>Users</h2>
-            <p className="status-note">Start with hosted users before sites and cards so later setup slices attach to real workspace-owned people.</p>
+            <p className="status-note">
+              {hostedWorkspaceReady
+                ? "Start with hosted users before sites and cards so later setup slices attach to real workspace-owned people."
+                : "You are signed in, but the hosted backend is not connected yet. Retry the hosted connection after verifying the API deployment and browser access."}
+            </p>
           </div>
           <div className="header-actions">
+            <button className="ghost-button" type="button" onClick={handleRetryHostedConnection}>Retry Hosted Connection</button>
             <a className="ghost-button" href="/#/migration">Migration Upload</a>
           </div>
         </header>
+
+        <section className="workspace-panel">
+          <div className="panel-header">
+            <div>
+              <p className="section-kicker">Hosted Status</p>
+              <h2>Connection</h2>
+            </div>
+          </div>
+          <dl className="detail-grid compact-grid">
+            <div><dt>Authentication</dt><dd>{authMessage}</dd></div>
+            <div><dt>API handshake</dt><dd>{apiStatus}</dd></div>
+            <div><dt>Hosted bootstrap</dt><dd>{hostedStatus}</dd></div>
+            <div><dt>Import planning</dt><dd>{importPlanStatus}</dd></div>
+          </dl>
+        </section>
 
         <section className="workspace-panel setup-panel">
           <div className="subtab-row" role="tablist" aria-label="Setup sections">
@@ -887,12 +940,12 @@ export default function App() {
                   <h2>Users</h2>
                 </div>
                 <div className="toolbar-row wrap-toolbar">
-                  <button className="primary-button" type="button" onClick={() => openUserModal("create")}>Add User</button>
-                  <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("view", selectedUser)} disabled={!selectedUser}>View</button>
-                  <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("edit", selectedUser)} disabled={!selectedUser}>Edit</button>
-                  <button className="ghost-button" type="button" onClick={() => selectedUser && handleDeleteUser(selectedUser)} disabled={!selectedUser}>Delete</button>
+                  <button className="primary-button" type="button" onClick={() => openUserModal("create")} disabled={!hostedWorkspaceReady}>Add User</button>
+                  <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("view", selectedUser)} disabled={!hostedWorkspaceReady || !selectedUser}>View</button>
+                  <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("edit", selectedUser)} disabled={!hostedWorkspaceReady || !selectedUser}>Edit</button>
+                  <button className="ghost-button" type="button" onClick={() => selectedUser && handleDeleteUser(selectedUser)} disabled={!hostedWorkspaceReady || !selectedUser}>Delete</button>
                   <button className="ghost-button" type="button" onClick={() => downloadUsersCsv(filteredUsers)} disabled={!filteredUsers.length}>Export CSV</button>
-                  <button className="ghost-button" type="button" onClick={handleUsersRefresh}>Refresh</button>
+                  <button className="ghost-button" type="button" onClick={handleUsersRefresh} disabled={!hostedWorkspaceReady}>Refresh</button>
                 </div>
               </div>
 
@@ -906,9 +959,10 @@ export default function App() {
                       type="search"
                       placeholder="Search users..."
                       value={usersSearch}
+                      disabled={!hostedWorkspaceReady}
                       onChange={(event) => setUsersSearch(event.target.value)}
                     />
-                    <button className="ghost-button" type="button" onClick={() => setUsersSearch("")}>Clear</button>
+                    <button className="ghost-button" type="button" onClick={() => setUsersSearch("")} disabled={!usersSearch}>Clear</button>
                   </div>
                 </div>
                 <div className="status-card">
@@ -946,7 +1000,11 @@ export default function App() {
                       </tr>
                     )) : (
                       <tr>
-                        <td colSpan="4" className="empty-state-cell">No users match the current view yet.</td>
+                        <td colSpan="4" className="empty-state-cell">
+                          {hostedWorkspaceReady
+                            ? "No users match the current view yet."
+                            : "Finish the hosted connection to load workspace users."}
+                        </td>
                       </tr>
                     )}
                   </tbody>

@@ -324,6 +324,43 @@ describe("App", () => {
     });
   });
 
+  it("keeps the hosted workspace shell visible when bootstrap fetch fails", async () => {
+    authMocks.getSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: "access-token-123",
+          user: {
+            email: "owner@sezzions.com"
+          }
+        }
+      },
+      error: null
+    });
+
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          authenticated: true,
+          user_id: "user-123",
+          email: "owner@sezzions.com",
+          audience: "authenticated",
+          role: "authenticated"
+        })
+      })
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: /hosted workspace/i })).toBeInTheDocument();
+    expect(screen.getByText("owner@sezzions.com")).toBeInTheDocument();
+    expect(screen.getByText(/could not reach the hosted api/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry hosted connection/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add user/i })).toBeDisabled();
+    expect(screen.getByText(/sign in to load hosted users|hosted users will load after workspace bootstrap/i)).toBeInTheDocument();
+  });
+
   it("creates a hosted user from the users modal", async () => {
     authMocks.getSession.mockResolvedValue({
       data: {
