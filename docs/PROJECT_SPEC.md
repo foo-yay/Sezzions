@@ -142,6 +142,13 @@ Hosted backend foundation (Issue #203):
 - Hosted workspace bootstrap must create one default workspace per hosted account when none exists yet, using `<owner email> Workspace` as the initial display name.
 - The hosted API persists account/workspace bootstrap state through the configured Supabase PostgreSQL SQLAlchemy connection.
 - After the protected session handshake succeeds, the web shell should call `POST /v1/account/bootstrap` with the same Supabase access token and render the hosted account owner, auth provider, workspace name, and bootstrap status in the UI.
+- The next hosted planning slice after bootstrap is `GET /v1/workspace/import-plan`.
+- `GET /v1/workspace/import-plan` must require a bearer token and return a read-only import-planning summary for the authenticated user's hosted workspace.
+- The import-planning summary must include workspace identity, whether a source SQLite path is recorded, whether that path is accessible to the API process, a human-readable planning detail message, and any read-only SQLite inventory data that can be inspected safely.
+- If the hosted workspace has no recorded `source_db_path`, the endpoint must return a safe actionable status instead of failing.
+- If the hosted workspace records a SQLite path that is not accessible to the API deployment, the endpoint must return a safe actionable status instead of failing.
+- The hosted API must never claim that a browser-only hosted flow can directly inspect an end user's local SQLite file unless that file has been made accessible to the API process by a later desktop-assisted or upload-based bridge.
+- After hosted bootstrap succeeds, the web shell should call `GET /v1/workspace/import-plan` and render the resulting import-planning status and any available inventory summary.
 - The hosted API must permit CORS preflight and authenticated browser requests from `https://dev.sezzions.com` and `http://localhost:5173` by default, with environment override support for additional origins.
 - If direct local JWT decoding is not compatible with the live Supabase token format, the API may validate the bearer token through Supabase's `/auth/v1/user` endpoint before returning `401`.
 - The `/auth/v1/user` validation fallback must include a Supabase publishable/anon key, either from hosted backend configuration or from the web client's protected handshake request.

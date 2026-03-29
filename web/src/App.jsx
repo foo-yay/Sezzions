@@ -42,6 +42,7 @@ const launchPlan = [
 export default function App() {
   const [sessionEmail, setSessionEmail] = useState(null);
   const [hostedSummary, setHostedSummary] = useState(null);
+  const [importPlanSummary, setImportPlanSummary] = useState(null);
   const [authMessage, setAuthMessage] = useState(
     supabaseConfigured ? "Sign in with Google to activate the hosted web shell." : supabaseConfigError
   );
@@ -51,19 +52,64 @@ export default function App() {
   const [hostedStatus, setHostedStatus] = useState(
     "Hosted account bootstrap will run after the protected API handshake."
   );
+  const [importPlanStatus, setImportPlanStatus] = useState(
+    "Hosted import planning will run after workspace bootstrap."
+  );
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || null;
   const supabaseApiKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || null;
+
+  async function syncWorkspaceImportPlan(nextSession) {
+    if (!nextSession?.access_token) {
+      setImportPlanSummary(null);
+      setImportPlanStatus("Hosted import planning will run after workspace bootstrap.");
+      return;
+    }
+
+    if (!apiBaseUrl) {
+      setImportPlanSummary(null);
+      setImportPlanStatus("Set VITE_API_BASE_URL to enable hosted import planning.");
+      return;
+    }
+
+    setImportPlanStatus("Loading hosted workspace import planning status...");
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/v1/workspace/import-plan`, {
+        headers: {
+          Authorization: `Bearer ${nextSession.access_token}`,
+          ...(supabaseApiKey ? { apikey: supabaseApiKey } : {})
+        }
+      });
+
+      if (!response.ok) {
+        setImportPlanSummary(null);
+        setImportPlanStatus(`Hosted import planning failed (${response.status}).`);
+        return;
+      }
+
+      const data = await response.json();
+      setImportPlanSummary(data);
+      setImportPlanStatus(data.detail || "Hosted import planning is ready.");
+    } catch (error) {
+      setImportPlanSummary(null);
+      setImportPlanStatus(error instanceof Error ? error.message : "Hosted import planning failed.");
+    }
+  }
 
   async function syncHostedBootstrap(nextSession) {
     if (!nextSession?.access_token) {
       setHostedSummary(null);
       setHostedStatus("Hosted account bootstrap will run after the protected API handshake.");
+      setImportPlanSummary(null);
+      setImportPlanStatus("Hosted import planning will run after workspace bootstrap.");
       return;
     }
 
     if (!apiBaseUrl) {
       setHostedSummary(null);
       setHostedStatus("Set VITE_API_BASE_URL to enable hosted account bootstrap.");
+      setImportPlanSummary(null);
+      setImportPlanStatus("Set VITE_API_BASE_URL to enable hosted import planning.");
       return;
     }
 
@@ -80,6 +126,8 @@ export default function App() {
 
       if (!response.ok) {
         setHostedSummary(null);
+        setImportPlanSummary(null);
+        setImportPlanStatus("Hosted import planning will run after workspace bootstrap.");
         setHostedStatus(`Hosted account bootstrap failed (${response.status}).`);
         return;
       }
@@ -91,8 +139,11 @@ export default function App() {
           ? "Hosted account workspace created and ready."
           : "Hosted account workspace ready."
       );
+      await syncWorkspaceImportPlan(nextSession);
     } catch (error) {
       setHostedSummary(null);
+      setImportPlanSummary(null);
+      setImportPlanStatus("Hosted import planning will run after workspace bootstrap.");
       setHostedStatus(error instanceof Error ? error.message : "Hosted account bootstrap failed.");
     }
   }
@@ -102,6 +153,8 @@ export default function App() {
       setApiStatus("Protected API handshake will run after Google sign-in.");
       setHostedSummary(null);
       setHostedStatus("Hosted account bootstrap will run after the protected API handshake.");
+      setImportPlanSummary(null);
+      setImportPlanStatus("Hosted import planning will run after workspace bootstrap.");
       return;
     }
 
@@ -109,6 +162,8 @@ export default function App() {
       setApiStatus("Set VITE_API_BASE_URL to enable the protected API handshake.");
       setHostedSummary(null);
       setHostedStatus("Set VITE_API_BASE_URL to enable hosted account bootstrap.");
+      setImportPlanSummary(null);
+      setImportPlanStatus("Set VITE_API_BASE_URL to enable hosted import planning.");
       return;
     }
 
@@ -135,6 +190,8 @@ export default function App() {
     } catch (error) {
       setHostedSummary(null);
       setHostedStatus("Hosted account bootstrap will run after the protected API handshake.");
+      setImportPlanSummary(null);
+      setImportPlanStatus("Hosted import planning will run after workspace bootstrap.");
       setApiStatus(error instanceof Error ? error.message : "Protected API handshake failed.");
     }
   }
@@ -216,9 +273,11 @@ export default function App() {
 
     setSessionEmail(null);
     setHostedSummary(null);
+    setImportPlanSummary(null);
     setAuthMessage("Signed out. Sign in with Google to reactivate the hosted web shell.");
     setApiStatus("Protected API handshake will run after Google sign-in.");
     setHostedStatus("Hosted account bootstrap will run after the protected API handshake.");
+    setImportPlanStatus("Hosted import planning will run after workspace bootstrap.");
   }
 
   return (
@@ -267,6 +326,10 @@ export default function App() {
             <div>
               <dt>Hosted bootstrap</dt>
               <dd>{hostedStatus}</dd>
+            </div>
+            <div>
+              <dt>Import planning</dt>
+              <dd>{importPlanStatus}</dd>
             </div>
           </dl>
           {sessionEmail ? (
@@ -319,8 +382,8 @@ export default function App() {
             ))}
           </ol>
           <p className="launch-note">
-            After Google sign-in is live, the next slice is a protected call into the Render API
-            and then the first controlled import of desktop data from the local SQLite source.
+            After Google sign-in is live, the next slice is a protected import-planning pass that
+            reports whether this hosted workspace has an inspectable SQLite migration source.
           </p>
         </section>
 
@@ -350,6 +413,39 @@ export default function App() {
             </dl>
           ) : (
             <p className="launch-note">{hostedStatus}</p>
+          )}
+        </section>
+
+        <section className="panel launch-panel">
+          <div className="panel-head">
+            <p className="panel-kicker">Import planning</p>
+            <h2>Hosted workspace import readiness</h2>
+          </div>
+          {importPlanSummary ? (
+            <dl className="aside-meta">
+              <div>
+                <dt>Planning status</dt>
+                <dd>{importPlanSummary.status}</dd>
+              </div>
+              <div>
+                <dt>Planning detail</dt>
+                <dd>{importPlanSummary.detail}</dd>
+              </div>
+              <div>
+                <dt>Source DB path</dt>
+                <dd>{importPlanSummary.workspace?.source_db_path || "Not recorded"}</dd>
+              </div>
+              <div>
+                <dt>Active users discovered</dt>
+                <dd>{importPlanSummary.inventory?.active_user_names?.join(", ") || "None"}</dd>
+              </div>
+              <div>
+                <dt>Sites discovered</dt>
+                <dd>{importPlanSummary.inventory?.site_names?.join(", ") || "None"}</dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="launch-note">{importPlanStatus}</p>
           )}
         </section>
       </main>

@@ -12,6 +12,42 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-04
+type: feat
+areas: [api, web, docs, tests]
+issue: 214
+summary: "Add authenticated hosted workspace import planning"
+details: >
+  Added the next hosted product slice after workspace bootstrap: a protected
+  read-only import-planning endpoint and staged web UI that report whether the
+  hosted workspace has an inspectable SQLite migration source. The implemented
+  contract reflects the real deployment boundary: the hosted API can only
+  inspect a source SQLite path when that path is actually accessible to the API
+  process.
+
+  Implemented:
+  - `GET /v1/workspace/import-plan` protected hosted planning endpoint
+  - hosted planning service with safe statuses for missing paths, inaccessible
+    paths, and inspection failures
+  - staged web-shell import planning status/inventory rendering after bootstrap
+  - focused service, API, and web tests for the new hosted slice
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/services/hosted/test_workspace_import_planning_service.py tests/api/test_workspace_import_plan.py
+  - cd web && npm test -- --run src/App.test.jsx
+files_changed:
+  - api/app.py
+  - services/hosted/workspace_import_planning_service.py
+  - services/hosted/__init__.py
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - tests/services/hosted/test_workspace_import_planning_service.py
+  - tests/api/test_workspace_import_plan.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-03
 type: fix
 areas: [api, database, docs, tests]
