@@ -160,6 +160,7 @@ Hosted backend foundation (Issue #203):
 - Updating a hosted workspace user must support editing name, email, notes, and active status while rejecting cross-workspace access.
 - Deleting a hosted workspace user must require explicit user intent in the UI and must reject cross-workspace access.
 - After hosted bootstrap succeeds, the signed-in web app should transition from the temporary marketing shell into a real hosted application shell with Setup navigation.
+- After Google sign-in succeeds, the hosted web app should keep the signed-in application shell visible even if the protected API handshake or hosted bootstrap cannot be reached, and it should expose retryable status instead of hiding Setup behind a successful bootstrap.
 - Because Supabase OAuth redirect allow-list validation may reject hash-routed URLs, the hosted web app must preserve hash-route return targets locally and use an allowlist-safe origin redirect for Google sign-in.
 - The first real hosted app shell slice is `Setup -> Users`, and it should preserve desktop-style behaviors where practical: search, refresh, CSV export, add/view/edit/delete workflows, visible active/inactive state, and highlighted validation for required fields.
 - Before substantial hosted UI porting begins, the hosted persistence metadata must structurally define the core workspace-owned business schema so the web app can target the real long-term data contract rather than temporary CRUD scaffolding.

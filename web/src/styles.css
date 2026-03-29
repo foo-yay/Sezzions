@@ -196,6 +196,7 @@ h3 {
 }
 
 .ghost-button:disabled,
+.primary-button:disabled,
 .subtab-button:disabled {
   opacity: 0.45;
   cursor: default;

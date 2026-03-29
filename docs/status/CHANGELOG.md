@@ -12,6 +12,34 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-12
+type: fix
+areas: [web, docs, tests]
+issue: 225
+summary: "Keep the hosted shell visible when bootstrap cannot be reached"
+details: >
+  Adjusted the hosted web entry flow so a signed-in user still lands in the
+  hosted workspace shell even if the protected API handshake or hosted
+  bootstrap cannot currently reach the backend. The Users slice now remains
+  visible with retryable hosted-status messaging instead of leaving the user on
+  the marketing shell with a generic fetch failure.
+
+  Implemented:
+  - signed-in hosted shell visibility even when bootstrap is unavailable
+  - clearer network failure text for API/bootstrap/users flows
+  - retry action for hosted connection recovery
+  - frontend coverage for the signed-in bootstrap-failure path
+
+  Validation:
+  - cd web && npm test -- --run src/App.test.jsx
+files_changed:
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-11
 type: feat
 areas: [web, api, docs, tests]
