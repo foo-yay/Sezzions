@@ -40,8 +40,10 @@ const launchPlan = [
 ];
 
 export default function App() {
-  const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
-  const isMigrationPage = currentPath === "/migration";
+  const hashRoute = window.location.hash.replace(/^#/, "").replace(/\/+$/, "") || "";
+  const pathRoute = window.location.pathname.replace(/\/+$/, "") || "/";
+  const currentRoute = hashRoute || pathRoute;
+  const isMigrationPage = currentRoute === "/migration";
   const [sessionEmail, setSessionEmail] = useState(null);
   const [hostedSummary, setHostedSummary] = useState(null);
   const [importPlanSummary, setImportPlanSummary] = useState(null);
@@ -360,7 +362,7 @@ export default function App() {
               read-only hosted migration planning. This is an operator bridge, not a permanent sync surface.
             </p>
             <div className="hero-actions">
-              <a className="primary-link action-button" href="/">Back To Control Tower</a>
+              <a className="primary-link action-button" href="/#/">Back To Control Tower</a>
               <span className="status-pill">
                 {sessionEmail ? "Google session live" : "Awaiting Google sign-in"}
               </span>
@@ -465,7 +467,7 @@ export default function App() {
             <button className="primary-link action-button" type="button" onClick={handleGoogleSignIn}>
               Continue With Google
             </button>
-            <a className="secondary-button" href="/migration">Open Migration Upload</a>
+            <a className="secondary-button" href="/#/migration">Open Migration Upload</a>
             <span className="status-pill">
               {sessionEmail ? "Google session live" : "Awaiting Google sign-in"}
             </span>

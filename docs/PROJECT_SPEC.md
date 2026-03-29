@@ -153,7 +153,7 @@ Hosted backend foundation (Issue #203):
 - `POST /v1/workspace/import-upload-plan` must require a bearer token and accept a browser-uploaded SQLite file as multipart form data for read-only inspection.
 - The upload-planning endpoint must write the uploaded file to a temporary location only long enough to inspect it, return a read-only inventory summary, and delete the temporary file afterward.
 - Invalid, empty, or unreadable uploads must fail safely with an actionable `400` response and must not create hosted business-domain records.
-- The staged web frontend may expose this as a temporary authenticated migration page at `/migration` rather than productizing it as a permanent customer-facing workflow.
+- The staged web frontend may expose this as a temporary authenticated migration page, but on static hosting without SPA rewrites it should use a hash route such as `/#/migration` rather than relying on a direct server path.
 - The hosted API must permit CORS preflight and authenticated browser requests from `https://dev.sezzions.com` and `http://localhost:5173` by default, with environment override support for additional origins.
 - If direct local JWT decoding is not compatible with the live Supabase token format, the API may validate the bearer token through Supabase's `/auth/v1/user` endpoint before returning `401`.
 - The `/auth/v1/user` validation fallback must include a Supabase publishable/anon key, either from hosted backend configuration or from the web client's protected handshake request.
