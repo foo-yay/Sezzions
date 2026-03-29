@@ -31,6 +31,11 @@ Behavior notes:
 - fails fast if only part of the config is present
 - mirrors the source directory with `rsync --delete`, so the target path must be dedicated to this app
 
+Frontend scaffold note:
+- the current web app source lives under `web/`
+- the deploy lane should normally use `DEPLOY_SOURCE_DIR=web/dist`
+- the canonical build command is `cd web && npm ci --cache .npm-cache && npm run build`
+
 ### Release Update Automation (Issue #174)
 ```bash
 python3 tools/release_update.py --version 1.0.1
