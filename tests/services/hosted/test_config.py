@@ -16,6 +16,20 @@ def test_load_hosted_backend_config_builds_supabase_db_connection_values() -> No
     assert config.db_host == "db.nztovvajnrokzsetliwz.supabase.co"
     assert config.google_auth_enabled is True
     assert "secret+with+spaces" in config.sqlalchemy_url
+    assert config.sqlalchemy_url.endswith("?sslmode=require")
+
+
+def test_load_hosted_backend_config_allows_sslmode_override() -> None:
+    config = load_hosted_backend_config(
+        {
+            "SUPABASE_URL": "https://nztovvajnrokzsetliwz.supabase.co",
+            "SUPABASE_DB_PASSWORD": "secret",
+            "SUPABASE_DB_SSLMODE": "verify-full",
+        }
+    )
+
+    assert config.db_sslmode == "verify-full"
+    assert config.sqlalchemy_url.endswith("?sslmode=verify-full")
 
 
 def test_load_hosted_backend_config_can_skip_when_not_required() -> None:
