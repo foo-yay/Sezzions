@@ -136,6 +136,7 @@ Hosted backend foundation (Issue #203):
 - The first protected hosted API endpoint is `GET /v1/session`.
 - `GET /v1/session` must require a bearer token, verify the Supabase access token against Supabase JWKS, and return the authenticated session identity summary.
 - After successful Google sign-in, the web shell should call `GET /v1/session` with the Supabase access token and reflect the protected API handshake status in the UI.
+- When Google sign-in is initiated from a staged hash-routed page such as `/#/migration`, the OAuth redirect target must preserve that current URL so the browser returns to the same page after authentication.
 - The first hosted persistence slice after auth is `POST /v1/account/bootstrap`.
 - `POST /v1/account/bootstrap` must require a bearer token and idempotently create or return the hosted account/workspace records for the authenticated Supabase user.
 - Hosted account identity is keyed by Supabase user id and tracks the owner email plus auth provider separately from the legacy SQLite business-domain `users` table.
@@ -154,6 +155,7 @@ Hosted backend foundation (Issue #203):
 - The upload-planning endpoint must write the uploaded file to a temporary location only long enough to inspect it, return a read-only inventory summary, and delete the temporary file afterward.
 - Invalid, empty, or unreadable uploads must fail safely with an actionable `400` response and must not create hosted business-domain records.
 - The staged web frontend may expose this as a temporary authenticated migration page, but on static hosting without SPA rewrites it should use a hash route such as `/#/migration` rather than relying on a direct server path.
+- Hash-routed staged pages must react to hash changes client-side rather than only reading the route once at initial page load.
 - The hosted API must permit CORS preflight and authenticated browser requests from `https://dev.sezzions.com` and `http://localhost:5173` by default, with environment override support for additional origins.
 - If direct local JWT decoding is not compatible with the live Supabase token format, the API may validate the bearer token through Supabase's `/auth/v1/user` endpoint before returning `401`.
 - The `/auth/v1/user` validation fallback must include a Supabase publishable/anon key, either from hosted backend configuration or from the web client's protected handshake request.
