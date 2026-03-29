@@ -23,6 +23,8 @@ htmlcov/
 *.swp
 *.swo
 *~
+node_modules/
+web/.npm-cache/
 
 # OS
 .DS_Store
@@ -40,6 +42,10 @@ backup/
 
 # Local settings (user-specific configuration)
 settings.json
+.env
+.env.*
+!.env.example
+!**/.env.example
 
 # Temporary files
 *.txt

@@ -28,13 +28,22 @@ This file defines how humans and AI agents should work in this repository.
 ## Required Workflow (Do Not Deviate)
 
 1. Pick work from a GitHub Issue.
-2. Implement in code following layering rules.
-3. Update/add tests for intended semantics.
-4. Update `docs/PROJECT_SPEC.md` if behavior/architecture/workflows changed.
-5. Add a changelog entry in `docs/status/CHANGELOG.md` for noteworthy changes.
-6. Commit changes to a feature branch, push, and open a PR (Draft by default unless the owner requests otherwise).
-7. Move completed work to "Ready for Review" and wait for owner approval.
-8. After approval/merge, close the Issue and ensure changelog/spec are updated.
+2. For normal work, branch from `develop` using a feature branch (`issue-<id>-<slug>`, `feature/<slug>`, `bug/<slug>`, `chore/<slug>`).
+3. Implement in code following layering rules.
+4. Update/add tests for intended semantics.
+5. Update `docs/PROJECT_SPEC.md` if behavior/architecture/workflows changed.
+6. Add a changelog entry in `docs/status/CHANGELOG.md` for noteworthy changes.
+7. Push the feature branch and open a PR into `develop` (Draft by default unless the owner requests otherwise).
+8. Treat `main` as production-only; merge `develop` into `main` only for approved releases or explicit hotfixes.
+9. Move completed work to "Ready for Review" and wait for owner approval.
+10. After approval/merge, close the Issue and ensure changelog/spec are updated.
+
+## Branch Policy
+
+- `develop` is the integration/staging branch.
+- `main` is the production/release branch.
+- Agents should default to `develop` for implementation PRs unless the owner explicitly asks for a production hotfix or release action.
+- Release publishing workflows must be run from `main`.
 
 ## Issues (Templates)
 

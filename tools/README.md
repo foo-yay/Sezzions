@@ -6,6 +6,55 @@ Note: These scripts live in `tools/`. The in-app Tools functionality is implemen
 
 ## Supported Utilities
 
+### Static cPanel Deploy Helper (Issue #199)
+```bash
+bash tools/deploy_cpanel_static.sh
+```
+
+Helper used by `.github/workflows/deploy-static-web.yml` to publish a built static site to a cPanel host over SSH with `rsync`.
+
+Expected environment variables:
+- `DEPLOY_ENABLED`
+- `DEPLOY_SOURCE_DIR`
+- `DEPLOY_BUILD_COMMAND` (optional)
+- `CPANEL_HOST`
+- `CPANEL_PORT`
+- `CPANEL_USERNAME`
+- `CPANEL_TARGET_PATH`
+- `CPANEL_PUBLIC_URL` (optional)
+- `CPANEL_SSH_PRIVATE_KEY`
+- `CPANEL_SSH_KNOWN_HOSTS`
+
+Behavior notes:
+- skips unless `DEPLOY_ENABLED=true`
+- skips cleanly when no cPanel deployment config exists yet
+- fails fast if only part of the config is present
+- mirrors the source directory with `rsync --delete`, so the target path must be dedicated to this app
+
+Frontend scaffold note:
+- the current web app source lives under `web/`
+- the deploy lane should normally use `DEPLOY_SOURCE_DIR=web/dist`
+- the canonical build command is `cd web && npm ci --cache .npm-cache && npm run build`
+
+### SQLite Hosted-Migration Inventory (Issue #203)
+```bash
+python3 tools/inspect_sqlite_for_hosted_import.py sezzions.db
+```
+
+Prints a read-only JSON inventory of the current SQLite database to help plan the first hosted import into Supabase/PostgreSQL.
+
+What it reports:
+- tracked table row counts
+- active user names
+- active site names
+- database file size
+- schema version row count
+
+Usage notes:
+- defaults to `sezzions.db` when no path is passed
+- does not modify the database
+- intended as a pre-import planning tool, not the final hosted importer
+
 ### Release Update Automation (Issue #174)
 ```bash
 python3 tools/release_update.py --version 1.0.1

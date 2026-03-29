@@ -9,6 +9,704 @@ Rules:
 
 ---
 
+## 2026-03-29
+
+```yaml
+id: 2026-03-29-11
+type: feat
+areas: [web, api, docs, tests]
+issue: 225
+summary: "Port the first real hosted Setup Users slice"
+details: >
+  Replaced the signed-in hosted web control tower with the first real app shell
+  and ported the Setup Users workflow onto the hosted backend. The browser app
+  now boots into a dark hosted workspace shell after bootstrap, loads real
+  workspace-owned users, and supports add/edit flows through the hosted users
+  API instead of fake client-side CRUD state.
+
+  Implemented:
+  - dark hosted app shell with Setup navigation and a real Users surface
+  - desktop-inspired Users tools: search, refresh, CSV export, and modal-based
+    add/view/edit/delete workflows with required-field validation
+  - hosted `PATCH /v1/workspace/users/{user_id}` support for editing and
+    active-status changes within the authenticated workspace
+  - hosted `DELETE /v1/workspace/users/{user_id}` support and an allowlist-safe
+    Google OAuth redirect flow that preserves the hash-route return target locally
+  - focused frontend tests for signed-in shell rendering, create/edit flows,
+    and preserved migration upload behavior
+
+  Validation:
+  - pytest -q tests/services/hosted/test_workspace_user_service.py tests/api/test_workspace_users.py
+  - cd web && npm test -- --run
+files_changed:
+  - api/app.py
+  - repositories/hosted_user_repository.py
+  - services/hosted/workspace_user_service.py
+  - tests/api/test_workspace_users.py
+  - tests/services/hosted/test_workspace_user_service.py
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - web/src/styles.css
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-29-10
+type: feat
+areas: [api, database, docs, tests]
+issue: 224
+summary: "Add hosted account roles and lifecycle status foundation"
+details: >
+  Extended the hosted account model with explicit role and lifecycle status
+  fields so future Sezzions admin capabilities can be built on a real account
+  authorization foundation instead of inferred behavior. Self-serve hosted
+  sign-ups now default to the normal customer `owner` role and `active`
+  status, while the spec now documents the intended distinction between normal
+  workspace ownership and Sezzions-controlled elevated administrators.
+
+  Implemented:
+  - `role` and `status` fields on hosted account persistence/model records
+  - hosted account bootstrap summaries now include role and lifecycle status
+  - focused bootstrap/API tests for the new defaults and summary fields
+  - spec updates documenting future admin dashboard and bug-reporting direction
+
+  Validation:
+  - pytest -q tests/services/hosted/test_account_bootstrap_service.py tests/api/test_app.py
+files_changed:
+  - repositories/hosted_account_repository.py
+  - services/hosted/account_bootstrap_service.py
+  - services/hosted/models.py
+  - services/hosted/persistence.py
+  - tests/api/test_app.py
+  - tests/services/hosted/test_account_bootstrap_service.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-29-09
+type: feat
+areas: [database, services, docs, tests]
+issue: 222
+summary: "Define the hosted workspace-owned business schema foundation"
+details: >
+  Added the structural hosted business schema needed before real web UI porting
+  begins. The hosted metadata now defines the core Sezzions business tables as
+  workspace-owned records so future UI, import, and desktop-compatibility work
+  can target the real long-term data contract rather than temporary CRUD-only
+  scaffolding.
+
+  Implemented:
+  - workspace-owned hosted table definitions for core master and transactional data
+  - scoped uniqueness for key workspace master tables such as users, sites,
+    game types, and redemption method types
+  - targeted schema tests covering table presence, explicit workspace ownership,
+    and core transactional foreign-key structure
+
+  Validation:
+  - pytest -q tests/services/hosted/test_business_schema_foundation.py
+files_changed:
+  - services/hosted/persistence.py
+  - tests/services/hosted/test_business_schema_foundation.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-29-08
+type: feat
+areas: [api, database, services, docs, tests]
+issue: 220
+summary: "Add a hosted workspace-managed users foundation"
+details: >
+  Added the first hosted business-domain data slice after account/workspace
+  bootstrap: workspace-owned managed users. This preserves the product model
+  where an authenticated account owner is separate from the players they manage
+  inside a workspace, giving the hosted path a stable parent entity for later
+  cards, transactions, and import work.
+
+  Implemented:
+  - `hosted_users` hosted persistence table keyed by `workspace_id`
+  - workspace-scoped hosted user repository and service for create/list flows
+  - protected `GET /v1/workspace/users` and `POST /v1/workspace/users` endpoints
+  - focused service and API tests covering workspace isolation and validation
+
+  Validation:
+  - pytest -q tests/services/hosted/test_workspace_user_service.py tests/api/test_workspace_users.py
+files_changed:
+  - api/app.py
+  - repositories/hosted_user_repository.py
+  - services/hosted/__init__.py
+  - services/hosted/models.py
+  - services/hosted/persistence.py
+  - services/hosted/workspace_user_service.py
+  - tests/api/test_workspace_users.py
+  - tests/services/hosted/test_workspace_user_service.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-29-07
+type: fix
+areas: [web, auth, docs, tests]
+issue: 216
+summary: "Preserve the migration hash route across navigation and sign-in"
+details: >
+  Fixed the staged migration upload page failing to stay visible during normal
+  navigation and after Google sign-in. The web shell now reacts to hash-route
+  changes client-side and preserves the full current URL as the Supabase OAuth
+  redirect target so `/#/migration` survives the auth round-trip.
+
+  Implemented:
+  - reactive hash-route page selection in the staged web shell
+  - Google OAuth redirect now preserves the full current URL
+  - focused web test updates for the route/auth behavior
+
+  Validation:
+  - cd web && npm test -- --run src/App.test.jsx
+files_changed:
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-29-06
+type: fix
+areas: [web, docs, tests]
+issue: 216
+summary: "Use a hash route for the temporary migration page on static hosting"
+details: >
+  Fixed the staged migration upload page returning a server-side 404 on the
+  cPanel static host. The temporary migration surface now uses a hash route
+  instead of a direct `/migration` path so the server only has to serve the
+  root web bundle and React can select the migration view client-side.
+
+  Implemented:
+  - switched migration links/page detection to `/#/migration`
+  - updated the web tests for hash-based routing
+  - clarified the static-host routing constraint in the project spec
+
+  Validation:
+  - cd web && npm test -- --run src/App.test.jsx
+files_changed:
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-29-05
+type: feat
+areas: [api, web, docs, tests]
+issue: 216
+summary: "Add a temporary hosted SQLite upload planning page"
+details: >
+  Added a pragmatic one-user migration bridge for the hosted rollout: an
+  authenticated web migration page and protected API endpoint that accept a
+  SQLite upload, inspect it read-only through the existing inventory service,
+  and return planning data without performing any hosted business-data import.
+
+  Implemented:
+  - `POST /v1/workspace/import-upload-plan` multipart upload inspection endpoint
+  - temporary uploaded-SQLite inspection service with temp-file cleanup
+  - staged `/migration` page for authenticated SQLite upload planning
+  - focused service, API, and web tests for the upload bridge
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/services/hosted/test_uploaded_sqlite_inspection_service.py tests/api/test_workspace_import_upload.py
+  - cd web && npm test -- --run src/App.test.jsx
+files_changed:
+  - api/app.py
+  - services/hosted/uploaded_sqlite_inspection_service.py
+  - services/hosted/__init__.py
+  - requirements.txt
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - tests/services/hosted/test_uploaded_sqlite_inspection_service.py
+  - tests/api/test_workspace_import_upload.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-29-04
+type: feat
+areas: [api, web, docs, tests]
+issue: 214
+summary: "Add authenticated hosted workspace import planning"
+details: >
+  Added the next hosted product slice after workspace bootstrap: a protected
+  read-only import-planning endpoint and staged web UI that report whether the
+  hosted workspace has an inspectable SQLite migration source. The implemented
+  contract reflects the real deployment boundary: the hosted API can only
+  inspect a source SQLite path when that path is actually accessible to the API
+  process.
+
+  Implemented:
+  - `GET /v1/workspace/import-plan` protected hosted planning endpoint
+  - hosted planning service with safe statuses for missing paths, inaccessible
+    paths, and inspection failures
+  - staged web-shell import planning status/inventory rendering after bootstrap
+  - focused service, API, and web tests for the new hosted slice
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/services/hosted/test_workspace_import_planning_service.py tests/api/test_workspace_import_plan.py
+  - cd web && npm test -- --run src/App.test.jsx
+files_changed:
+  - api/app.py
+  - services/hosted/workspace_import_planning_service.py
+  - services/hosted/__init__.py
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - tests/services/hosted/test_workspace_import_planning_service.py
+  - tests/api/test_workspace_import_plan.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-29-03
+type: fix
+areas: [api, database, docs, tests]
+issue: 210
+summary: "Allow hosted Postgres URL overrides for IPv4-safe deployments"
+details: >
+  Followed up on the staged hosted bootstrap 500 after Render logs showed the
+  API was attempting to reach the direct Supabase database host over IPv6,
+  which was unreachable from the deployed service. The hosted backend now
+  accepts `SUPABASE_SQLALCHEMY_URL` or `DATABASE_URL` so deployments can use a
+  Supabase pooler or other platform-safe Postgres connection string directly.
+
+  Implemented:
+  - direct SQLAlchemy URL override support for hosted database access
+  - focused config coverage for the override path
+  - README guidance for using a pooler/IPv4-safe connection string on hosted platforms
+
+  Validation:
+  - pending deploy verification on Render using a Supabase pooler URL override
+files_changed:
+  - api/config.py
+  - tests/services/hosted/test_config.py
+  - README.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-29-02
+type: fix
+areas: [api, database, docs, tests]
+issue: 210
+summary: "Require SSL on hosted Supabase Postgres connections"
+details: >
+  Fixed a live staged regression where authenticated hosted account bootstrap
+  reached the backend but failed with a server-side error while opening the
+  hosted Supabase Postgres connection. The hosted SQLAlchemy URL now includes
+  `sslmode=require` by default, with an env override for deployments that need
+  a different libpq SSL mode.
+
+  Implemented:
+  - default Supabase SQLAlchemy URLs now append `?sslmode=require`
+  - optional `SUPABASE_DB_SSLMODE` override for hosted deployments
+  - focused config tests covering the default and override cases
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/services/hosted/test_config.py tests/api/test_app.py
+files_changed:
+  - api/config.py
+  - tests/services/hosted/test_config.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-29-01
+type: feat
+areas: [api, auth, database, web, docs, tests]
+issue: 210
+summary: "Bootstrap a hosted account and workspace after authenticated sign-in"
+details: >
+  Added the first persisted hosted product state after the protected Supabase
+  session handshake. The hosted API now exposes `POST /v1/account/bootstrap`,
+  which idempotently creates or returns the hosted account/workspace for the
+  authenticated Supabase user. The web shell now calls that endpoint after the
+  protected session handshake succeeds and renders the hosted owner/workspace
+  summary in the UI.
+
+  Implemented:
+  - SQLAlchemy-backed hosted account/workspace persistence records
+  - idempotent hosted account bootstrap service and protected API endpoint
+  - web-shell bootstrap request and hosted summary rendering after sign-in
+  - focused service, API, and web tests for the new authenticated slice
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/services/hosted/test_account_bootstrap_service.py tests/api/test_app.py
+  - cd web && npm test -- --run App.test.jsx
+files_changed:
+  - api/app.py
+  - repositories/hosted_account_repository.py
+  - repositories/hosted_workspace_repository.py
+  - services/hosted/__init__.py
+  - services/hosted/account_bootstrap_service.py
+  - services/hosted/persistence.py
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - tests/api/test_app.py
+  - tests/services/hosted/test_account_bootstrap_service.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+## 2026-03-28
+
+```yaml
+id: 2026-03-28-10
+type: fix
+areas: [api, auth, tests]
+issue: 203
+summary: "Prefer the browser apikey during staged Supabase user fallback"
+details: >
+  Followed up on the still-live staged `401` after confirming the current web
+  bundle was deployed. The hosted auth fallback was still preferring any
+  backend-configured Supabase publishable key over the fresh `apikey` already
+  being sent by the browser, which left room for stale Render env values to
+  keep breaking `/auth/v1/user` validation.
+
+  Implemented:
+  - auth fallback now tries request-supplied Supabase API keys before backend
+    config values
+  - fallback now retries available key candidates in order instead of failing on
+    the first rejected key
+  - focused auth tests covering request-key precedence and ordered retries
+
+  Validation:
+  - /usr/local/bin/python3 -m pytest tests/api/test_auth.py -q
+files_changed:
+  - api/auth.py
+  - tests/api/test_auth.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-28-09
+type: fix
+areas: [api, auth, web, docs, tests]
+issue: 203
+summary: "Provide the Supabase public key on the protected session fallback path"
+details: >
+  Followed up on the staged `401` issue after adding the `/auth/v1/user`
+  fallback. Supabase's server-side user validation path requires both the bearer
+  token and a publishable/anon API key. Added support for the hosted API to read
+  that public key from backend configuration or from the web client's protected
+  handshake request, and updated the web shell to forward the key alongside the
+  bearer token.
+
+  Implemented:
+  - hosted config support for `SUPABASE_PUBLISHABLE_KEY` or `SUPABASE_ANON_KEY`
+  - `apikey` forwarding on the protected web handshake
+  - auth tests covering the forwarded-key fallback path
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/api/test_auth.py tests/api/test_app.py tests/services/hosted/test_config.py
+files_changed:
+  - api/config.py
+  - api/auth.py
+  - web/src/App.jsx
+  - tests/api/test_auth.py
+  - tests/services/hosted/test_config.py
+  - README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-28-08
+type: fix
+areas: [api, auth, docs, tests]
+issue: 203
+summary: "Fallback to Supabase user validation when direct JWT decoding rejects a live session"
+details: >
+  Fixed the staged Google sign-in handshake returning `401` after the CORS
+  issue was resolved. The browser was now reaching the Render API, but the API
+  was rejecting the live Supabase access token during direct JWT/JWKS decoding.
+  Added a fallback path that validates the bearer token through Supabase's
+  `/auth/v1/user` endpoint before rejecting the request. This keeps the direct
+  JWT path in place while making the live hosted session handshake compatible
+  with the current Supabase token behavior.
+
+  Implemented:
+  - Supabase `/auth/v1/user` fallback in the hosted auth layer
+  - focused auth tests covering successful fallback and unauthorized failure
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/api/test_auth.py tests/api/test_app.py tests/services/hosted/test_config.py
+files_changed:
+  - api/auth.py
+  - tests/api/test_auth.py
+  - README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-28-07
+type: fix
+areas: [api, auth, deployment, docs, tests]
+issue: 203
+summary: "Allow staged web-to-Render auth requests through API CORS handling"
+details: >
+  Fixed the immediate production blocker for the protected API handshake after
+  Google sign-in. The browser app on `dev.sezzions.com` was failing with
+  "failed to fetch" because the Render-hosted FastAPI service rejected CORS
+  preflight requests. Added CORS middleware to the hosted API, introduced
+  configurable allowed origins, and added focused tests to verify that the
+  staged web origin can preflight `GET /v1/session` successfully.
+
+  Implemented:
+  - FastAPI CORS middleware for staged web + local Vite origins
+  - configurable `CORS_ALLOWED_ORIGINS` parsing in hosted config
+  - API preflight coverage for the protected session endpoint
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/api/test_app.py tests/services/hosted/test_config.py
+files_changed:
+  - api/app.py
+  - api/config.py
+  - tests/api/test_app.py
+  - tests/services/hosted/test_config.py
+  - README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-28-06
+type: feat
+areas: [api, auth, frontend, docs, tests]
+issue: 203
+summary: "Add the first protected Supabase-to-Render API handshake"
+details: >
+  Extended the hosted foundation with the first authenticated API slice.
+  The FastAPI service now exposes `GET /v1/session`, which requires a bearer
+  token and verifies the Supabase access token against Supabase JWKS before
+  returning the authenticated identity summary. The web shell now uses the
+  signed-in Supabase session token to call that protected endpoint and displays
+  the Render handshake status in the UI.
+
+  Implemented:
+  - JWT/JWKS verification for Supabase access tokens in the API layer
+  - protected `GET /v1/session` endpoint
+  - web-side protected API call after Google sign-in
+  - focused tests for the protected endpoint and frontend handshake behavior
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/api/test_app.py tests/services/hosted/test_config.py
+  - cd web && npm test
+files_changed:
+  - requirements.txt
+  - api/auth.py
+  - api/app.py
+  - api/config.py
+  - tests/api/test_app.py
+  - tests/services/hosted/test_config.py
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-28-04
+type: feat
+areas: [api, auth, database, migration, docs, tests, tools]
+issue: 203
+summary: "Scaffold the hosted backend foundation around Supabase and FastAPI"
+details: >
+  Added the first concrete shared desktop/web backend foundation. The repository
+  now includes a minimal FastAPI package for hosted API work, environment-based
+  Supabase configuration helpers, explicit hosted account/workspace model stubs,
+  and a read-only SQLite migration inventory service and CLI to inspect the
+  current local database before import work begins. Documented the chosen stack
+  and ownership boundary: Supabase Auth with Google first, Supabase PostgreSQL
+  as the hosted system of record, FastAPI for the API layer, and `sezzions.db`
+  as the initial migration source.
+
+  Implemented:
+  - FastAPI scaffold under `api/` with health and foundation endpoints
+  - Supabase environment configuration loader with derived PostgreSQL host/URL
+  - hosted account/workspace model stubs separate from business-domain users
+  - read-only SQLite migration inventory service and CLI
+  - targeted tests for hosted config, API scaffold, and migration inventory
+
+  Validation:
+  - pytest -q tests/api/test_app.py tests/services/hosted/test_config.py tests/services/hosted/test_sqlite_migration_inventory_service.py
+files_changed:
+  - requirements.txt
+  - .gitignore
+  - api/__init__.py
+  - api/app.py
+  - api/config.py
+  - api/.env.example
+  - services/hosted/__init__.py
+  - services/hosted/models.py
+  - services/hosted/sqlite_migration_inventory_service.py
+  - tools/inspect_sqlite_for_hosted_import.py
+  - tools/README.md
+  - README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+  - docs/adr/2026-03-28-hosted-foundation-stack.md
+  - tests/api/test_app.py
+  - tests/services/hosted/test_config.py
+  - tests/services/hosted/test_sqlite_migration_inventory_service.py
+```
+
+```yaml
+id: 2026-03-28-05
+type: feat
+areas: [web, auth, frontend, docs, tests]
+issue: 203
+summary: "Wire the web shell for Supabase Google sign-in"
+details: >
+  Replaced the static web shell call-to-action with the first real hosted auth
+  state machine. The web app now initializes a Supabase browser client from
+  environment variables, displays signed-in vs signed-out state, starts Google
+  OAuth through Supabase, and supports sign-out from the shell. Added example
+  frontend environment variables and updated docs to define the required web
+  auth configuration.
+
+  Implemented:
+  - Supabase browser client module for Vite environment variables
+  - Google sign-in and sign-out actions in the web shell
+  - current session email display in the web UI
+  - focused frontend tests for signed-out, sign-in trigger, and signed-in states
+
+  Validation:
+  - cd web && npm test
+  - cd web && npm run build
+files_changed:
+  - web/.env.example
+  - web/src/lib/supabaseClient.js
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - web/src/styles.css
+  - README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-28-03
+type: feat
+areas: [web, frontend, deployment, ci, docs]
+issue: 201
+summary: "Scaffold the actual Vite and React web frontend"
+details: >
+  Replaced the static tracked placeholder-only approach with a real Vite + React
+  frontend scaffold under `web/`. Added a landing shell, responsive styling,
+  frontend test coverage, and a working production build. Updated CI so the web
+  frontend is installed, tested, and built when present, and switched the
+  deployment defaults/documentation to use built output from `web/dist` with a
+  canonical build command.
+
+  Implemented:
+  - Vite + React app scaffold with an initial Sezzions web landing shell
+  - Vitest + Testing Library smoke coverage for the app shell
+  - CI steps for frontend dependency install, test, and build
+  - deploy helper/default documentation changes from tracked placeholder output
+    to built frontend output
+
+  Validation:
+  - cd web && npm test
+  - cd web && npm run build
+files_changed:
+  - .github/workflows/ci.yml
+  - .gitignore
+  - README.md
+  - tools/README.md
+  - tools/deploy_cpanel_static.sh
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+  - docs/archive/2026-03-28-issue-web-frontend-scaffold.md
+  - web/package.json
+  - web/package-lock.json
+  - web/index.html
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - web/src/main.jsx
+  - web/src/styles.css
+  - web/src/test/setup.js
+```
+
+```yaml
+id: 2026-03-28-02
+type: feat
+areas: [workflow, deployment, docs, tools]
+issue: 199
+summary: "Add staged cPanel-compatible static deployment scaffold"
+details: >
+  Added a GitHub Actions deployment scaffold for future static web rollout.
+  Pushes to `develop` target the `development` environment and pushes to
+  `main` target `production`. Deployment uses SSH + rsync through a new helper
+  script and expects all hostnames, target paths, build commands, and SSH
+  credentials to come from GitHub environment variables/secrets. Deployment is
+  further gated by `DEPLOY_ENABLED=true` so environment values can be staged in
+  GitHub before secrets are added. The workflow skips cleanly until cPanel
+  deployment config is actually enabled.
+
+  Documented:
+  - required GitHub environment variables and secrets
+  - required cPanel setup steps for subdomains, SSH access, authorized keys,
+    and dedicated target paths
+  - static-only scope of the scaffold pending a real web build/API hosting plan
+  - added a minimal placeholder page under `web/static` so the development lane
+    can be verified end-to-end before the real frontend exists
+
+  Validation:
+  - bash -n tools/deploy_cpanel_static.sh
+  - YAML/workflow validation via editor diagnostics
+files_changed:
+  - .github/workflows/deploy-static-web.yml
+  - tools/deploy_cpanel_static.sh
+  - README.md
+  - tools/README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+  - docs/archive/2026-03-28-issue-cpanel-deployment-workflow.md
+  - web/static/index.html
+```
+
+```yaml
+id: 2026-03-28-01
+type: chore
+areas: [workflow, ci, release, docs]
+issue: null
+summary: "Adopt develop-to-main workflow and guard production release publishing"
+details: >
+  Established `develop` as the integration/staging branch and `main` as the
+  production branch. CI now runs on pushes and pull requests for both branches,
+  and the release publishing workflow now refuses to run unless dispatched from
+  `main`. Updated the repository instructions, PR template, README, and project
+  spec so future human and AI work defaults to feature branches into `develop`
+  with explicit promotion to `main` only for approved releases or hotfixes.
+
+  Validation:
+  - YAML/workflow validation via editor diagnostics
+files_changed:
+  - .github/workflows/ci.yml
+  - .github/workflows/release-binaries.yml
+  - .github/copilot-instructions.md
+  - AGENTS.md
+  - README.md
+  - docs/PROJECT_SPEC.md
+  - .github/pull_request_template.md
+  - docs/status/CHANGELOG.md
+```
+
 ## 2026-03-26
 
 ```yaml
