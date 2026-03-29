@@ -18,6 +18,7 @@ class HostedBackendConfig:
 
     supabase_url: str
     supabase_db_password: Optional[str] = None
+    supabase_publishable_key: Optional[str] = None
     db_user: str = "postgres"
     db_name: str = "postgres"
     db_port: int = 5432
@@ -85,6 +86,8 @@ def load_hosted_backend_config(
     - SUPABASE_DB_USER
     - SUPABASE_DB_NAME
     - SUPABASE_DB_PORT
+    - SUPABASE_PUBLISHABLE_KEY
+    - SUPABASE_ANON_KEY
     - SUPABASE_JWT_AUDIENCE
     - SUPABASE_GOOGLE_AUTH_ENABLED
     """
@@ -106,6 +109,12 @@ def load_hosted_backend_config(
     db_user = env_map.get("SUPABASE_DB_USER", "postgres").strip() or "postgres"
     db_name = env_map.get("SUPABASE_DB_NAME", "postgres").strip() or "postgres"
     db_port_raw = env_map.get("SUPABASE_DB_PORT", "5432").strip() or "5432"
+    supabase_publishable_key = (
+        env_map.get("SUPABASE_PUBLISHABLE_KEY", "").strip()
+        or env_map.get("SUPABASE_ANON_KEY", "").strip()
+        or env_map.get("VITE_SUPABASE_ANON_KEY", "").strip()
+        or None
+    )
     jwt_audience = env_map.get("SUPABASE_JWT_AUDIENCE", "authenticated").strip() or "authenticated"
     google_auth_enabled = env_map.get("SUPABASE_GOOGLE_AUTH_ENABLED", "false").strip().lower() in {
         "1",
@@ -130,6 +139,7 @@ def load_hosted_backend_config(
     return HostedBackendConfig(
         supabase_url=supabase_url,
         supabase_db_password=db_password or None,
+        supabase_publishable_key=supabase_publishable_key,
         db_user=db_user,
         db_name=db_name,
         db_port=db_port,

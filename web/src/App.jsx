@@ -48,6 +48,7 @@ export default function App() {
     "Protected API handshake will run after Google sign-in."
   );
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || null;
+  const supabaseApiKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || null;
 
   async function syncProtectedApi(nextSession) {
     if (!nextSession?.access_token) {
@@ -65,7 +66,8 @@ export default function App() {
     try {
       const response = await fetch(`${apiBaseUrl}/v1/session`, {
         headers: {
-          Authorization: `Bearer ${nextSession.access_token}`
+          Authorization: `Bearer ${nextSession.access_token}`,
+          ...(supabaseApiKey ? { apikey: supabaseApiKey } : {})
         }
       });
 

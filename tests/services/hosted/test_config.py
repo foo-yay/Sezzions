@@ -60,3 +60,27 @@ def test_load_hosted_backend_config_parses_cors_allowed_origins() -> None:
         "https://sezzions.com",
         "http://localhost:5173",
     )
+
+
+def test_load_hosted_backend_config_reads_publishable_key_variants() -> None:
+    config = load_hosted_backend_config(
+        {
+            "SUPABASE_URL": "https://nztovvajnrokzsetliwz.supabase.co",
+            "SUPABASE_PUBLISHABLE_KEY": "publishable-key-123",
+        },
+        require_db_password=False,
+    )
+
+    assert config is not None
+    assert config.supabase_publishable_key == "publishable-key-123"
+
+    fallback_config = load_hosted_backend_config(
+        {
+            "SUPABASE_URL": "https://nztovvajnrokzsetliwz.supabase.co",
+            "SUPABASE_ANON_KEY": "anon-key-123",
+        },
+        require_db_password=False,
+    )
+
+    assert fallback_config is not None
+    assert fallback_config.supabase_publishable_key == "anon-key-123"
