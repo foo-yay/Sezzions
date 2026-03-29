@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.auth import AuthenticatedSession, get_authenticated_session
 from api.config import HostedConfigurationError, load_hosted_backend_config
 from services.hosted.account_bootstrap_service import HostedAccountBootstrapService
 from services.hosted.persistence import get_hosted_session_factory
+from services.hosted.uploaded_sqlite_inspection_service import (
+    HostedUploadedSQLiteInspectionService,
+)
 from services.hosted.workspace_import_planning_service import (
     HostedWorkspaceImportPlanningService,
 )
@@ -47,6 +50,10 @@ def get_hosted_workspace_import_planning_service() -> HostedWorkspaceImportPlann
 
     session_factory = get_hosted_session_factory(config.sqlalchemy_url)
     return HostedWorkspaceImportPlanningService(session_factory)
+
+
+def get_hosted_uploaded_sqlite_inspection_service() -> HostedUploadedSQLiteInspectionService:
+    return HostedUploadedSQLiteInspectionService()
 
 
 @app.get("/healthz")
@@ -100,5 +107,25 @@ def workspace_import_plan(
         summary = service.plan_import(supabase_user_id=session.user_id)
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return summary.as_dict() if hasattr(summary, "as_dict") else summary
+
+
+@app.post("/v1/workspace/import-upload-plan")
+async def workspace_import_upload_plan(
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    sqlite_db: UploadFile = File(...),
+    service: HostedUploadedSQLiteInspectionService = Depends(get_hosted_uploaded_sqlite_inspection_service),
+) -> dict[str, object]:
+    del session
+    try:
+        summary = service.inspect_upload(
+            filename=sqlite_db.filename or "uploaded.sqlite",
+            fileobj=sqlite_db.file,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    finally:
+        await sqlite_db.close()
 
     return summary.as_dict() if hasattr(summary, "as_dict") else summary

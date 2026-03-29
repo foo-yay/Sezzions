@@ -12,6 +12,40 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-05
+type: feat
+areas: [api, web, docs, tests]
+issue: 216
+summary: "Add a temporary hosted SQLite upload planning page"
+details: >
+  Added a pragmatic one-user migration bridge for the hosted rollout: an
+  authenticated web migration page and protected API endpoint that accept a
+  SQLite upload, inspect it read-only through the existing inventory service,
+  and return planning data without performing any hosted business-data import.
+
+  Implemented:
+  - `POST /v1/workspace/import-upload-plan` multipart upload inspection endpoint
+  - temporary uploaded-SQLite inspection service with temp-file cleanup
+  - staged `/migration` page for authenticated SQLite upload planning
+  - focused service, API, and web tests for the upload bridge
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/services/hosted/test_uploaded_sqlite_inspection_service.py tests/api/test_workspace_import_upload.py
+  - cd web && npm test -- --run src/App.test.jsx
+files_changed:
+  - api/app.py
+  - services/hosted/uploaded_sqlite_inspection_service.py
+  - services/hosted/__init__.py
+  - requirements.txt
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - tests/services/hosted/test_uploaded_sqlite_inspection_service.py
+  - tests/api/test_workspace_import_upload.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-04
 type: feat
 areas: [api, web, docs, tests]
