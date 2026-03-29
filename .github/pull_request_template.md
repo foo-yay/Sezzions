@@ -14,10 +14,6 @@
 
 - Closes #
 
-## Target Branch
-
-- [ ] This PR targets `develop` for normal work, or `main` only for an approved release/hotfix.
-
 ## Checklist
 
 - [ ] Tests pass locally (`pytest -q`)
