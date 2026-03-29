@@ -136,6 +136,12 @@ Hosted backend foundation (Issue #203):
 - The first protected hosted API endpoint is `GET /v1/session`.
 - `GET /v1/session` must require a bearer token, verify the Supabase access token against Supabase JWKS, and return the authenticated session identity summary.
 - After successful Google sign-in, the web shell should call `GET /v1/session` with the Supabase access token and reflect the protected API handshake status in the UI.
+- The first hosted persistence slice after auth is `POST /v1/account/bootstrap`.
+- `POST /v1/account/bootstrap` must require a bearer token and idempotently create or return the hosted account/workspace records for the authenticated Supabase user.
+- Hosted account identity is keyed by Supabase user id and tracks the owner email plus auth provider separately from the legacy SQLite business-domain `users` table.
+- Hosted workspace bootstrap must create one default workspace per hosted account when none exists yet, using `<owner email> Workspace` as the initial display name.
+- The hosted API persists account/workspace bootstrap state through the configured Supabase PostgreSQL SQLAlchemy connection.
+- After the protected session handshake succeeds, the web shell should call `POST /v1/account/bootstrap` with the same Supabase access token and render the hosted account owner, auth provider, workspace name, and bootstrap status in the UI.
 - The hosted API must permit CORS preflight and authenticated browser requests from `https://dev.sezzions.com` and `http://localhost:5173` by default, with environment override support for additional origins.
 - If direct local JWT decoding is not compatible with the live Supabase token format, the API may validate the bearer token through Supabase's `/auth/v1/user` endpoint before returning `401`.
 - The `/auth/v1/user` validation fallback must include a Supabase publishable/anon key, either from hosted backend configuration or from the web client's protected handshake request.

@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 
@@ -25,6 +25,11 @@ vi.mock("./lib/supabaseClient", () => ({
 }));
 
 describe("App", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
     vi.stubEnv("VITE_API_BASE_URL", "https://api.sezzions.test");
     authMocks.getSession.mockReset();
@@ -43,15 +48,39 @@ describe("App", () => {
     });
     authMocks.signInWithOAuth.mockResolvedValue({ error: null });
     authMocks.signOut.mockResolvedValue({ error: null });
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        authenticated: true,
-        user_id: "user-123",
-        email: "owner@sezzions.com",
-        audience: "authenticated",
-        role: "authenticated"
-      })
+    global.fetch = vi.fn().mockImplementation(async (url) => {
+      if (url === "https://api.sezzions.test/v1/account/bootstrap") {
+        return {
+          ok: true,
+          json: async () => ({
+            created_account: true,
+            created_workspace: true,
+            account: {
+              id: "account-123",
+              supabase_user_id: "user-123",
+              owner_email: "owner@sezzions.com",
+              auth_provider: "google"
+            },
+            workspace: {
+              id: "workspace-123",
+              account_id: "account-123",
+              name: "owner@sezzions.com Workspace",
+              source_db_path: null
+            }
+          })
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          authenticated: true,
+          user_id: "user-123",
+          email: "owner@sezzions.com",
+          audience: "authenticated",
+          role: "authenticated"
+        })
+      };
     });
   });
 
@@ -113,5 +142,75 @@ describe("App", () => {
     expect(
       screen.getByText(/protected api handshake ready for owner@sezzions.com/i)
     ).toBeInTheDocument();
+  });
+
+  it("renders the hosted account workspace summary after bootstrap", async () => {
+    authMocks.getSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: "access-token-123",
+          user: {
+            email: "owner@sezzions.com"
+          }
+        }
+      },
+      error: null
+    });
+
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          authenticated: true,
+          user_id: "user-123",
+          email: "owner@sezzions.com",
+          audience: "authenticated",
+          role: "authenticated"
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          created_account: true,
+          created_workspace: true,
+          account: {
+            id: "account-123",
+            supabase_user_id: "user-123",
+            owner_email: "owner@sezzions.com",
+            auth_provider: "google"
+          },
+          workspace: {
+            id: "workspace-123",
+            account_id: "account-123",
+            name: "owner@sezzions.com Workspace",
+            source_db_path: null
+          }
+        })
+      });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenNthCalledWith(
+        2,
+        "https://api.sezzions.test/v1/account/bootstrap",
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer access-token-123"
+          }
+        }
+      );
+    });
+
+    const hostedHeading = await screen.findByRole("heading", {
+      name: /authenticated workspace bootstrap/i
+    });
+    const hostedSection = hostedHeading.closest("section");
+
+    expect(hostedSection).not.toBeNull();
+    expect(within(hostedSection).getByText(/hosted account owner/i)).toBeInTheDocument();
+    expect(within(hostedSection).getByText("owner@sezzions.com Workspace")).toBeInTheDocument();
   });
 });
