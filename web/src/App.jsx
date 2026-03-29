@@ -14,6 +14,11 @@ const setupTabs = [
   { key: "tools", label: "Tools", enabled: false }
 ];
 
+const primaryTabs = [
+  { key: "setup", label: "Setup" },
+  { key: "account", label: "Account" }
+];
+
 const initialUserForm = {
   name: "",
   email: "",
@@ -66,6 +71,77 @@ function describeFetchFailure(error, fallback) {
   return error instanceof Error ? error.message : fallback;
 }
 
+function classifyStatusTone(message, { ready = false, available = true } = {}) {
+  if (ready) {
+    return "good";
+  }
+
+  if (!available) {
+    return "bad";
+  }
+
+  const normalizedMessage = String(message || "").toLowerCase();
+
+  if (
+    normalizedMessage.includes("failed")
+    || normalizedMessage.includes("could not reach")
+    || normalizedMessage.includes("set vite_api_base_url")
+    || normalizedMessage.includes("not signed in")
+  ) {
+    return "bad";
+  }
+
+  return "warn";
+}
+
+function StatusModal({ overallTone, statusItems, onClose }) {
+  return (
+    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+      <section
+        className="modal-card status-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="status-modal-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="modal-header">
+          <div>
+            <p className="section-kicker">Hosted Status</p>
+            <h2 id="status-modal-title">Connection Health</h2>
+          </div>
+          <button className="ghost-button" type="button" onClick={onClose}>Close</button>
+        </div>
+
+        <div className="status-overview-card">
+          <span className={`status-dot large ${overallTone}`} aria-hidden="true" />
+          <div>
+            <strong>Overall status</strong>
+            <p className="status-note">
+              {overallTone === "good"
+                ? "All hosted checks are healthy."
+                : overallTone === "bad"
+                  ? "All hosted checks are failing."
+                  : "Hosted checks are mixed or partially degraded."}
+            </p>
+          </div>
+        </div>
+
+        <dl className="status-list">
+          {statusItems.map((item) => (
+            <div key={item.label} className="status-list-item">
+              <dt>
+                <span className={`status-dot ${item.tone}`} aria-hidden="true" />
+                {item.label}
+              </dt>
+              <dd>{item.message}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+    </div>
+  );
+}
+
 function downloadUsersCsv(users) {
   const rows = [
     ["Name", "Email", "Status", "Notes"],
@@ -88,10 +164,78 @@ function downloadUsersCsv(users) {
   URL.revokeObjectURL(url);
 }
 
-function UserModal({ mode, user, form, setForm, onClose, onSubmit, submitError, suggestions }) {
+function UserModal({
+  mode,
+  user,
+  form,
+  setForm,
+  onClose,
+  onSubmit,
+  onRequestEdit,
+  onRequestDelete,
+  submitError,
+  suggestions
+}) {
   const readOnly = mode === "view";
   const title = mode === "create" ? "Add User" : mode === "edit" ? "Edit User" : "View User";
   const nameInvalid = !form.name.trim();
+
+  if (readOnly && user) {
+    return (
+      <div className="modal-backdrop" role="presentation" onClick={onClose}>
+        <section
+          className="modal-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="user-modal-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="modal-header">
+            <div>
+              <p className="section-kicker">Setup / Users</p>
+              <h2 id="user-modal-title">View User</h2>
+            </div>
+            <button className="ghost-button" type="button" onClick={onClose}>Close</button>
+          </div>
+
+          <section className="detail-section">
+            <p className="section-kicker">User Details</p>
+            <div className="detail-columns">
+              <dl className="detail-grid single-column-grid">
+                <div><dt>Name</dt><dd>{user.name}</dd></div>
+                <div><dt>Email</dt><dd>{user.email || "-"}</dd></div>
+              </dl>
+              <dl className="detail-grid single-column-grid">
+                <div>
+                  <dt>Status</dt>
+                  <dd>
+                    <span className={user.is_active ? "status-chip active" : "status-chip inactive"}>
+                      {user.is_active ? "Active" : "Inactive"}
+                    </span>
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          </section>
+
+          <section className="detail-section">
+            <p className="section-kicker">Notes</p>
+            <div className="notes-display">{user.notes || "-"}</div>
+          </section>
+
+          <div className="modal-actions modal-actions-split">
+            <div className="toolbar-row">
+              <button className="ghost-button" type="button" onClick={onRequestDelete}>Delete</button>
+            </div>
+            <div className="toolbar-row">
+              <button className="primary-button" type="button" onClick={onRequestEdit}>Edit User</button>
+              <button className="ghost-button" type="button" onClick={onClose}>Close</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -178,18 +322,11 @@ function UserModal({ mode, user, form, setForm, onClose, onSubmit, submitError, 
 
         {submitError ? <p className="submit-error">{submitError}</p> : null}
 
-        <div className="modal-actions">
-          {!readOnly ? (
-            <button className="primary-button" type="button" onClick={onSubmit} disabled={nameInvalid}>
-              Save User
-            </button>
-          ) : null}
-          {mode === "view" && user ? (
-            <div className="view-summary">
-              <span>{user.email || "No email"}</span>
-              <span>{user.is_active ? "Active" : "Inactive"}</span>
-            </div>
-          ) : null}
+        <div className="modal-actions modal-actions-end">
+          <button className="ghost-button" type="button" onClick={onClose}>Cancel</button>
+          <button className="primary-button" type="button" onClick={onSubmit} disabled={nameInvalid}>
+            Save User
+          </button>
         </div>
       </section>
     </div>
@@ -199,6 +336,7 @@ function UserModal({ mode, user, form, setForm, onClose, onSubmit, submitError, 
 export default function App() {
   const [currentRoute, setCurrentRoute] = useState(() => readCurrentRoute());
   const isMigrationPage = currentRoute === "/migration";
+  const [primaryTab, setPrimaryTab] = useState("setup");
   const [sessionEmail, setSessionEmail] = useState(null);
   const [authMessage, setAuthMessage] = useState(
     supabaseConfigured ? "Sign in with Google to activate the hosted Sezzions workspace." : supabaseConfigError
@@ -223,6 +361,7 @@ export default function App() {
   const [usersSearch, setUsersSearch] = useState("");
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [userModalMode, setUserModalMode] = useState(null);
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [userForm, setUserForm] = useState(initialUserForm);
   const [userSubmitError, setUserSubmitError] = useState(null);
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || null;
@@ -233,6 +372,35 @@ export default function App() {
   const accountOwner = hostedSummary?.account?.owner_email || sessionEmail || "Not signed in";
   const accountRole = hostedSummary?.account?.role || "Pending bootstrap";
   const accountStatus = hostedSummary?.account?.status || "Pending bootstrap";
+
+  const statusItems = useMemo(() => {
+    const authenticationTone = sessionEmail ? "good" : "bad";
+    const apiTone = classifyStatusTone(apiStatus, { ready: apiStatus.toLowerCase().includes("ready for"), available: Boolean(apiBaseUrl) });
+    const bootstrapTone = classifyStatusTone(hostedStatus, { ready: hostedWorkspaceReady, available: Boolean(apiBaseUrl) });
+    const importTone = classifyStatusTone(importPlanStatus, { ready: Boolean(importPlanSummary), available: Boolean(apiBaseUrl) });
+
+    return [
+      { label: "Authentication", message: authMessage, tone: authenticationTone },
+      { label: "API Handshake", message: apiStatus, tone: apiTone },
+      { label: "Hosted Bootstrap", message: hostedStatus, tone: bootstrapTone },
+      { label: "Import Planning", message: importPlanStatus, tone: importTone }
+    ];
+  }, [authMessage, apiBaseUrl, apiStatus, hostedStatus, hostedWorkspaceReady, importPlanStatus, importPlanSummary, sessionEmail]);
+
+  const overallStatusTone = useMemo(() => {
+    const failures = statusItems.filter((item) => item.tone === "bad").length;
+    const allGood = statusItems.every((item) => item.tone === "good");
+
+    if (allGood) {
+      return "good";
+    }
+
+    if (failures === statusItems.length) {
+      return "bad";
+    }
+
+    return "warn";
+  }, [statusItems]);
 
   const filteredUsers = useMemo(() => {
     const searchText = usersSearch.trim().toLowerCase();
@@ -713,6 +881,8 @@ export default function App() {
     setUsers([]);
     setSelectedUserId(null);
     setUserModalMode(null);
+    setPrimaryTab("setup");
+    setStatusModalOpen(false);
     setUserForm(initialUserForm);
     setAuthMessage("Signed out. Sign in with Google to reactivate the hosted workspace.");
     setApiStatus("Protected API handshake will run after Google sign-in.");
@@ -861,159 +1031,213 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar-shell">
-        <div>
-          <p className="sidebar-brand">Sezzions</p>
-          <h1 className="sidebar-heading">Hosted Workspace</h1>
-          <p className="sidebar-copy">Faithful desktop-style slices, ported onto the hosted backend one workflow at a time.</p>
-        </div>
-
-        <nav className="primary-nav" aria-label="Primary navigation">
-          <button className="primary-nav-item active" type="button">Setup</button>
-        </nav>
-
-        <div className="sidebar-footer">
-          <dl className="detail-grid compact-grid">
-            <div><dt>Account</dt><dd>{accountOwner}</dd></div>
-            <div><dt>Role</dt><dd>{accountRole}</dd></div>
-            <div><dt>Status</dt><dd>{accountStatus}</dd></div>
-            <div><dt>Workspace</dt><dd>{workspaceName}</dd></div>
-          </dl>
-          <button className="ghost-button full-width" type="button" onClick={handleSignOut}>Sign Out</button>
-        </div>
-      </aside>
-
       <main className="workspace-shell">
-        <header className="workspace-header">
+        <header className="workspace-panel app-topbar">
           <div>
-            <p className="section-kicker">Setup</p>
-            <h2>Users</h2>
-            <p className="status-note">
-              {hostedWorkspaceReady
-                ? "Start with hosted users before sites and cards so later setup slices attach to real workspace-owned people."
-                : "You are signed in, but the hosted backend is not connected yet. Retry the hosted connection after verifying the API deployment and browser access."}
-            </p>
+            <p className="sidebar-brand">Sezzions</p>
+            <h1 className="app-title">Hosted Workspace</h1>
+            <p className="shell-copy">Desktop-style main tabs and Setup sub-tabs, ported onto the hosted backend one slice at a time.</p>
           </div>
-          <div className="header-actions">
-            <button className="ghost-button" type="button" onClick={handleRetryHostedConnection}>Retry Hosted Connection</button>
-            <a className="ghost-button" href="/#/migration">Migration Upload</a>
+
+          <div className="topbar-actions">
+            <div className="workspace-meta">
+              <span className="workspace-meta-label">Signed in as</span>
+              <strong>{accountOwner}</strong>
+            </div>
+            <button
+              className="status-indicator-button"
+              type="button"
+              onClick={() => setStatusModalOpen(true)}
+              aria-label="Open hosted status"
+            >
+              <span className={`status-dot ${overallStatusTone}`} aria-hidden="true" />
+              <span>Hosted Status</span>
+            </button>
           </div>
         </header>
 
-        <section className="workspace-panel">
-          <div className="panel-header">
-            <div>
-              <p className="section-kicker">Hosted Status</p>
-              <h2>Connection</h2>
-            </div>
-          </div>
-          <dl className="detail-grid compact-grid">
-            <div><dt>Authentication</dt><dd>{authMessage}</dd></div>
-            <div><dt>API handshake</dt><dd>{apiStatus}</dd></div>
-            <div><dt>Hosted bootstrap</dt><dd>{hostedStatus}</dd></div>
-            <div><dt>Import planning</dt><dd>{importPlanStatus}</dd></div>
-          </dl>
-        </section>
+        <nav className="main-tab-row" role="tablist" aria-label="Primary navigation">
+          {primaryTabs.map((tab) => (
+            <button
+              key={tab.key}
+              className={tab.key === primaryTab ? "main-tab-button active" : "main-tab-button"}
+              type="button"
+              role="tab"
+              aria-selected={tab.key === primaryTab}
+              onClick={() => setPrimaryTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
 
-        <section className="workspace-panel setup-panel">
-          <div className="subtab-row" role="tablist" aria-label="Setup sections">
-            {setupTabs.map((tab) => (
-              <button
-                key={tab.key}
-                className={tab.key === setupTab ? "subtab-button active" : "subtab-button"}
-                type="button"
-                role="tab"
-                aria-selected={tab.key === setupTab}
-                disabled={!tab.enabled}
-                onClick={() => setSetupTab(tab.key)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {setupTab === "users" ? (
-            <section className="users-surface" aria-label="Setup Users">
-              <div className="panel-header sticky-tools">
-                <div>
-                  <p className="section-kicker">Setup / Users</p>
-                  <h2>Users</h2>
-                </div>
-                <div className="toolbar-row wrap-toolbar">
-                  <button className="primary-button" type="button" onClick={() => openUserModal("create")} disabled={!hostedWorkspaceReady}>Add User</button>
-                  <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("view", selectedUser)} disabled={!hostedWorkspaceReady || !selectedUser}>View</button>
-                  <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("edit", selectedUser)} disabled={!hostedWorkspaceReady || !selectedUser}>Edit</button>
-                  <button className="ghost-button" type="button" onClick={() => selectedUser && handleDeleteUser(selectedUser)} disabled={!hostedWorkspaceReady || !selectedUser}>Delete</button>
-                  <button className="ghost-button" type="button" onClick={() => downloadUsersCsv(filteredUsers)} disabled={!filteredUsers.length}>Export CSV</button>
-                  <button className="ghost-button" type="button" onClick={handleUsersRefresh} disabled={!hostedWorkspaceReady}>Refresh</button>
-                </div>
+        {primaryTab === "setup" ? (
+          <section className="workspace-panel setup-panel">
+            <div className="panel-header">
+              <div>
+                <p className="section-kicker">Setup</p>
+                <h2>Users</h2>
+                <p className="status-note">
+                  {hostedWorkspaceReady
+                    ? "Start with hosted users before sites and cards so later setup slices attach to real workspace-owned people."
+                    : "You are signed in, but the hosted backend is not connected yet. Retry the hosted connection after verifying the deployment."}
+                </p>
               </div>
+              <div className="header-actions">
+                <button className="ghost-button" type="button" onClick={handleRetryHostedConnection}>Retry Hosted Connection</button>
+              </div>
+            </div>
 
-              <div className="users-toolbar-grid">
-                <div className="search-stack">
-                  <label className="field-label-left" htmlFor="users-search-input">Search users</label>
-                  <div className="search-row">
-                    <input
-                      id="users-search-input"
-                      className="text-input"
-                      type="search"
-                      placeholder="Search users..."
-                      value={usersSearch}
-                      disabled={!hostedWorkspaceReady}
-                      onChange={(event) => setUsersSearch(event.target.value)}
-                    />
-                    <button className="ghost-button" type="button" onClick={() => setUsersSearch("")} disabled={!usersSearch}>Clear</button>
+            <div className="subtab-row" role="tablist" aria-label="Setup sections">
+              {setupTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  className={tab.key === setupTab ? "subtab-button active" : "subtab-button"}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab.key === setupTab}
+                  disabled={!tab.enabled}
+                  onClick={() => setSetupTab(tab.key)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {setupTab === "users" ? (
+              <section className="users-surface" aria-label="Setup Users">
+                <div className="panel-header sticky-tools">
+                  <div>
+                    <p className="section-kicker">Setup / Users</p>
+                    <h2>Users</h2>
+                  </div>
+                  <div className="toolbar-row wrap-toolbar">
+                    <button className="primary-button" type="button" onClick={() => openUserModal("create")} disabled={!hostedWorkspaceReady}>Add User</button>
+                    <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("view", selectedUser)} disabled={!hostedWorkspaceReady || !selectedUser}>View</button>
+                    <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("edit", selectedUser)} disabled={!hostedWorkspaceReady || !selectedUser}>Edit</button>
+                    <button className="ghost-button" type="button" onClick={() => selectedUser && handleDeleteUser(selectedUser)} disabled={!hostedWorkspaceReady || !selectedUser}>Delete</button>
+                    <button className="ghost-button" type="button" onClick={() => downloadUsersCsv(filteredUsers)} disabled={!filteredUsers.length}>Export CSV</button>
+                    <button className="ghost-button" type="button" onClick={handleUsersRefresh} disabled={!hostedWorkspaceReady}>Refresh</button>
                   </div>
                 </div>
-                <div className="status-card">
-                  <dt>Workspace users</dt>
-                  <dd>{usersStatus}</dd>
-                </div>
-              </div>
 
-              <div className="table-shell">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Email</th>
-                      <th>Status</th>
-                      <th>Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredUsers.length ? filteredUsers.map((user) => (
-                      <tr
-                        key={user.id}
-                        className={selectedUserId === user.id ? "selected-row" : undefined}
-                        onClick={() => setSelectedUserId(user.id)}
-                        onDoubleClick={() => openUserModal("view", user)}
-                      >
-                        <td>{user.name}</td>
-                        <td>{user.email || ""}</td>
-                        <td>
-                          <span className={user.is_active ? "status-chip active" : "status-chip inactive"}>
-                            {user.is_active ? "Active" : "Inactive"}
-                          </span>
-                        </td>
-                        <td>{(user.notes || "").slice(0, 100)}</td>
-                      </tr>
-                    )) : (
+                <div className="users-toolbar-grid">
+                  <div className="search-stack">
+                    <label className="field-label-left" htmlFor="users-search-input">Search users</label>
+                    <div className="search-row">
+                      <input
+                        id="users-search-input"
+                        className="text-input"
+                        type="search"
+                        placeholder="Search users..."
+                        value={usersSearch}
+                        disabled={!hostedWorkspaceReady}
+                        onChange={(event) => setUsersSearch(event.target.value)}
+                      />
+                      <button className="ghost-button" type="button" onClick={() => setUsersSearch("")} disabled={!usersSearch}>Clear</button>
+                    </div>
+                  </div>
+                  <div className="status-card">
+                    <dt>Workspace users</dt>
+                    <dd>{usersStatus}</dd>
+                  </div>
+                </div>
+
+                <div className="table-shell">
+                  <table className="data-table">
+                    <thead>
                       <tr>
-                        <td colSpan="4" className="empty-state-cell">
-                          {hostedWorkspaceReady
-                            ? "No users match the current view yet."
-                            : "Finish the hosted connection to load workspace users."}
-                        </td>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Status</th>
+                        <th>Notes</th>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {filteredUsers.length ? filteredUsers.map((user) => (
+                        <tr
+                          key={user.id}
+                          className={selectedUserId === user.id ? "selected-row" : undefined}
+                          onClick={() => setSelectedUserId(user.id)}
+                          onDoubleClick={() => openUserModal("view", user)}
+                        >
+                          <td>{user.name}</td>
+                          <td>{user.email || ""}</td>
+                          <td>
+                            <span className={user.is_active ? "status-chip active" : "status-chip inactive"}>
+                              {user.is_active ? "Active" : "Inactive"}
+                            </span>
+                          </td>
+                          <td>{(user.notes || "").slice(0, 100)}</td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td colSpan="4" className="empty-state-cell">
+                            {hostedWorkspaceReady
+                              ? "No users match the current view yet."
+                              : "Finish the hosted connection to load workspace users."}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ) : null}
+          </section>
+        ) : null}
+
+        {primaryTab === "account" ? (
+          <section className="workspace-panel account-surface">
+            <div className="panel-header">
+              <div>
+                <p className="section-kicker">Account</p>
+                <h2>{workspaceName}</h2>
+                <p className="status-note">Hosted account identity, workspace ownership, and migration utilities live here.</p>
               </div>
-            </section>
-          ) : null}
-        </section>
+              <div className="header-actions">
+                <button className="ghost-button" type="button" onClick={handleRetryHostedConnection}>Retry Hosted Connection</button>
+                <a className="ghost-button" href="/#/migration">Migration Upload</a>
+                <button className="ghost-button" type="button" onClick={handleSignOut}>Sign Out</button>
+              </div>
+            </div>
+
+            <div className="account-grid">
+              <section className="info-card">
+                <div>
+                  <p className="section-kicker">Account Summary</p>
+                  <h3>Hosted Identity</h3>
+                </div>
+                <dl className="detail-grid compact-grid">
+                  <div><dt>Owner</dt><dd>{accountOwner}</dd></div>
+                  <div><dt>Role</dt><dd>{accountRole}</dd></div>
+                  <div><dt>Status</dt><dd>{accountStatus}</dd></div>
+                  <div><dt>Workspace</dt><dd>{workspaceName}</dd></div>
+                </dl>
+              </section>
+
+              <section className="info-card">
+                <div>
+                  <p className="section-kicker">Hosted Workspace</p>
+                  <h3>Migration & Import</h3>
+                </div>
+                <dl className="detail-grid compact-grid">
+                  <div><dt>Import planning</dt><dd>{importPlanStatus}</dd></div>
+                  <div><dt>Workspace users</dt><dd>{usersStatus}</dd></div>
+                </dl>
+              </section>
+            </div>
+          </section>
+        ) : null}
       </main>
+
+      {statusModalOpen ? (
+        <StatusModal
+          overallTone={overallStatusTone}
+          statusItems={statusItems}
+          onClose={() => setStatusModalOpen(false)}
+        />
+      ) : null}
 
       {userModalMode ? (
         <UserModal
@@ -1027,6 +1251,8 @@ export default function App() {
             setUserModalMode(null);
             setUserSubmitError(null);
           }}
+          onRequestEdit={() => selectedUser && openUserModal("edit", selectedUser)}
+          onRequestDelete={() => selectedUser && handleDeleteUser(selectedUser)}
           onSubmit={submitUserModal}
         />
       ) : null}
