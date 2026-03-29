@@ -12,6 +12,32 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-13
+type: fix
+areas: [api, database, tests]
+issue: 225
+summary: "Repair legacy hosted bootstrap tables before account bootstrap runs"
+details: >
+  Hardened the hosted persistence bootstrap so older hosted databases created
+  before the account role/status columns existed are upgraded in place before
+  the account bootstrap service queries them. This prevents `/v1/account/bootstrap`
+  from failing with a raw 500 on long-lived hosted environments that still have
+  the original bootstrap-era schema.
+
+  Implemented:
+  - compatibility upgrade for legacy `hosted_accounts` bootstrap tables
+  - regression coverage for bootstrapping against a pre-role/pre-status schema
+
+  Validation:
+  - pytest -q tests/services/hosted/test_account_bootstrap_service.py tests/api/test_app.py
+files_changed:
+  - services/hosted/persistence.py
+  - tests/services/hosted/test_account_bootstrap_service.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-12
 type: fix
 areas: [web, docs, tests]

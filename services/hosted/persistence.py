@@ -5,7 +5,18 @@ from __future__ import annotations
 from functools import lru_cache
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Float, ForeignKey, Index, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import (
+    Boolean,
+    Float,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    inspect,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -395,8 +406,35 @@ class HostedAccountAdjustmentRecord(HostedBase):
     deleted_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+def _ensure_hosted_schema_compatibility(engine) -> None:
+    inspector = inspect(engine)
+
+    if "hosted_accounts" in inspector.get_table_names():
+        account_columns = {column["name"] for column in inspector.get_columns("hosted_accounts")}
+        statements: list[str] = []
+
+        if "auth_provider" not in account_columns:
+            statements.append(
+                "ALTER TABLE hosted_accounts ADD COLUMN auth_provider VARCHAR(32) NOT NULL DEFAULT 'google'"
+            )
+        if "role" not in account_columns:
+            statements.append(
+                "ALTER TABLE hosted_accounts ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'owner'"
+            )
+        if "status" not in account_columns:
+            statements.append(
+                "ALTER TABLE hosted_accounts ADD COLUMN status VARCHAR(32) NOT NULL DEFAULT 'active'"
+            )
+
+        if statements:
+            with engine.begin() as connection:
+                for statement in statements:
+                    connection.execute(text(statement))
+
+
 @lru_cache(maxsize=4)
 def get_hosted_session_factory(sqlalchemy_url: str):
     engine = create_engine(sqlalchemy_url, future=True, pool_pre_ping=True)
     HostedBase.metadata.create_all(engine)
+    _ensure_hosted_schema_compatibility(engine)
     return sessionmaker(bind=engine, expire_on_commit=False)

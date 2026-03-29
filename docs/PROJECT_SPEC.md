@@ -146,6 +146,7 @@ Hosted backend foundation (Issue #203):
 - The initial hosted account lifecycle statuses are `active`, `disabled`, and `deleted`.
 - Hosted workspace bootstrap must create one default workspace per hosted account when none exists yet, using `<owner email> Workspace` as the initial display name.
 - The hosted API persists account/workspace bootstrap state through the configured Supabase PostgreSQL SQLAlchemy connection.
+- The hosted API must repair legacy hosted bootstrap tables in place when the initial account schema predates later account metadata columns required by the current bootstrap summary.
 - After the protected session handshake succeeds, the web shell should call `POST /v1/account/bootstrap` with the same Supabase access token and render the hosted account owner, auth provider, workspace name, and bootstrap status in the UI.
 - The hosted bootstrap summary must also expose the hosted account role and lifecycle status so future clients can render/administer the account correctly.
 - Sezzions-controlled administrator accounts are a platform layer above normal workspace ownership and exist to support future account-level operations such as disable, restore, delete/correct, and administrative review.
