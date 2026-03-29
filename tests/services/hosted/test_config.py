@@ -39,3 +39,24 @@ def test_load_hosted_backend_config_can_load_auth_only_settings() -> None:
     assert config.supabase_db_password is None
     assert config.supabase_issuer == "https://nztovvajnrokzsetliwz.supabase.co/auth/v1"
     assert config.supabase_jwks_url.endswith("/.well-known/jwks.json")
+    assert config.cors_allowed_origins == (
+        "https://dev.sezzions.com",
+        "http://localhost:5173",
+    )
+
+
+def test_load_hosted_backend_config_parses_cors_allowed_origins() -> None:
+    config = load_hosted_backend_config(
+        {
+            "SUPABASE_URL": "https://nztovvajnrokzsetliwz.supabase.co",
+            "CORS_ALLOWED_ORIGINS": "https://dev.sezzions.com, https://sezzions.com ,http://localhost:5173",
+        },
+        require_db_password=False,
+    )
+
+    assert config is not None
+    assert config.cors_allowed_origins == (
+        "https://dev.sezzions.com",
+        "https://sezzions.com",
+        "http://localhost:5173",
+    )

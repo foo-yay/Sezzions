@@ -23,6 +23,10 @@ class HostedBackendConfig:
     db_port: int = 5432
     jwt_audience: str = "authenticated"
     google_auth_enabled: bool = False
+    cors_allowed_origins: tuple[str, ...] = (
+        "https://dev.sezzions.com",
+        "http://localhost:5173",
+    )
 
     def __post_init__(self) -> None:
         parsed = urlparse(self.supabase_url)
@@ -109,6 +113,14 @@ def load_hosted_backend_config(
         "yes",
         "on",
     }
+    cors_allowed_origins = tuple(
+        origin.strip()
+        for origin in env_map.get(
+            "CORS_ALLOWED_ORIGINS",
+            "https://dev.sezzions.com,http://localhost:5173",
+        ).split(",")
+        if origin.strip()
+    )
 
     try:
         db_port = int(db_port_raw)
@@ -123,4 +135,5 @@ def load_hosted_backend_config(
         db_port=db_port,
         jwt_audience=jwt_audience,
         google_auth_enabled=google_auth_enabled,
+        cors_allowed_origins=cors_allowed_origins,
     )
