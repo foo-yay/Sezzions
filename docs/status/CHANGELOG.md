@@ -12,6 +12,86 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-18
+type: feat
+areas: [web, docs, tests]
+issue: none
+summary: "Lock hosted Users controls while table rows scroll"
+details: >
+  Finalized the hosted Users panel around a fixed-controls data-grid pattern.
+  Action buttons, search, summary chips, and footer stats now stay outside the
+  scrollable row viewport so the interface behaves more like a desktop table.
+  Infinite loading is driven by the table viewport rather than the page, which
+  keeps the controls stable while the row area scrolls independently.
+
+  Implemented:
+  - internal scrolling viewport for hosted Users rows
+  - opaque sticky table headers inside the row viewport
+  - fixed top controls and top/bottom summary rails outside the row scroll area
+  - updated frontend tests for viewport-based paging behavior
+
+  Validation:
+  - cd web && npm test
+files_changed:
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - web/src/styles.css
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-29-17
+type: feat
+areas: [web, docs]
+issue: none
+summary: "Add sticky Users controls and bottom stats rail"
+details: >
+  Continued the hosted Users UI polish by turning the actions and search area
+  into a sticky control block and moving the summary chips into dedicated top
+  and bottom rails. The framed internal-scroll table experiment was then backed
+  out in favor of preserving the original page-scroll loading behavior while
+  keeping the sticky bottom stats treatment.
+
+  Implemented:
+  - sticky hosted Users action/search control block
+  - top and bottom summary rails for shown, total, selection, and filtered-state chips
+  - search input switched to a plain text control and corrected left padding so the custom search icon no longer collides with the text
+  - restored page-scroll-based auto loading instead of an internal table scroll frame
+
+  Validation:
+  - cd web && npm test
+files_changed:
+  - web/src/App.jsx
+  - web/src/styles.css
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
+id: 2026-03-29-16
+type: fix
+areas: [web, docs]
+issue: none
+summary: "Polish hosted Users search spacing and viewport fit"
+details: >
+  Tightened the hosted Users page after live validation. The search field now
+  clears the browser-native search decoration so the custom magnifying-glass
+  icon no longer overlaps the placeholder text, and the Users page/table shell
+  no longer impose oversized viewport-based minimum heights when only a small
+  number of rows are present.
+
+  Implemented:
+  - removed native WebKit search adornments from the hosted Users search field
+  - increased the left text inset so the custom search icon has clear spacing
+  - removed hard minimum heights that forced the Users table below the visible window when few rows exist
+
+  Validation:
+  - cd web && npm test
+files_changed:
+  - web/src/styles.css
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-15
 type: feat
 areas: [web, docs, tests]

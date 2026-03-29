@@ -913,6 +913,7 @@ function UserModal({
 export default function App() {
   const usersScrollGateRef = useRef({ armed: false, lastScrollTop: 0 });
   const usersPagingRequestRef = useRef(false);
+  const usersTableViewportRef = useRef(null);
   const [currentRoute, setCurrentRoute] = useState(() => readCurrentRoute());
   const isMigrationPage = currentRoute === "/migration";
   const [railCollapsed, setRailCollapsed] = useState(false);
@@ -1056,7 +1057,6 @@ export default function App() {
 
   const filteredUserCount = filteredUsers.length;
   const totalUserCount = usersTotalCount ?? users.length;
-  const usersTotalKnown = usersTotalCount !== null;
   const devToolsVisible = Boolean(import.meta.env.DEV);
 
   const selectedUsers = users.filter((user) => selectedUserIds.includes(user.id));
@@ -1323,14 +1323,12 @@ export default function App() {
         }
       }
 
-      const totalCount = hasMore && ((reportedTotalCount ?? 0) <= mergedUsers.length)
-        ? null
-        : Math.max(reportedTotalCount ?? 0, mergedUsers.length);
+      const totalCount = Math.max(reportedTotalCount ?? 0, mergedUsers.length);
 
       if (!append) {
         usersScrollGateRef.current = {
           armed: false,
-          lastScrollTop: window.scrollY || document.documentElement.scrollTop || 0,
+          lastScrollTop: usersTableViewportRef.current?.scrollTop || 0,
         };
       }
 
@@ -1343,9 +1341,7 @@ export default function App() {
       if (!mergedUsers.length) {
         setUsersStatus("No hosted users yet. Add your first user to get started.");
       } else if (hasMore) {
-        setUsersStatus(totalCount === null
-          ? `Loaded ${mergedUsers.length} hosted users. More may be available.`
-          : `Loaded ${mergedUsers.length} of ${totalCount} hosted users.`);
+        setUsersStatus(`Loaded ${mergedUsers.length} of ${totalCount} hosted users.`);
       } else {
         setUsersStatus("Hosted users ready.");
       }
@@ -1435,8 +1431,13 @@ export default function App() {
       return undefined;
     }
 
-    function handleWindowScroll() {
-      const scrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+    const viewport = usersTableViewportRef.current;
+    if (!viewport) {
+      return undefined;
+    }
+
+    function handleViewportScroll() {
+      const scrollTop = viewport.scrollTop || 0;
       const scrollGate = usersScrollGateRef.current;
 
       if (!scrollGate.armed) {
@@ -1447,19 +1448,16 @@ export default function App() {
       }
 
       scrollGate.lastScrollTop = scrollTop;
-      const viewportBottom = scrollTop + window.innerHeight;
-      const documentHeight = Math.max(
-        document.body.scrollHeight,
-        document.documentElement.scrollHeight,
-      );
+      const viewportBottom = scrollTop + viewport.clientHeight;
+      const documentHeight = viewport.scrollHeight;
 
       if (documentHeight - viewportBottom <= 220) {
         loadNextUsersPage();
       }
     }
 
-    window.addEventListener("scroll", handleWindowScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleWindowScroll);
+    viewport.addEventListener("scroll", handleViewportScroll, { passive: true });
+    return () => viewport.removeEventListener("scroll", handleViewportScroll);
   }, [hasAuthenticatedSession, usersFiltersActive, usersHasMore, usersLoadingInitial, usersLoadingMore, usersNextOffset]);
 
   function openUserHeaderOptions(event, columnKey) {
@@ -2253,151 +2251,168 @@ export default function App() {
                   <h2>Users</h2>
                 </div>
               </div>
-              <div className="toolbar-row wrap-toolbar users-toolbar-panel">
-                <button className="primary-button" type="button" onClick={() => openUserModal("create")} disabled={!hostedWorkspaceReady}>Add User</button>
-                <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("view", selectedUser)} disabled={!hostedWorkspaceReady || selectedUserIds.length !== 1}>View</button>
-                <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("edit", selectedUser)} disabled={!hostedWorkspaceReady || selectedUserIds.length !== 1}>Edit</button>
-                <button className="ghost-button" type="button" onClick={() => handleDeleteUser()} disabled={!hostedWorkspaceReady || !selectedUserIds.length}>Delete</button>
-                <button className="ghost-button" type="button" onClick={() => downloadUsersCsv(filteredUsers)} disabled={!filteredUsers.length}>Export CSV</button>
-                <button className="ghost-button" type="button" onClick={handleUsersRefresh} disabled={!hostedWorkspaceReady}>Refresh</button>
-                {devToolsVisible ? <button className="ghost-button" type="button" onClick={handleSeedDemoUsers} disabled={!hostedWorkspaceReady}>Seed 200 Demo Users</button> : null}
-              </div>
               <div className="users-page-header-copy">
                 <p className="users-page-note">Manage workspace users, inspect individual records, and export the current filtered view.</p>
-                <div className="users-page-metrics" aria-label="User summary">
-                  <span className="users-metric-chip">{filteredUserCount} shown</span>
-                  {usersTotalKnown ? <span className="users-metric-chip subdued">{totalUserCount} total</span> : null}
-                  {selectedUserIds.length ? <span className="users-metric-chip accent">{selectedUserIds.length} selected</span> : null}
-                  {usersFiltersActive ? <span className="users-metric-chip subdued">Filtered view</span> : null}
-                </div>
               </div>
             </div>
 
             <div className="users-surface">
-              <div className="users-search-bar">
-                <label className="users-search-field" htmlFor="users-search-input">
-                  <span className="users-search-icon" aria-hidden="true"><Icon name="search" className="app-icon" /></span>
-                  <input
-                    id="users-search-input"
-                    className="text-input hero-search-input"
-                    type="search"
-                    placeholder="Search users..."
-                    value={usersSearch}
-                    disabled={!hostedWorkspaceReady}
-                    onChange={(event) => setUsersSearch(event.target.value)}
-                  />
-                </label>
-                <div className="toolbar-row users-search-actions">
-                  <button className="ghost-button" type="button" onClick={() => { setUsersSearch(""); clearUserSelection(); }}>Clear Search</button>
-                  <button className="ghost-button" type="button" onClick={clearAllUserFilters}>Clear All Filters</button>
+              <div className="sticky-tools users-sticky-tools">
+                <div className="toolbar-row wrap-toolbar users-toolbar-panel">
+                  <button className="primary-button" type="button" onClick={() => openUserModal("create")} disabled={!hostedWorkspaceReady}>Add User</button>
+                  <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("view", selectedUser)} disabled={!hostedWorkspaceReady || selectedUserIds.length !== 1}>View</button>
+                  <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("edit", selectedUser)} disabled={!hostedWorkspaceReady || selectedUserIds.length !== 1}>Edit</button>
+                  <button className="ghost-button" type="button" onClick={() => handleDeleteUser()} disabled={!hostedWorkspaceReady || !selectedUserIds.length}>Delete</button>
+                  <button className="ghost-button" type="button" onClick={() => downloadUsersCsv(filteredUsers)} disabled={!filteredUsers.length}>Export CSV</button>
+                  <button className="ghost-button" type="button" onClick={handleUsersRefresh} disabled={!hostedWorkspaceReady}>Refresh</button>
+                  {devToolsVisible ? <button className="ghost-button" type="button" onClick={handleSeedDemoUsers} disabled={!hostedWorkspaceReady}>Seed 200 Demo Users</button> : null}
+                </div>
+                <div className="users-search-bar">
+                  <label className="users-search-field" htmlFor="users-search-input">
+                    <span className="users-search-icon" aria-hidden="true"><Icon name="search" className="app-icon" /></span>
+                    <input
+                      id="users-search-input"
+                      className="text-input hero-search-input"
+                      type="text"
+                      placeholder="Search users..."
+                      value={usersSearch}
+                      disabled={!hostedWorkspaceReady}
+                      onChange={(event) => setUsersSearch(event.target.value)}
+                    />
+                  </label>
+                  <div className="toolbar-row users-search-actions">
+                    <button className="ghost-button" type="button" onClick={() => { setUsersSearch(""); clearUserSelection(); }}>Clear Search</button>
+                    <button className="ghost-button" type="button" onClick={clearAllUserFilters}>Clear All Filters</button>
+                  </div>
                 </div>
               </div>
 
-              <div className="table-shell">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      {userTableColumns.map((column) => {
-                        const sortDirection = usersSort.column === column.key ? usersSort.direction : null;
-                        const filterValues = userColumnFilters[column.key];
-                        return (
-                          <th key={column.key}>
-                            <div className="table-header-menu-wrap">
-                              <button
-                                className={sortDirection || filterValues.length ? "table-sort-button active" : "table-sort-button"}
-                                type="button"
-                                aria-label={`${column.label} options`}
-                                onClick={(event) => openUserHeaderOptions(event, column.key)}
-                              >
-                                <span>{column.label}</span>
-                                <span className="table-sort-indicator" aria-hidden="true">
-                                  {sortDirection === "asc"
-                                    ? "↑"
-                                    : sortDirection === "desc"
-                                      ? "↓"
-                                      : filterValues.length
-                                        ? filterValues.length
-                                        : <Icon name="filterMenu" className="app-icon table-filter-icon" />}
-                                </span>
-                              </button>
+              <div className="users-summary-rail users-summary-rail-top" aria-label="User summary">
+                <div className="users-page-metrics">
+                  <span className="users-metric-chip">{filteredUserCount} shown</span>
+                  <span className="users-metric-chip subdued">{totalUserCount} total</span>
+                  {selectedUserIds.length ? <span className="users-metric-chip accent">{selectedUserIds.length} selected</span> : null}
+                  {usersFiltersActive ? <span className="users-metric-chip subdued">Filtered view</span> : null}
+                </div>
+              </div>
 
-                              {openUserHeaderMenu?.key === column.key ? (
-                                <UserHeaderFilterMenu
-                                  column={column}
-                                  options={userFilterOptions[column.key]}
-                                  selectedValues={filterValues}
-                                  sortDirection={sortDirection}
-                                  onClearFilter={() => {
-                                    setUserColumnFilters((current) => ({ ...current, [column.key]: [] }));
-                                    setOpenUserHeaderMenu(null);
-                                  }}
-                                  onSortAsc={() => {
-                                    setUsersSort({ column: column.key, direction: "asc" });
-                                    setOpenUserHeaderMenu(null);
-                                  }}
-                                  onSortDesc={() => {
-                                    setUsersSort({ column: column.key, direction: "desc" });
-                                    setOpenUserHeaderMenu(null);
-                                  }}
-                                  onClearSort={() => {
-                                    setUsersSort({ column: null, direction: "asc" });
-                                    setOpenUserHeaderMenu(null);
-                                  }}
-                                  onApplyFilter={(values) => {
-                                    setUserColumnFilters((current) => ({ ...current, [column.key]: values }));
-                                  }}
-                                  onClose={() => setOpenUserHeaderMenu(null)}
-                                  style={openUserHeaderMenu}
-                                />
-                              ) : null}
-                            </div>
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredUsers.length ? filteredUsers.map((user) => (
-                      <tr
-                        key={user.id}
-                        className={selectedUserIds.includes(user.id) ? "selected-row" : undefined}
-                        aria-selected={selectedUserIds.includes(user.id)}
-                        onMouseDown={(event) => {
-                          if (event.shiftKey || event.metaKey || event.ctrlKey) {
-                            event.preventDefault();
-                          }
-                        }}
-                        onClick={(event) => handleUserRowSelection(event, user.id)}
-                        onDoubleClick={() => openUserModal("view", user)}
-                      >
-                        <td>{user.name}</td>
-                        <td>{user.email || ""}</td>
-                        <td>
-                          <span className={user.is_active ? "status-chip active" : "status-chip inactive"}>
-                            {user.is_active ? "Active" : "Inactive"}
-                          </span>
-                        </td>
-                        <td className="notes-cell">{(user.notes || "").slice(0, 100) || "-"}</td>
-                      </tr>
-                    )) : (
-                      <tr>
-                        <td colSpan="4" className="empty-state-cell">
-                          {hostedWorkspaceReady ? "No users match the current view." : "Connect the hosted workspace to load users."}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-                {usersLoadingMore ? <div className="table-loading-row">Loading more users...</div> : null}
-                {usersHasMore && !usersLoadingMore ? (
-                  <div className="table-load-more-row">
-                    <button className="ghost-button" type="button" onClick={loadNextUsersPage}>Load More Users</button>
+              <div className="users-table-stack">
+                <div className="table-shell">
+                  <div className="table-viewport" ref={usersTableViewportRef}>
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          {userTableColumns.map((column) => {
+                            const sortDirection = usersSort.column === column.key ? usersSort.direction : null;
+                            const filterValues = userColumnFilters[column.key];
+                            return (
+                              <th key={column.key}>
+                                <div className="table-header-menu-wrap">
+                                  <button
+                                    className={sortDirection || filterValues.length ? "table-sort-button active" : "table-sort-button"}
+                                    type="button"
+                                    aria-label={`${column.label} options`}
+                                    onClick={(event) => openUserHeaderOptions(event, column.key)}
+                                  >
+                                    <span>{column.label}</span>
+                                    <span className="table-sort-indicator" aria-hidden="true">
+                                      {sortDirection === "asc"
+                                        ? "↑"
+                                        : sortDirection === "desc"
+                                          ? "↓"
+                                          : filterValues.length
+                                            ? filterValues.length
+                                            : <Icon name="filterMenu" className="app-icon table-filter-icon" />}
+                                    </span>
+                                  </button>
+
+                                  {openUserHeaderMenu?.key === column.key ? (
+                                    <UserHeaderFilterMenu
+                                      column={column}
+                                      options={userFilterOptions[column.key]}
+                                      selectedValues={filterValues}
+                                      sortDirection={sortDirection}
+                                      onClearFilter={() => {
+                                        setUserColumnFilters((current) => ({ ...current, [column.key]: [] }));
+                                        setOpenUserHeaderMenu(null);
+                                      }}
+                                      onSortAsc={() => {
+                                        setUsersSort({ column: column.key, direction: "asc" });
+                                        setOpenUserHeaderMenu(null);
+                                      }}
+                                      onSortDesc={() => {
+                                        setUsersSort({ column: column.key, direction: "desc" });
+                                        setOpenUserHeaderMenu(null);
+                                      }}
+                                      onClearSort={() => {
+                                        setUsersSort({ column: null, direction: "asc" });
+                                        setOpenUserHeaderMenu(null);
+                                      }}
+                                      onApplyFilter={(values) => {
+                                        setUserColumnFilters((current) => ({ ...current, [column.key]: values }));
+                                      }}
+                                      onClose={() => setOpenUserHeaderMenu(null)}
+                                      style={openUserHeaderMenu}
+                                    />
+                                  ) : null}
+                                </div>
+                              </th>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredUsers.length ? filteredUsers.map((user) => (
+                          <tr
+                            key={user.id}
+                            className={selectedUserIds.includes(user.id) ? "selected-row" : undefined}
+                            aria-selected={selectedUserIds.includes(user.id)}
+                            onMouseDown={(event) => {
+                              if (event.shiftKey || event.metaKey || event.ctrlKey) {
+                                event.preventDefault();
+                              }
+                            }}
+                            onClick={(event) => handleUserRowSelection(event, user.id)}
+                            onDoubleClick={() => openUserModal("view", user)}
+                          >
+                            <td>{user.name}</td>
+                            <td>{user.email || ""}</td>
+                            <td>
+                              <span className={user.is_active ? "status-chip active" : "status-chip inactive"}>
+                                {user.is_active ? "Active" : "Inactive"}
+                              </span>
+                            </td>
+                            <td className="notes-cell">{(user.notes || "").slice(0, 100) || "-"}</td>
+                          </tr>
+                        )) : (
+                          <tr>
+                            <td colSpan="4" className="empty-state-cell">
+                              {hostedWorkspaceReady ? "No users match the current view." : "Connect the hosted workspace to load users."}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
-                ) : null}
+                  {usersLoadingMore ? <div className="table-loading-row">Loading more users...</div> : null}
+                  {usersHasMore && !usersLoadingMore ? (
+                    <div className="table-load-more-row">
+                      <button className="ghost-button" type="button" onClick={loadNextUsersPage}>Load More Users</button>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="users-summary-rail users-summary-rail-bottom" aria-label="User summary">
+                  <div className="users-page-metrics">
+                    <span className="users-metric-chip">{filteredUserCount} shown</span>
+                    <span className="users-metric-chip subdued">{totalUserCount} total</span>
+                    {selectedUserIds.length ? <span className="users-metric-chip accent">{selectedUserIds.length} selected</span> : null}
+                    {usersFiltersActive ? <span className="users-metric-chip subdued">Filtered view</span> : null}
+                  </div>
+                </div>
               </div>
             </div>
           </section>
-        ) : null}
+      ) : null}
       </main>
 
       {notificationsModalOpen ? (

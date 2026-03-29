@@ -1219,29 +1219,28 @@ describe("App", () => {
     expect(await findUserCell("Alpha")).toBeInTheDocument();
     expect(within(await screen.findByRole("table")).queryByText("Beta")).not.toBeInTheDocument();
 
-    Object.defineProperty(window, "innerHeight", { configurable: true, value: 900, writable: true });
-    Object.defineProperty(window, "scrollY", { configurable: true, value: 0, writable: true });
-    Object.defineProperty(document.body, "scrollHeight", { configurable: true, value: 1000 });
-    Object.defineProperty(document.documentElement, "scrollHeight", { configurable: true, value: 1000 });
-    Object.defineProperty(document.documentElement, "scrollTop", { configurable: true, value: 0, writable: true });
-    fireEvent.scroll(window);
+    const tableViewport = (await screen.findByRole("table")).closest(".table-viewport");
+    expect(tableViewport).not.toBeNull();
+
+    Object.defineProperty(tableViewport, "clientHeight", { configurable: true, value: 600 });
+    Object.defineProperty(tableViewport, "scrollHeight", { configurable: true, value: 1000, writable: true });
+    Object.defineProperty(tableViewport, "scrollTop", { configurable: true, value: 0, writable: true });
+    fireEvent.scroll(tableViewport);
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledTimes(4);
     });
 
-    Object.defineProperty(window, "scrollY", { configurable: true, value: 1200, writable: true });
-    Object.defineProperty(document.body, "scrollHeight", { configurable: true, value: 2280 });
-    Object.defineProperty(document.documentElement, "scrollHeight", { configurable: true, value: 2280 });
-    Object.defineProperty(document.documentElement, "scrollTop", { configurable: true, value: 1200, writable: true });
-    fireEvent.scroll(window);
+    Object.defineProperty(tableViewport, "scrollHeight", { configurable: true, value: 1820, writable: true });
+    Object.defineProperty(tableViewport, "scrollTop", { configurable: true, value: 1220, writable: true });
+    fireEvent.scroll(tableViewport);
 
     expect(await findUserCell("Beta")).toBeInTheDocument();
 
     const rows = within(await screen.findByRole("table")).getAllByRole("row");
     fireEvent.click(within(rows[1]).getByText("Alpha"));
     fireEvent.click(within(rows[2]).getByText("Beta"), { ctrlKey: true });
-    expect(screen.getByText(/2 selected/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/2 selected/i)).toHaveLength(2);
 
     fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
     const deleteDialog = await screen.findByRole("alertdialog", { name: /delete users\?/i });
@@ -1325,6 +1324,8 @@ describe("App", () => {
     render(<App />);
 
     expect(await findUserCell("User 001")).toBeInTheDocument();
+    expect(screen.getAllByText("100 shown")).toHaveLength(2);
+    expect(screen.getAllByText("151 total")).toHaveLength(2);
     const table = await screen.findByRole("table");
     expect(within(table).getAllByRole("row")).toHaveLength(101);
     expect(within(table).queryByText("User 151")).not.toBeInTheDocument();
@@ -1406,14 +1407,15 @@ describe("App", () => {
     render(<App />);
 
     expect(await findUserCell("User 001")).toBeInTheDocument();
-    expect(screen.queryByText(/101 total/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/more available/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/100 loaded/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText("100 shown")).toHaveLength(2);
+    expect(screen.getAllByText("100 total")).toHaveLength(2);
     expect(screen.getByRole("button", { name: /load more users/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /load more users/i }));
 
     expect(await findUserCell("User 101")).toBeInTheDocument();
+    expect(screen.getAllByText("101 shown")).toHaveLength(2);
+    expect(screen.getAllByText("101 total")).toHaveLength(2);
   });
 
   it("falls back when the hosted API repeats the first page for later offsets", async () => {
@@ -1511,6 +1513,8 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /load more users/i }));
 
     expect(await findUserCell("User 151")).toBeInTheDocument();
+    expect(screen.getAllByText("151 shown")).toHaveLength(2);
+    expect(screen.getAllByText("151 total")).toHaveLength(2);
     expect(global.fetch).toHaveBeenCalledWith(
       "https://api.sezzions.test/v1/workspace/users?limit=500&offset=0",
       expect.objectContaining({
