@@ -1,0 +1,269 @@
+:root {
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  color: #1d1d17;
+  background:
+    radial-gradient(circle at top left, rgba(184, 74, 43, 0.2), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(16, 85, 73, 0.18), transparent 24%),
+    linear-gradient(135deg, #f8f1e6 0%, #f2e6d4 46%, #ead7bf 100%);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+}
+
+.shell {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: 32px;
+}
+
+.ambient {
+  position: absolute;
+  width: 24rem;
+  height: 24rem;
+  border-radius: 50%;
+  filter: blur(40px);
+  opacity: 0.52;
+  pointer-events: none;
+}
+
+.ambient-left {
+  top: -8rem;
+  left: -8rem;
+  background: rgba(184, 74, 43, 0.32);
+}
+
+.ambient-right {
+  right: -10rem;
+  bottom: -10rem;
+  background: rgba(16, 85, 73, 0.24);
+}
+
+.hero,
+.content-grid {
+  position: relative;
+  z-index: 1;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.9fr);
+  gap: 24px;
+  align-items: stretch;
+  margin: 0 auto 24px;
+  max-width: 1180px;
+}
+
+.hero-copy,
+.hero-aside,
+.panel {
+  background: rgba(255, 251, 245, 0.78);
+  border: 1px solid rgba(29, 29, 23, 0.09);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 24px 60px rgba(49, 32, 20, 0.12);
+}
+
+.hero-copy {
+  border-radius: 32px;
+  padding: 42px;
+}
+
+.hero-aside {
+  border-radius: 28px;
+  padding: 28px;
+  align-self: center;
+}
+
+.eyebrow,
+.panel-kicker,
+.aside-label {
+  margin: 0 0 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #15584b;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+  font-weight: 700;
+  margin: 0;
+}
+
+h1 {
+  max-width: 12ch;
+  font-size: clamp(2.8rem, 5vw, 5.4rem);
+  line-height: 0.92;
+}
+
+.lede,
+.hero-aside p,
+.milestone-card p,
+.surface-row p,
+.launch-list li {
+  color: #5d584f;
+  line-height: 1.65;
+  font-size: 1rem;
+}
+
+.lede {
+  max-width: 42rem;
+  margin: 20px 0 0;
+  font-size: 1.12rem;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin-top: 24px;
+}
+
+.primary-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #b84a2b, #8e361d);
+  color: #fffaf5;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(16, 85, 73, 0.1);
+  color: #15584b;
+  font-weight: 700;
+}
+
+.hero-aside strong {
+  display: block;
+  margin-bottom: 14px;
+  font-size: 1.55rem;
+}
+
+.content-grid {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.panel {
+  border-radius: 28px;
+  padding: 28px;
+}
+
+.feature-panel {
+  grid-column: span 7;
+}
+
+.surfaces-panel {
+  grid-column: span 5;
+}
+
+.launch-panel {
+  grid-column: span 12;
+}
+
+.panel-head {
+  margin-bottom: 18px;
+}
+
+.panel-head h2 {
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+}
+
+.milestone-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.milestone-card,
+.surface-row {
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(29, 29, 23, 0.08);
+}
+
+.milestone-card h3,
+.surface-row h3 {
+  margin-bottom: 10px;
+  font-size: 1.25rem;
+}
+
+.surface-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.launch-list {
+  margin: 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 12px;
+}
+
+@media (max-width: 980px) {
+  .hero,
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-panel,
+  .surfaces-panel,
+  .launch-panel {
+    grid-column: span 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .shell {
+    padding: 18px;
+  }
+
+  .hero-copy,
+  .hero-aside,
+  .panel {
+    padding: 22px;
+  }
+
+  .hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .primary-link,
+  .status-pill {
+    justify-content: center;
+  }
+}

@@ -60,6 +60,7 @@ open htmlcov/index.html
 - `app_facade.py`: app-level wiring between UI and services
 - `models/`, `repositories/`, `services/`: core backend layers
 - `ui/`: PySide6 UI
+- `web/`: Vite + React web frontend scaffold
 - `tools/`: offline/maintenance tools
 - `.LEGACY/`: frozen legacy snapshot (not maintained)
 
@@ -107,7 +108,7 @@ The repository now includes a staged static-site deployment scaffold for future 
 - deploys use `.github/workflows/deploy-static-web.yml`
 - publish uses SSH + `rsync` via `tools/deploy_cpanel_static.sh`
 
-This workflow is scaffold-only until a real web build exists. It skips cleanly when the required environment configuration has not been added yet.
+This workflow now supports the real web frontend scaffold under `web/`. It still skips cleanly when the required environment configuration has not been added yet.
 
 ### GitHub Environment Variables
 
@@ -119,8 +120,8 @@ Configure these variables separately in the `development` and `production` GitHu
 - `CPANEL_USERNAME`: cPanel SSH username
 - `CPANEL_TARGET_PATH`: remote directory to publish into, such as `public_html/dev` or `public_html/app`
 - `CPANEL_PUBLIC_URL`: public URL for the deployed site
-- `DEPLOY_SOURCE_DIR`: built static site directory, for example `web/static`
-- `DEPLOY_BUILD_COMMAND`: optional build command, for example `npm ci && npm run build`
+- `DEPLOY_SOURCE_DIR`: built static site directory, for example `web/dist`
+- `DEPLOY_BUILD_COMMAND`: optional build command, for example `cd web && npm ci --cache .npm-cache && npm run build`
 
 ### GitHub Environment Secrets
 

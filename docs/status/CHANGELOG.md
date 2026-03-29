@@ -12,6 +12,49 @@ Rules:
 ## 2026-03-28
 
 ```yaml
+id: 2026-03-28-03
+type: feat
+areas: [web, frontend, deployment, ci, docs]
+issue: 201
+summary: "Scaffold the actual Vite and React web frontend"
+details: >
+  Replaced the static tracked placeholder-only approach with a real Vite + React
+  frontend scaffold under `web/`. Added a landing shell, responsive styling,
+  frontend test coverage, and a working production build. Updated CI so the web
+  frontend is installed, tested, and built when present, and switched the
+  deployment defaults/documentation to use built output from `web/dist` with a
+  canonical build command.
+
+  Implemented:
+  - Vite + React app scaffold with an initial Sezzions web landing shell
+  - Vitest + Testing Library smoke coverage for the app shell
+  - CI steps for frontend dependency install, test, and build
+  - deploy helper/default documentation changes from tracked placeholder output
+    to built frontend output
+
+  Validation:
+  - cd web && npm test
+  - cd web && npm run build
+files_changed:
+  - .github/workflows/ci.yml
+  - .gitignore
+  - README.md
+  - tools/README.md
+  - tools/deploy_cpanel_static.sh
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+  - docs/archive/2026-03-28-issue-web-frontend-scaffold.md
+  - web/package.json
+  - web/package-lock.json
+  - web/index.html
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - web/src/main.jsx
+  - web/src/styles.css
+  - web/src/test/setup.js
+```
+
+```yaml
 id: 2026-03-28-02
 type: feat
 areas: [workflow, deployment, docs, tools]

@@ -114,6 +114,9 @@ Static web deployment scaffold:
 - Pushes to `main` target the GitHub `production` environment.
 - Deployment transport is SSH + `rsync` using `tools/deploy_cpanel_static.sh`.
 - Deploy execution is gated by environment variable `DEPLOY_ENABLED=true` so environment values can be staged before first publish.
+- The repository now includes a real web frontend scaffold under `web/` using Vite + React.
+- Canonical frontend build output is `web/dist`.
+- Canonical frontend build command is `cd web && npm ci --cache .npm-cache && npm run build`.
 - Environment-specific hostnames, target paths, URLs, build commands, and SSH credentials must come from GitHub environment variables/secrets, not from repository-tracked files.
 - If no deployment configuration is present yet, the workflow may skip without publishing; this is expected during pre-web scaffolding.
 - Because deploy mirrors the built directory with `rsync --delete`, each target path must be dedicated to the Sezzions web artifact for that environment.
