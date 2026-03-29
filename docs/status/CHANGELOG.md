@@ -12,6 +12,35 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-09
+type: feat
+areas: [database, services, docs, tests]
+issue: 222
+summary: "Define the hosted workspace-owned business schema foundation"
+details: >
+  Added the structural hosted business schema needed before real web UI porting
+  begins. The hosted metadata now defines the core Sezzions business tables as
+  workspace-owned records so future UI, import, and desktop-compatibility work
+  can target the real long-term data contract rather than temporary CRUD-only
+  scaffolding.
+
+  Implemented:
+  - workspace-owned hosted table definitions for core master and transactional data
+  - scoped uniqueness for key workspace master tables such as users, sites,
+    game types, and redemption method types
+  - targeted schema tests covering table presence, explicit workspace ownership,
+    and core transactional foreign-key structure
+
+  Validation:
+  - pytest -q tests/services/hosted/test_business_schema_foundation.py
+files_changed:
+  - services/hosted/persistence.py
+  - tests/services/hosted/test_business_schema_foundation.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-08
 type: feat
 areas: [api, database, services, docs, tests]

@@ -149,6 +149,11 @@ Hosted backend foundation (Issue #203):
 - Hosted workspace users must be keyed by `workspace_id`, not by Supabase auth user id.
 - `GET /v1/workspace/users` and `POST /v1/workspace/users` must require a bearer token, resolve the authenticated user's hosted workspace, and only list/create business-domain users within that workspace.
 - Creating a hosted workspace user must require a non-blank name, may accept optional email and notes, and must fail safely without partial persistence when validation fails.
+- Before substantial hosted UI porting begins, the hosted persistence metadata must structurally define the core workspace-owned business schema so the web app can target the real long-term data contract rather than temporary CRUD scaffolding.
+- Hosted business-domain tables should be workspace-owned by default, and for the current hosted path that ownership should be explicit via `workspace_id` on the business tables rather than relying on implicit inheritance alone.
+- The hosted structural foundation must include workspace-owned definitions for sites, cards, redemption method types, redemption methods, game types, games, purchases, unrealized positions, redemptions, game sessions, game session event links, game RTP aggregates, redemption allocations, realized transactions, realized daily notes, expenses, daily sessions, daily date tax, and account adjustments in addition to hosted users.
+- Workspace-scoped master data such as sites, game types, and redemption method types should allow the same display names to exist independently across different workspaces.
+- The hosted schema should favor simple workspace-local duplication over premature global/shared catalogs unless a later requirement makes a true shared catalog necessary.
 - The next hosted planning slice after bootstrap is `GET /v1/workspace/import-plan`.
 - `GET /v1/workspace/import-plan` must require a bearer token and return a read-only import-planning summary for the authenticated user's hosted workspace.
 - The import-planning summary must include workspace identity, whether a source SQLite path is recorded, whether that path is accessible to the API process, a human-readable planning detail message, and any read-only SQLite inventory data that can be inspected safely.
