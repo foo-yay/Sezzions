@@ -36,6 +36,25 @@ Frontend scaffold note:
 - the deploy lane should normally use `DEPLOY_SOURCE_DIR=web/dist`
 - the canonical build command is `cd web && npm ci --cache .npm-cache && npm run build`
 
+### SQLite Hosted-Migration Inventory (Issue #203)
+```bash
+python3 tools/inspect_sqlite_for_hosted_import.py sezzions.db
+```
+
+Prints a read-only JSON inventory of the current SQLite database to help plan the first hosted import into Supabase/PostgreSQL.
+
+What it reports:
+- tracked table row counts
+- active user names
+- active site names
+- database file size
+- schema version row count
+
+Usage notes:
+- defaults to `sezzions.db` when no path is passed
+- does not modify the database
+- intended as a pre-import planning tool, not the final hosted importer
+
 ### Release Update Automation (Issue #174)
 ```bash
 python3 tools/release_update.py --version 1.0.1

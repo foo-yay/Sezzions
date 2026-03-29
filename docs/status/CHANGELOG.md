@@ -12,6 +12,86 @@ Rules:
 ## 2026-03-28
 
 ```yaml
+id: 2026-03-28-04
+type: feat
+areas: [api, auth, database, migration, docs, tests, tools]
+issue: 203
+summary: "Scaffold the hosted backend foundation around Supabase and FastAPI"
+details: >
+  Added the first concrete shared desktop/web backend foundation. The repository
+  now includes a minimal FastAPI package for hosted API work, environment-based
+  Supabase configuration helpers, explicit hosted account/workspace model stubs,
+  and a read-only SQLite migration inventory service and CLI to inspect the
+  current local database before import work begins. Documented the chosen stack
+  and ownership boundary: Supabase Auth with Google first, Supabase PostgreSQL
+  as the hosted system of record, FastAPI for the API layer, and `sezzions.db`
+  as the initial migration source.
+
+  Implemented:
+  - FastAPI scaffold under `api/` with health and foundation endpoints
+  - Supabase environment configuration loader with derived PostgreSQL host/URL
+  - hosted account/workspace model stubs separate from business-domain users
+  - read-only SQLite migration inventory service and CLI
+  - targeted tests for hosted config, API scaffold, and migration inventory
+
+  Validation:
+  - pytest -q tests/api/test_app.py tests/services/hosted/test_config.py tests/services/hosted/test_sqlite_migration_inventory_service.py
+files_changed:
+  - requirements.txt
+  - .gitignore
+  - api/__init__.py
+  - api/app.py
+  - api/config.py
+  - api/.env.example
+  - services/hosted/__init__.py
+  - services/hosted/models.py
+  - services/hosted/sqlite_migration_inventory_service.py
+  - tools/inspect_sqlite_for_hosted_import.py
+  - tools/README.md
+  - README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+  - docs/adr/2026-03-28-hosted-foundation-stack.md
+  - tests/api/test_app.py
+  - tests/services/hosted/test_config.py
+  - tests/services/hosted/test_sqlite_migration_inventory_service.py
+```
+
+```yaml
+id: 2026-03-28-05
+type: feat
+areas: [web, auth, frontend, docs, tests]
+issue: 203
+summary: "Wire the web shell for Supabase Google sign-in"
+details: >
+  Replaced the static web shell call-to-action with the first real hosted auth
+  state machine. The web app now initializes a Supabase browser client from
+  environment variables, displays signed-in vs signed-out state, starts Google
+  OAuth through Supabase, and supports sign-out from the shell. Added example
+  frontend environment variables and updated docs to define the required web
+  auth configuration.
+
+  Implemented:
+  - Supabase browser client module for Vite environment variables
+  - Google sign-in and sign-out actions in the web shell
+  - current session email display in the web UI
+  - focused frontend tests for signed-out, sign-in trigger, and signed-in states
+
+  Validation:
+  - cd web && npm test
+  - cd web && npm run build
+files_changed:
+  - web/.env.example
+  - web/src/lib/supabaseClient.js
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - web/src/styles.css
+  - README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-28-03
 type: feat
 areas: [web, frontend, deployment, ci, docs]

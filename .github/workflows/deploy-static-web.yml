@@ -36,6 +36,9 @@ jobs:
           DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
           DEPLOY_SOURCE_DIR: ${{ vars.DEPLOY_SOURCE_DIR }}
           DEPLOY_BUILD_COMMAND: ${{ vars.DEPLOY_BUILD_COMMAND }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
           CPANEL_HOST: ${{ vars.CPANEL_HOST }}
           CPANEL_PORT: ${{ vars.CPANEL_PORT }}
           CPANEL_USERNAME: ${{ vars.CPANEL_USERNAME }}
@@ -66,6 +69,9 @@ jobs:
           DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
           DEPLOY_SOURCE_DIR: ${{ vars.DEPLOY_SOURCE_DIR }}
           DEPLOY_BUILD_COMMAND: ${{ vars.DEPLOY_BUILD_COMMAND }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
           CPANEL_HOST: ${{ vars.CPANEL_HOST }}
           CPANEL_PORT: ${{ vars.CPANEL_PORT }}
           CPANEL_USERNAME: ${{ vars.CPANEL_USERNAME }}

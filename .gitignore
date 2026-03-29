@@ -42,6 +42,10 @@ backup/
 
 # Local settings (user-specific configuration)
 settings.json
+.env
+.env.*
+!.env.example
+!**/.env.example
 
 # Temporary files
 *.txt
