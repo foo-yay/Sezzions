@@ -80,6 +80,8 @@ def test_account_bootstrap_endpoint_returns_hosted_summary() -> None:
                             "supabase_user_id": supabase_user_id,
                             "owner_email": owner_email,
                             "auth_provider": "google",
+                            "role": "owner",
+                            "status": "active",
                         },
                         "workspace": {
                             "id": "workspace-123",
@@ -113,6 +115,8 @@ def test_account_bootstrap_endpoint_returns_hosted_summary() -> None:
             "supabase_user_id": "user-123",
             "owner_email": "owner@sezzions.com",
             "auth_provider": "google",
+            "role": "owner",
+            "status": "active",
         },
         "workspace": {
             "id": "workspace-123",

@@ -19,6 +19,8 @@ class HostedAccountRecord(HostedBase):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     owner_email: Mapped[str] = mapped_column(String(255), nullable=False)
     auth_provider: Mapped[str] = mapped_column(String(32), nullable=False, default="google")
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="owner")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     supabase_user_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
 
 

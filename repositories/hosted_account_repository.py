@@ -19,6 +19,8 @@ class HostedAccountRepository:
             id=record.id,
             owner_email=record.owner_email,
             auth_provider=record.auth_provider,
+            role=record.role,
+            status=record.status,
             supabase_user_id=record.supabase_user_id,
         )
 
@@ -29,10 +31,14 @@ class HostedAccountRepository:
         owner_email: str,
         supabase_user_id: str,
         auth_provider: str = "google",
+        role: str = "owner",
+        status: str = "active",
     ) -> HostedAccount:
         record = HostedAccountRecord(
             owner_email=owner_email,
             auth_provider=auth_provider,
+            role=role,
+            status=status,
             supabase_user_id=supabase_user_id,
         )
         session.add(record)
@@ -41,6 +47,8 @@ class HostedAccountRepository:
             id=record.id,
             owner_email=record.owner_email,
             auth_provider=record.auth_provider,
+            role=record.role,
+            status=record.status,
             supabase_user_id=record.supabase_user_id,
         )
 
@@ -57,5 +65,7 @@ class HostedAccountRepository:
             id=record.id,
             owner_email=record.owner_email,
             auth_provider=record.auth_provider,
+            role=record.role,
+            status=record.status,
             supabase_user_id=record.supabase_user_id,
         )

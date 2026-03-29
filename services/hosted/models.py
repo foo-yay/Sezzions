@@ -12,6 +12,8 @@ class HostedAccount:
 
     owner_email: str
     auth_provider: str = "google"
+    role: str = "owner"
+    status: str = "active"
     supabase_user_id: Optional[str] = None
     id: Optional[str] = None
 
@@ -21,6 +23,10 @@ class HostedAccount:
             raise ValueError("Hosted account owner email is required.")
         if self.auth_provider != "google":
             raise ValueError("Hosted account auth_provider must currently be 'google'.")
+        if self.role not in {"owner", "administrator"}:
+            raise ValueError("Hosted account role must currently be 'owner' or 'administrator'.")
+        if self.status not in {"active", "disabled", "deleted"}:
+            raise ValueError("Hosted account status must currently be 'active', 'disabled', or 'deleted'.")
 
 
 @dataclass
