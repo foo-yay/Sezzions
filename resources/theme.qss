@@ -177,6 +177,62 @@ QToolButton#InfoButton {
     font-weight: 600;
 }
 QToolButton#InfoButton:hover { background: $border; }
+
+/* Reports tab (dashboard-first layout) */
+QListWidget#ReportsSidebar {
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: 10px;
+    padding: 6px;
+}
+QListWidget#ReportsSidebar::item {
+    padding: 8px 10px;
+    border-radius: 6px;
+}
+QListWidget#ReportsSidebar::item:selected {
+    background: $selection;
+}
+QFrame#FilterToolbar,
+QFrame#MoreFiltersDrawer {
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: 10px;
+}
+QToolButton#PresetChip {
+    background: $surface2;
+    border: 1px solid $border;
+    border-radius: 12px;
+    padding: 4px 10px;
+}
+QToolButton#PresetChip:checked {
+    background: $selection;
+    border: 1px solid $focus;
+}
+QToolButton#MoreFiltersButton {
+    background: $surface2;
+    border: 1px solid $border;
+    border-radius: 12px;
+    padding: 4px 10px;
+}
+QFrame#KpiCard {
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: 12px;
+}
+QLabel#KpiTitle { color: $text_muted; font-size: 11px; }
+QLabel#KpiValue { font-size: 16px; font-weight: 600; }
+QFrame#KpiChip {
+    background: $surface2;
+    border: 1px solid $border;
+    border-radius: 12px;
+}
+QLabel#KpiChipValue { font-weight: 600; }
+QFrame#Panel {
+    background: $surface;
+    border: 1px solid $border;
+    border-radius: 12px;
+}
+QLabel#PanelTitle { font-weight: 600; }
 QCheckBox, QRadioButton {
     spacing: 6px;
 }
