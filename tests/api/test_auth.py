@@ -78,7 +78,7 @@ def test_get_authenticated_session_uses_request_apikey_for_fallback(monkeypatch)
         lambda require_db_password=False: type(
             "Config",
             (),
-            {"supabase_publishable_key": None},
+            {"supabase_publishable_key": "stale-render-key"},
         )(),
     )
     monkeypatch.setattr(
@@ -112,6 +112,55 @@ def test_get_authenticated_session_uses_request_apikey_for_fallback(monkeypatch)
 
     assert session.user_id == "user-123"
     assert captured["api_key"] == "publishable-key-123"
+
+
+def test_get_authenticated_session_retries_fallback_keys_in_order(monkeypatch) -> None:
+    attempted_keys = []
+
+    monkeypatch.setattr(
+        "api.auth.load_hosted_backend_config",
+        lambda require_db_password=False: type(
+            "Config",
+            (),
+            {"supabase_publishable_key": "render-config-key"},
+        )(),
+    )
+    monkeypatch.setattr(
+        "api.auth.decode_supabase_access_token",
+        lambda token, config: (_ for _ in ()).throw(jwt.InvalidTokenError("bad token")),
+    )
+
+    def fake_fetch(token, config, *, api_key=None):
+        attempted_keys.append(api_key)
+        if api_key == "request-key":
+            raise RuntimeError("request key rejected")
+        return {
+            "id": "user-123",
+            "email": "owner@sezzions.com",
+            "aud": "authenticated",
+            "role": "authenticated",
+        }
+
+    monkeypatch.setattr("api.auth.fetch_supabase_user", fake_fetch)
+
+    session = get_authenticated_session(
+        credentials=type(
+            "Creds",
+            (),
+            {"scheme": "Bearer", "credentials": "token-123"},
+        )(),
+        request=type(
+            "Request",
+            (),
+            {"headers": {"apikey": "request-key", "x-supabase-apikey": "secondary-request-key"}},
+        )(),
+    )
+
+    assert session.user_id == "user-123"
+    assert attempted_keys == [
+        "request-key",
+        "secondary-request-key",
+    ]
 
 
 def test_fetch_supabase_user_sends_apikey_header(monkeypatch) -> None:
