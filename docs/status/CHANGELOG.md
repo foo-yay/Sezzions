@@ -12,6 +12,32 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-06
+type: fix
+areas: [web, docs, tests]
+issue: 216
+summary: "Use a hash route for the temporary migration page on static hosting"
+details: >
+  Fixed the staged migration upload page returning a server-side 404 on the
+  cPanel static host. The temporary migration surface now uses a hash route
+  instead of a direct `/migration` path so the server only has to serve the
+  root web bundle and React can select the migration view client-side.
+
+  Implemented:
+  - switched migration links/page detection to `/#/migration`
+  - updated the web tests for hash-based routing
+  - clarified the static-host routing constraint in the project spec
+
+  Validation:
+  - cd web && npm test -- --run src/App.test.jsx
+files_changed:
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-05
 type: feat
 areas: [api, web, docs, tests]

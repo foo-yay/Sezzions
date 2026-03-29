@@ -31,7 +31,7 @@ describe("App", () => {
   });
 
   beforeEach(() => {
-    window.history.pushState({}, "", "/");
+    window.history.pushState({}, "", "/#/");
     vi.stubEnv("VITE_API_BASE_URL", "https://api.sezzions.test");
     authMocks.getSession.mockReset();
     authMocks.onAuthStateChange.mockReset();
@@ -268,7 +268,7 @@ describe("App", () => {
   });
 
   it("uploads a sqlite file from the migration page and renders the inventory summary", async () => {
-    window.history.pushState({}, "", "/migration");
+    window.history.pushState({}, "", "/#/migration");
     authMocks.getSession.mockResolvedValue({
       data: {
         session: {
