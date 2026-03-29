@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from api.config import HostedBackendConfig, HostedConfigurationError, load_hosted_backend_config
@@ -41,12 +41,21 @@ def decode_supabase_access_token(token: str, config: HostedBackendConfig) -> dic
     )
 
 
-def fetch_supabase_user(token: str, config: HostedBackendConfig) -> dict[str, Any]:
+def fetch_supabase_user(
+    token: str,
+    config: HostedBackendConfig,
+    *,
+    api_key: str | None = None,
+) -> dict[str, Any]:
+    headers = {
+        "Authorization": f"Bearer {token}",
+    }
+    if api_key or config.supabase_publishable_key:
+        headers["apikey"] = api_key or config.supabase_publishable_key
+
     response = httpx.get(
         f"{config.supabase_url.rstrip('/')}/auth/v1/user",
-        headers={
-            "Authorization": f"Bearer {token}",
-        },
+        headers=headers,
         timeout=10.0,
     )
     response.raise_for_status()
@@ -62,6 +71,7 @@ def _unauthorized(detail: str) -> HTTPException:
 
 
 def get_authenticated_session(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> AuthenticatedSession:
     if not credentials or credentials.scheme.lower() != "bearer":
@@ -75,8 +85,17 @@ def get_authenticated_session(
     try:
         claims = decode_supabase_access_token(credentials.credentials, config)
     except jwt.InvalidTokenError:
+        fallback_api_key = (
+            getattr(config, "supabase_publishable_key", None)
+            or request.headers.get("apikey")
+            or request.headers.get("x-supabase-apikey")
+        )
         try:
-            claims = fetch_supabase_user(credentials.credentials, config)
+            claims = fetch_supabase_user(
+                credentials.credentials,
+                config,
+                api_key=fallback_api_key,
+            )
         except Exception as exc:
             raise _unauthorized("Invalid bearer token.") from exc
 

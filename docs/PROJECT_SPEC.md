@@ -138,6 +138,7 @@ Hosted backend foundation (Issue #203):
 - After successful Google sign-in, the web shell should call `GET /v1/session` with the Supabase access token and reflect the protected API handshake status in the UI.
 - The hosted API must permit CORS preflight and authenticated browser requests from `https://dev.sezzions.com` and `http://localhost:5173` by default, with environment override support for additional origins.
 - If direct local JWT decoding is not compatible with the live Supabase token format, the API may validate the bearer token through Supabase's `/auth/v1/user` endpoint before returning `401`.
+- The `/auth/v1/user` validation fallback must include a Supabase publishable/anon key, either from hosted backend configuration or from the web client's protected handshake request.
 
 ### Application Update Infrastructure (Issue #171, MVP)
 

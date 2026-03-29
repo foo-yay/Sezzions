@@ -12,6 +12,38 @@ Rules:
 ## 2026-03-28
 
 ```yaml
+id: 2026-03-28-09
+type: fix
+areas: [api, auth, web, docs, tests]
+issue: 203
+summary: "Provide the Supabase public key on the protected session fallback path"
+details: >
+  Followed up on the staged `401` issue after adding the `/auth/v1/user`
+  fallback. Supabase's server-side user validation path requires both the bearer
+  token and a publishable/anon API key. Added support for the hosted API to read
+  that public key from backend configuration or from the web client's protected
+  handshake request, and updated the web shell to forward the key alongside the
+  bearer token.
+
+  Implemented:
+  - hosted config support for `SUPABASE_PUBLISHABLE_KEY` or `SUPABASE_ANON_KEY`
+  - `apikey` forwarding on the protected web handshake
+  - auth tests covering the forwarded-key fallback path
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/api/test_auth.py tests/api/test_app.py tests/services/hosted/test_config.py
+files_changed:
+  - api/config.py
+  - api/auth.py
+  - web/src/App.jsx
+  - tests/api/test_auth.py
+  - tests/services/hosted/test_config.py
+  - README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-28-08
 type: fix
 areas: [api, auth, docs, tests]

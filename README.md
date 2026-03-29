@@ -159,6 +159,7 @@ Current authenticated backend slice:
 - the API verifies the token against Supabase JWKS before returning session identity details
 - the API must allow browser CORS requests from the staged web host and local Vite host
 - if direct JWT verification fails for a real Supabase session token, the API falls back to Supabase's `/auth/v1/user` validation endpoint before rejecting the request
+- the `/auth/v1/user` fallback must include a Supabase publishable/anon key, sourced from backend env or forwarded by the web client during the protected handshake
 
 Important boundary:
 - the current SQLite `users` table is a business-domain entity, not the hosted auth/account model
