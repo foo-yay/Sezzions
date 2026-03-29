@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
+import httpx
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -40,6 +41,18 @@ def decode_supabase_access_token(token: str, config: HostedBackendConfig) -> dic
     )
 
 
+def fetch_supabase_user(token: str, config: HostedBackendConfig) -> dict[str, Any]:
+    response = httpx.get(
+        f"{config.supabase_url.rstrip('/')}/auth/v1/user",
+        headers={
+            "Authorization": f"Bearer {token}",
+        },
+        timeout=10.0,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 def _unauthorized(detail: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -61,10 +74,13 @@ def get_authenticated_session(
 
     try:
         claims = decode_supabase_access_token(credentials.credentials, config)
-    except jwt.InvalidTokenError as exc:
-        raise _unauthorized("Invalid bearer token.") from exc
+    except jwt.InvalidTokenError:
+        try:
+            claims = fetch_supabase_user(credentials.credentials, config)
+        except Exception as exc:
+            raise _unauthorized("Invalid bearer token.") from exc
 
-    user_id = str(claims.get("sub") or "")
+    user_id = str(claims.get("sub") or claims.get("id") or "")
     if not user_id:
         raise _unauthorized("Bearer token is missing subject.")
 

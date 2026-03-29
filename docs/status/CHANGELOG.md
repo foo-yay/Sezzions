@@ -12,6 +12,35 @@ Rules:
 ## 2026-03-28
 
 ```yaml
+id: 2026-03-28-08
+type: fix
+areas: [api, auth, docs, tests]
+issue: 203
+summary: "Fallback to Supabase user validation when direct JWT decoding rejects a live session"
+details: >
+  Fixed the staged Google sign-in handshake returning `401` after the CORS
+  issue was resolved. The browser was now reaching the Render API, but the API
+  was rejecting the live Supabase access token during direct JWT/JWKS decoding.
+  Added a fallback path that validates the bearer token through Supabase's
+  `/auth/v1/user` endpoint before rejecting the request. This keeps the direct
+  JWT path in place while making the live hosted session handshake compatible
+  with the current Supabase token behavior.
+
+  Implemented:
+  - Supabase `/auth/v1/user` fallback in the hosted auth layer
+  - focused auth tests covering successful fallback and unauthorized failure
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/api/test_auth.py tests/api/test_app.py tests/services/hosted/test_config.py
+files_changed:
+  - api/auth.py
+  - tests/api/test_auth.py
+  - README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-28-07
 type: fix
 areas: [api, auth, deployment, docs, tests]

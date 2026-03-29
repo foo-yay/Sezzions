@@ -137,6 +137,7 @@ Hosted backend foundation (Issue #203):
 - `GET /v1/session` must require a bearer token, verify the Supabase access token against Supabase JWKS, and return the authenticated session identity summary.
 - After successful Google sign-in, the web shell should call `GET /v1/session` with the Supabase access token and reflect the protected API handshake status in the UI.
 - The hosted API must permit CORS preflight and authenticated browser requests from `https://dev.sezzions.com` and `http://localhost:5173` by default, with environment override support for additional origins.
+- If direct local JWT decoding is not compatible with the live Supabase token format, the API may validate the bearer token through Supabase's `/auth/v1/user` endpoint before returning `401`.
 
 ### Application Update Infrastructure (Issue #171, MVP)
 
