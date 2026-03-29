@@ -9,6 +9,9 @@ from api.auth import AuthenticatedSession, get_authenticated_session
 from api.config import HostedConfigurationError, load_hosted_backend_config
 from services.hosted.account_bootstrap_service import HostedAccountBootstrapService
 from services.hosted.persistence import get_hosted_session_factory
+from services.hosted.workspace_import_planning_service import (
+    HostedWorkspaceImportPlanningService,
+)
 
 
 app = FastAPI(title="Sezzions Hosted API", version="0.1.0")
@@ -34,6 +37,16 @@ def get_hosted_account_bootstrap_service() -> HostedAccountBootstrapService:
 
     session_factory = get_hosted_session_factory(config.sqlalchemy_url)
     return HostedAccountBootstrapService(session_factory)
+
+
+def get_hosted_workspace_import_planning_service() -> HostedWorkspaceImportPlanningService:
+    try:
+        config = load_hosted_backend_config(require_db_password=True)
+    except HostedConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    session_factory = get_hosted_session_factory(config.sqlalchemy_url)
+    return HostedWorkspaceImportPlanningService(session_factory)
 
 
 @app.get("/healthz")
@@ -75,4 +88,17 @@ def account_bootstrap(
         supabase_user_id=session.user_id,
         owner_email=session.email,
     )
+    return summary.as_dict() if hasattr(summary, "as_dict") else summary
+
+
+@app.get("/v1/workspace/import-plan")
+def workspace_import_plan(
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceImportPlanningService = Depends(get_hosted_workspace_import_planning_service),
+) -> dict[str, object]:
+    try:
+        summary = service.plan_import(supabase_user_id=session.user_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
     return summary.as_dict() if hasattr(summary, "as_dict") else summary

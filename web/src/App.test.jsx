@@ -49,6 +49,25 @@ describe("App", () => {
     authMocks.signInWithOAuth.mockResolvedValue({ error: null });
     authMocks.signOut.mockResolvedValue({ error: null });
     global.fetch = vi.fn().mockImplementation(async (url) => {
+      if (url === "https://api.sezzions.test/v1/workspace/import-plan") {
+        return {
+          ok: true,
+          json: async () => ({
+            status: "source-db-path-missing",
+            detail: "No source SQLite database path is recorded for this hosted workspace yet.",
+            source_db_configured: false,
+            source_db_accessible: false,
+            workspace: {
+              id: "workspace-123",
+              account_id: "account-123",
+              name: "owner@sezzions.com Workspace",
+              source_db_path: null
+            },
+            inventory: null
+          })
+        };
+      }
+
       if (url === "https://api.sezzions.test/v1/account/bootstrap") {
         return {
           ok: true,
@@ -187,6 +206,22 @@ describe("App", () => {
             source_db_path: null
           }
         })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: "source-db-path-missing",
+          detail: "No source SQLite database path is recorded for this hosted workspace yet.",
+          source_db_configured: false,
+          source_db_accessible: false,
+          workspace: {
+            id: "workspace-123",
+            account_id: "account-123",
+            name: "owner@sezzions.com Workspace",
+            source_db_path: null
+          },
+          inventory: null
+        })
       });
 
     render(<App />);
@@ -208,9 +243,26 @@ describe("App", () => {
       name: /authenticated workspace bootstrap/i
     });
     const hostedSection = hostedHeading.closest("section");
+    const importHeading = await screen.findByRole("heading", {
+      name: /hosted workspace import readiness/i
+    });
+    const importSection = importHeading.closest("section");
 
     expect(hostedSection).not.toBeNull();
+    expect(importSection).not.toBeNull();
     expect(within(hostedSection).getByText(/hosted account owner/i)).toBeInTheDocument();
     expect(within(hostedSection).getByText("owner@sezzions.com Workspace")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenNthCalledWith(
+        3,
+        "https://api.sezzions.test/v1/workspace/import-plan",
+        {
+          headers: {
+            Authorization: "Bearer access-token-123"
+          }
+        }
+      );
+    });
+    expect(within(importSection).getByText(/no source sqlite database path is recorded/i)).toBeInTheDocument();
   });
 });
