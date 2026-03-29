@@ -49,3 +49,17 @@ def test_session_endpoint_returns_authenticated_session() -> None:
         "audience": "authenticated",
         "role": "authenticated",
     }
+
+
+def test_session_endpoint_allows_cors_preflight_from_dev_site() -> None:
+    response = client.options(
+        "/v1/session",
+        headers={
+            "Origin": "https://dev.sezzions.com",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://dev.sezzions.com"

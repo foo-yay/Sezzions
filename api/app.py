@@ -3,12 +3,25 @@
 from __future__ import annotations
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from api.auth import AuthenticatedSession, get_authenticated_session
 from api.config import load_hosted_backend_config
 
 
 app = FastAPI(title="Sezzions Hosted API", version="0.1.0")
+
+cors_config = load_hosted_backend_config(required=False, require_db_password=False)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(cors_config.cors_allowed_origins) if cors_config else [
+        "https://dev.sezzions.com",
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/healthz")

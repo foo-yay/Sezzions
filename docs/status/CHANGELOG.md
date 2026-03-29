@@ -12,6 +12,37 @@ Rules:
 ## 2026-03-28
 
 ```yaml
+id: 2026-03-28-07
+type: fix
+areas: [api, auth, deployment, docs, tests]
+issue: 203
+summary: "Allow staged web-to-Render auth requests through API CORS handling"
+details: >
+  Fixed the immediate production blocker for the protected API handshake after
+  Google sign-in. The browser app on `dev.sezzions.com` was failing with
+  "failed to fetch" because the Render-hosted FastAPI service rejected CORS
+  preflight requests. Added CORS middleware to the hosted API, introduced
+  configurable allowed origins, and added focused tests to verify that the
+  staged web origin can preflight `GET /v1/session` successfully.
+
+  Implemented:
+  - FastAPI CORS middleware for staged web + local Vite origins
+  - configurable `CORS_ALLOWED_ORIGINS` parsing in hosted config
+  - API preflight coverage for the protected session endpoint
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/api/test_app.py tests/services/hosted/test_config.py
+files_changed:
+  - api/app.py
+  - api/config.py
+  - tests/api/test_app.py
+  - tests/services/hosted/test_config.py
+  - README.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-28-06
 type: feat
 areas: [api, auth, frontend, docs, tests]

@@ -136,6 +136,7 @@ Hosted backend foundation (Issue #203):
 - The first protected hosted API endpoint is `GET /v1/session`.
 - `GET /v1/session` must require a bearer token, verify the Supabase access token against Supabase JWKS, and return the authenticated session identity summary.
 - After successful Google sign-in, the web shell should call `GET /v1/session` with the Supabase access token and reflect the protected API handshake status in the UI.
+- The hosted API must permit CORS preflight and authenticated browser requests from `https://dev.sezzions.com` and `http://localhost:5173` by default, with environment override support for additional origins.
 
 ### Application Update Infrastructure (Issue #171, MVP)
 

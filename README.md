@@ -157,6 +157,7 @@ Current authenticated backend slice:
 - `GET /v1/session` is the first protected endpoint
 - it expects a Supabase bearer access token from the web client
 - the API verifies the token against Supabase JWKS before returning session identity details
+- the API must allow browser CORS requests from the staged web host and local Vite host
 
 Important boundary:
 - the current SQLite `users` table is a business-domain entity, not the hosted auth/account model
@@ -177,6 +178,9 @@ Frontend environment variables for hosted sign-in:
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 - `VITE_API_BASE_URL`
+
+Backend environment variables for browser access control:
+- `CORS_ALLOWED_ORIGINS` as a comma-separated list, if you need to override the defaults
 
 Example values are provided in `web/.env.example`.
 
