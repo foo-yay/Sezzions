@@ -87,3 +87,119 @@ def test_create_user_rejects_blank_name_without_persisting_record() -> None:
         engine.dispose()
 
     assert users == []
+
+
+def test_update_user_updates_workspace_owned_business_user() -> None:
+    engine, session_factory = _session_factory()
+    bootstrap_service = HostedAccountBootstrapService(session_factory)
+    service = HostedWorkspaceUserService(session_factory)
+
+    try:
+        bootstrap_service.bootstrap_account_workspace(
+            supabase_user_id="owner-123",
+            owner_email="owner@sezzions.com",
+        )
+        created_user = service.create_user(supabase_user_id="owner-123", name="Alice")
+
+        updated_user = service.update_user(
+            supabase_user_id="owner-123",
+            user_id=created_user.id,
+            name="Alice Updated",
+            email="alice@sezzions.com",
+            notes="Updated notes",
+            is_active=False,
+        )
+    finally:
+        engine.dispose()
+
+    assert updated_user.id == created_user.id
+    assert updated_user.name == "Alice Updated"
+    assert updated_user.email == "alice@sezzions.com"
+    assert updated_user.notes == "Updated notes"
+    assert updated_user.is_active is False
+
+
+def test_update_user_rejects_cross_workspace_access() -> None:
+    engine, session_factory = _session_factory()
+    bootstrap_service = HostedAccountBootstrapService(session_factory)
+    service = HostedWorkspaceUserService(session_factory)
+
+    try:
+        bootstrap_service.bootstrap_account_workspace(
+            supabase_user_id="owner-123",
+            owner_email="owner1@sezzions.com",
+        )
+        bootstrap_service.bootstrap_account_workspace(
+            supabase_user_id="owner-456",
+            owner_email="owner2@sezzions.com",
+        )
+        created_user = service.create_user(supabase_user_id="owner-456", name="Other Workspace User")
+
+        try:
+            service.update_user(
+                supabase_user_id="owner-123",
+                user_id=created_user.id,
+                name="Should Fail",
+                email=None,
+                notes=None,
+                is_active=True,
+            )
+        except LookupError as exc:
+            assert str(exc) == "Hosted user was not found in the authenticated workspace."
+        else:
+            raise AssertionError("Expected cross-workspace update to fail")
+    finally:
+        engine.dispose()
+
+
+def test_delete_user_removes_workspace_owned_business_user() -> None:
+    engine, session_factory = _session_factory()
+    bootstrap_service = HostedAccountBootstrapService(session_factory)
+    service = HostedWorkspaceUserService(session_factory)
+
+    try:
+        bootstrap_service.bootstrap_account_workspace(
+            supabase_user_id="owner-123",
+            owner_email="owner@sezzions.com",
+        )
+        created_user = service.create_user(supabase_user_id="owner-123", name="Delete Me")
+
+        service.delete_user(
+            supabase_user_id="owner-123",
+            user_id=created_user.id,
+        )
+
+        users = service.list_users(supabase_user_id="owner-123")
+    finally:
+        engine.dispose()
+
+    assert users == []
+
+
+def test_delete_user_rejects_cross_workspace_access() -> None:
+    engine, session_factory = _session_factory()
+    bootstrap_service = HostedAccountBootstrapService(session_factory)
+    service = HostedWorkspaceUserService(session_factory)
+
+    try:
+        bootstrap_service.bootstrap_account_workspace(
+            supabase_user_id="owner-123",
+            owner_email="owner1@sezzions.com",
+        )
+        bootstrap_service.bootstrap_account_workspace(
+            supabase_user_id="owner-456",
+            owner_email="owner2@sezzions.com",
+        )
+        created_user = service.create_user(supabase_user_id="owner-456", name="Other Workspace User")
+
+        try:
+            service.delete_user(
+                supabase_user_id="owner-123",
+                user_id=created_user.id,
+            )
+        except LookupError as exc:
+            assert str(exc) == "Hosted user was not found in the authenticated workspace."
+        else:
+            raise AssertionError("Expected cross-workspace delete to fail")
+    finally:
+        engine.dispose()

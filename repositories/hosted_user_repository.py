@@ -9,6 +9,17 @@ from services.hosted.persistence import HostedUserRecord
 
 
 class HostedUserRepository:
+    def get_by_id_and_workspace_id(self, session, *, user_id: str, workspace_id: str) -> HostedUser | None:
+        record = session.scalar(
+            select(HostedUserRecord).where(
+                HostedUserRecord.id == user_id,
+                HostedUserRecord.workspace_id == workspace_id,
+            )
+        )
+        if record is None:
+            return None
+        return self._record_to_model(record)
+
     def list_by_workspace_id(self, session, workspace_id: str) -> list[HostedUser]:
         records = session.scalars(
             select(HostedUserRecord)
@@ -37,6 +48,47 @@ class HostedUserRepository:
         session.add(record)
         session.flush()
         return self._record_to_model(record)
+
+    def update(
+        self,
+        session,
+        *,
+        user_id: str,
+        workspace_id: str,
+        name: str,
+        email: str | None,
+        notes: str | None,
+        is_active: bool,
+    ) -> HostedUser | None:
+        record = session.scalar(
+            select(HostedUserRecord).where(
+                HostedUserRecord.id == user_id,
+                HostedUserRecord.workspace_id == workspace_id,
+            )
+        )
+        if record is None:
+            return None
+
+        record.name = name
+        record.email = email
+        record.notes = notes
+        record.is_active = is_active
+        session.flush()
+        return self._record_to_model(record)
+
+    def delete(self, session, *, user_id: str, workspace_id: str) -> bool:
+        record = session.scalar(
+            select(HostedUserRecord).where(
+                HostedUserRecord.id == user_id,
+                HostedUserRecord.workspace_id == workspace_id,
+            )
+        )
+        if record is None:
+            return False
+
+        session.delete(record)
+        session.flush()
+        return True
 
     @staticmethod
     def _record_to_model(record: HostedUserRecord) -> HostedUser:
