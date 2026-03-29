@@ -12,6 +12,32 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-02
+type: fix
+areas: [api, database, docs, tests]
+issue: 210
+summary: "Require SSL on hosted Supabase Postgres connections"
+details: >
+  Fixed a live staged regression where authenticated hosted account bootstrap
+  reached the backend but failed with a server-side error while opening the
+  hosted Supabase Postgres connection. The hosted SQLAlchemy URL now includes
+  `sslmode=require` by default, with an env override for deployments that need
+  a different libpq SSL mode.
+
+  Implemented:
+  - default Supabase SQLAlchemy URLs now append `?sslmode=require`
+  - optional `SUPABASE_DB_SSLMODE` override for hosted deployments
+  - focused config tests covering the default and override cases
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/services/hosted/test_config.py tests/api/test_app.py
+files_changed:
+  - api/config.py
+  - tests/services/hosted/test_config.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-01
 type: feat
 areas: [api, auth, database, web, docs, tests]

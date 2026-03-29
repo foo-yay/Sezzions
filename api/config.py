@@ -22,6 +22,7 @@ class HostedBackendConfig:
     db_user: str = "postgres"
     db_name: str = "postgres"
     db_port: int = 5432
+    db_sslmode: str = "require"
     jwt_audience: str = "authenticated"
     google_auth_enabled: bool = False
     cors_allowed_origins: tuple[str, ...] = (
@@ -67,6 +68,7 @@ class HostedBackendConfig:
         return (
             "postgresql+psycopg2://"
             f"{self.db_user}:{encoded_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+            f"?sslmode={quote_plus(self.db_sslmode)}"
         )
 
 
@@ -86,6 +88,7 @@ def load_hosted_backend_config(
     - SUPABASE_DB_USER
     - SUPABASE_DB_NAME
     - SUPABASE_DB_PORT
+    - SUPABASE_DB_SSLMODE
     - SUPABASE_PUBLISHABLE_KEY
     - SUPABASE_ANON_KEY
     - SUPABASE_JWT_AUDIENCE
@@ -109,6 +112,7 @@ def load_hosted_backend_config(
     db_user = env_map.get("SUPABASE_DB_USER", "postgres").strip() or "postgres"
     db_name = env_map.get("SUPABASE_DB_NAME", "postgres").strip() or "postgres"
     db_port_raw = env_map.get("SUPABASE_DB_PORT", "5432").strip() or "5432"
+    db_sslmode = env_map.get("SUPABASE_DB_SSLMODE", "require").strip() or "require"
     supabase_publishable_key = (
         env_map.get("SUPABASE_PUBLISHABLE_KEY", "").strip()
         or env_map.get("SUPABASE_ANON_KEY", "").strip()
@@ -143,6 +147,7 @@ def load_hosted_backend_config(
         db_user=db_user,
         db_name=db_name,
         db_port=db_port,
+        db_sslmode=db_sslmode,
         jwt_audience=jwt_audience,
         google_auth_enabled=google_auth_enabled,
         cors_allowed_origins=cors_allowed_origins,
