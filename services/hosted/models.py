@@ -36,3 +36,36 @@ class HostedWorkspace:
         self.name = self.name.strip()
         if not self.name:
             raise ValueError("Hosted workspace name is required.")
+
+
+@dataclass
+class HostedUser:
+    """Business-domain user/player owned by a hosted workspace."""
+
+    name: str
+    workspace_id: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+    is_active: bool = True
+    id: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("User name is required")
+
+        if self.email is not None:
+            self.email = self.email.strip() or None
+
+        if self.notes is not None:
+            self.notes = self.notes.strip() or None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "workspace_id": self.workspace_id,
+            "name": self.name,
+            "email": self.email,
+            "notes": self.notes,
+            "is_active": self.is_active,
+        }

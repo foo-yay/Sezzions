@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi import Body, Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from api.auth import AuthenticatedSession, get_authenticated_session
 from api.config import HostedConfigurationError, load_hosted_backend_config
@@ -12,12 +13,19 @@ from services.hosted.persistence import get_hosted_session_factory
 from services.hosted.uploaded_sqlite_inspection_service import (
     HostedUploadedSQLiteInspectionService,
 )
+from services.hosted.workspace_user_service import HostedWorkspaceUserService
 from services.hosted.workspace_import_planning_service import (
     HostedWorkspaceImportPlanningService,
 )
 
 
 app = FastAPI(title="Sezzions Hosted API", version="0.1.0")
+
+
+class HostedWorkspaceUserCreateRequest(BaseModel):
+    name: str
+    email: str | None = None
+    notes: str | None = None
 
 cors_config = load_hosted_backend_config(required=False, require_db_password=False)
 app.add_middleware(
@@ -50,6 +58,16 @@ def get_hosted_workspace_import_planning_service() -> HostedWorkspaceImportPlann
 
     session_factory = get_hosted_session_factory(config.sqlalchemy_url)
     return HostedWorkspaceImportPlanningService(session_factory)
+
+
+def get_hosted_workspace_user_service() -> HostedWorkspaceUserService:
+    try:
+        config = load_hosted_backend_config(require_db_password=True)
+    except HostedConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    session_factory = get_hosted_session_factory(config.sqlalchemy_url)
+    return HostedWorkspaceUserService(session_factory)
 
 
 def get_hosted_uploaded_sqlite_inspection_service() -> HostedUploadedSQLiteInspectionService:
@@ -96,6 +114,42 @@ def account_bootstrap(
         owner_email=session.email,
     )
     return summary.as_dict() if hasattr(summary, "as_dict") else summary
+
+
+@app.get("/v1/workspace/users")
+def workspace_users_list(
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceUserService = Depends(get_hosted_workspace_user_service),
+) -> dict[str, object]:
+    try:
+        users = service.list_users(supabase_user_id=session.user_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return {
+        "users": [user.as_dict() if hasattr(user, "as_dict") else user for user in users],
+    }
+
+
+@app.post("/v1/workspace/users")
+def workspace_users_create(
+    payload: HostedWorkspaceUserCreateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceUserService = Depends(get_hosted_workspace_user_service),
+) -> dict[str, object]:
+    try:
+        user = service.create_user(
+            supabase_user_id=session.user_id,
+            name=payload.name,
+            email=payload.email,
+            notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return user.as_dict() if hasattr(user, "as_dict") else user
 
 
 @app.get("/v1/workspace/import-plan")

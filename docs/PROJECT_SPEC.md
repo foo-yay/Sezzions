@@ -143,6 +143,12 @@ Hosted backend foundation (Issue #203):
 - Hosted workspace bootstrap must create one default workspace per hosted account when none exists yet, using `<owner email> Workspace` as the initial display name.
 - The hosted API persists account/workspace bootstrap state through the configured Supabase PostgreSQL SQLAlchemy connection.
 - After the protected session handshake succeeds, the web shell should call `POST /v1/account/bootstrap` with the same Supabase access token and render the hosted account owner, auth provider, workspace name, and bootstrap status in the UI.
+- The first hosted business-domain data slice is a workspace-owned users directory exposed through `GET /v1/workspace/users` and `POST /v1/workspace/users`.
+- Hosted workspace users are business-domain players managed by the account owner and are distinct from the hosted auth/account identity.
+- A single hosted account/workspace may manage multiple hosted workspace users such as `fooyay` and `mrs. fooyay`, and those managed users are the future owners of cards, purchases, redemptions, sessions, and related accounting records.
+- Hosted workspace users must be keyed by `workspace_id`, not by Supabase auth user id.
+- `GET /v1/workspace/users` and `POST /v1/workspace/users` must require a bearer token, resolve the authenticated user's hosted workspace, and only list/create business-domain users within that workspace.
+- Creating a hosted workspace user must require a non-blank name, may accept optional email and notes, and must fail safely without partial persistence when validation fails.
 - The next hosted planning slice after bootstrap is `GET /v1/workspace/import-plan`.
 - `GET /v1/workspace/import-plan` must require a bearer token and return a read-only import-planning summary for the authenticated user's hosted workspace.
 - The import-planning summary must include workspace identity, whether a source SQLite path is recorded, whether that path is accessible to the API process, a human-readable planning detail message, and any read-only SQLite inventory data that can be inspected safely.

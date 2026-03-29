@@ -12,6 +12,40 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-08
+type: feat
+areas: [api, database, services, docs, tests]
+issue: 220
+summary: "Add a hosted workspace-managed users foundation"
+details: >
+  Added the first hosted business-domain data slice after account/workspace
+  bootstrap: workspace-owned managed users. This preserves the product model
+  where an authenticated account owner is separate from the players they manage
+  inside a workspace, giving the hosted path a stable parent entity for later
+  cards, transactions, and import work.
+
+  Implemented:
+  - `hosted_users` hosted persistence table keyed by `workspace_id`
+  - workspace-scoped hosted user repository and service for create/list flows
+  - protected `GET /v1/workspace/users` and `POST /v1/workspace/users` endpoints
+  - focused service and API tests covering workspace isolation and validation
+
+  Validation:
+  - pytest -q tests/services/hosted/test_workspace_user_service.py tests/api/test_workspace_users.py
+files_changed:
+  - api/app.py
+  - repositories/hosted_user_repository.py
+  - services/hosted/__init__.py
+  - services/hosted/models.py
+  - services/hosted/persistence.py
+  - services/hosted/workspace_user_service.py
+  - tests/api/test_workspace_users.py
+  - tests/services/hosted/test_workspace_user_service.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-07
 type: fix
 areas: [web, auth, docs, tests]

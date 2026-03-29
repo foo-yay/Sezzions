@@ -5,6 +5,7 @@ __all__ = [
 	"HostedBootstrapSummary",
 	"HostedUploadedSQLiteInspectionService",
 	"HostedUploadedSQLiteInspectionSummary",
+	"HostedWorkspaceUserService",
 	"HostedWorkspaceImportPlanningService",
 	"HostedWorkspaceImportPlanningSummary",
 ]
@@ -31,6 +32,10 @@ def __getattr__(name: str):
 			"HostedUploadedSQLiteInspectionService": HostedUploadedSQLiteInspectionService,
 			"HostedUploadedSQLiteInspectionSummary": HostedUploadedSQLiteInspectionSummary,
 		}[name]
+	if name == "HostedWorkspaceUserService":
+		from services.hosted.workspace_user_service import HostedWorkspaceUserService
+
+		return HostedWorkspaceUserService
 	if name in {"HostedWorkspaceImportPlanningService", "HostedWorkspaceImportPlanningSummary"}:
 		from services.hosted.workspace_import_planning_service import (
 			HostedWorkspaceImportPlanningService,
