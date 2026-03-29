@@ -18,6 +18,7 @@ class HostedBackendConfig:
 
     supabase_url: str
     supabase_db_password: Optional[str] = None
+    sqlalchemy_url_override: Optional[str] = None
     supabase_publishable_key: Optional[str] = None
     db_user: str = "postgres"
     db_name: str = "postgres"
@@ -60,6 +61,8 @@ class HostedBackendConfig:
 
     @property
     def sqlalchemy_url(self) -> str:
+        if self.sqlalchemy_url_override:
+            return self.sqlalchemy_url_override
         if not self.supabase_db_password:
             raise HostedConfigurationError(
                 "SUPABASE_DB_PASSWORD is required for hosted database access."
@@ -82,9 +85,11 @@ def load_hosted_backend_config(
 
     Required environment variables:
     - SUPABASE_URL
-    - SUPABASE_DB_PASSWORD
+    - SUPABASE_DB_PASSWORD or SUPABASE_SQLALCHEMY_URL / DATABASE_URL
 
     Optional:
+    - SUPABASE_SQLALCHEMY_URL
+    - DATABASE_URL
     - SUPABASE_DB_USER
     - SUPABASE_DB_NAME
     - SUPABASE_DB_PORT
@@ -98,14 +103,19 @@ def load_hosted_backend_config(
     env_map = env or os.environ
     supabase_url = env_map.get("SUPABASE_URL", "").strip()
     db_password = env_map.get("SUPABASE_DB_PASSWORD", "").strip()
+    sqlalchemy_url_override = (
+        env_map.get("SUPABASE_SQLALCHEMY_URL", "").strip()
+        or env_map.get("DATABASE_URL", "").strip()
+        or None
+    )
 
-    if not supabase_url and not db_password and not required:
+    if not supabase_url and not db_password and not sqlalchemy_url_override and not required:
         return None
 
-    if not supabase_url or (require_db_password and not db_password):
+    if not supabase_url or (require_db_password and not db_password and not sqlalchemy_url_override):
         if required:
             raise HostedConfigurationError(
-                "SUPABASE_URL and SUPABASE_DB_PASSWORD must both be set."
+                "SUPABASE_URL and either SUPABASE_DB_PASSWORD or SUPABASE_SQLALCHEMY_URL / DATABASE_URL must be set."
             )
         return None
 
@@ -143,6 +153,7 @@ def load_hosted_backend_config(
     return HostedBackendConfig(
         supabase_url=supabase_url,
         supabase_db_password=db_password or None,
+        sqlalchemy_url_override=sqlalchemy_url_override,
         supabase_publishable_key=supabase_publishable_key,
         db_user=db_user,
         db_name=db_name,

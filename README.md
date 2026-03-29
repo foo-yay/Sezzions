@@ -168,11 +168,15 @@ Important boundary:
 Environment variables expected by the hosted foundation:
 - `SUPABASE_URL`
 - `SUPABASE_DB_PASSWORD`
+- `SUPABASE_SQLALCHEMY_URL` or `DATABASE_URL` (optional override for hosted deployments; preferred when your platform needs a pooler or IPv4-safe connection string)
 - `SUPABASE_DB_USER` (optional, defaults to `postgres`)
 - `SUPABASE_DB_NAME` (optional, defaults to `postgres`)
 - `SUPABASE_DB_PORT` (optional, defaults to `5432`)
+- `SUPABASE_DB_SSLMODE` (optional, defaults to `require`)
 - `SUPABASE_JWT_AUDIENCE` (optional, defaults to `authenticated`)
 - `SUPABASE_GOOGLE_AUTH_ENABLED` (optional, `true`/`false`)
+
+If `SUPABASE_SQLALCHEMY_URL` or `DATABASE_URL` is set, the API uses that value directly for hosted Postgres access instead of constructing a URL from the individual `SUPABASE_DB_*` parts. This is the safer option on platforms that cannot reach Supabase's direct IPv6 database host and need the Supabase pooler connection string instead.
 
 Example values are provided in `api/.env.example`.
 
