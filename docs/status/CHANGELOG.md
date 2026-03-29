@@ -9,6 +9,46 @@ Rules:
 
 ---
 
+## 2026-03-29
+
+```yaml
+id: 2026-03-29-01
+type: feat
+areas: [api, auth, database, web, docs, tests]
+issue: 210
+summary: "Bootstrap a hosted account and workspace after authenticated sign-in"
+details: >
+  Added the first persisted hosted product state after the protected Supabase
+  session handshake. The hosted API now exposes `POST /v1/account/bootstrap`,
+  which idempotently creates or returns the hosted account/workspace for the
+  authenticated Supabase user. The web shell now calls that endpoint after the
+  protected session handshake succeeds and renders the hosted owner/workspace
+  summary in the UI.
+
+  Implemented:
+  - SQLAlchemy-backed hosted account/workspace persistence records
+  - idempotent hosted account bootstrap service and protected API endpoint
+  - web-shell bootstrap request and hosted summary rendering after sign-in
+  - focused service, API, and web tests for the new authenticated slice
+
+  Validation:
+  - PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/services/hosted/test_account_bootstrap_service.py tests/api/test_app.py
+  - cd web && npm test -- --run App.test.jsx
+files_changed:
+  - api/app.py
+  - repositories/hosted_account_repository.py
+  - repositories/hosted_workspace_repository.py
+  - services/hosted/__init__.py
+  - services/hosted/account_bootstrap_service.py
+  - services/hosted/persistence.py
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - tests/api/test_app.py
+  - tests/services/hosted/test_account_bootstrap_service.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
 ## 2026-03-28
 
 ```yaml

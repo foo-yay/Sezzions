@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from api.auth import AuthenticatedSession, get_authenticated_session
-from api.app import app
+from api.app import app, get_hosted_account_bootstrap_service
 
 
 client = TestClient(app)
@@ -63,3 +63,67 @@ def test_session_endpoint_allows_cors_preflight_from_dev_site() -> None:
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "https://dev.sezzions.com"
+
+
+def test_account_bootstrap_endpoint_returns_hosted_summary() -> None:
+    class StubBootstrapService:
+        def bootstrap_account_workspace(self, *, supabase_user_id: str, owner_email: str | None):
+            return type(
+                "Summary",
+                (),
+                {
+                    "as_dict": lambda self: {
+                        "created_account": True,
+                        "created_workspace": True,
+                        "account": {
+                            "id": "account-123",
+                            "supabase_user_id": supabase_user_id,
+                            "owner_email": owner_email,
+                            "auth_provider": "google",
+                        },
+                        "workspace": {
+                            "id": "workspace-123",
+                            "account_id": "account-123",
+                            "name": "owner@sezzions.com Workspace",
+                            "source_db_path": None,
+                        },
+                    }
+                },
+            )()
+
+    app.dependency_overrides[get_authenticated_session] = lambda: AuthenticatedSession(
+        user_id="user-123",
+        email="owner@sezzions.com",
+        audience="authenticated",
+        role="authenticated",
+    )
+    app.dependency_overrides[get_hosted_account_bootstrap_service] = lambda: StubBootstrapService()
+
+    try:
+        response = client.post("/v1/account/bootstrap")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "created_account": True,
+        "created_workspace": True,
+        "account": {
+            "id": "account-123",
+            "supabase_user_id": "user-123",
+            "owner_email": "owner@sezzions.com",
+            "auth_provider": "google",
+        },
+        "workspace": {
+            "id": "workspace-123",
+            "account_id": "account-123",
+            "name": "owner@sezzions.com Workspace",
+            "source_db_path": None,
+        },
+    }
+
+
+def test_account_bootstrap_endpoint_requires_bearer_auth() -> None:
+    response = client.post("/v1/account/bootstrap")
+
+    assert response.status_code == 401

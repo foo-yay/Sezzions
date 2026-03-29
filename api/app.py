@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.auth import AuthenticatedSession, get_authenticated_session
-from api.config import load_hosted_backend_config
+from api.config import HostedConfigurationError, load_hosted_backend_config
+from services.hosted.account_bootstrap_service import HostedAccountBootstrapService
+from services.hosted.persistence import get_hosted_session_factory
 
 
 app = FastAPI(title="Sezzions Hosted API", version="0.1.0")
@@ -19,9 +21,19 @@ app.add_middleware(
         "http://localhost:5173",
     ],
     allow_credentials=True,
-    allow_methods=["GET", "OPTIONS"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+def get_hosted_account_bootstrap_service() -> HostedAccountBootstrapService:
+    try:
+        config = load_hosted_backend_config(require_db_password=True)
+    except HostedConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    session_factory = get_hosted_session_factory(config.sqlalchemy_url)
+    return HostedAccountBootstrapService(session_factory)
 
 
 @app.get("/healthz")
@@ -52,3 +64,15 @@ def session_summary(
         "audience": session.audience,
         "role": session.role,
     }
+
+
+@app.post("/v1/account/bootstrap")
+def account_bootstrap(
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedAccountBootstrapService = Depends(get_hosted_account_bootstrap_service),
+) -> dict[str, object]:
+    summary = service.bootstrap_account_workspace(
+        supabase_user_id=session.user_id,
+        owner_email=session.email,
+    )
+    return summary.as_dict() if hasattr(summary, "as_dict") else summary

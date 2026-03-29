@@ -41,23 +41,74 @@ const launchPlan = [
 
 export default function App() {
   const [sessionEmail, setSessionEmail] = useState(null);
+  const [hostedSummary, setHostedSummary] = useState(null);
   const [authMessage, setAuthMessage] = useState(
     supabaseConfigured ? "Sign in with Google to activate the hosted web shell." : supabaseConfigError
   );
   const [apiStatus, setApiStatus] = useState(
     "Protected API handshake will run after Google sign-in."
   );
+  const [hostedStatus, setHostedStatus] = useState(
+    "Hosted account bootstrap will run after the protected API handshake."
+  );
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || null;
   const supabaseApiKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || null;
+
+  async function syncHostedBootstrap(nextSession) {
+    if (!nextSession?.access_token) {
+      setHostedSummary(null);
+      setHostedStatus("Hosted account bootstrap will run after the protected API handshake.");
+      return;
+    }
+
+    if (!apiBaseUrl) {
+      setHostedSummary(null);
+      setHostedStatus("Set VITE_API_BASE_URL to enable hosted account bootstrap.");
+      return;
+    }
+
+    setHostedStatus("Bootstrapping the hosted Sezzions account workspace...");
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/v1/account/bootstrap`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${nextSession.access_token}`,
+          ...(supabaseApiKey ? { apikey: supabaseApiKey } : {})
+        }
+      });
+
+      if (!response.ok) {
+        setHostedSummary(null);
+        setHostedStatus(`Hosted account bootstrap failed (${response.status}).`);
+        return;
+      }
+
+      const data = await response.json();
+      setHostedSummary(data);
+      setHostedStatus(
+        data.created_account || data.created_workspace
+          ? "Hosted account workspace created and ready."
+          : "Hosted account workspace ready."
+      );
+    } catch (error) {
+      setHostedSummary(null);
+      setHostedStatus(error instanceof Error ? error.message : "Hosted account bootstrap failed.");
+    }
+  }
 
   async function syncProtectedApi(nextSession) {
     if (!nextSession?.access_token) {
       setApiStatus("Protected API handshake will run after Google sign-in.");
+      setHostedSummary(null);
+      setHostedStatus("Hosted account bootstrap will run after the protected API handshake.");
       return;
     }
 
     if (!apiBaseUrl) {
       setApiStatus("Set VITE_API_BASE_URL to enable the protected API handshake.");
+      setHostedSummary(null);
+      setHostedStatus("Set VITE_API_BASE_URL to enable hosted account bootstrap.");
       return;
     }
 
@@ -80,7 +131,10 @@ export default function App() {
       setApiStatus(
         `Protected API handshake ready for ${data.email || data.user_id}.`
       );
+      await syncHostedBootstrap(nextSession);
     } catch (error) {
+      setHostedSummary(null);
+      setHostedStatus("Hosted account bootstrap will run after the protected API handshake.");
       setApiStatus(error instanceof Error ? error.message : "Protected API handshake failed.");
     }
   }
@@ -161,8 +215,10 @@ export default function App() {
     }
 
     setSessionEmail(null);
+    setHostedSummary(null);
     setAuthMessage("Signed out. Sign in with Google to reactivate the hosted web shell.");
     setApiStatus("Protected API handshake will run after Google sign-in.");
+    setHostedStatus("Hosted account bootstrap will run after the protected API handshake.");
   }
 
   return (
@@ -207,6 +263,10 @@ export default function App() {
             <div>
               <dt>API handshake</dt>
               <dd>{apiStatus}</dd>
+            </div>
+            <div>
+              <dt>Hosted bootstrap</dt>
+              <dd>{hostedStatus}</dd>
             </div>
           </dl>
           {sessionEmail ? (
@@ -262,6 +322,35 @@ export default function App() {
             After Google sign-in is live, the next slice is a protected call into the Render API
             and then the first controlled import of desktop data from the local SQLite source.
           </p>
+        </section>
+
+        <section className="panel launch-panel">
+          <div className="panel-head">
+            <p className="panel-kicker">Hosted account</p>
+            <h2>Authenticated workspace bootstrap</h2>
+          </div>
+          {hostedSummary ? (
+            <dl className="aside-meta">
+              <div>
+                <dt>Hosted account owner</dt>
+                <dd>{hostedSummary.account.owner_email}</dd>
+              </div>
+              <div>
+                <dt>Auth provider</dt>
+                <dd>{hostedSummary.account.auth_provider}</dd>
+              </div>
+              <div>
+                <dt>Workspace</dt>
+                <dd>{hostedSummary.workspace.name}</dd>
+              </div>
+              <div>
+                <dt>Bootstrap result</dt>
+                <dd>{hostedStatus}</dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="launch-note">{hostedStatus}</p>
+          )}
         </section>
       </main>
     </div>
