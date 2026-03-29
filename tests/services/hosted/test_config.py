@@ -32,6 +32,21 @@ def test_load_hosted_backend_config_allows_sslmode_override() -> None:
     assert config.sqlalchemy_url.endswith("?sslmode=verify-full")
 
 
+def test_load_hosted_backend_config_allows_sqlalchemy_url_override() -> None:
+    config = load_hosted_backend_config(
+        {
+            "SUPABASE_URL": "https://nztovvajnrokzsetliwz.supabase.co",
+            "DATABASE_URL": "postgresql+psycopg2://postgres.nztovvajnrokzsetliwz:secret@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require",
+        }
+    )
+
+    assert config.sqlalchemy_url_override is not None
+    assert config.sqlalchemy_url == (
+        "postgresql+psycopg2://postgres.nztovvajnrokzsetliwz:secret@"
+        "aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require"
+    )
+
+
 def test_load_hosted_backend_config_can_skip_when_not_required() -> None:
     config = load_hosted_backend_config({}, required=False)
 

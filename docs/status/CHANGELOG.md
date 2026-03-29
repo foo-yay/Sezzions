@@ -12,6 +12,33 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-03
+type: fix
+areas: [api, database, docs, tests]
+issue: 210
+summary: "Allow hosted Postgres URL overrides for IPv4-safe deployments"
+details: >
+  Followed up on the staged hosted bootstrap 500 after Render logs showed the
+  API was attempting to reach the direct Supabase database host over IPv6,
+  which was unreachable from the deployed service. The hosted backend now
+  accepts `SUPABASE_SQLALCHEMY_URL` or `DATABASE_URL` so deployments can use a
+  Supabase pooler or other platform-safe Postgres connection string directly.
+
+  Implemented:
+  - direct SQLAlchemy URL override support for hosted database access
+  - focused config coverage for the override path
+  - README guidance for using a pooler/IPv4-safe connection string on hosted platforms
+
+  Validation:
+  - pending deploy verification on Render using a Supabase pooler URL override
+files_changed:
+  - api/config.py
+  - tests/services/hosted/test_config.py
+  - README.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-02
 type: fix
 areas: [api, database, docs, tests]
