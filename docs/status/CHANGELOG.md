@@ -12,6 +12,34 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-12
+type: rollback
+areas: [web, api, docs, tests, ci]
+issue: 225
+summary: "Rollback the hosted Users slice from main after a branch-target mistake"
+details: >
+  Reverted the hosted Users slice and related hosted web/backend foundation from
+  `main` after PR #227 was merged to the wrong branch. The intended integration
+  target for this line of work is `develop`, so `main` was restored while the
+  same feature work was prepared to continue on the correct branch.
+
+  Notes:
+  - preserves the earlier changelog entries as historical record instead of
+    deleting them
+  - removes the mistakenly merged hosted implementation from `main`
+  - retargets the hosted Users slice back to `develop`
+files_changed:
+  - api/
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+  - repositories/hosted_*.py
+  - services/hosted/
+  - tests/api/
+  - tests/services/hosted/
+  - web/
+```
+
+```yaml
 id: 2026-03-29-11
 type: feat
 areas: [web, api, docs, tests]
