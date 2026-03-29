@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import Body, Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi import Body, Depends, FastAPI, File, HTTPException, Path, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -27,6 +27,13 @@ class HostedWorkspaceUserCreateRequest(BaseModel):
     email: str | None = None
     notes: str | None = None
 
+
+class HostedWorkspaceUserUpdateRequest(BaseModel):
+    name: str
+    email: str | None = None
+    notes: str | None = None
+    is_active: bool = True
+
 cors_config = load_hosted_backend_config(required=False, require_db_password=False)
 app.add_middleware(
     CORSMiddleware,
@@ -35,7 +42,7 @@ app.add_middleware(
         "http://localhost:5173",
     ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -150,6 +157,47 @@ def workspace_users_create(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return user.as_dict() if hasattr(user, "as_dict") else user
+
+
+@app.patch("/v1/workspace/users/{user_id}")
+def workspace_users_update(
+    user_id: str = Path(...),
+    payload: HostedWorkspaceUserUpdateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceUserService = Depends(get_hosted_workspace_user_service),
+) -> dict[str, object]:
+    try:
+        user = service.update_user(
+            supabase_user_id=session.user_id,
+            user_id=user_id,
+            name=payload.name,
+            email=payload.email,
+            notes=payload.notes,
+            is_active=payload.is_active,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return user.as_dict() if hasattr(user, "as_dict") else user
+
+
+@app.delete("/v1/workspace/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def workspace_users_delete(
+    user_id: str = Path(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceUserService = Depends(get_hosted_workspace_user_service),
+) -> Response:
+    try:
+        service.delete_user(
+            supabase_user_id=session.user_id,
+            user_id=user_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/v1/workspace/import-plan")
