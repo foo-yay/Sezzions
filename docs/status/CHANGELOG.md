@@ -12,6 +12,46 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-11
+type: feat
+areas: [web, api, docs, tests]
+issue: 225
+summary: "Port the first real hosted Setup Users slice"
+details: >
+  Replaced the signed-in hosted web control tower with the first real app shell
+  and ported the Setup Users workflow onto the hosted backend. The browser app
+  now boots into a dark hosted workspace shell after bootstrap, loads real
+  workspace-owned users, and supports add/edit flows through the hosted users
+  API instead of fake client-side CRUD state.
+
+  Implemented:
+  - dark hosted app shell with Setup navigation and a real Users surface
+  - desktop-inspired Users tools: search, refresh, CSV export, and modal-based
+    add/view/edit/delete workflows with required-field validation
+  - hosted `PATCH /v1/workspace/users/{user_id}` support for editing and
+    active-status changes within the authenticated workspace
+  - hosted `DELETE /v1/workspace/users/{user_id}` support and an allowlist-safe
+    Google OAuth redirect flow that preserves the hash-route return target locally
+  - focused frontend tests for signed-in shell rendering, create/edit flows,
+    and preserved migration upload behavior
+
+  Validation:
+  - pytest -q tests/services/hosted/test_workspace_user_service.py tests/api/test_workspace_users.py
+  - cd web && npm test -- --run
+files_changed:
+  - api/app.py
+  - repositories/hosted_user_repository.py
+  - services/hosted/workspace_user_service.py
+  - tests/api/test_workspace_users.py
+  - tests/services/hosted/test_workspace_user_service.py
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - web/src/styles.css
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-10
 type: feat
 areas: [api, database, docs, tests]
