@@ -12,6 +12,37 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-14
+type: feat
+areas: [web, docs, tests]
+issue: 225
+summary: "Reshape the hosted shell around desktop-style tabs and compact status"
+details: >
+  Reworked the signed-in hosted web shell to better match the original desktop
+  app structure. The hosted experience now uses top-level primary tabs with
+  Setup sub-tabs beneath them, moves account ownership and sign-out actions into
+  a dedicated Account section, and collapses the hosted operational checks into
+  a small status affordance that opens a modal with green/orange/red health
+  feedback. The Users view dialog now also restores direct Edit access from the
+  view state to match the desktop workflow more closely.
+
+  Implemented:
+  - top-tab hosted shell with separate Setup and Account primary sections
+  - compact hosted status indicator and modal-based detailed health view
+  - desktop-style View User actions including Edit from the view dialog
+  - updated frontend coverage for the new shell structure and view-dialog flow
+
+  Validation:
+  - cd web && npm test
+files_changed:
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - web/src/styles.css
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-13
 type: fix
 areas: [api, database, tests]

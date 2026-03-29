@@ -191,7 +191,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("owner@sezzions.com")).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hosted status/i })).toBeInTheDocument();
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith("https://api.sezzions.test/v1/session", {
         headers: {
@@ -199,7 +199,9 @@ describe("App", () => {
         }
       });
     });
-    expect(screen.getByText("owner@sezzions.com Workspace")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: /account/i }));
+    expect(screen.getAllByText("owner@sezzions.com Workspace").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
   });
 
   it("renders the hosted app shell and users surface after bootstrap", async () => {
@@ -297,8 +299,9 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: /hosted workspace/i })).toBeInTheDocument();
     const usersSections = await screen.findAllByRole("heading", { name: /^users$/i });
     expect(usersSections).toHaveLength(2);
-    expect(screen.getByText("owner")).toBeInTheDocument();
-    expect(screen.getByText("active")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /setup/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /account/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hosted status/i })).toBeInTheDocument();
     expect(screen.getByText("Elliot")).toBeInTheDocument();
     await waitFor(() => {
       expect(global.fetch).toHaveBeenNthCalledWith(
@@ -355,10 +358,99 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: /hosted workspace/i })).toBeInTheDocument();
     expect(screen.getByText("owner@sezzions.com")).toBeInTheDocument();
-    expect(screen.getByText(/could not reach the hosted api/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /retry hosted connection/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /add user/i })).toBeDisabled();
-    expect(screen.getByText(/sign in to load hosted users|hosted users will load after workspace bootstrap/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /hosted status/i }));
+    expect(screen.getByText(/could not reach the hosted api/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /connection health/i })).toBeInTheDocument();
+  });
+
+  it("lets the user edit directly from the view user dialog", async () => {
+    authMocks.getSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: "access-token-123",
+          user: {
+            email: "owner@sezzions.com"
+          }
+        }
+      },
+      error: null
+    });
+
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          authenticated: true,
+          user_id: "user-123",
+          email: "owner@sezzions.com",
+          audience: "authenticated",
+          role: "authenticated"
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          created_account: true,
+          created_workspace: true,
+          account: {
+            id: "account-123",
+            supabase_user_id: "user-123",
+            owner_email: "owner@sezzions.com",
+            auth_provider: "google",
+            role: "owner",
+            status: "active"
+          },
+          workspace: {
+            id: "workspace-123",
+            account_id: "account-123",
+            name: "owner@sezzions.com Workspace",
+            source_db_path: null
+          }
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          status: "source-db-path-missing",
+          detail: "No source SQLite database path is recorded for this hosted workspace yet.",
+          source_db_configured: false,
+          source_db_accessible: false,
+          workspace: {
+            id: "workspace-123",
+            account_id: "account-123",
+            name: "owner@sezzions.com Workspace",
+            source_db_path: null
+          },
+          inventory: null
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          users: [
+            {
+              id: "user-1",
+              name: "Elliot",
+              email: "elliot@sezzions.com",
+              notes: "Primary operator",
+              is_active: true
+            }
+          ]
+        })
+      });
+
+    render(<App />);
+
+    const elliotCell = await screen.findByText("Elliot");
+    fireEvent.doubleClick(elliotCell);
+
+    expect(await screen.findByRole("heading", { name: /view user/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /edit user/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /edit user/i }));
+    expect(await screen.findByRole("heading", { name: /edit user/i })).toBeInTheDocument();
   });
 
   it("creates a hosted user from the users modal", async () => {
