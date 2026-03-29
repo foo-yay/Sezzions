@@ -127,7 +127,7 @@ describe("App", () => {
       expect(authMocks.signInWithOAuth).toHaveBeenCalledWith({
         provider: "google",
         options: {
-          redirectTo: window.location.origin
+          redirectTo: window.location.href
         }
       });
     });

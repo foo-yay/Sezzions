@@ -12,6 +12,32 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-07
+type: fix
+areas: [web, auth, docs, tests]
+issue: 216
+summary: "Preserve the migration hash route across navigation and sign-in"
+details: >
+  Fixed the staged migration upload page failing to stay visible during normal
+  navigation and after Google sign-in. The web shell now reacts to hash-route
+  changes client-side and preserves the full current URL as the Supabase OAuth
+  redirect target so `/#/migration` survives the auth round-trip.
+
+  Implemented:
+  - reactive hash-route page selection in the staged web shell
+  - Google OAuth redirect now preserves the full current URL
+  - focused web test updates for the route/auth behavior
+
+  Validation:
+  - cd web && npm test -- --run src/App.test.jsx
+files_changed:
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-06
 type: fix
 areas: [web, docs, tests]

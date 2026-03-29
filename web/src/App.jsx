@@ -39,10 +39,14 @@ const launchPlan = [
   "Port feature areas incrementally without rewriting accounting rules twice."
 ];
 
-export default function App() {
+function readCurrentRoute() {
   const hashRoute = window.location.hash.replace(/^#/, "").replace(/\/+$/, "") || "";
   const pathRoute = window.location.pathname.replace(/\/+$/, "") || "/";
-  const currentRoute = hashRoute || pathRoute;
+  return hashRoute || pathRoute;
+}
+
+export default function App() {
+  const [currentRoute, setCurrentRoute] = useState(() => readCurrentRoute());
   const isMigrationPage = currentRoute === "/migration";
   const [sessionEmail, setSessionEmail] = useState(null);
   const [hostedSummary, setHostedSummary] = useState(null);
@@ -261,6 +265,20 @@ export default function App() {
   }
 
   useEffect(() => {
+    function syncRoute() {
+      setCurrentRoute(readCurrentRoute());
+    }
+
+    window.addEventListener("hashchange", syncRoute);
+    window.addEventListener("popstate", syncRoute);
+
+    return () => {
+      window.removeEventListener("hashchange", syncRoute);
+      window.removeEventListener("popstate", syncRoute);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!supabase) {
       return undefined;
     }
@@ -315,7 +333,7 @@ export default function App() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: window.location.origin
+        redirectTo: window.location.href
       }
     });
 
