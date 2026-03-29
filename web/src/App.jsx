@@ -40,9 +40,16 @@ const launchPlan = [
 ];
 
 export default function App() {
+  const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
+  const isMigrationPage = currentPath === "/migration";
   const [sessionEmail, setSessionEmail] = useState(null);
   const [hostedSummary, setHostedSummary] = useState(null);
   const [importPlanSummary, setImportPlanSummary] = useState(null);
+  const [uploadSummary, setUploadSummary] = useState(null);
+  const [uploadStatus, setUploadStatus] = useState(
+    "Upload a SQLite database to inspect it for hosted migration planning."
+  );
+  const [selectedUploadFile, setSelectedUploadFile] = useState(null);
   const [authMessage, setAuthMessage] = useState(
     supabaseConfigured ? "Sign in with Google to activate the hosted web shell." : supabaseConfigError
   );
@@ -57,6 +64,61 @@ export default function App() {
   );
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || null;
   const supabaseApiKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || null;
+
+  async function handleMigrationUpload() {
+    if (!selectedUploadFile) {
+      setUploadSummary(null);
+      setUploadStatus("Choose a SQLite database file before uploading.");
+      return;
+    }
+
+    if (!apiBaseUrl) {
+      setUploadSummary(null);
+      setUploadStatus("Set VITE_API_BASE_URL to enable SQLite upload planning.");
+      return;
+    }
+
+    if (!supabase?.auth) {
+      setUploadSummary(null);
+      setUploadStatus("Google sign-in is required before uploading a SQLite file.");
+      return;
+    }
+
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session?.access_token) {
+      setUploadSummary(null);
+      setUploadStatus(error?.message || "Google sign-in is required before uploading a SQLite file.");
+      return;
+    }
+
+    setUploadStatus("Uploading SQLite file for hosted migration planning...");
+    const formData = new FormData();
+    formData.append("sqlite_db", selectedUploadFile);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/v1/workspace/import-upload-plan`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${data.session.access_token}`,
+          ...(supabaseApiKey ? { apikey: supabaseApiKey } : {})
+        },
+        body: formData
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        setUploadSummary(null);
+        setUploadStatus(payload.detail || `SQLite upload planning failed (${response.status}).`);
+        return;
+      }
+
+      setUploadSummary(payload);
+      setUploadStatus(payload.detail || "Uploaded SQLite inventory is ready.");
+    } catch (error) {
+      setUploadSummary(null);
+      setUploadStatus(error instanceof Error ? error.message : "SQLite upload planning failed.");
+    }
+  }
 
   async function syncWorkspaceImportPlan(nextSession) {
     if (!nextSession?.access_token) {
@@ -274,10 +336,115 @@ export default function App() {
     setSessionEmail(null);
     setHostedSummary(null);
     setImportPlanSummary(null);
+    setUploadSummary(null);
+    setSelectedUploadFile(null);
     setAuthMessage("Signed out. Sign in with Google to reactivate the hosted web shell.");
     setApiStatus("Protected API handshake will run after Google sign-in.");
     setHostedStatus("Hosted account bootstrap will run after the protected API handshake.");
     setImportPlanStatus("Hosted import planning will run after workspace bootstrap.");
+    setUploadStatus("Upload a SQLite database to inspect it for hosted migration planning.");
+  }
+
+  if (isMigrationPage) {
+    return (
+      <div className="shell">
+        <div className="ambient ambient-left" aria-hidden="true" />
+        <div className="ambient ambient-right" aria-hidden="true" />
+
+        <header className="hero">
+          <div className="hero-copy">
+            <p className="eyebrow">Sezzions Migration</p>
+            <h1>Temporary SQLite Upload Planning</h1>
+            <p className="lede">
+              Use this temporary authenticated page to upload a local Sezzions SQLite database for
+              read-only hosted migration planning. This is an operator bridge, not a permanent sync surface.
+            </p>
+            <div className="hero-actions">
+              <a className="primary-link action-button" href="/">Back To Control Tower</a>
+              <span className="status-pill">
+                {sessionEmail ? "Google session live" : "Awaiting Google sign-in"}
+              </span>
+            </div>
+          </div>
+
+          <aside className="hero-aside">
+            <p className="aside-label">Auth state</p>
+            <strong>{sessionEmail || "Not signed in"}</strong>
+            <p>{authMessage}</p>
+            <dl className="aside-meta">
+              <div>
+                <dt>API host</dt>
+                <dd>{apiBaseUrl || "Set VITE_API_BASE_URL"}</dd>
+              </div>
+              <div>
+                <dt>Upload status</dt>
+                <dd>{uploadStatus}</dd>
+              </div>
+            </dl>
+            {sessionEmail ? (
+              <button className="secondary-button" type="button" onClick={handleSignOut}>
+                Sign Out
+              </button>
+            ) : (
+              <button className="secondary-button" type="button" onClick={handleGoogleSignIn}>
+                Continue With Google
+              </button>
+            )}
+          </aside>
+        </header>
+
+        <main className="content-grid">
+          <section className="panel launch-panel">
+            <div className="panel-head">
+              <p className="panel-kicker">Upload bridge</p>
+              <h2>Inspect a local SQLite database</h2>
+            </div>
+            <label htmlFor="sqlite-upload-input">SQLite database file</label>
+            <input
+              id="sqlite-upload-input"
+              type="file"
+              accept=".db,.sqlite,.sqlite3,application/octet-stream"
+              onChange={(event) => setSelectedUploadFile(event.target.files?.[0] || null)}
+            />
+            <div className="hero-actions">
+              <button className="primary-link action-button" type="button" onClick={handleMigrationUpload}>
+                Upload SQLite For Planning
+              </button>
+            </div>
+            <p className="launch-note">{uploadStatus}</p>
+          </section>
+
+          <section className="panel launch-panel">
+            <div className="panel-head">
+              <p className="panel-kicker">Inventory</p>
+              <h2>Uploaded SQLite inspection</h2>
+            </div>
+            {uploadSummary ? (
+              <dl className="aside-meta">
+                <div>
+                  <dt>Uploaded file</dt>
+                  <dd>{uploadSummary.uploaded_filename}</dd>
+                </div>
+                <div>
+                  <dt>Status</dt>
+                  <dd>{uploadSummary.status}</dd>
+                </div>
+                <div>
+                  <dt>Active users discovered</dt>
+                  <dd>{uploadSummary.inventory?.active_user_names?.join(", ") || "None"}</dd>
+                </div>
+                <div>
+                  <dt>Sites discovered</dt>
+                  <dd>{uploadSummary.inventory?.site_names?.join(", ") || "None"}</dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="launch-note">Upload a SQLite file to inspect it here.</p>
+            )}
+          </section>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -298,6 +465,7 @@ export default function App() {
             <button className="primary-link action-button" type="button" onClick={handleGoogleSignIn}>
               Continue With Google
             </button>
+            <a className="secondary-button" href="/migration">Open Migration Upload</a>
             <span className="status-pill">
               {sessionEmail ? "Google session live" : "Awaiting Google sign-in"}
             </span>
