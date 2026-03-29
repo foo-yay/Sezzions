@@ -60,6 +60,7 @@ open htmlcov/index.html
 - `app_facade.py`: app-level wiring between UI and services
 - `models/`, `repositories/`, `services/`: core backend layers
 - `ui/`: PySide6 UI
+- `api/`: FastAPI scaffold for the hosted backend foundation
 - `web/`: Vite + React web frontend scaffold
 - `tools/`: offline/maintenance tools
 - `.LEGACY/`: frozen legacy snapshot (not maintained)
@@ -122,6 +123,9 @@ Configure these variables separately in the `development` and `production` GitHu
 - `CPANEL_PUBLIC_URL`: public URL for the deployed site
 - `DEPLOY_SOURCE_DIR`: built static site directory, for example `web/dist`
 - `DEPLOY_BUILD_COMMAND`: optional build command, for example `cd web && npm ci --cache .npm-cache && npm run build`
+- `VITE_SUPABASE_URL`: frontend Supabase project URL used at build time
+- `VITE_SUPABASE_ANON_KEY`: frontend public anon key used at build time
+- `VITE_API_BASE_URL`: hosted API base URL, such as your Render service URL
 
 ### GitHub Environment Secrets
 
@@ -138,6 +142,38 @@ Configure these secrets separately in the `development` and `production` GitHub 
 4. Add and authorize an SSH key for deployment in cPanel.
 5. Make sure the deploy target directories are dedicated to this app, because the workflow uses `rsync --delete`.
 6. If you are using shared hosting, treat this workflow as static-site deployment only. A hosted Python API may need a separate platform unless your cPanel plan includes reliable Python app/process support.
+
+## Hosted Backend Foundation
+
+The current desktop product still runs on local SQLite. The shared desktop + web direction now uses this hosted foundation:
+
+- hosted auth: Supabase Auth
+- first sign-in provider: Google
+- hosted database: Supabase PostgreSQL
+- API layer: FastAPI scaffold under `api/`
+- first migration source: `sezzions.db`
+
+Important boundary:
+- the current SQLite `users` table is a business-domain entity, not the hosted auth/account model
+- hosted identity and ownership must live separately from the existing tracked-player records
+
+Environment variables expected by the hosted foundation:
+- `SUPABASE_URL`
+- `SUPABASE_DB_PASSWORD`
+- `SUPABASE_DB_USER` (optional, defaults to `postgres`)
+- `SUPABASE_DB_NAME` (optional, defaults to `postgres`)
+- `SUPABASE_DB_PORT` (optional, defaults to `5432`)
+- `SUPABASE_JWT_AUDIENCE` (optional, defaults to `authenticated`)
+- `SUPABASE_GOOGLE_AUTH_ENABLED` (optional, `true`/`false`)
+
+Example values are provided in `api/.env.example`.
+
+Frontend environment variables for hosted sign-in:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+- `VITE_API_BASE_URL`
+
+Example values are provided in `web/.env.example`.
 
 ### How To Generate Known Hosts
 

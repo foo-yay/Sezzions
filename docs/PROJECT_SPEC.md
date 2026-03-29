@@ -122,6 +122,18 @@ Static web deployment scaffold:
 - Because deploy mirrors the built directory with `rsync --delete`, each target path must be dedicated to the Sezzions web artifact for that environment.
 - This scaffold covers static web artifact delivery only. Hosted API/process deployment remains a separate concern unless the chosen cPanel plan explicitly supports managed Python application hosting.
 
+Hosted backend foundation (Issue #203):
+- Canonical hosted auth provider for the shared desktop/web path is Supabase Auth.
+- Initial hosted sign-in provider is Google only.
+- Canonical hosted database for the shared path is Supabase-managed PostgreSQL.
+- Canonical hosted API layer is a Python FastAPI service inside this repository.
+- The first migration source database is the current local `sezzions.db` file.
+- The existing SQLite `users` table remains a business-domain entity and must not be repurposed as the hosted auth/account model.
+- Hosted ownership must be represented separately as account/workspace identity that owns imported and future records.
+- `tools/inspect_sqlite_for_hosted_import.py` is the read-only planning tool for inventorying a local SQLite file before hosted import work.
+- The web frontend consumes Supabase configuration through `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` and may optionally target the hosted API through `VITE_API_BASE_URL`.
+- Initial web auth flow is Google sign-in via Supabase; the first authenticated UI state must support sign-in, sign-out, and current session display.
+
 ### Application Update Infrastructure (Issue #171, MVP)
 
 Sezzions update discovery/download is implemented as a service-layer workflow sourced from GitHub Releases artifacts (not Git operations).
