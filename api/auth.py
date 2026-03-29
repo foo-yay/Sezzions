@@ -16,6 +16,12 @@ from api.config import HostedBackendConfig, HostedConfigurationError, load_hoste
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
+JWT_FALLBACK_ERRORS = [jwt.InvalidTokenError]
+for _jwt_error_name in ("PyJWKClientError", "PyJWKClientConnectionError"):
+    _jwt_error = getattr(jwt, _jwt_error_name, None)
+    if _jwt_error is not None:
+        JWT_FALLBACK_ERRORS.append(_jwt_error)
+
 
 @dataclass(frozen=True)
 class AuthenticatedSession:
@@ -70,6 +76,22 @@ def _unauthorized(detail: str) -> HTTPException:
     )
 
 
+def _fallback_api_keys(request: Request, config: HostedBackendConfig) -> tuple[str | None, ...]:
+    candidates = (
+        request.headers.get("apikey"),
+        request.headers.get("x-supabase-apikey"),
+        getattr(config, "supabase_publishable_key", None),
+        None,
+    )
+
+    ordered_keys: list[str | None] = []
+    for candidate in candidates:
+        if candidate not in ordered_keys:
+            ordered_keys.append(candidate)
+
+    return tuple(ordered_keys)
+
+
 def get_authenticated_session(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
@@ -84,20 +106,20 @@ def get_authenticated_session(
 
     try:
         claims = decode_supabase_access_token(credentials.credentials, config)
-    except jwt.InvalidTokenError:
-        fallback_api_key = (
-            getattr(config, "supabase_publishable_key", None)
-            or request.headers.get("apikey")
-            or request.headers.get("x-supabase-apikey")
-        )
-        try:
-            claims = fetch_supabase_user(
-                credentials.credentials,
-                config,
-                api_key=fallback_api_key,
-            )
-        except Exception as exc:
-            raise _unauthorized("Invalid bearer token.") from exc
+    except tuple(JWT_FALLBACK_ERRORS):
+        last_error: Exception | None = None
+        for fallback_api_key in _fallback_api_keys(request, config):
+            try:
+                claims = fetch_supabase_user(
+                    credentials.credentials,
+                    config,
+                    api_key=fallback_api_key,
+                )
+                break
+            except Exception as exc:
+                last_error = exc
+        else:
+            raise _unauthorized("Invalid bearer token.") from last_error
 
     user_id = str(claims.get("sub") or claims.get("id") or "")
     if not user_id:

@@ -12,6 +12,34 @@ Rules:
 ## 2026-03-28
 
 ```yaml
+id: 2026-03-28-10
+type: fix
+areas: [api, auth, tests]
+issue: 203
+summary: "Prefer the browser apikey during staged Supabase user fallback"
+details: >
+  Followed up on the still-live staged `401` after confirming the current web
+  bundle was deployed. The hosted auth fallback was still preferring any
+  backend-configured Supabase publishable key over the fresh `apikey` already
+  being sent by the browser, which left room for stale Render env values to
+  keep breaking `/auth/v1/user` validation.
+
+  Implemented:
+  - auth fallback now tries request-supplied Supabase API keys before backend
+    config values
+  - fallback now retries available key candidates in order instead of failing on
+    the first rejected key
+  - focused auth tests covering request-key precedence and ordered retries
+
+  Validation:
+  - /usr/local/bin/python3 -m pytest tests/api/test_auth.py -q
+files_changed:
+  - api/auth.py
+  - tests/api/test_auth.py
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-28-09
 type: fix
 areas: [api, auth, web, docs, tests]
