@@ -8,7 +8,7 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from app_facade import AppFacade
-from ui.tabs.game_sessions_tab import EndSessionDialog, GameSessionsTab, StartSessionDialog
+from desktop.ui.tabs.game_sessions_tab import EndSessionDialog, GameSessionsTab, StartSessionDialog
 
 
 @pytest.fixture

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
 from app_facade import AppFacade
-from ui.main_window import MainWindow
+from desktop.ui.main_window import MainWindow
 
 
 @pytest.fixture(scope="module")

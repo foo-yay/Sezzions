@@ -5,10 +5,10 @@ from datetime import date, timedelta
 from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
 from models.game import Game
-from ui.table_header_filters import TableHeaderFilter
-from ui.spreadsheet_ux import SpreadsheetUXController
-from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
-from ui.input_parsers import parse_date_input
+from desktop.ui.table_header_filters import TableHeaderFilter
+from desktop.ui.spreadsheet_ux import SpreadsheetUXController
+from desktop.ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from desktop.ui.input_parsers import parse_date_input
 
 
 class GamesTab(QtWidgets.QWidget):

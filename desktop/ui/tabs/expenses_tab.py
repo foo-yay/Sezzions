@@ -6,11 +6,11 @@ from decimal import Decimal
 from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
 from models.expense import Expense
-from ui.date_filter_widget import DateFilterWidget
-from ui.table_header_filters import TableHeaderFilter
-from ui.spreadsheet_ux import SpreadsheetUXController
-from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
-from ui.input_parsers import parse_date_input, parse_time_input
+from desktop.ui.date_filter_widget import DateFilterWidget
+from desktop.ui.table_header_filters import TableHeaderFilter
+from desktop.ui.spreadsheet_ux import SpreadsheetUXController
+from desktop.ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from desktop.ui.input_parsers import parse_date_input, parse_time_input
 from tools.timezone_utils import get_accounting_timezone_name
 
 

@@ -1,7 +1,7 @@
 """Reusable header sorting/filtering for QTableWidget (legacy-style)."""
 from PySide6 import QtWidgets, QtCore
 import shiboken6
-from ui.daily_sessions_filters import (
+from desktop.ui.daily_sessions_filters import (
     ColumnFilterDialog,
     DateTimeFilterDialog,
     header_resize_section_index,

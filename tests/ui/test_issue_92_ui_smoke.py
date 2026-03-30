@@ -7,7 +7,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 from unittest.mock import Mock, patch
 from app_facade import AppFacade
-from ui.main_window import MainWindow
+from desktop.ui.main_window import MainWindow
 
 
 @pytest.fixture(scope="module")

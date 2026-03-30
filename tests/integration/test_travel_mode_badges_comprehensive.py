@@ -16,13 +16,13 @@ from decimal import Decimal
 from PySide6 import QtWidgets
 from app_facade import AppFacade
 from models.game_session import GameSession
-from ui.tabs.game_sessions_tab import (
+from desktop.ui.tabs.game_sessions_tab import (
     GameSessionsTab,
     ViewSessionDialog,
     EditClosedSessionDialog,
 )
-from ui.tabs.purchases_tab import PurchaseViewDialog
-from ui.tabs.redemptions_tab import RedemptionViewDialog
+from desktop.ui.tabs.purchases_tab import PurchaseViewDialog
+from desktop.ui.tabs.redemptions_tab import RedemptionViewDialog
 
 
 @pytest.fixture

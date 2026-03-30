@@ -6,10 +6,10 @@ from decimal import Decimal
 import pytest
 
 from app_facade import AppFacade
-from ui.settings import Settings
-from ui.tabs.game_sessions_tab import GameSessionsTab
-from ui.tabs.purchases_tab import PurchasesTab
-from ui.tabs.redemptions_tab import RedemptionsTab
+from desktop.ui.settings import Settings
+from desktop.ui.tabs.game_sessions_tab import GameSessionsTab
+from desktop.ui.tabs.purchases_tab import PurchasesTab
+from desktop.ui.tabs.redemptions_tab import RedemptionsTab
 
 
 class _MainWindowStub:

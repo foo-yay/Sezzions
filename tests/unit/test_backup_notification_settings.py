@@ -4,7 +4,7 @@ Tests for automatic backup notification settings persistence (Issue #35).
 import json
 import os
 import tempfile
-from ui.settings import Settings
+from desktop.ui.settings import Settings
 
 
 def test_default_backup_notification_settings():

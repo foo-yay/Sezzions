@@ -5,9 +5,9 @@ from datetime import date
 from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
 from models.game_type import GameType
-from ui.table_header_filters import TableHeaderFilter
-from ui.spreadsheet_ux import SpreadsheetUXController
-from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from desktop.ui.table_header_filters import TableHeaderFilter
+from desktop.ui.spreadsheet_ux import SpreadsheetUXController
+from desktop.ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 
 
 class GameTypesTab(QtWidgets.QWidget):

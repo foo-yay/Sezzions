@@ -16,7 +16,7 @@ import pytest
 from PySide6.QtCore import Qt
 
 from app_facade import AppFacade
-from ui.tabs.game_sessions_tab import EndSessionDialog
+from desktop.ui.tabs.game_sessions_tab import EndSessionDialog
 
 
 @pytest.fixture

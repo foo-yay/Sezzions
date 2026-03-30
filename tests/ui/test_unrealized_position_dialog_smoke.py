@@ -10,7 +10,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from models.unrealized_position import UnrealizedPosition
-from ui.tabs.unrealized_tab import UnrealizedPositionDialog
+from desktop.ui.tabs.unrealized_tab import UnrealizedPositionDialog
 
 
 @pytest.fixture(scope="module")

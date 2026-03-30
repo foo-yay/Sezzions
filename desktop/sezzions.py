@@ -3,15 +3,22 @@
 Sezzions - Casino Session Tracker with FIFO Accounting
 
 Main application entry point.
-Run: python3 sezzions.py
+Run: python3 desktop/sezzions.py
 """
 import sys
 import os
 from pathlib import Path
+
+# Ensure the project root is on sys.path so shared packages (models, services, etc.)
+# are importable when this script is invoked from within the desktop/ directory.
+_project_root = str(Path(__file__).resolve().parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import traceback
 from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
-from ui.main_window import MainWindow
+from desktop.ui.main_window import MainWindow
 from services.db_location_service import (
     default_db_path,
     has_persisted_db_path,

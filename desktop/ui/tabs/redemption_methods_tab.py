@@ -1,39 +1,37 @@
 """
-Cards tab - Manage payment cards
+Redemption Methods tab - Manage redemption methods
 """
 from datetime import date
 from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
-from models.card import Card
-from ui.table_header_filters import TableHeaderFilter
-from ui.spreadsheet_ux import SpreadsheetUXController
-from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from models.redemption_method import RedemptionMethod
+from desktop.ui.table_header_filters import TableHeaderFilter
+from desktop.ui.spreadsheet_ux import SpreadsheetUXController
+from desktop.ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 
 
-class CardsTab(QtWidgets.QWidget):
-    """Tab for managing payment cards"""
-    
+class RedemptionMethodsTab(QtWidgets.QWidget):
+    """Tab for managing redemption methods"""
+
     def __init__(self, facade: AppFacade):
         super().__init__()
         self.facade = facade
-        self.cards = []
-        
+        self.methods = []
+
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
-        
-        # Header
+
         header_layout = QtWidgets.QHBoxLayout()
-        title = QtWidgets.QLabel("Cards")
+        title = QtWidgets.QLabel("Redemption Methods")
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         header_layout.addWidget(title)
         header_layout.addStretch()
-        
-        # Search
+
         self.search_edit = QtWidgets.QLineEdit()
-        self.search_edit.setPlaceholderText("Search cards...")
+        self.search_edit.setPlaceholderText("Search methods...")
         self.search_edit.setMaximumWidth(300)
-        self.search_edit.textChanged.connect(self._filter_cards)
+        self.search_edit.textChanged.connect(self._filter_methods)
         header_layout.addWidget(self.search_edit)
 
         self.clear_search_btn = QtWidgets.QPushButton("Clear")
@@ -43,48 +41,46 @@ class CardsTab(QtWidgets.QWidget):
         self.clear_filters_btn = QtWidgets.QPushButton("Clear All Filters")
         self.clear_filters_btn.clicked.connect(self._clear_all_filters)
         header_layout.addWidget(self.clear_filters_btn)
-        
         layout.addLayout(header_layout)
-        
-        # Toolbar
+
         toolbar = QtWidgets.QHBoxLayout()
-        
-        add_btn = QtWidgets.QPushButton("➕ Add Card")
+        add_btn = QtWidgets.QPushButton("➕ Add Method")
         add_btn.setObjectName("PrimaryButton")
-        add_btn.clicked.connect(self._add_card)
+        add_btn.clicked.connect(self._add_method)
         toolbar.addWidget(add_btn)
 
         self.view_btn = QtWidgets.QPushButton("👁️ View")
-        self.view_btn.clicked.connect(self._view_card)
+        self.view_btn.clicked.connect(self._view_method)
         self.view_btn.setVisible(False)
         toolbar.addWidget(self.view_btn)
-        
+
         self.edit_btn = QtWidgets.QPushButton("✏️ Edit")
-        self.edit_btn.clicked.connect(self._edit_card)
+        self.edit_btn.clicked.connect(self._edit_method)
         self.edit_btn.setVisible(False)
         toolbar.addWidget(self.edit_btn)
-        
+
         self.delete_btn = QtWidgets.QPushButton("🗑️ Delete")
-        self.delete_btn.clicked.connect(self._delete_card)
+        self.delete_btn.clicked.connect(self._delete_method)
         self.delete_btn.setVisible(False)
         toolbar.addWidget(self.delete_btn)
-        
+
         toolbar.addStretch()
 
         export_btn = QtWidgets.QPushButton("📤 Export CSV")
         export_btn.clicked.connect(self._export_csv)
         toolbar.addWidget(export_btn)
-        
+
         refresh_btn = QtWidgets.QPushButton("🔄 Refresh")
         refresh_btn.clicked.connect(self.refresh_data)
         toolbar.addWidget(refresh_btn)
-        
+
         layout.addLayout(toolbar)
-        
-        # Table
+
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["Name", "User", "Last Four", "Cashback %", "Status", "Notes"])
+        self.table.setColumnCount(5)
+        self.table.setHorizontalHeaderLabels([
+            "Name", "Method Type", "User", "Status", "Notes"
+        ])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
@@ -93,7 +89,7 @@ class CardsTab(QtWidgets.QWidget):
         self.table.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
-        self.table.itemDoubleClicked.connect(self._view_card)
+        self.table.itemDoubleClicked.connect(self._view_method)
         
         # Context menu setup
         self.table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -109,35 +105,33 @@ class CardsTab(QtWidgets.QWidget):
         
         copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self.table)
         copy_shortcut.activated.connect(self._copy_selection)
-        
-        # Load data
+
         self.refresh_data()
-    
+
     def focus_search(self):
         """Focus the search bar (for Cmd+F/Ctrl+F shortcut - Issue #99)"""
         self.search_edit.setFocus()
         self.search_edit.selectAll()
 
     def refresh_data(self):
-        """Reload cards from database"""
-        self.cards = self.facade.get_all_cards()
+        self.methods = self.facade.get_all_redemption_methods(active_only=False)
+        users = {u.id: u.name for u in self.facade.get_all_users(active_only=False)}
+        for method in self.methods:
+            if method.user_id is not None:
+                method.user_name = users.get(method.user_id, "")
         self._populate_table()
-    
+
     def _populate_table(self):
-        """Populate table with cards"""
         search_text = self.search_edit.text().lower()
-        
-        # Filter cards
         if search_text:
-            filtered = [c for c in self.cards 
-                       if search_text in c.name.lower() 
-                       or (hasattr(c, 'user_name') and c.user_name and search_text in c.user_name.lower())
-                       or (c.last_four and search_text in c.last_four)
-                       or (c.notes and search_text in c.notes.lower())
-                       or (str(c.cashback_rate) and search_text in f"{float(c.cashback_rate):.2f}")]
+            filtered = [m for m in self.methods
+                        if search_text in m.name.lower()
+                        or (m.method_type and search_text in m.method_type.lower())
+                        or (getattr(m, 'user_name', None) and search_text in m.user_name.lower())
+                        or (m.notes and search_text in m.notes.lower())]
         else:
-            filtered = self.cards
-        
+            filtered = self.methods
+
         sorting_was_enabled = self.table.isSortingEnabled()
         self.table.setSortingEnabled(False)
         self.table.setUpdatesEnabled(False)
@@ -145,37 +139,26 @@ class CardsTab(QtWidgets.QWidget):
         try:
             self.table.clearContents()
             self.table.setRowCount(len(filtered))
-        
-            for row, card in enumerate(filtered):
-                # Name
-                name_item = QtWidgets.QTableWidgetItem(card.name)
-                name_item.setData(QtCore.Qt.UserRole, card.id)
-                self.table.setItem(row, 0, name_item)
-                
-                # User
-                user = getattr(card, 'user_name', None) or "—"
-                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(user))
-                
-                # Last Four
-                last_four = card.last_four or "—"
-                self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(last_four))
 
-                # Cashback %
-                cashback_str = f"{float(card.cashback_rate):.2f}%"
-                cashback_item = QtWidgets.QTableWidgetItem(cashback_str)
-                cashback_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-                self.table.setItem(row, 3, cashback_item)
-                
-                # Status
-                status = "Active" if card.is_active else "Inactive"
+            for row, method in enumerate(filtered):
+                name_item = QtWidgets.QTableWidgetItem(method.name)
+                name_item.setData(QtCore.Qt.UserRole, method.id)
+                self.table.setItem(row, 0, name_item)
+
+                method_type = method.method_type or "—"
+                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(method_type))
+
+                user_name = getattr(method, 'user_name', None) or "—"
+                self.table.setItem(row, 2, QtWidgets.QTableWidgetItem(user_name))
+
+                status = "Active" if method.is_active else "Inactive"
                 status_item = QtWidgets.QTableWidgetItem(status)
-                if not card.is_active:
+                if not method.is_active:
                     status_item.setForeground(QtGui.QColor("#999"))
-                self.table.setItem(row, 4, status_item)
-                
-                # Notes
-                notes = (card.notes or "")[:100]
-                self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(notes))
+                self.table.setItem(row, 3, status_item)
+
+                notes = (method.notes or "")[:100]
+                self.table.setItem(row, 4, QtWidgets.QTableWidgetItem(notes))
 
         finally:
             self.table.blockSignals(False)
@@ -188,12 +171,12 @@ class CardsTab(QtWidgets.QWidget):
             header = self.table.horizontalHeader()
             if header is not None:
                 header.setSortIndicatorShown(False)
-        
-        # Column sizing handled by header resize mode
+
         self.table_filter.apply_filters()
-    
-    def _filter_cards(self):
-        """Filter table based on search"""
+
+        # Column sizing handled by header resize mode
+
+    def _filter_methods(self):
         self._populate_table()
 
     def _clear_search(self):
@@ -209,7 +192,7 @@ class CardsTab(QtWidgets.QWidget):
         if hasattr(self, "table_filter"):
             self.table_filter.clear_all_filters()
         self._populate_table()
-    
+
     def _on_selection_changed(self):
         """Enable/disable buttons based on selection"""
         # Check if any cells are selected
@@ -235,13 +218,12 @@ class CardsTab(QtWidgets.QWidget):
         if not selected_indexes:
             return []
         return sorted(set(index.row() for index in selected_indexes))
-    
-    def _get_selected_card_id(self):
-        """Get ID of selected card"""
-        ids = self._get_selected_card_ids()
+
+    def _get_selected_method_id(self):
+        ids = self._get_selected_method_ids()
         return ids[0] if ids else None
 
-    def _get_selected_card_ids(self):
+    def _get_selected_method_ids(self):
         ids = []
         for row in self._get_selected_row_numbers():
             item = self.table.item(row, 0)
@@ -250,78 +232,73 @@ class CardsTab(QtWidgets.QWidget):
                 if value is not None:
                     ids.append(value)
         return ids
-    
-    def _add_card(self):
-        """Show dialog to add new card"""
-        dialog = CardDialog(self.facade, self)
+
+    def _add_method(self):
+        dialog = RedemptionMethodDialog(self.facade, self)
         if dialog.exec():
             try:
-                card = self.facade.create_card(
-                    user_id=dialog.user_id,
+                method = self.facade.create_redemption_method(
                     name=dialog.name_edit.text(),
-                    last_four=dialog.last_four_edit.text() or None,
-                    cashback_rate=dialog.get_cashback_rate(),
+                    method_type=dialog.method_type_combo.currentText() or None,
+                    user_id=dialog.user_id,
                     notes=dialog.notes_edit.toPlainText() or None
                 )
                 self.refresh_data()
                 QtWidgets.QMessageBox.information(
-                    self.window() or self, "Success", f"Card '{card.name}' created"
+                    self.window() or self, "Success", f"Method '{method.name}' created"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
-                    self, "Error", f"Failed to create card:\n{str(e)}"
+                    self, "Error", f"Failed to create method:\n{str(e)}"
                 )
-    
-    def _edit_card(self):
-        """Show dialog to edit selected card"""
-        card_id = self._get_selected_card_id()
-        if not card_id:
+
+    def _edit_method(self):
+        method_id = self._get_selected_method_id()
+        if not method_id:
             return
-        
-        card = self.facade.get_card(card_id)
-        if not card:
+
+        method = self.facade.get_redemption_method(method_id)
+        if not method:
             return
-        
-        dialog = CardDialog(self.facade, self, card)
+
+        dialog = RedemptionMethodDialog(self.facade, self, method)
         if dialog.exec():
             try:
-                updated = self.facade.update_card(
-                    card_id,
-                    user_id=dialog.user_id,
+                updated = self.facade.update_redemption_method(
+                    method_id,
                     name=dialog.name_edit.text(),
-                    last_four=dialog.last_four_edit.text() or None,
-                    cashback_rate=dialog.get_cashback_rate(),
+                    method_type=dialog.method_type_combo.currentText() or None,
+                    user_id=dialog.user_id,
                     notes=dialog.notes_edit.toPlainText() or None,
                     is_active=dialog.active_check.isChecked()
                 )
                 self.refresh_data()
                 QtWidgets.QMessageBox.information(
-                    self, "Success", f"Card '{updated.name}' updated"
+                    self, "Success", f"Method '{updated.name}' updated"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
-                    self, "Error", f"Failed to update card:\n{str(e)}"
+                    self, "Error", f"Failed to update method:\n{str(e)}"
                 )
-    
-    def _delete_card(self):
-        """Delete selected card"""
-        card_ids = self._get_selected_card_ids()
-        if not card_ids:
+
+    def _delete_method(self):
+        method_ids = self._get_selected_method_ids()
+        if not method_ids:
             return
 
-        cards = []
-        for card_id in card_ids:
-            card = self.facade.get_card(card_id)
-            if card:
-                cards.append(card)
+        methods = []
+        for method_id in method_ids:
+            method = self.facade.get_redemption_method(method_id)
+            if method:
+                methods.append(method)
 
-        if not cards:
+        if not methods:
             return
 
-        if len(cards) == 1:
-            prompt = f"Delete card '{cards[0].name}'?\n\nThis cannot be undone."
+        if len(methods) == 1:
+            prompt = f"Delete redemption method '{methods[0].name}'?\n\nThis cannot be undone."
         else:
-            prompt = f"Delete {len(cards)} cards?\n\nThis cannot be undone."
+            prompt = f"Delete {len(methods)} redemption methods?\n\nThis cannot be undone."
 
         reply = QtWidgets.QMessageBox.question(
             self,
@@ -329,18 +306,15 @@ class CardsTab(QtWidgets.QWidget):
             prompt,
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         )
-
         if reply == QtWidgets.QMessageBox.Yes:
             try:
-                for card in cards:
-                    self.facade.delete_card(card.id)
+                for method in methods:
+                    self.facade.delete_redemption_method(method.id)
                 self.refresh_data()
-                QtWidgets.QMessageBox.information(
-                    self, "Success", "Card(s) deleted"
-                )
+                QtWidgets.QMessageBox.information(self, "Success", "Method(s) deleted")
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
-                    self, "Error", f"Failed to delete card(s):\n{str(e)}"
+                    self, "Error", f"Failed to delete method(s):\n{str(e)}"
                 )
 
     def _copy_selection(self):
@@ -376,8 +350,8 @@ class CardsTab(QtWidgets.QWidget):
 
         filename, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            "Export Cards",
-            f"cards_{date.today().isoformat()}.csv",
+            "Export Redemption Methods",
+            f"redemption_methods_{date.today().isoformat()}.csv",
             "CSV Files (*.csv)"
         )
 
@@ -399,41 +373,41 @@ class CardsTab(QtWidgets.QWidget):
 
                 QtWidgets.QMessageBox.information(
                     self, "Export Complete",
-                    f"Exported cards to:\n{filename}"
+                    f"Exported redemption methods to:\n{filename}"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.critical(
                     self, "Export Error", f"Failed to export:\n{str(e)}"
                 )
 
-    def _view_card(self):
-        card_id = self._get_selected_card_id()
-        if not card_id:
+    def _view_method(self):
+        method_id = self._get_selected_method_id()
+        if not method_id:
             return
-        card = self.facade.get_card(card_id)
-        if not card:
+        method = self.facade.get_redemption_method(method_id)
+        if not method:
             return
         
-        dialog = CardViewDialog(
-            card,
+        dialog = RedemptionMethodViewDialog(
+            method,
             parent=self,
-            on_edit=self._edit_card,
-            on_delete=self._delete_card,
+            on_edit=self._edit_method,
+            on_delete=self._delete_method,
         )
         dialog.exec()
         self.refresh_data()
 
 
-class CardDialog(QtWidgets.QDialog):
-    """Dialog for adding/editing cards"""
-    
-    def __init__(self, facade: AppFacade, parent=None, card: Card = None):
+class RedemptionMethodDialog(QtWidgets.QDialog):
+    """Dialog for adding/editing redemption methods"""
+
+    def __init__(self, facade: AppFacade, parent=None, method: RedemptionMethod = None):
         super().__init__(parent)
         self.facade = facade
-        self.card = card
-        self.user_id = card.user_id if card else None
-        self.setWindowTitle("Edit Card" if card else "Add Card")
-        self.setMinimumSize(400, 340)
+        self.method = method
+        self.user_id = method.user_id if method else None
+        self.setWindowTitle("Edit Method" if method else "Add Method")
+        self.setMinimumSize(400, 350)
         
         # Main layout
         main_layout = QtWidgets.QVBoxLayout(self)
@@ -441,7 +415,7 @@ class CardDialog(QtWidgets.QDialog):
         main_layout.setSpacing(16)
         
         # Section header
-        header = QtWidgets.QLabel("💳 Card Details")
+        header = QtWidgets.QLabel("💳 Redemption Method Details")
         header.setObjectName("SectionHeader")
         main_layout.addWidget(header)
         
@@ -459,78 +433,60 @@ class CardDialog(QtWidgets.QDialog):
         active_label.setObjectName("FieldLabel")
         active_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.active_check = QtWidgets.QCheckBox()
-        self.active_check.setChecked(card.is_active if card else True)
+        self.active_check.setChecked(method.is_active if method else True)
         main_grid.addWidget(active_label, 0, 0)
-        main_grid.addWidget(self.active_check, 0, 1)
+        main_grid.addWidget(self.active_check, 0, 1, alignment=QtCore.Qt.AlignLeft)
         
-        # User (required) - increased from 200px to 250px
+        # Name (required) - increased to 300px
+        name_label = QtWidgets.QLabel("Name:")
+        name_label.setObjectName("FieldLabel")
+        name_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.name_edit = QtWidgets.QLineEdit()
+        self.name_edit.setPlaceholderText("Required")
+        self.name_edit.setFixedWidth(300)
+        if method:
+            self.name_edit.setText(method.name)
+        main_grid.addWidget(name_label, 1, 0)
+        main_grid.addWidget(self.name_edit, 1, 1, alignment=QtCore.Qt.AlignLeft)
+        
+        # Method Type (required) - increased to 300px
+        method_type_label = QtWidgets.QLabel("Method Type:")
+        method_type_label.setObjectName("FieldLabel")
+        method_type_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.method_type_combo = QtWidgets.QComboBox()
+        self.method_type_combo.setEditable(True)
+        self.method_type_combo.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
+        self.method_type_combo.setFixedWidth(300)
+        self._load_method_types()
+        main_grid.addWidget(method_type_label, 2, 0)
+        main_grid.addWidget(self.method_type_combo, 2, 1, alignment=QtCore.Qt.AlignLeft)
+        
+        # User (required) - increased to 300px
         user_label = QtWidgets.QLabel("User:")
         user_label.setObjectName("FieldLabel")
         user_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.user_combo = QtWidgets.QComboBox()
         self.user_combo.setEditable(True)
         self.user_combo.setInsertPolicy(QtWidgets.QComboBox.NoInsert)
-        self.user_combo.setFixedWidth(250)
-        
-        # Load users
-        users = facade.get_all_users(active_only=True)
+        self.user_combo.setFixedWidth(300)
+        users = self.facade.get_all_users(active_only=True)
         self.user_map = {}
         for user in users:
             self.user_combo.addItem(user.name, user.id)
             self.user_map[user.id] = user.name
         
-        # Set current user if editing
-        if card:
-            index = self.user_combo.findData(card.user_id)
-            if index >= 0:
-                self.user_combo.setCurrentIndex(index)
+        if method and method.user_id is not None:
+            idx = self.user_combo.findData(method.user_id)
+            if idx >= 0:
+                self.user_combo.setCurrentIndex(idx)
         else:
             self.user_combo.setCurrentIndex(-1)
-            if self.user_combo.isEditable():
-                self.user_combo.setEditText("")
-                if self.user_combo.lineEdit() is not None:
-                    self.user_combo.lineEdit().setPlaceholderText("Required")
+            self.user_combo.setEditText("")
+            if self.user_combo.lineEdit() is not None:
+                self.user_combo.lineEdit().setPlaceholderText("Required")
         
-        self.user_combo.currentIndexChanged.connect(self._on_user_changed)
-        main_grid.addWidget(user_label, 1, 0)
-        main_grid.addWidget(self.user_combo, 1, 1)
-        
-        # Card Name (required) - increased from 200px to 250px
-        name_label = QtWidgets.QLabel("Card Name:")
-        name_label.setObjectName("FieldLabel")
-        name_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self.name_edit = QtWidgets.QLineEdit()
-        self.name_edit.setPlaceholderText("Required")
-        self.name_edit.setFixedWidth(250)
-        if card:
-            self.name_edit.setText(card.name)
-        main_grid.addWidget(name_label, 2, 0)
-        main_grid.addWidget(self.name_edit, 2, 1)
-        
-        # Cashback Rate (optional) - increased to 160px to fit placeholder
-        cashback_label = QtWidgets.QLabel("Cashback %:")
-        cashback_label.setObjectName("FieldLabel")
-        cashback_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self.cashback_rate_edit = QtWidgets.QLineEdit()
-        self.cashback_rate_edit.setPlaceholderText("Optional (0.00)")
-        self.cashback_rate_edit.setFixedWidth(160)
-        if card:
-            self.cashback_rate_edit.setText(f"{float(card.cashback_rate):.2f}")
-        main_grid.addWidget(cashback_label, 3, 0)
-        main_grid.addWidget(self.cashback_rate_edit, 3, 1)
-        
-        # Last Four (optional)
-        last_four_label = QtWidgets.QLabel("Last 4:")
-        last_four_label.setObjectName("FieldLabel")
-        last_four_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self.last_four_edit = QtWidgets.QLineEdit()
-        self.last_four_edit.setMaxLength(4)
-        self.last_four_edit.setPlaceholderText("Optional")
-        self.last_four_edit.setFixedWidth(80)
-        if card and card.last_four:
-            self.last_four_edit.setText(card.last_four)
-        main_grid.addWidget(last_four_label, 4, 0)
-        main_grid.addWidget(self.last_four_edit, 4, 1)
+        main_grid.addWidget(user_label, 3, 0)
+        main_grid.addWidget(self.user_combo, 3, 1)
         
         main_layout.addWidget(main_section)
         
@@ -550,14 +506,14 @@ class CardDialog(QtWidgets.QDialog):
         self.notes_edit = QtWidgets.QPlainTextEdit()
         self.notes_edit.setPlaceholderText("Optional...")
         self.notes_edit.setFixedHeight(80)
-        if card and card.notes:
-            self.notes_edit.setPlainText(card.notes)
+        if method and method.notes:
+            self.notes_edit.setPlainText(method.notes)
         notes_layout.addWidget(self.notes_edit)
         self.notes_section.setVisible(False)
         main_layout.addWidget(self.notes_section)
         
         # Expand notes if editing and notes exist
-        if card and card.notes:
+        if method and method.notes:
             self._toggle_notes()
         
         # Buttons
@@ -575,34 +531,30 @@ class CardDialog(QtWidgets.QDialog):
         
         main_layout.addLayout(btn_row)
         
-        # Set initial user_id
-        self._on_user_changed()
-        
         # Validation
         self.name_edit.textChanged.connect(self._validate_inline)
-        self.last_four_edit.textChanged.connect(self._validate_inline)
-        self.cashback_rate_edit.textChanged.connect(self._validate_inline)
+        self.method_type_combo.currentTextChanged.connect(self._validate_inline)
         self.user_combo.currentTextChanged.connect(self._validate_inline)
         self._validate_inline()
         
-        # User combo autocomplete
-        completer = QtWidgets.QCompleter(self.user_combo.model())
-        completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
-        completer.setFilterMode(QtCore.Qt.MatchStartsWith)
-        completer.setCompletionMode(QtWidgets.QCompleter.InlineCompletion)
-        self.user_combo.setCompleter(completer)
-        if self.user_combo.lineEdit() is not None:
-            self.user_combo.lineEdit().setCompleter(completer)
-            app = QtWidgets.QApplication.instance()
-            if app is not None and hasattr(app, "_completer_filter"):
-                self.user_combo.lineEdit().installEventFilter(app._completer_filter)
+        # Autocomplete
+        for combo in (self.method_type_combo, self.user_combo):
+            completer = QtWidgets.QCompleter(combo.model())
+            completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+            completer.setFilterMode(QtCore.Qt.MatchStartsWith)
+            completer.setCompletionMode(QtWidgets.QCompleter.InlineCompletion)
+            combo.setCompleter(completer)
+            if combo.lineEdit() is not None:
+                combo.lineEdit().setCompleter(completer)
+                app = QtWidgets.QApplication.instance()
+                if app is not None and hasattr(app, "_completer_filter"):
+                    combo.lineEdit().installEventFilter(app._completer_filter)
         
         # Tab order
-        self.setTabOrder(self.user_combo, self.active_check)
-        self.setTabOrder(self.active_check, self.name_edit)
-        self.setTabOrder(self.name_edit, self.last_four_edit)
-        self.setTabOrder(self.last_four_edit, self.cashback_rate_edit)
-        self.setTabOrder(self.cashback_rate_edit, self.notes_edit)
+        self.setTabOrder(self.name_edit, self.active_check)
+        self.setTabOrder(self.active_check, self.method_type_combo)
+        self.setTabOrder(self.method_type_combo, self.user_combo)
+        self.setTabOrder(self.user_combo, self.notes_edit)
         self.setTabOrder(self.notes_edit, self.save_btn)
     
     def _toggle_notes(self):
@@ -611,24 +563,30 @@ class CardDialog(QtWidgets.QDialog):
         self.notes_section.setVisible(not self.notes_collapsed)
         if self.notes_collapsed:
             self.notes_toggle.setText("📝 Add Notes...")
-            self.setMinimumHeight(420)
-            self.setMaximumHeight(420)
-            self.resize(self.width(), 420)
+            self.setMinimumHeight(450)
+            self.setMaximumHeight(450)
+            self.resize(self.width(), 450)
         else:
             self.notes_toggle.setText("📝 Hide Notes")
-            self.setMinimumHeight(500)
+            self.setMinimumHeight(530)
             self.setMaximumHeight(16777215)
-            self.resize(self.width(), 500)
+            self.resize(self.width(), 530)
     
-    def _on_user_changed(self):
-        """Update user_id when selection changes"""
-        self.user_id = self.user_combo.currentData()
-        if self.user_id is None:
-            text = self.user_combo.currentText().strip().lower()
-            for uid, name in self.user_map.items():
-                if name.lower() == text:
-                    self.user_id = uid
-                    break
+    def _load_method_types(self):
+        self.method_type_combo.clear()
+        types = self.facade.get_all_redemption_method_types(active_only=True)
+        for method_type in types:
+            self.method_type_combo.addItem(method_type.name, method_type.id)
+        
+        if self.method and self.method.method_type:
+            idx = self.method_type_combo.findText(self.method.method_type)
+            if idx >= 0:
+                self.method_type_combo.setCurrentIndex(idx)
+        else:
+            self.method_type_combo.setCurrentIndex(-1)
+            self.method_type_combo.setEditText("")
+            if self.method_type_combo.lineEdit() is not None:
+                self.method_type_combo.lineEdit().setPlaceholderText("Required")
     
     def _set_invalid(self, widget, message):
         widget.setProperty("invalid", True)
@@ -646,71 +604,62 @@ class CardDialog(QtWidgets.QDialog):
         """Validate all fields and return True if valid"""
         valid = True
         
-        if not self.user_combo.currentText().strip():
-            self._set_invalid(self.user_combo, "User is required.")
-            valid = False
-        else:
-            self._set_valid(self.user_combo)
-        
         if not self.name_edit.text().strip():
-            self._set_invalid(self.name_edit, "Card name is required.")
+            self._set_invalid(self.name_edit, "Name is required.")
             valid = False
         else:
             self._set_valid(self.name_edit)
         
-        last_four = self.last_four_edit.text().strip()
-        if last_four and not last_four.isdigit():
-            self._set_invalid(self.last_four_edit, "Last four must be numeric")
+        if not self.method_type_combo.currentText().strip():
+            self._set_invalid(self.method_type_combo, "Method Type is required.")
             valid = False
         else:
-            self._set_valid(self.last_four_edit)
+            self._set_valid(self.method_type_combo)
         
-        rate_text = self.cashback_rate_edit.text().strip()
-        if rate_text:
-            try:
-                rate_val = float(rate_text)
-                if rate_val < 0 or rate_val > 100:
-                    raise ValueError("out of range")
-                self._set_valid(self.cashback_rate_edit)
-            except Exception:
-                self._set_invalid(self.cashback_rate_edit, "Cashback % must be 0-100")
-                valid = False
+        # Update user_id
+        self.user_id = self.user_combo.currentData()
+        if self.user_id is None:
+            text = self.user_combo.currentText().strip().lower()
+            for uid, name in self.user_map.items():
+                if name.lower() == text:
+                    self.user_id = uid
+                    break
+        
+        if self.user_id is None:
+            self._set_invalid(self.user_combo, "User is required.")
+            valid = False
         else:
-            self._set_valid(self.cashback_rate_edit)
+            self._set_valid(self.user_combo)
         
         self.save_btn.setEnabled(valid)
         return valid
     
     def _validate_and_accept(self):
         """Final validation before accepting"""
+        if self.method_type_combo.count() == 0:
+            QtWidgets.QMessageBox.warning(
+                self, "Validation Error", "Please add a Method Type first."
+            )
+            return
+        
         if not self._validate_inline():
             QtWidgets.QMessageBox.warning(
                 self, "Validation Error", "Please correct the highlighted fields."
             )
             return
         
-        if not self.user_id:
-            QtWidgets.QMessageBox.warning(
-                self, "Validation Error", "Please select a valid user."
-            )
-            return
-        
         self.accept()
-    
-    def get_cashback_rate(self) -> float:
-        text = self.cashback_rate_edit.text().strip()
-        return float(text) if text else 0.0
 
 
-class CardViewDialog(QtWidgets.QDialog):
-    """Dialog for viewing card details"""
+class RedemptionMethodViewDialog(QtWidgets.QDialog):
+    """Dialog for viewing redemption method details"""
     
-    def __init__(self, card: Card, parent=None, on_edit=None, on_delete=None):
+    def __init__(self, method: RedemptionMethod, parent=None, on_edit=None, on_delete=None):
         super().__init__(parent)
-        self.card = card
+        self.method = method
         self._on_edit = on_edit
         self._on_delete = on_delete
-        self.setWindowTitle("View Card")
+        self.setWindowTitle("View Redemption Method")
         self.setMinimumSize(600, 360)
         
         # Main layout
@@ -718,12 +667,12 @@ class CardViewDialog(QtWidgets.QDialog):
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(12)
         
-        # Card details section header
-        details_header = QtWidgets.QLabel("💳 Card Details")
+        # Redemption Method details section header
+        details_header = QtWidgets.QLabel("💳 Redemption Method Details")
         details_header.setObjectName("SectionHeader")
         main_layout.addWidget(details_header)
         
-        # Card details section
+        # Redemption Method details section
         details_section = QtWidgets.QWidget()
         details_section.setObjectName("SectionBackground")
         details_layout = QtWidgets.QVBoxLayout(details_section)
@@ -740,25 +689,17 @@ class CardViewDialog(QtWidgets.QDialog):
         left_grid.setVerticalSpacing(6)
         left_grid.setColumnStretch(1, 1)
         
-        user_lbl = QtWidgets.QLabel("User:")
-        user_lbl.setObjectName("MutedLabel")
-        user_name = getattr(card, 'user_name', None)
-        user_display = user_name if user_name else "Unknown User" if card.user_id else "—"
-        user_val = self._make_selectable_label(user_display)
-        left_grid.addWidget(user_lbl, 0, 0, QtCore.Qt.AlignRight)
-        left_grid.addWidget(user_val, 0, 1)
-        
-        name_lbl = QtWidgets.QLabel("Card Name:")
+        name_lbl = QtWidgets.QLabel("Name:")
         name_lbl.setObjectName("MutedLabel")
-        name_val = self._make_selectable_label(card.name)
-        left_grid.addWidget(name_lbl, 1, 0, QtCore.Qt.AlignRight)
-        left_grid.addWidget(name_val, 1, 1)
+        name_val = self._make_selectable_label(method.name)
+        left_grid.addWidget(name_lbl, 0, 0, QtCore.Qt.AlignRight)
+        left_grid.addWidget(name_val, 0, 1)
         
-        last_four_lbl = QtWidgets.QLabel("Last Four:")
-        last_four_lbl.setObjectName("MutedLabel")
-        last_four_val = self._make_selectable_label(card.last_four or "—")
-        left_grid.addWidget(last_four_lbl, 2, 0, QtCore.Qt.AlignRight)
-        left_grid.addWidget(last_four_val, 2, 1)
+        method_type_lbl = QtWidgets.QLabel("Method Type:")
+        method_type_lbl.setObjectName("MutedLabel")
+        method_type_val = self._make_selectable_label(method.method_type or "—")
+        left_grid.addWidget(method_type_lbl, 1, 0, QtCore.Qt.AlignRight)
+        left_grid.addWidget(method_type_val, 1, 1)
         
         columns.addLayout(left_grid, 1)
         
@@ -768,17 +709,19 @@ class CardViewDialog(QtWidgets.QDialog):
         right_grid.setVerticalSpacing(6)
         right_grid.setColumnStretch(1, 1)
         
+        user_lbl = QtWidgets.QLabel("User:")
+        user_lbl.setObjectName("MutedLabel")
+        user_name = getattr(method, 'user_name', None)
+        user_display = user_name if user_name else "Unknown User" if method.user_id else "—"
+        user_val = self._make_selectable_label(user_display)
+        right_grid.addWidget(user_lbl, 0, 0, QtCore.Qt.AlignRight)
+        right_grid.addWidget(user_val, 0, 1)
+        
         status_lbl = QtWidgets.QLabel("Status:")
         status_lbl.setObjectName("MutedLabel")
-        status_val = self._make_selectable_label("Active" if card.is_active else "Inactive")
-        right_grid.addWidget(status_lbl, 0, 0, QtCore.Qt.AlignRight)
-        right_grid.addWidget(status_val, 0, 1)
-        
-        cashback_lbl = QtWidgets.QLabel("Cashback %:")
-        cashback_lbl.setObjectName("MutedLabel")
-        cashback_val = self._make_selectable_label(f"{float(card.cashback_rate):.2f}" if card.cashback_rate else "0.00")
-        right_grid.addWidget(cashback_lbl, 1, 0, QtCore.Qt.AlignRight)
-        right_grid.addWidget(cashback_val, 1, 1)
+        status_val = self._make_selectable_label("Active" if method.is_active else "Inactive")
+        right_grid.addWidget(status_lbl, 1, 0, QtCore.Qt.AlignRight)
+        right_grid.addWidget(status_val, 1, 1)
         
         columns.addLayout(right_grid, 1)
         
@@ -797,10 +740,10 @@ class CardViewDialog(QtWidgets.QDialog):
         notes_layout.setContentsMargins(12, 12, 12, 12)
         notes_layout.setSpacing(6)
         
-        if card.notes:
+        if method.notes:
             notes_display = QtWidgets.QTextEdit()
             notes_display.setReadOnly(True)
-            notes_display.setPlainText(card.notes)
+            notes_display.setPlainText(method.notes)
             notes_display.setMaximumHeight(80)
             notes_display.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
             notes_layout.addWidget(notes_display)

@@ -3,7 +3,7 @@ Reusable date filter widget for Qt tabs
 """
 from PySide6 import QtWidgets, QtCore
 from datetime import date, timedelta, datetime
-from ui.input_parsers import parse_date_input
+from desktop.ui.input_parsers import parse_date_input
 
 
 class DateFilterWidget(QtWidgets.QGroupBox):

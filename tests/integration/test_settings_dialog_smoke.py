@@ -10,7 +10,7 @@ import tempfile
 import pytest
 from PySide6 import QtWidgets, QtCore
 from app_facade import AppFacade
-from ui.main_window import MainWindow
+from desktop.ui.main_window import MainWindow
 
 
 @pytest.fixture

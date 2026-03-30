@@ -11,19 +11,19 @@ import sys
 import traceback
 import zipfile
 from app_facade import AppFacade
-from ui.tabs.purchases_tab import PurchasesTab
-from ui.tabs.redemptions_tab import RedemptionsTab
-from ui.tabs.expenses_tab import ExpensesTab
-from ui.tabs.game_sessions_tab import GameSessionsTab
-from ui.tabs.unrealized_tab import UnrealizedTab
-from ui.tabs.realized_tab import RealizedTab
-from ui.tabs.daily_sessions_tab import DailySessionsTab
-from ui.tabs.setup_tab import SetupTab
-from ui.themes import get_theme, get_theme_names
-from ui.settings import Settings
-from ui.notification_widgets import NotificationBellWidget, NotificationCenterDialog
-from ui.settings_dialog import SettingsDialog
-from ui.maintenance_mode_dialog import MaintenanceModeDialog
+from desktop.ui.tabs.purchases_tab import PurchasesTab
+from desktop.ui.tabs.redemptions_tab import RedemptionsTab
+from desktop.ui.tabs.expenses_tab import ExpensesTab
+from desktop.ui.tabs.game_sessions_tab import GameSessionsTab
+from desktop.ui.tabs.unrealized_tab import UnrealizedTab
+from desktop.ui.tabs.realized_tab import RealizedTab
+from desktop.ui.tabs.daily_sessions_tab import DailySessionsTab
+from desktop.ui.tabs.setup_tab import SetupTab
+from desktop.ui.themes import get_theme, get_theme_names
+from desktop.ui.settings import Settings
+from desktop.ui.notification_widgets import NotificationBellWidget, NotificationCenterDialog
+from desktop.ui.settings_dialog import SettingsDialog
+from desktop.ui.maintenance_mode_dialog import MaintenanceModeDialog
 from services.data_integrity_service import DataIntegrityService
 from services.repair_mode_service import RepairModeService
 from models.notification import NotificationSeverity
@@ -857,7 +857,7 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def _show_audit_log(self):
         """Show audit log viewer dialog (Issue #92)"""
-        from ui.audit_log_viewer_dialog import AuditLogViewerDialog
+        from desktop.ui.audit_log_viewer_dialog import AuditLogViewerDialog
         
         dialog = AuditLogViewerDialog(self.facade.audit_service, parent=self)
         dialog.exec()

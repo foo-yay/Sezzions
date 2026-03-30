@@ -6,8 +6,8 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from app_facade import AppFacade
-from ui.main_window import MainWindow
-from ui.tabs.games_tab import GameViewDialog
+from desktop.ui.main_window import MainWindow
+from desktop.ui.tabs.games_tab import GameViewDialog
 
 
 @pytest.fixture(scope="module")

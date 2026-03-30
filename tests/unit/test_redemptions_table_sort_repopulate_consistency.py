@@ -6,7 +6,7 @@ from decimal import Decimal
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
-from ui.tabs.redemptions_tab import RedemptionsTab
+from desktop.ui.tabs.redemptions_tab import RedemptionsTab
 
 
 @dataclass(frozen=True)

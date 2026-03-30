@@ -4,7 +4,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from app_facade import AppFacade
-from ui.tabs.realized_tab import RealizedTab
+from desktop.ui.tabs.realized_tab import RealizedTab
 
 
 @pytest.fixture(scope="module")
@@ -17,7 +17,7 @@ def qapp():
 
 def test_realized_tab_groups_by_local_day(monkeypatch, tmp_path, qapp):
     monkeypatch.setattr(
-        "ui.tabs.realized_tab.get_configured_timezone_name",
+        "desktop.ui.tabs.realized_tab.get_configured_timezone_name",
         lambda *args, **kwargs: "America/New_York",
     )
 

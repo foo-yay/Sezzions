@@ -3,7 +3,7 @@ import os
 from PySide6.QtWidgets import QApplication
 
 from services.tools.dtos import ImportPreview, ValidationError, ValidationSeverity
-from ui.csv_dialogs import ImportPreviewDialog
+from desktop.ui.csv_dialogs import ImportPreviewDialog
 
 
 def test_import_preview_dialog_renders_csv_duplicates_without_crash():

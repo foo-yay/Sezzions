@@ -7,8 +7,8 @@ import pytest
 from PySide6 import QtCore
 
 from app_facade import AppFacade
-from ui.settings import Settings
-from ui.tabs.redemptions_tab import RedemptionsTab
+from desktop.ui.settings import Settings
+from desktop.ui.tabs.redemptions_tab import RedemptionsTab
 
 
 class _MainWindowStub:

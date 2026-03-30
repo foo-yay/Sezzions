@@ -4,7 +4,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from app_facade import AppFacade
-from ui.adjustment_dialogs import CheckpointDialog, BasisAdjustmentDialog
+from desktop.ui.adjustment_dialogs import CheckpointDialog, BasisAdjustmentDialog
 
 
 @pytest.fixture(scope="module")

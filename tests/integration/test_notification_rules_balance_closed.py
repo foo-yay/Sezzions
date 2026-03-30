@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from repositories.notification_repository import NotificationRepository
 from services.notification_service import NotificationService
 from services.notification_rules_service import NotificationRulesService
-from ui.settings import Settings
+from desktop.ui.settings import Settings
 
 
 def test_pending_receipt_rules_ignore_zero_amount_total_loss_rows(test_db, tmp_path):

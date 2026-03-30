@@ -8,18 +8,18 @@ from datetime import date, datetime
 from typing import Literal, Optional
 from app_facade import AppFacade
 from models.redemption import Redemption
-from ui.date_filter_widget import DateFilterWidget
-from ui.table_header_filters import TableHeaderFilter
-from ui.input_parsers import parse_date_input
-from ui.spreadsheet_ux import SpreadsheetUXController
-from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from desktop.ui.date_filter_widget import DateFilterWidget
+from desktop.ui.table_header_filters import TableHeaderFilter
+from desktop.ui.input_parsers import parse_date_input
+from desktop.ui.spreadsheet_ux import SpreadsheetUXController
+from desktop.ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 from tools.time_utils import (
     parse_time_input,
     current_time_with_seconds,
     format_time_display,
     time_to_db_string,
 )
-from ui.adjustment_dialogs import ViewAdjustmentsDialog
+from desktop.ui.adjustment_dialogs import ViewAdjustmentsDialog
 from tools.timezone_utils import get_accounting_timezone_name, get_entry_timezone_name
 
 
@@ -3296,7 +3296,7 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         if not purchase:
             QtWidgets.QMessageBox.warning(self, "Warning", "Purchase not found")
             return
-        from ui.tabs.purchases_tab import PurchaseViewDialog
+        from desktop.ui.tabs.purchases_tab import PurchaseViewDialog
 
         self.accept()
         dialog = PurchaseViewDialog(purchase=purchase, facade=self.facade, parent=self)
@@ -3320,7 +3320,7 @@ class RedemptionViewDialog(QtWidgets.QDialog):
         if not session:
             QtWidgets.QMessageBox.warning(self, "Warning", "Session not found")
             return
-        from ui.tabs.game_sessions_tab import ViewSessionDialog
+        from desktop.ui.tabs.game_sessions_tab import ViewSessionDialog
 
         self.accept()
         dialog = ViewSessionDialog(self.facade, session=session, parent=self)

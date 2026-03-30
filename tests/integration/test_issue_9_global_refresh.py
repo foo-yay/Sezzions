@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QApplication
 
 from app_facade import AppFacade
 from services.data_change_event import DataChangeEvent, OperationType
-from ui.main_window import MainWindow
+from desktop.ui.main_window import MainWindow
 
 
 @pytest.fixture
@@ -129,11 +129,11 @@ class TestTabCompleteness:
     def test_tab_refresh_contract(self):
         """Verify that key tab classes have refresh_data() methods."""
         # Import tab classes
-        from ui.tabs.game_sessions_tab import GameSessionsTab
-        from ui.tabs.daily_sessions_tab import DailySessionsTab
-        from ui.tabs.realized_tab import RealizedTab
-        from ui.tabs.sites_tab import SitesTab
-        from ui.tabs.tools_tab import ToolsTab
+        from desktop.ui.tabs.game_sessions_tab import GameSessionsTab
+        from desktop.ui.tabs.daily_sessions_tab import DailySessionsTab
+        from desktop.ui.tabs.realized_tab import RealizedTab
+        from desktop.ui.tabs.sites_tab import SitesTab
+        from desktop.ui.tabs.tools_tab import ToolsTab
         
         # Check that each tab class has refresh_data attribute
         tabs_to_check = [

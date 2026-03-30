@@ -2,7 +2,7 @@
 
 import pytest
 from decimal import Decimal
-from ui.spreadsheet_ux import SpreadsheetUXController, SelectionStats
+from desktop.ui.spreadsheet_ux import SpreadsheetUXController, SelectionStats
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,

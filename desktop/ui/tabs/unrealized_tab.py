@@ -6,11 +6,11 @@ from decimal import Decimal
 from datetime import date, datetime
 from app_facade import AppFacade
 from models.unrealized_position import UnrealizedPosition
-from ui.adjustment_dialogs import ViewAdjustmentsDialog
-from ui.date_filter_widget import DateFilterWidget
-from ui.table_header_filters import TableHeaderFilter
-from ui.spreadsheet_ux import SpreadsheetUXController
-from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from desktop.ui.adjustment_dialogs import ViewAdjustmentsDialog
+from desktop.ui.date_filter_widget import DateFilterWidget
+from desktop.ui.table_header_filters import TableHeaderFilter
+from desktop.ui.spreadsheet_ux import SpreadsheetUXController
+from desktop.ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 from tools.timezone_utils import get_accounting_timezone_name
 
 

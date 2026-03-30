@@ -1,22 +1,22 @@
 """
-Sites tab - Manage casino sites
+Users tab - Manage users/players
 """
 from datetime import date
 from PySide6 import QtWidgets, QtCore, QtGui
 from app_facade import AppFacade
-from models.site import Site
-from ui.table_header_filters import TableHeaderFilter
-from ui.spreadsheet_ux import SpreadsheetUXController
-from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from models.user import User
+from desktop.ui.table_header_filters import TableHeaderFilter
+from desktop.ui.spreadsheet_ux import SpreadsheetUXController
+from desktop.ui.spreadsheet_stats_bar import SpreadsheetStatsBar
 
 
-class SitesTab(QtWidgets.QWidget):
-    """Tab for managing sites"""
+class UsersTab(QtWidgets.QWidget):
+    """Tab for managing users"""
     
     def __init__(self, facade: AppFacade):
         super().__init__()
         self.facade = facade
-        self.sites = []
+        self.users = []
         
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -24,16 +24,16 @@ class SitesTab(QtWidgets.QWidget):
         
         # Header
         header_layout = QtWidgets.QHBoxLayout()
-        title = QtWidgets.QLabel("Sites")
+        title = QtWidgets.QLabel("Users")
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         header_layout.addWidget(title)
         header_layout.addStretch()
         
         # Search
         self.search_edit = QtWidgets.QLineEdit()
-        self.search_edit.setPlaceholderText("Search sites...")
+        self.search_edit.setPlaceholderText("Search users...")
         self.search_edit.setMaximumWidth(300)
-        self.search_edit.textChanged.connect(self._filter_sites)
+        self.search_edit.textChanged.connect(self._filter_users)
         header_layout.addWidget(self.search_edit)
 
         self.clear_search_btn = QtWidgets.QPushButton("Clear")
@@ -49,23 +49,23 @@ class SitesTab(QtWidgets.QWidget):
         # Toolbar
         toolbar = QtWidgets.QHBoxLayout()
         
-        add_btn = QtWidgets.QPushButton("➕ Add Site")
+        add_btn = QtWidgets.QPushButton("➕ Add User")
         add_btn.setObjectName("PrimaryButton")
-        add_btn.clicked.connect(self._add_site)
+        add_btn.clicked.connect(self._add_user)
         toolbar.addWidget(add_btn)
 
         self.view_btn = QtWidgets.QPushButton("👁️ View")
-        self.view_btn.clicked.connect(self._view_site)
+        self.view_btn.clicked.connect(self._view_user)
         self.view_btn.setVisible(False)
         toolbar.addWidget(self.view_btn)
         
         self.edit_btn = QtWidgets.QPushButton("✏️ Edit")
-        self.edit_btn.clicked.connect(self._edit_site)
+        self.edit_btn.clicked.connect(self._edit_user)
         self.edit_btn.setVisible(False)
         toolbar.addWidget(self.edit_btn)
         
         self.delete_btn = QtWidgets.QPushButton("🗑️ Delete")
-        self.delete_btn.clicked.connect(self._delete_site)
+        self.delete_btn.clicked.connect(self._delete_user)
         self.delete_btn.setVisible(False)
         toolbar.addWidget(self.delete_btn)
         
@@ -83,8 +83,8 @@ class SitesTab(QtWidgets.QWidget):
         
         # Table
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["Name", "URL", "SC Rate", "Playthrough", "Status", "Notes"])
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["Name", "Email", "Status", "Notes"])
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
         header.setStretchLastSection(True)
@@ -93,7 +93,7 @@ class SitesTab(QtWidgets.QWidget):
         self.table.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
         self.table.itemSelectionChanged.connect(self._on_selection_changed)
-        self.table.itemDoubleClicked.connect(self._view_site)
+        self.table.itemDoubleClicked.connect(self._view_user)
         
         # Context menu setup
         self.table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -119,22 +119,23 @@ class SitesTab(QtWidgets.QWidget):
         self.search_edit.selectAll()
 
     def refresh_data(self):
-        """Reload sites from database"""
-        self.sites = self.facade.get_all_sites()
+        """Reload users from database"""
+        self.users = self.facade.get_all_users()
         self._populate_table()
     
     def _populate_table(self):
-        """Populate table with sites"""
+        """Populate table with users"""
+        # Clear search when refreshing
         search_text = self.search_edit.text().lower()
         
-        # Filter sites
+        # Filter users
         if search_text:
-            filtered = [s for s in self.sites 
-                       if search_text in s.name.lower() 
-                       or (s.url and search_text in s.url.lower())
-                       or (s.notes and search_text in s.notes.lower())]
+            filtered = [u for u in self.users 
+                       if search_text in u.name.lower() 
+                       or (u.email and search_text in u.email.lower())
+                       or (u.notes and search_text in u.notes.lower())]
         else:
-            filtered = self.sites
+            filtered = self.users
         
         sorting_was_enabled = self.table.isSortingEnabled()
         self.table.setSortingEnabled(False)
@@ -144,36 +145,26 @@ class SitesTab(QtWidgets.QWidget):
             self.table.clearContents()
             self.table.setRowCount(len(filtered))
         
-            for row, site in enumerate(filtered):
+            for row, user in enumerate(filtered):
                 # Name
-                name_item = QtWidgets.QTableWidgetItem(site.name)
-                name_item.setData(QtCore.Qt.UserRole, site.id)
+                name_item = QtWidgets.QTableWidgetItem(user.name)
+                name_item.setData(QtCore.Qt.UserRole, user.id)
                 self.table.setItem(row, 0, name_item)
                 
-                # URL
-                url = site.url or ""
-                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(url))
-                
-                # SC Rate
-                rate_item = QtWidgets.QTableWidgetItem(f"{site.sc_rate:.4f}")
-                rate_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-                self.table.setItem(row, 2, rate_item)
-
-                # Playthrough requirement
-                playthrough_item = QtWidgets.QTableWidgetItem(f"{site.playthrough_requirement:.4f}")
-                playthrough_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-                self.table.setItem(row, 3, playthrough_item)
+                # Email
+                email = user.email or ""
+                self.table.setItem(row, 1, QtWidgets.QTableWidgetItem(email))
                 
                 # Status
-                status = "Active" if site.is_active else "Inactive"
+                status = "Active" if user.is_active else "Inactive"
                 status_item = QtWidgets.QTableWidgetItem(status)
-                if not site.is_active:
+                if not user.is_active:
                     status_item.setForeground(QtGui.QColor("#999"))
-                self.table.setItem(row, 4, status_item)
+                self.table.setItem(row, 2, status_item)
                 
                 # Notes
-                notes = (site.notes or "")[:100]
-                self.table.setItem(row, 5, QtWidgets.QTableWidgetItem(notes))
+                notes = (user.notes or "")[:100]
+                self.table.setItem(row, 3, QtWidgets.QTableWidgetItem(notes))
 
         finally:
             self.table.blockSignals(False)
@@ -190,7 +181,7 @@ class SitesTab(QtWidgets.QWidget):
         # Column sizing handled by header resize mode
         self.table_filter.apply_filters()
     
-    def _filter_sites(self):
+    def _filter_users(self):
         """Filter table based on search"""
         self._populate_table()
 
@@ -234,12 +225,12 @@ class SitesTab(QtWidgets.QWidget):
             return []
         return sorted(set(index.row() for index in selected_indexes))
     
-    def _get_selected_site_id(self):
-        """Get ID of selected site"""
-        ids = self._get_selected_site_ids()
+    def _get_selected_user_id(self):
+        """Get ID of selected user"""
+        ids = self._get_selected_user_ids()
         return ids[0] if ids else None
 
-    def _get_selected_site_ids(self):
+    def _get_selected_user_ids(self):
         ids = []
         for row in self._get_selected_row_numbers():
             item = self.table.item(row, 0)
@@ -249,77 +240,73 @@ class SitesTab(QtWidgets.QWidget):
                     ids.append(value)
         return ids
     
-    def _add_site(self):
-        """Show dialog to add new site"""
-        dialog = SiteDialog(self)
+    def _add_user(self):
+        """Show dialog to add new user"""
+        dialog = UserDialog(self, suggestions=self.users)
         if dialog.exec():
             try:
-                site = self.facade.create_site(
+                user = self.facade.create_user(
                     name=dialog.name_edit.text(),
-                    url=dialog.url_edit.text() or None,
-                    sc_rate=float(dialog.rate_edit.text()),
-                    playthrough_requirement=float(dialog.playthrough_edit.text()),
+                    email=dialog.email_edit.text() or None,
                     notes=dialog.notes_edit.toPlainText() or None
                 )
                 self.refresh_data()
                 QtWidgets.QMessageBox.information(
-                    self.window() or self, "Success", f"Site '{site.name}' created"
+                    self.window() or self, "Success", f"User '{user.name}' created"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
-                    self, "Error", f"Failed to create site:\n{str(e)}"
+                    self, "Error", f"Failed to create user:\n{str(e)}"
                 )
     
-    def _edit_site(self):
-        """Show dialog to edit selected site"""
-        site_id = self._get_selected_site_id()
-        if not site_id:
+    def _edit_user(self):
+        """Show dialog to edit selected user"""
+        user_id = self._get_selected_user_id()
+        if not user_id:
             return
         
-        site = self.facade.get_site(site_id)
-        if not site:
+        user = self.facade.get_user(user_id)
+        if not user:
             return
         
-        dialog = SiteDialog(self, site)
+        dialog = UserDialog(self, user, suggestions=self.users)
         if dialog.exec():
             try:
-                updated = self.facade.update_site(
-                    site_id,
+                updated = self.facade.update_user(
+                    user_id,
                     name=dialog.name_edit.text(),
-                    url=dialog.url_edit.text() or None,
-                    sc_rate=float(dialog.rate_edit.text()),
-                    playthrough_requirement=float(dialog.playthrough_edit.text()),
+                    email=dialog.email_edit.text() or None,
                     notes=dialog.notes_edit.toPlainText() or None,
                     is_active=dialog.active_check.isChecked()
                 )
                 self.refresh_data()
                 QtWidgets.QMessageBox.information(
-                    self, "Success", f"Site '{updated.name}' updated"
+                    self, "Success", f"User '{updated.name}' updated"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
-                    self, "Error", f"Failed to update site:\n{str(e)}"
+                    self, "Error", f"Failed to update user:\n{str(e)}"
                 )
     
-    def _delete_site(self):
-        """Delete selected site"""
-        site_ids = self._get_selected_site_ids()
-        if not site_ids:
+    def _delete_user(self):
+        """Delete selected user"""
+        user_ids = self._get_selected_user_ids()
+        if not user_ids:
             return
 
-        sites = []
-        for site_id in site_ids:
-            site = self.facade.get_site(site_id)
-            if site:
-                sites.append(site)
+        users = []
+        for user_id in user_ids:
+            user = self.facade.get_user(user_id)
+            if user:
+                users.append(user)
 
-        if not sites:
+        if not users:
             return
 
-        if len(sites) == 1:
-            prompt = f"Delete site '{sites[0].name}'?\n\nThis cannot be undone."
+        if len(users) == 1:
+            prompt = f"Delete user '{users[0].name}'?\n\nThis cannot be undone."
         else:
-            prompt = f"Delete {len(sites)} sites?\n\nThis cannot be undone."
+            prompt = f"Delete {len(users)} users?\n\nThis cannot be undone."
 
         reply = QtWidgets.QMessageBox.question(
             self,
@@ -330,15 +317,15 @@ class SitesTab(QtWidgets.QWidget):
 
         if reply == QtWidgets.QMessageBox.Yes:
             try:
-                for site in sites:
-                    self.facade.delete_site(site.id)
+                for user in users:
+                    self.facade.delete_user(user.id)
                 self.refresh_data()
                 QtWidgets.QMessageBox.information(
-                    self, "Success", "Site(s) deleted"
+                    self, "Success", "User(s) deleted"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.warning(
-                    self, "Error", f"Failed to delete site(s):\n{str(e)}"
+                    self, "Error", f"Failed to delete user(s):\n{str(e)}"
                 )
 
     def _copy_selection(self):
@@ -374,8 +361,8 @@ class SitesTab(QtWidgets.QWidget):
 
         filename, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            "Export Sites",
-            f"sites_{date.today().isoformat()}.csv",
+            "Export Users",
+            f"users_{date.today().isoformat()}.csv",
             "CSV Files (*.csv)"
         )
 
@@ -397,39 +384,40 @@ class SitesTab(QtWidgets.QWidget):
 
                 QtWidgets.QMessageBox.information(
                     self, "Export Complete",
-                    f"Exported sites to:\n{filename}"
+                    f"Exported users to:\n{filename}"
                 )
             except Exception as e:
                 QtWidgets.QMessageBox.critical(
                     self, "Export Error", f"Failed to export:\n{str(e)}"
                 )
 
-    def _view_site(self):
-        site_id = self._get_selected_site_id()
-        if not site_id:
+    def _view_user(self):
+        user_id = self._get_selected_user_id()
+        if not user_id:
             return
-        site = self.facade.get_site(site_id)
-        if not site:
+        user = self.facade.get_user(user_id)
+        if not user:
             return
         
-        dialog = SiteViewDialog(
-            site,
+        dialog = UserViewDialog(
+            user,
             parent=self,
-            on_edit=self._edit_site,
-            on_delete=self._delete_site,
+            on_edit=self._edit_user,
+            on_delete=self._delete_user,
         )
         dialog.exec()
         self.refresh_data()
 
 
-class SiteDialog(QtWidgets.QDialog):
-    """Dialog for adding/editing sites"""
+class UserDialog(QtWidgets.QDialog):
+    """Dialog for adding/editing users"""
     
-    def __init__(self, parent=None, site: Site = None):
+    def __init__(self, parent=None, user: User = None, suggestions=None):
         super().__init__(parent)
-        self.site = site
-        self.setWindowTitle("Edit Site" if site else "Add Site")
-        self.setMinimumSize(420, 420)
+        self.user = user
+        self.suggestions = suggestions or []
+        self.setWindowTitle("Edit User" if user else "Add User")
+        self.setMinimumSize(400, 300)
         
         # Main layout
         main_layout = QtWidgets.QVBoxLayout(self)
@@ -437,7 +425,7 @@ class SiteDialog(QtWidgets.QDialog):
         main_layout.setSpacing(16)
         
         # Section header
-        header = QtWidgets.QLabel("🏢 Site Details")
+        header = QtWidgets.QLabel("👤 User Details")
         header.setObjectName("SectionHeader")
         main_layout.addWidget(header)
         
@@ -454,53 +442,31 @@ class SiteDialog(QtWidgets.QDialog):
         active_label.setObjectName("FieldLabel")
         active_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.active_check = QtWidgets.QCheckBox()
-        self.active_check.setChecked(site.is_active if site else True)
+        self.active_check.setChecked(user.is_active if user else True)
         main_grid.addWidget(active_label, 0, 0)
         main_grid.addWidget(self.active_check, 0, 1)
         
-        # Name (required)
+        # Name (required) - same width as Email
         name_label = QtWidgets.QLabel("Name:")
         name_label.setObjectName("FieldLabel")
         name_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         self.name_edit = QtWidgets.QLineEdit()
         self.name_edit.setPlaceholderText("Required")
-        if site:
-            self.name_edit.setText(site.name)
+        if user:
+            self.name_edit.setText(user.name)
         main_grid.addWidget(name_label, 1, 0)
         main_grid.addWidget(self.name_edit, 1, 1)
         
-        # URL (optional)
-        url_label = QtWidgets.QLabel("URL:")
-        url_label.setObjectName("FieldLabel")
-        url_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self.url_edit = QtWidgets.QLineEdit()
-        self.url_edit.setPlaceholderText("Optional")
-        if site and site.url:
-            self.url_edit.setText(site.url)
-        main_grid.addWidget(url_label, 2, 0)
-        main_grid.addWidget(self.url_edit, 2, 1)
-        
-        # SC Rate (required)
-        rate_label = QtWidgets.QLabel("SC Rate:")
-        rate_label.setObjectName("FieldLabel")
-        rate_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self.rate_edit = QtWidgets.QLineEdit()
-        self.rate_edit.setPlaceholderText("Required (e.g., 1.0)")
-        self.rate_edit.setFixedWidth(140)
-        self.rate_edit.setText(str(site.sc_rate if site else "1.0"))
-        main_grid.addWidget(rate_label, 3, 0)
-        main_grid.addWidget(self.rate_edit, 3, 1)
-
-        # Playthrough Requirement (required)
-        playthrough_label = QtWidgets.QLabel("Playthrough Requirement:")
-        playthrough_label.setObjectName("FieldLabel")
-        playthrough_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        self.playthrough_edit = QtWidgets.QLineEdit()
-        self.playthrough_edit.setPlaceholderText("Required (e.g., 1.0)")
-        self.playthrough_edit.setFixedWidth(140)
-        self.playthrough_edit.setText(str(site.playthrough_requirement if site else "1.0"))
-        main_grid.addWidget(playthrough_label, 4, 0)
-        main_grid.addWidget(self.playthrough_edit, 4, 1)
+        # Email (optional) - same width as Name
+        email_label = QtWidgets.QLabel("Email:")
+        email_label.setObjectName("FieldLabel")
+        email_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.email_edit = QtWidgets.QLineEdit()
+        self.email_edit.setPlaceholderText("Optional")
+        if user and user.email:
+            self.email_edit.setText(user.email)
+        main_grid.addWidget(email_label, 2, 0)
+        main_grid.addWidget(self.email_edit, 2, 1)
         
         main_layout.addWidget(main_section)
         
@@ -520,18 +486,15 @@ class SiteDialog(QtWidgets.QDialog):
         self.notes_edit = QtWidgets.QPlainTextEdit()
         self.notes_edit.setPlaceholderText("Optional...")
         self.notes_edit.setFixedHeight(80)
-        if site and site.notes:
-            self.notes_edit.setPlainText(site.notes)
+        if user and user.notes:
+            self.notes_edit.setPlainText(user.notes)
         notes_layout.addWidget(self.notes_edit)
         self.notes_section.setVisible(False)
         main_layout.addWidget(self.notes_section)
         
         # Expand notes if editing and notes exist
-        if site and site.notes:
+        if user and user.notes:
             self._toggle_notes()
-        
-        # Stretch
-        main_layout.addStretch(1)
         
         # Buttons
         btn_row = QtWidgets.QHBoxLayout()
@@ -550,16 +513,30 @@ class SiteDialog(QtWidgets.QDialog):
         
         # Validation
         self.name_edit.textChanged.connect(self._validate_inline)
-        self.rate_edit.textChanged.connect(self._validate_inline)
-        self.playthrough_edit.textChanged.connect(self._validate_inline)
         self._validate_inline()
+        
+        # Autocomplete
+        if self.suggestions:
+            name_model = QtCore.QStringListModel([u.name for u in self.suggestions if u and u.name])
+            name_completer = QtWidgets.QCompleter(name_model)
+            name_completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+            name_completer.setFilterMode(QtCore.Qt.MatchStartsWith)
+            name_completer.setCompletionMode(QtWidgets.QCompleter.InlineCompletion)
+            self.name_edit.setCompleter(name_completer)
+            
+            emails = [u.email for u in self.suggestions if u and u.email]
+            if emails:
+                email_model = QtCore.QStringListModel(emails)
+                email_completer = QtWidgets.QCompleter(email_model)
+                email_completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+                email_completer.setFilterMode(QtCore.Qt.MatchStartsWith)
+                email_completer.setCompletionMode(QtWidgets.QCompleter.InlineCompletion)
+                self.email_edit.setCompleter(email_completer)
         
         # Tab order
         self.setTabOrder(self.name_edit, self.active_check)
-        self.setTabOrder(self.active_check, self.url_edit)
-        self.setTabOrder(self.url_edit, self.rate_edit)
-        self.setTabOrder(self.rate_edit, self.playthrough_edit)
-        self.setTabOrder(self.playthrough_edit, self.notes_edit)
+        self.setTabOrder(self.active_check, self.email_edit)
+        self.setTabOrder(self.email_edit, self.notes_edit)
         self.setTabOrder(self.notes_edit, self.save_btn)
     
     def _toggle_notes(self):
@@ -568,14 +545,14 @@ class SiteDialog(QtWidgets.QDialog):
         self.notes_section.setVisible(not self.notes_collapsed)
         if self.notes_collapsed:
             self.notes_toggle.setText("📝 Add Notes...")
-            self.setMinimumHeight(420)
-            self.setMaximumHeight(420)
-            self.resize(self.width(), 420)
+            self.setMinimumHeight(350)
+            self.setMaximumHeight(350)
+            self.resize(self.width(), 350)
         else:
             self.notes_toggle.setText("📝 Hide Notes")
-            self.setMinimumHeight(500)
+            self.setMinimumHeight(430)
             self.setMaximumHeight(16777215)
-            self.resize(self.width(), 500)
+            self.resize(self.width(), 430)
     
     def _set_invalid(self, widget, message):
         widget.setProperty("invalid", True)
@@ -599,24 +576,6 @@ class SiteDialog(QtWidgets.QDialog):
         else:
             self._set_valid(self.name_edit)
         
-        try:
-            rate = float(self.rate_edit.text())
-            if rate <= 0:
-                raise ValueError("Rate must be positive")
-            self._set_valid(self.rate_edit)
-        except Exception:
-            self._set_invalid(self.rate_edit, "Enter a positive rate")
-            valid = False
-
-        try:
-            playthrough = float(self.playthrough_edit.text())
-            if playthrough <= 0:
-                raise ValueError("Playthrough requirement must be positive")
-            self._set_valid(self.playthrough_edit)
-        except Exception:
-            self._set_invalid(self.playthrough_edit, "Enter a positive playthrough requirement")
-            valid = False
-        
         self.save_btn.setEnabled(valid)
         return valid
     
@@ -630,28 +589,28 @@ class SiteDialog(QtWidgets.QDialog):
         self.accept()
 
 
-class SiteViewDialog(QtWidgets.QDialog):
-    """Dialog for viewing site details"""
+class UserViewDialog(QtWidgets.QDialog):
+    """Dialog for viewing user details"""
     
-    def __init__(self, site: Site, parent=None, on_edit=None, on_delete=None):
+    def __init__(self, user: User, parent=None, on_edit=None, on_delete=None):
         super().__init__(parent)
-        self.site = site
+        self.user = user
         self._on_edit = on_edit
         self._on_delete = on_delete
-        self.setWindowTitle("View Site")
-        self.setMinimumSize(550, 300)
+        self.setWindowTitle("View User")
+        self.setMinimumSize(520, 300)
         
         # Main layout
         main_layout = QtWidgets.QVBoxLayout(self)
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(12)
         
-        # Site details section header
-        details_header = QtWidgets.QLabel("🏛️ Site Details")
+        # User details section header
+        details_header = QtWidgets.QLabel("👤 User Details")
         details_header.setObjectName("SectionHeader")
         main_layout.addWidget(details_header)
         
-        # Site details section
+        # User details section
         details_section = QtWidgets.QWidget()
         details_section.setObjectName("SectionBackground")
         details_layout = QtWidgets.QVBoxLayout(details_section)
@@ -670,15 +629,15 @@ class SiteViewDialog(QtWidgets.QDialog):
         
         name_lbl = QtWidgets.QLabel("Name:")
         name_lbl.setObjectName("MutedLabel")
-        name_val = self._make_selectable_label(site.name)
+        name_val = self._make_selectable_label(user.name)
         left_grid.addWidget(name_lbl, 0, 0, QtCore.Qt.AlignRight)
         left_grid.addWidget(name_val, 0, 1)
         
-        url_lbl = QtWidgets.QLabel("URL:")
-        url_lbl.setObjectName("MutedLabel")
-        url_val = self._make_selectable_label(site.url or "—")
-        left_grid.addWidget(url_lbl, 1, 0, QtCore.Qt.AlignRight)
-        left_grid.addWidget(url_val, 1, 1)
+        email_lbl = QtWidgets.QLabel("Email:")
+        email_lbl.setObjectName("MutedLabel")
+        email_val = self._make_selectable_label(user.email or "—")
+        left_grid.addWidget(email_lbl, 1, 0, QtCore.Qt.AlignRight)
+        left_grid.addWidget(email_val, 1, 1)
         
         columns.addLayout(left_grid, 1)
         
@@ -690,21 +649,9 @@ class SiteViewDialog(QtWidgets.QDialog):
         
         status_lbl = QtWidgets.QLabel("Status:")
         status_lbl.setObjectName("MutedLabel")
-        status_val = self._make_selectable_label("Active" if site.is_active else "Inactive")
+        status_val = self._make_selectable_label("Active" if user.is_active else "Inactive")
         right_grid.addWidget(status_lbl, 0, 0, QtCore.Qt.AlignRight)
         right_grid.addWidget(status_val, 0, 1)
-        
-        rate_lbl = QtWidgets.QLabel("SC Rate:")
-        rate_lbl.setObjectName("MutedLabel")
-        rate_val = self._make_selectable_label(str(site.sc_rate))
-        right_grid.addWidget(rate_lbl, 1, 0, QtCore.Qt.AlignRight)
-        right_grid.addWidget(rate_val, 1, 1)
-
-        playthrough_lbl = QtWidgets.QLabel("Playthrough:")
-        playthrough_lbl.setObjectName("MutedLabel")
-        playthrough_val = self._make_selectable_label(str(site.playthrough_requirement))
-        right_grid.addWidget(playthrough_lbl, 2, 0, QtCore.Qt.AlignRight)
-        right_grid.addWidget(playthrough_val, 2, 1)
         
         columns.addLayout(right_grid, 1)
         
@@ -723,10 +670,10 @@ class SiteViewDialog(QtWidgets.QDialog):
         notes_layout.setContentsMargins(12, 12, 12, 12)
         notes_layout.setSpacing(6)
         
-        if site.notes:
+        if user.notes:
             notes_display = QtWidgets.QTextEdit()
             notes_display.setReadOnly(True)
-            notes_display.setPlainText(site.notes)
+            notes_display.setPlainText(user.notes)
             notes_display.setMaximumHeight(80)
             notes_display.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
             notes_layout.addWidget(notes_display)

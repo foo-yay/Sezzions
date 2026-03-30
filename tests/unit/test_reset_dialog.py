@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 
-from ui.tools_dialogs import ResetDialog
+from desktop.ui.tools_dialogs import ResetDialog
 
 
 @pytest.fixture(scope="module")

@@ -6,17 +6,17 @@ from decimal import Decimal
 from datetime import date, datetime
 
 from app_facade import AppFacade
-from ui.adjustment_dialogs import ViewAdjustmentsDialog
-from ui.date_filter_widget import DateFilterWidget
-from ui.spreadsheet_ux import SpreadsheetUXController
-from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
-from ui.daily_sessions_filters import (
+from desktop.ui.adjustment_dialogs import ViewAdjustmentsDialog
+from desktop.ui.date_filter_widget import DateFilterWidget
+from desktop.ui.spreadsheet_ux import SpreadsheetUXController
+from desktop.ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from desktop.ui.daily_sessions_filters import (
     ColumnFilterDialog,
     DateTimeFilterDialog,
     header_resize_section_index,
     header_menu_position,
 )
-from ui.input_parsers import parse_date_input
+from desktop.ui.input_parsers import parse_date_input
 from tools.timezone_utils import (
     get_accounting_timezone_name,
     get_configured_timezone_name,

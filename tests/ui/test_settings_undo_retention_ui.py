@@ -7,8 +7,8 @@ import pytest
 from PySide6.QtWidgets import QApplication
 from unittest.mock import Mock
 from app_facade import AppFacade
-from ui.main_window import MainWindow
-from ui.settings_dialog import SettingsDialog
+from desktop.ui.main_window import MainWindow
+from desktop.ui.settings_dialog import SettingsDialog
 
 
 @pytest.fixture(scope="module")
