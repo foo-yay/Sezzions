@@ -33,6 +33,8 @@ class HostedAccountRecord(HostedBase):
     role: Mapped[str] = mapped_column(String(32), nullable=False, default="owner")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     supabase_user_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedWorkspaceRecord(HostedBase):
@@ -47,6 +49,8 @@ class HostedWorkspaceRecord(HostedBase):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     source_db_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedUserRecord(HostedBase):
@@ -63,6 +67,8 @@ class HostedUserRecord(HostedBase):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedSiteRecord(HostedBase):
@@ -77,6 +83,8 @@ class HostedSiteRecord(HostedBase):
     playthrough_requirement: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedCardRecord(HostedBase):
@@ -91,6 +99,8 @@ class HostedCardRecord(HostedBase):
     cashback_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedRedemptionMethodTypeRecord(HostedBase):
@@ -102,6 +112,8 @@ class HostedRedemptionMethodTypeRecord(HostedBase):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedRedemptionMethodRecord(HostedBase):
@@ -119,6 +131,8 @@ class HostedRedemptionMethodRecord(HostedBase):
     user_id: Mapped[str | None] = mapped_column(ForeignKey("hosted_users.id", ondelete="CASCADE"), nullable=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedGameTypeRecord(HostedBase):
@@ -130,6 +144,8 @@ class HostedGameTypeRecord(HostedBase):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedGameRecord(HostedBase):
@@ -144,6 +160,8 @@ class HostedGameRecord(HostedBase):
     actual_rtp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedPurchaseRecord(HostedBase):
@@ -160,6 +178,7 @@ class HostedPurchaseRecord(HostedBase):
     amount: Mapped[str] = mapped_column(String(32), nullable=False)
     sc_received: Mapped[str] = mapped_column(String(32), nullable=False, default="0.00")
     starting_sc_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0.00")
+    starting_redeemable_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0.00")
     cashback_earned: Mapped[str] = mapped_column(String(32), nullable=False, default="0.00")
     cashback_is_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     purchase_date: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -170,6 +189,8 @@ class HostedPurchaseRecord(HostedBase):
     status: Mapped[str] = mapped_column(String(64), nullable=False, default="active")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     deleted_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedUnrealizedPositionRecord(HostedBase):
@@ -181,6 +202,8 @@ class HostedUnrealizedPositionRecord(HostedBase):
     site_id: Mapped[str] = mapped_column(ForeignKey("hosted_sites.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id", ondelete="CASCADE"), nullable=False, index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedRedemptionRecord(HostedBase):
@@ -213,6 +236,8 @@ class HostedRedemptionRecord(HostedBase):
     canceled_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     cancel_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     deleted_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedGameSessionRecord(HostedBase):
@@ -260,6 +285,8 @@ class HostedGameSessionRecord(HostedBase):
     status: Mapped[str] = mapped_column(String(64), nullable=False, default="Active")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     deleted_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedGameSessionEventLinkRecord(HostedBase):
@@ -321,6 +348,7 @@ class HostedRealizedTransactionRecord(HostedBase):
     payout: Mapped[str] = mapped_column(String(32), nullable=False)
     net_pl: Mapped[str] = mapped_column(String(32), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedRealizedDailyNoteRecord(HostedBase):
@@ -331,6 +359,8 @@ class HostedRealizedDailyNoteRecord(HostedBase):
     workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
     session_date: Mapped[str] = mapped_column(String(32), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedExpenseRecord(HostedBase):
@@ -347,6 +377,8 @@ class HostedExpenseRecord(HostedBase):
     category: Mapped[str | None] = mapped_column(String(255), nullable=True)
     user_id: Mapped[str | None] = mapped_column(ForeignKey("hosted_users.id", ondelete="CASCADE"), nullable=True, index=True)
     expense_entry_time_zone: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedDailySessionRecord(HostedBase):
@@ -364,6 +396,8 @@ class HostedDailySessionRecord(HostedBase):
     num_game_sessions: Mapped[int] = mapped_column(nullable=False, default=0)
     num_other_income_items: Mapped[int] = mapped_column(nullable=False, default=0)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedDailyDateTaxRecord(HostedBase):
@@ -378,6 +412,8 @@ class HostedDailyDateTaxRecord(HostedBase):
     tax_withholding_is_custom: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     tax_withholding_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class HostedAccountAdjustmentRecord(HostedBase):
@@ -404,6 +440,47 @@ class HostedAccountAdjustmentRecord(HostedBase):
     related_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     deleted_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     deleted_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class HostedAuditLogRecord(HostedBase):
+    __tablename__ = "hosted_audit_log"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    table_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    record_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    old_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    new_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    group_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    summary_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    timestamp: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class HostedSettingsRecord(HostedBase):
+    __tablename__ = "hosted_settings"
+
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("hosted_workspaces.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class HostedAccountingTimeZoneHistoryRecord(HostedBase):
+    __tablename__ = "hosted_accounting_time_zone_history"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    effective_utc_timestamp: Mapped[str] = mapped_column(String(64), nullable=False)
+    accounting_time_zone: Mapped[str] = mapped_column(String(128), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 def _ensure_hosted_schema_compatibility(engine) -> None:
@@ -431,7 +508,65 @@ def _ensure_hosted_schema_compatibility(engine) -> None:
                 for statement in statements:
                     connection.execute(text(statement))
 
+    _migrate_missing_columns(engine, inspector)
     _migrate_fk_ondelete_rules(engine, inspector)
+
+
+# --- Missing column migration ---------------------------------------------
+
+
+def _column_default_sql(column) -> str:
+    """Return a SQL DEFAULT literal for a NOT NULL column being added to an existing table."""
+    if column.default is not None:
+        arg = column.default.arg
+        if not callable(arg):
+            if isinstance(arg, bool):
+                return "TRUE" if arg else "FALSE"
+            if isinstance(arg, (int, float)):
+                return str(arg)
+            if isinstance(arg, str):
+                return f"'{arg}'"
+    # Fallback based on column type
+    type_name = type(column.type).__name__
+    if type_name in ("String", "Text"):
+        return "''"
+    if type_name == "Boolean":
+        return "FALSE"
+    if type_name == "Float":
+        return "0.0"
+    return "''"
+
+
+def _migrate_missing_columns(engine, inspector) -> None:
+    """Add columns defined in ORM models but missing from live database tables.
+
+    Idempotent: skips columns that already exist and tables not yet created.
+    """
+    existing_tables = set(inspector.get_table_names())
+    statements: list[str] = []
+
+    for table in HostedBase.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            continue
+        existing_cols = {col["name"] for col in inspector.get_columns(table.name)}
+        for column in table.columns:
+            if column.name in existing_cols:
+                continue
+            col_type = column.type.compile(dialect=engine.dialect)
+            if column.nullable:
+                statements.append(
+                    f"ALTER TABLE {table.name} ADD COLUMN {column.name} {col_type} NULL"
+                )
+            else:
+                default_val = _column_default_sql(column)
+                statements.append(
+                    f"ALTER TABLE {table.name} ADD COLUMN {column.name} {col_type} NOT NULL DEFAULT {default_val}"
+                )
+
+    if statements:
+        with engine.begin() as connection:
+            for stmt in statements:
+                connection.execute(text(stmt))
 
 
 # --- FK ondelete migration ------------------------------------------------

@@ -40,6 +40,9 @@ def test_hosted_business_schema_defines_all_core_workspace_tables() -> None:
         "hosted_daily_sessions",
         "hosted_daily_date_tax",
         "hosted_account_adjustments",
+        "hosted_audit_log",
+        "hosted_settings",
+        "hosted_accounting_time_zone_history",
     }.issubset(table_names)
 
 

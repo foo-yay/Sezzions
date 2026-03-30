@@ -9,6 +9,34 @@ Rules:
 
 ---
 
+## 2026-03-30
+
+```yaml
+id: 2026-03-30-01
+type: feat
+areas: [hosted, persistence, tests]
+issue: "#236"
+summary: "Hosted DB schema parity with desktop: timestamps, missing columns, missing tables, auto-migration"
+details: >
+  Brought the hosted Postgres schema into full parity with the desktop SQLite schema.
+
+  Implemented:
+  - Added created_at and updated_at columns to all 18 domain ORM tables
+  - Added created_at to 4 link/transaction tables (event_links, allocations, realized_transactions, tz_history)
+  - Added starting_redeemable_balance column to hosted_purchases
+  - Added 3 missing tables: hosted_audit_log, hosted_settings, hosted_accounting_time_zone_history
+  - Added generic _migrate_missing_columns() auto-migration that introspects ORM metadata vs live schema and ALTERs any missing columns with correct types/defaults
+  - 12 new tests covering timestamp presence, new tables, migration idempotency, and column default SQL generation
+
+  Validation:
+  - python3 -m pytest (1170 passed, 1 known flaky skipped)
+files_changed:
+  - services/hosted/persistence.py
+  - tests/services/hosted/test_hosted_schema_parity.py
+  - tests/services/hosted/test_business_schema_foundation.py
+  - docs/status/CHANGELOG.md
+```
+
 ## 2026-03-29
 
 ```yaml
