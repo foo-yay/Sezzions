@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, date
 from repositories.notification_repository import NotificationRepository
 from services.notification_service import NotificationService
 from services.notification_rules_service import NotificationRulesService
-from ui.settings import Settings
+from desktop.ui.settings import Settings
 from models.notification import NotificationSeverity
 
 

@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from ui.tabs.redemptions_tab import classify_redemption_confirmation
+from desktop.ui.tabs.redemptions_tab import classify_redemption_confirmation
 
 
 def test_partial_redeems_all_redeemable_but_total_remains_is_not_full_cashout_warning():

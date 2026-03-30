@@ -16,14 +16,14 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QTime, QDate, QTimer
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
-from ui.date_filter_widget import DateFilterWidget
-from ui.tabs.purchases_tab import PurchaseViewDialog
-from ui.tabs.redemptions_tab import RedemptionViewDialog
-from ui.table_header_filters import TableHeaderFilter
-from ui.spreadsheet_ux import SpreadsheetUXController
-from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
-from ui.input_parsers import parse_date_input, parse_time_input
-from ui.adjustment_dialogs import ViewAdjustmentsDialog
+from desktop.ui.date_filter_widget import DateFilterWidget
+from desktop.ui.tabs.purchases_tab import PurchaseViewDialog
+from desktop.ui.tabs.redemptions_tab import RedemptionViewDialog
+from desktop.ui.table_header_filters import TableHeaderFilter
+from desktop.ui.spreadsheet_ux import SpreadsheetUXController
+from desktop.ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from desktop.ui.input_parsers import parse_date_input, parse_time_input
+from desktop.ui.adjustment_dialogs import ViewAdjustmentsDialog
 from tools.timezone_utils import (
     get_accounting_timezone_name,
     get_entry_timezone_name,

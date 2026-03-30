@@ -7,7 +7,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from app_facade import AppFacade
-from ui.tabs.expenses_tab import ExpenseDialog, ExpensesTab
+from desktop.ui.tabs.expenses_tab import ExpenseDialog, ExpensesTab
 
 
 @pytest.fixture(scope="module")

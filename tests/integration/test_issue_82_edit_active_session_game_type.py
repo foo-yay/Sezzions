@@ -10,7 +10,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from app_facade import AppFacade
-from ui.tabs.game_sessions_tab import EditSessionDialog
+from desktop.ui.tabs.game_sessions_tab import EditSessionDialog
 
 
 @pytest.fixture

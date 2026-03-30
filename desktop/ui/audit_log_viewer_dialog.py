@@ -7,7 +7,7 @@ import json
 from datetime import datetime, date, timedelta
 import tempfile
 import os
-from ui.date_filter_widget import DateFilterWidget
+from desktop.ui.date_filter_widget import DateFilterWidget
 
 
 class AuditLogViewerDialog(QtWidgets.QDialog):

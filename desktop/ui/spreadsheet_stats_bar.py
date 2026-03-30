@@ -12,7 +12,7 @@ from PySide6.QtCore import Qt
 from decimal import Decimal
 from typing import Optional
 
-from ui.spreadsheet_ux import SelectionStats
+from desktop.ui.spreadsheet_ux import SelectionStats
 
 
 class SpreadsheetStatsBar(QWidget):

@@ -12,6 +12,31 @@ Rules:
 ## 2026-03-30
 
 ```yaml
+id: 2026-03-30-02
+type: chore
+areas: [repo, docs]
+issue: "#238"
+summary: "Reorganize repo: move desktop-only code to desktop/ subdirectory"
+details: >
+  Moved all desktop-specific files (PyQt UI, entrypoint, resources, build spec)
+  into a desktop/ subdirectory. Shared backend code (models, repositories,
+  services, app_facade) remains at root. Updated all import paths from
+  'from ui.*' to 'from desktop.ui.*' across ~70 files. Updated AGENTS.md,
+  copilot-instructions.md, and PROJECT_SPEC.md to reflect active web
+  development vs deprecated desktop.
+
+  Desktop app remains runnable via: python3 desktop/sezzions.py
+
+files_changed:
+  - desktop/ (new — ui/, sezzions.py, resources/, __init__.py)
+  - ~70 .py files (import path updates)
+  - AGENTS.md
+  - .github/copilot-instructions.md
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-30-01
 type: feat
 areas: [hosted, persistence, tests]

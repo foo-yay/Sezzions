@@ -6,7 +6,7 @@ import pytest
 from PySide6.QtWidgets import QApplication, QLabel
 
 from app_facade import AppFacade
-from ui.tabs.game_sessions_tab import EndSessionDialog, EditClosedSessionDialog, StartSessionDialog
+from desktop.ui.tabs.game_sessions_tab import EndSessionDialog, EditClosedSessionDialog, StartSessionDialog
 
 
 @pytest.fixture(scope="module")

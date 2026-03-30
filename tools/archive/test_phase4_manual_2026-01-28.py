@@ -72,7 +72,7 @@ def test_worker_classes():
     print("TEST 3: Background Worker Classes")
     print("=" * 60)
     
-    from ui.tools_workers import RecalculationWorker, WorkerSignals
+    from desktop.ui.tools_workers import RecalculationWorker, WorkerSignals
     
     print("✅ RecalculationWorker importable")
     print("✅ WorkerSignals importable")
@@ -93,7 +93,7 @@ def test_dialog_classes():
     print("TEST 4: Dialog Classes")
     print("=" * 60)
     
-    from ui.tools_dialogs import (
+    from desktop.ui.tools_dialogs import (
         ProgressDialog,
         RecalculationProgressDialog,
         RecalculationResultDialog,
@@ -113,7 +113,7 @@ def test_tools_tab_methods():
     print("TEST 5: Tools Tab Integration")
     print("=" * 60)
     
-    from ui.tabs.tools_tab import ToolsTab
+    from desktop.ui.tabs.tools_tab import ToolsTab
     
     print("✅ ToolsTab importable")
     

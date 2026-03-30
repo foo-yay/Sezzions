@@ -6,8 +6,8 @@ import pytest
 from PySide6.QtWidgets import QApplication
 from decimal import Decimal
 
-from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
-from ui.spreadsheet_ux import SelectionStats
+from desktop.ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from desktop.ui.spreadsheet_ux import SelectionStats
 
 
 @pytest.fixture(scope="module")

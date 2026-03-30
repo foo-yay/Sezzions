@@ -6,7 +6,7 @@ import pytest
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from models.unrealized_position import UnrealizedPosition
-from ui.tabs.unrealized_tab import UnrealizedTab
+from desktop.ui.tabs.unrealized_tab import UnrealizedTab
 
 
 @pytest.fixture(scope="module")

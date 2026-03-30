@@ -5,13 +5,13 @@ from datetime import date
 import pytest
 
 from app_facade import AppFacade
-from ui.tabs.purchases_tab import PurchasesTab
-from ui.tabs.redemptions_tab import RedemptionsTab
-from ui.tabs.game_sessions_tab import GameSessionsTab
-from ui.tabs.daily_sessions_tab import DailySessionsTab
-from ui.tabs.unrealized_tab import UnrealizedTab
-from ui.tabs.realized_tab import RealizedTab
-from ui.tabs.expenses_tab import ExpensesTab
+from desktop.ui.tabs.purchases_tab import PurchasesTab
+from desktop.ui.tabs.redemptions_tab import RedemptionsTab
+from desktop.ui.tabs.game_sessions_tab import GameSessionsTab
+from desktop.ui.tabs.daily_sessions_tab import DailySessionsTab
+from desktop.ui.tabs.unrealized_tab import UnrealizedTab
+from desktop.ui.tabs.realized_tab import RealizedTab
+from desktop.ui.tabs.expenses_tab import ExpensesTab
 
 
 @pytest.fixture

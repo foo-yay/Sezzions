@@ -13,8 +13,8 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer
 
 from app_facade import AppFacade
-from ui.tabs.tools_tab import ToolsTab
-from ui.tools_dialogs import ResetDialog
+from desktop.ui.tabs.tools_tab import ToolsTab
+from desktop.ui.tools_dialogs import ResetDialog
 
 
 @pytest.fixture(scope="module")
@@ -103,7 +103,7 @@ class TestResetFlowSmoke:
         
         # Verify we can construct the dialog (doesn't require exec())
         try:
-            from ui.tools_dialogs import ResetDialog
+            from desktop.ui.tools_dialogs import ResetDialog
             dialog = ResetDialog(table_counts, tools_tab)
             
             # Verify API exists

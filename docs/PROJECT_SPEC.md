@@ -34,7 +34,12 @@ pip install -r requirements.txt
 
 ### Run
 ```bash
-python3 sezzions.py
+# Desktop (deprecated — reference/stop-gap)
+python3 desktop/sezzions.py
+
+# Web app
+cd web && npm run dev        # frontend
+python3 -m uvicorn api.app:app --reload  # backend
 ```
 
 Database path rules:
@@ -80,14 +85,16 @@ Sezzions is a desktop application for tracking casino sweepstakes activity with 
 - `models/`: domain entities
 - `repositories/`: database access (SQLite via `DatabaseManager`)
 - `services/`: business logic and orchestration
-- `ui/`: PySide6 UI; must call services, not repositories directly
+- `desktop/ui/`: PySide6 UI (deprecated); must call services, not repositories directly
+- `web/src/`: React SPA (active development)
+- `api/`: FastAPI endpoints for hosted/web backend
 
 Key rules:
 - UI must not talk to the database directly.
 - **Transaction Atomicity**: All multi-step database operations (create/update/delete with cascading recalculations) use `with self.db.transaction()` context manager in `AppFacade` to ensure atomicity. Operations either fully succeed or fully roll back—no partial writes.
 
 ### Primary Entrypoint
-- Run the app via `python3 sezzions.py` (repo root)
+- Run the desktop app via `python3 desktop/sezzions.py` (from repo root)
 - Source runtime default is `./sezzions.db`.
 - Packaged runtime default is `~/Library/Application Support/Sezzions/sezzions.db`.
 - DB location is resolved in this order: env override, persisted runtime config, runtime default.
@@ -626,7 +633,7 @@ To maintain data integrity and prevent ambiguous event ordering, Sezzions enforc
 **Redemption validation** (Issue #90 bug fix):
 - Previously checked for game sessions using user-entered timestamp → false "No game sessions" errors
 - Now uses ADJUSTED timestamp from `ensure_unique_timestamp()` and converts to UTC for session queries
-- Code: `ui/tabs/redemptions_tab.py` (session check block)
+- Code: `desktop/ui/tabs/redemptions_tab.py` (session check block)
 
 **Session end validation**:
 - Previously used wrong event_type ("session_start" instead of "session_end")
@@ -939,7 +946,7 @@ UI rules:
 - Prefer View-first dialog flows; edits are deliberate.
 - Bulk actions and destructive actions require confirmation.
 - Dialog secondary labels use theme-managed `MutedLabel` styling for dark-theme readability.
-- Global Qt stylesheet is maintained in `resources/theme.qss` with theme variables substituted at runtime by `ui/themes.py`.
+- Global Qt stylesheet is maintained in `desktop/resources/theme.qss` with theme variables substituted at runtime by `desktop/ui/themes.py`.
 
 ### Dialog UI Standards
 

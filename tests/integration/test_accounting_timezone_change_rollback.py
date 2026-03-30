@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 
 from services.accounting_time_zone_service import AccountingTimeZoneService
-from ui.settings import Settings
+from desktop.ui.settings import Settings
 
 
 def test_accounting_tz_change_rolls_back_on_failure(test_db, tmp_path, monkeypatch):

@@ -4,8 +4,8 @@ import zipfile
 
 import __init__ as sezzions_package
 from app_facade import AppFacade
-from ui.main_window import MainWindow
-from ui.settings_dialog import SettingsDialog
+from desktop.ui.main_window import MainWindow
+from desktop.ui.settings_dialog import SettingsDialog
 
 
 def test_help_menu_has_check_for_updates_action(tmp_path):
@@ -176,7 +176,7 @@ def test_update_now_disabled_in_development_runtime(tmp_path, monkeypatch):
         info_calls["title"] = title
         info_calls["text"] = text
 
-    monkeypatch.setattr("ui.main_window.QtWidgets.QMessageBox.information", _fake_info)
+    monkeypatch.setattr("desktop.ui.main_window.QtWidgets.QMessageBox.information", _fake_info)
 
     update_now_called = {"called": False}
 
@@ -212,7 +212,7 @@ def test_update_now_fallback_includes_failure_reason_and_log_path(tmp_path, monk
 
     open_calls = {}
     monkeypatch.setattr(
-        "ui.main_window.QtGui.QDesktopServices.openUrl",
+        "desktop.ui.main_window.QtGui.QDesktopServices.openUrl",
         lambda url: open_calls.setdefault("url", str(url.toString())),
     )
 
@@ -222,7 +222,7 @@ def test_update_now_fallback_includes_failure_reason_and_log_path(tmp_path, monk
         info_calls["title"] = title
         info_calls["text"] = text
 
-    monkeypatch.setattr("ui.main_window.QtWidgets.QMessageBox.information", _fake_info)
+    monkeypatch.setattr("desktop.ui.main_window.QtWidgets.QMessageBox.information", _fake_info)
 
     window._update_now(
         {
@@ -286,9 +286,9 @@ def test_auto_install_uses_system_applications_when_translocated(tmp_path, monke
         popen_calls["args"] = args
         return _DummyProcess()
 
-    monkeypatch.setattr("ui.main_window.subprocess.Popen", _fake_popen)
+    monkeypatch.setattr("desktop.ui.main_window.subprocess.Popen", _fake_popen)
     monkeypatch.setattr(
-        "ui.main_window.os.access",
+        "desktop.ui.main_window.os.access",
         lambda p, mode: str(p) == "/Applications",
     )
 
@@ -319,9 +319,9 @@ def test_auto_install_falls_back_to_user_applications_when_translocated(tmp_path
     expected_parent = fake_home / "Applications"
     expected_target = expected_parent / "sezzions-macos-arm64.app"
 
-    monkeypatch.setattr("ui.main_window.Path.home", staticmethod(lambda: fake_home))
+    monkeypatch.setattr("desktop.ui.main_window.Path.home", staticmethod(lambda: fake_home))
     monkeypatch.setattr(
-        "ui.main_window.os.access",
+        "desktop.ui.main_window.os.access",
         lambda p, mode: str(p) == str(expected_parent),
     )
 
@@ -334,7 +334,7 @@ def test_auto_install_falls_back_to_user_applications_when_translocated(tmp_path
         popen_calls["args"] = args
         return _DummyProcess()
 
-    monkeypatch.setattr("ui.main_window.subprocess.Popen", _fake_popen)
+    monkeypatch.setattr("desktop.ui.main_window.subprocess.Popen", _fake_popen)
     monkeypatch.setattr(window, "_update_install_log_path", lambda: tmp_path / "update-installer.log")
 
     assert window._try_auto_install_downloaded_update(downloaded_zip) is True
@@ -358,7 +358,7 @@ def test_auto_install_script_clears_quarantine_and_retries_open(tmp_path, monkey
     app_bundle = tmp_path / "sezzions-macos-arm64.app"
     monkeypatch.setattr(window, "_running_app_bundle_path", lambda: app_bundle)
     monkeypatch.setattr(
-        "ui.main_window.os.access",
+        "desktop.ui.main_window.os.access",
         lambda p, mode: str(p) == str(app_bundle.parent),
     )
     monkeypatch.setattr(window, "_update_install_log_path", lambda: tmp_path / "update-installer.log")
@@ -372,7 +372,7 @@ def test_auto_install_script_clears_quarantine_and_retries_open(tmp_path, monkey
         popen_calls["args"] = args
         return _DummyProcess()
 
-    monkeypatch.setattr("ui.main_window.subprocess.Popen", _fake_popen)
+    monkeypatch.setattr("desktop.ui.main_window.subprocess.Popen", _fake_popen)
 
     assert window._try_auto_install_downloaded_update(downloaded_zip) is True
     script_path = Path(popen_calls["args"][1])
@@ -399,10 +399,10 @@ def test_auto_install_uses_ditto_extraction_on_macos(tmp_path, monkeypatch):
     app_bundle = tmp_path / "sezzions-macos-arm64.app"
     monkeypatch.setattr(window, "_running_app_bundle_path", lambda: app_bundle)
     monkeypatch.setattr(window, "_update_install_log_path", lambda: tmp_path / "update-installer.log")
-    monkeypatch.setattr("ui.main_window.sys.platform", "darwin")
-    monkeypatch.setattr("ui.main_window.shutil.which", lambda cmd: "/usr/bin/ditto" if cmd == "ditto" else None)
+    monkeypatch.setattr("desktop.ui.main_window.sys.platform", "darwin")
+    monkeypatch.setattr("desktop.ui.main_window.shutil.which", lambda cmd: "/usr/bin/ditto" if cmd == "ditto" else None)
     monkeypatch.setattr(
-        "ui.main_window.os.access",
+        "desktop.ui.main_window.os.access",
         lambda p, mode: str(p) == str(app_bundle.parent),
     )
 
@@ -421,7 +421,7 @@ def test_auto_install_uses_ditto_extraction_on_macos(tmp_path, monkeypatch):
         (extracted_app / "sezzions").write_text("bin", encoding="utf-8")
         return _RunResult()
 
-    monkeypatch.setattr("ui.main_window.subprocess.run", _fake_run)
+    monkeypatch.setattr("desktop.ui.main_window.subprocess.run", _fake_run)
 
     popen_calls = {}
 
@@ -432,7 +432,7 @@ def test_auto_install_uses_ditto_extraction_on_macos(tmp_path, monkeypatch):
         popen_calls["args"] = args
         return _DummyProcess()
 
-    monkeypatch.setattr("ui.main_window.subprocess.Popen", _fake_popen)
+    monkeypatch.setattr("desktop.ui.main_window.subprocess.Popen", _fake_popen)
 
     assert window._try_auto_install_downloaded_update(downloaded_zip) is True
     assert run_calls["args"][:3] == ["ditto", "-x", "-k"]

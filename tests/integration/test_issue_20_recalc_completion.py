@@ -15,7 +15,7 @@ import sys
 
 from services.recalculation_service import RecalculationService, RebuildResult
 from repositories.database import DatabaseManager
-from ui.tools_workers import RecalculationWorker
+from desktop.ui.tools_workers import RecalculationWorker
 from app_facade import AppFacade
 
 
@@ -132,7 +132,7 @@ class TestToolsTabCompletionHandling:
     
     def test_on_recalculation_finished_with_operation_field(self, qapp, facade):
         """_on_recalculation_finished should handle result.operation correctly"""
-        from ui.tabs.tools_tab import ToolsTab
+        from desktop.ui.tabs.tools_tab import ToolsTab
         
         # Create ToolsTab
         tools_tab = ToolsTab(facade)
@@ -150,7 +150,7 @@ class TestToolsTabCompletionHandling:
         )
         
         # Mock RecalculationResultDialog to avoid showing UI
-        with patch('ui.tabs.tools_tab.RecalculationResultDialog') as mock_dialog:
+        with patch('desktop.ui.tabs.tools_tab.RecalculationResultDialog') as mock_dialog:
             mock_dialog_instance = MagicMock()
             mock_dialog.return_value = mock_dialog_instance
             
@@ -163,7 +163,7 @@ class TestToolsTabCompletionHandling:
     
     def test_on_recalculation_finished_without_operation_field(self, qapp, facade):
         """_on_recalculation_finished should handle result without operation field (backward compat)"""
-        from ui.tabs.tools_tab import ToolsTab
+        from desktop.ui.tabs.tools_tab import ToolsTab
         
         tools_tab = ToolsTab(facade)
         progress_dialog = MagicMock()
@@ -177,7 +177,7 @@ class TestToolsTabCompletionHandling:
         )
         
         # Mock RecalculationResultDialog
-        with patch('ui.tabs.tools_tab.RecalculationResultDialog') as mock_dialog:
+        with patch('desktop.ui.tabs.tools_tab.RecalculationResultDialog') as mock_dialog:
             mock_dialog_instance = MagicMock()
             mock_dialog.return_value = mock_dialog_instance
             
@@ -190,7 +190,7 @@ class TestToolsTabCompletionHandling:
     
     def test_on_recalculation_finished_emits_data_change_event(self, qapp, facade):
         """_on_recalculation_finished should emit global data change event"""
-        from ui.tabs.tools_tab import ToolsTab
+        from desktop.ui.tabs.tools_tab import ToolsTab
         from services.data_change_event import OperationType
         
         tools_tab = ToolsTab(facade)
@@ -215,7 +215,7 @@ class TestToolsTabCompletionHandling:
         facade.emit_data_changed = track_emit
         
         # Mock dialog
-        with patch('ui.tabs.tools_tab.RecalculationResultDialog'):
+        with patch('desktop.ui.tabs.tools_tab.RecalculationResultDialog'):
             tools_tab._on_recalculation_finished(result, progress_dialog)
         
         # Verify data change event was emitted
@@ -247,7 +247,7 @@ class TestGamesTabAutoRefresh:
     
     def test_games_tab_has_refresh_data_method(self, qapp, facade):
         """Games tab should implement refresh_data() for event-driven refresh"""
-        from ui.tabs.games_tab import GamesTab
+        from desktop.ui.tabs.games_tab import GamesTab
         
         games_tab = GamesTab(facade)
         
@@ -257,8 +257,8 @@ class TestGamesTabAutoRefresh:
     
     def test_recalculation_triggers_games_refresh(self, qapp, facade):
         """Recalculation completion should trigger Games tab refresh via event system"""
-        from ui.tabs.tools_tab import ToolsTab
-        from ui.tabs.games_tab import GamesTab
+        from desktop.ui.tabs.tools_tab import ToolsTab
+        from desktop.ui.tabs.games_tab import GamesTab
         from services.data_change_event import DataChangeEvent, OperationType
         
         tools_tab = ToolsTab(facade)

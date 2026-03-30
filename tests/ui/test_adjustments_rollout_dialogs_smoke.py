@@ -15,10 +15,10 @@ from models.purchase import Purchase
 from models.redemption import Redemption
 from models.game_session import GameSession
 
-from ui.tabs.purchases_tab_modern import ModernPurchaseViewDialog
-from ui.tabs.redemptions_tab import RedemptionViewDialog
-from ui.tabs.game_sessions_tab import ViewSessionDialog
-from ui.tabs.realized_tab import RealizedPositionDialog
+from desktop.ui.tabs.purchases_tab_modern import ModernPurchaseViewDialog
+from desktop.ui.tabs.redemptions_tab import RedemptionViewDialog
+from desktop.ui.tabs.game_sessions_tab import ViewSessionDialog
+from desktop.ui.tabs.realized_tab import RealizedPositionDialog
 
 
 @pytest.fixture(scope="module")

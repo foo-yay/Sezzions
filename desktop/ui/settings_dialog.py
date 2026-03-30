@@ -554,7 +554,7 @@ class SettingsDialog(QtWidgets.QDialog):
     
     def _show_recalc_dialog(self):
         """Show bulk recalculation dialog."""
-        from ui.tax_recalc_dialog import TaxRecalcDialog
+        from desktop.ui.tax_recalc_dialog import TaxRecalcDialog
         dialog = TaxRecalcDialog(self.parent().facade if hasattr(self.parent(), 'facade') else None, self)
         if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
             QtWidgets.QMessageBox.information(

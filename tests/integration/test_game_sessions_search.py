@@ -6,7 +6,7 @@ from datetime import date
 from PySide6.QtWidgets import QApplication
 
 from app_facade import AppFacade
-from ui.tabs.game_sessions_tab import GameSessionsTab
+from desktop.ui.tabs.game_sessions_tab import GameSessionsTab
 
 
 @pytest.fixture

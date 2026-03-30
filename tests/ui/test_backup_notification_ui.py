@@ -1,14 +1,14 @@
 from PySide6.QtWidgets import QApplication
 
 from app_facade import AppFacade
-from ui.settings import Settings
-from ui.main_window import MainWindow
+from desktop.ui.settings import Settings
+from desktop.ui.main_window import MainWindow
 
 
 def test_backup_completion_refreshes_notification_bell(tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
     settings_path = tmp_path / "settings.json"
-    monkeypatch.setattr("ui.settings.default_settings_file", lambda: str(settings_path))
+    monkeypatch.setattr("desktop.ui.settings.default_settings_file", lambda: str(settings_path))
     monkeypatch.setattr("app_facade.settings_file_path", lambda: settings_path)
 
     settings = Settings(settings_file=str(settings_path))

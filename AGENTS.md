@@ -4,12 +4,16 @@ This file defines how humans and AI agents should work in this repository.
 
 ## Product Rule
 
-- **Sezzions is the product.** The primary entrypoint is `python3 sezzions.py`.
+- **Sezzions is the product.**
+- The **web app** (React SPA at `web/` + FastAPI at `api/`) is the active development surface.
+- The **desktop app** is deprecated and lives in `desktop/` (entrypoint: `python3 desktop/sezzions.py`). It remains usable and serves as reference for web development.
+- Shared backend code lives at root: `models/`, `repositories/`, `services/`, `app_facade.py`.
 - `.LEGACY/` is reference-only and should not drive day-to-day decisions.
 
 ## Code Rules
 
-- UI (`ui/`) calls services (`services/`), not repositories (`repositories/`) directly.
+- Desktop UI (`desktop/ui/`) calls services (`services/`), not repositories (`repositories/`) directly.
+- Web UI (`web/src/`) talks to `api/` endpoints, which call `services/hosted/`.
 - Business rules live in services.
 - Keep behavior changes intentional: prefer tests that assert business outputs.
 

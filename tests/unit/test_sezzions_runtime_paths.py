@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 
-import sezzions
+from desktop import sezzions
 
 
 def test_resolve_db_path_uses_env_override(monkeypatch):

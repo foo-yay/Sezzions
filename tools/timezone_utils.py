@@ -50,7 +50,7 @@ def get_accounting_timezone_name(settings: Optional[object] = None) -> str:
     if value:
         return str(value)
     try:
-        from ui.settings import Settings
+        from desktop.ui.settings import Settings
 
         stored = Settings().get("accounting_time_zone", None)
         if stored:

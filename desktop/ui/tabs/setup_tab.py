@@ -3,14 +3,14 @@ Setup tab - Container for setup/configuration sub-tabs
 """
 from PySide6 import QtWidgets
 from app_facade import AppFacade
-from ui.tabs.users_tab import UsersTab
-from ui.tabs.sites_tab import SitesTab
-from ui.tabs.cards_tab import CardsTab
-from ui.tabs.redemption_methods_tab import RedemptionMethodsTab
-from ui.tabs.redemption_method_types_tab import RedemptionMethodTypesTab
-from ui.tabs.game_types_tab import GameTypesTab
-from ui.tabs.games_tab import GamesTab
-from ui.tabs.tools_tab import ToolsTab
+from desktop.ui.tabs.users_tab import UsersTab
+from desktop.ui.tabs.sites_tab import SitesTab
+from desktop.ui.tabs.cards_tab import CardsTab
+from desktop.ui.tabs.redemption_methods_tab import RedemptionMethodsTab
+from desktop.ui.tabs.redemption_method_types_tab import RedemptionMethodTypesTab
+from desktop.ui.tabs.game_types_tab import GameTypesTab
+from desktop.ui.tabs.games_tab import GamesTab
+from desktop.ui.tabs.tools_tab import ToolsTab
 
 
 class SetupTab(QtWidgets.QWidget):

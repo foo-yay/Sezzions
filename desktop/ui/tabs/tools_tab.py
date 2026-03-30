@@ -15,20 +15,20 @@ from datetime import datetime
 import zipfile
 import tempfile
 
-from ui.tools_workers import RecalculationWorker
-from ui.tools_dialogs import (
+from desktop.ui.tools_workers import RecalculationWorker
+from desktop.ui.tools_dialogs import (
     ProgressDialog,
     RecalculationProgressDialog,
     RecalculationResultDialog,
     PostImportPromptDialog
 )
-from ui.csv_dialogs import (
+from desktop.ui.csv_dialogs import (
     ImportPreviewDialog,
     ImportResultDialog,
     ExportOptionsDialog
 )
 from services.tools.dtos import ImportResult
-from ui.repair_mode_dialog import RepairModeConfirmDialog
+from desktop.ui.repair_mode_dialog import RepairModeConfirmDialog
 
 
 class ToolsTab(QWidget):
@@ -1603,7 +1603,7 @@ class ToolsTab(QWidget):
         
         try:
             from datetime import datetime
-            from ui.settings import Settings
+            from desktop.ui.settings import Settings
             from PySide6.QtWidgets import QProgressDialog
             
             # Create timestamped backup filename
@@ -1677,7 +1677,7 @@ class ToolsTab(QWidget):
                     
                     # Save backup time to settings
                     from datetime import datetime
-                    from ui.settings import Settings
+                    from desktop.ui.settings import Settings
                     now = datetime.now()
                     settings = Settings()
                     config = settings.get_automatic_backup_config()
@@ -1748,7 +1748,7 @@ class ToolsTab(QWidget):
     def _on_restore_database(self):
         """Handle database restore"""
         from PySide6.QtWidgets import QMessageBox, QProgressDialog
-        from ui.tools_dialogs import RestoreDialog
+        from desktop.ui.tools_dialogs import RestoreDialog
         import os
         from datetime import datetime
         
@@ -1981,7 +1981,7 @@ class ToolsTab(QWidget):
     def _on_reset_database(self):
         """Handle database reset"""
         from PySide6.QtWidgets import QMessageBox
-        from ui.tools_dialogs import ResetDialog, RecalculationProgressDialog
+        from desktop.ui.tools_dialogs import ResetDialog, RecalculationProgressDialog
         from services.tools.reset_service import ResetService
         import os
         from datetime import datetime
@@ -2273,7 +2273,7 @@ class ToolsTab(QWidget):
     
     def _load_automatic_backup_settings(self):
         """Load automatic backup settings from JSON"""
-        from ui.settings import Settings
+        from desktop.ui.settings import Settings
         settings = Settings()
         config = settings.get_automatic_backup_config()
         
@@ -2313,7 +2313,7 @@ class ToolsTab(QWidget):
     
     def _save_automatic_backup_settings(self):
         """Save automatic backup settings to JSON"""
-        from ui.settings import Settings
+        from desktop.ui.settings import Settings
         
         settings = Settings()
         config = settings.get_automatic_backup_config()
@@ -2345,7 +2345,7 @@ class ToolsTab(QWidget):
     
     def _update_last_backup_display(self):
         """Update the last backup label with most recent backup time"""
-        from ui.settings import Settings
+        from desktop.ui.settings import Settings
         from datetime import datetime
         
         settings = Settings()
@@ -2364,7 +2364,7 @@ class ToolsTab(QWidget):
     
     def _check_automatic_backup(self):
         """Check if it's time to run an automatic backup"""
-        from ui.settings import Settings
+        from desktop.ui.settings import Settings
         from datetime import datetime, timedelta
         
         settings = Settings()
@@ -2398,7 +2398,7 @@ class ToolsTab(QWidget):
     
     def _perform_automatic_backup(self):
         """Perform an automatic backup"""
-        from ui.settings import Settings
+        from desktop.ui.settings import Settings
         from datetime import datetime
         import os
         
@@ -2479,7 +2479,7 @@ class ToolsTab(QWidget):
     
     def _on_create_basis_adjustment(self):
         """Show dialog to create a basis adjustment."""
-        from ui.adjustment_dialogs import BasisAdjustmentDialog
+        from desktop.ui.adjustment_dialogs import BasisAdjustmentDialog
         
         dialog = BasisAdjustmentDialog(self.facade, parent=self)
         if dialog.exec() == QDialog.Accepted:
@@ -2496,7 +2496,7 @@ class ToolsTab(QWidget):
     
     def _on_create_checkpoint(self):
         """Show dialog to create a balance checkpoint."""
-        from ui.adjustment_dialogs import CheckpointDialog
+        from desktop.ui.adjustment_dialogs import CheckpointDialog
         
         dialog = CheckpointDialog(self.facade, parent=self)
         if dialog.exec() == QDialog.Accepted:
@@ -2514,7 +2514,7 @@ class ToolsTab(QWidget):
     
     def _on_view_adjustments(self):
         """Show dialog to view and manage adjustments."""
-        from ui.adjustment_dialogs import ViewAdjustmentsDialog
+        from desktop.ui.adjustment_dialogs import ViewAdjustmentsDialog
         
         dialog = ViewAdjustmentsDialog(self.facade, parent=self)
         dialog.exec()

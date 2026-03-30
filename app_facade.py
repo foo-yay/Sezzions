@@ -2929,7 +2929,7 @@ class AppFacade:
                 worker.signals.finished.connect(lambda: facade.release_tools_lock())
                 QThreadPool.globalInstance().start(worker)
         """
-        from ui.tools_workers import DatabaseBackupWorker
+        from desktop.ui.tools_workers import DatabaseBackupWorker
         return DatabaseBackupWorker(self.db_path, backup_path, include_audit_log)
     
     def create_restore_worker(self, backup_path: str, restore_mode, tables: Optional[List[str]] = None):
@@ -2953,7 +2953,7 @@ class AppFacade:
                 worker.signals.finished.connect(lambda: facade.release_tools_lock())
                 QThreadPool.globalInstance().start(worker)
         """
-        from ui.tools_workers import DatabaseRestoreWorker
+        from desktop.ui.tools_workers import DatabaseRestoreWorker
         return DatabaseRestoreWorker(self.db_path, backup_path, restore_mode, tables)
     
     def create_reset_worker(self, keep_setup_data: bool = False, keep_audit_log: bool = False, 
@@ -2977,5 +2977,5 @@ class AppFacade:
                 worker.signals.finished.connect(lambda: facade.release_tools_lock())
                 QThreadPool.globalInstance().start(worker)
         """
-        from ui.tools_workers import DatabaseResetWorker
+        from desktop.ui.tools_workers import DatabaseResetWorker
         return DatabaseResetWorker(self.db_path, keep_setup_data, keep_audit_log, tables_to_reset)

@@ -15,7 +15,7 @@ import pytest
 from PySide6 import QtCore
 
 from app_facade import AppFacade
-from ui.tabs.purchases_tab import PurchaseDialog
+from desktop.ui.tabs.purchases_tab import PurchaseDialog
 
 
 @pytest.fixture

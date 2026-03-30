@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 from PySide6.QtCore import QThreadPool
 
 from app_facade import AppFacade
-from ui.tools_workers import DatabaseBackupWorker, DatabaseRestoreWorker, DatabaseResetWorker
+from desktop.ui.tools_workers import DatabaseBackupWorker, DatabaseRestoreWorker, DatabaseResetWorker
 from services.tools.enums import RestoreMode
 
 

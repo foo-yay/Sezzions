@@ -8,11 +8,11 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 from app_facade import AppFacade
 from models.purchase import Purchase
-from ui.date_filter_widget import DateFilterWidget
-from ui.table_header_filters import TableHeaderFilter
-from ui.spreadsheet_ux import SpreadsheetUXController
-from ui.spreadsheet_stats_bar import SpreadsheetStatsBar
-from ui.adjustment_dialogs import ViewAdjustmentsDialog
+from desktop.ui.date_filter_widget import DateFilterWidget
+from desktop.ui.table_header_filters import TableHeaderFilter
+from desktop.ui.spreadsheet_ux import SpreadsheetUXController
+from desktop.ui.spreadsheet_stats_bar import SpreadsheetStatsBar
+from desktop.ui.adjustment_dialogs import ViewAdjustmentsDialog
 from tools.time_utils import (
     parse_time_input,
     current_time_with_seconds,
@@ -1152,7 +1152,7 @@ class PurchasesTab(QtWidgets.QWidget):
         if not self.main_window or not hasattr(self.main_window, "game_sessions_tab"):
             return
 
-        from ui.tabs.game_sessions_tab import StartSessionDialog
+        from desktop.ui.tabs.game_sessions_tab import StartSessionDialog
         dialog = StartSessionDialog(self.facade, parent=self)
         dialog.date_edit.setText(dialog._format_date_for_input(session_date))
         dialog.time_edit.setText(session_time)
@@ -3191,14 +3191,14 @@ class PurchaseViewDialog(QtWidgets.QDialog):
         if not session:
             QtWidgets.QMessageBox.warning(self, "Warning", "Session not found")
             return
-        from ui.tabs.game_sessions_tab import ViewSessionDialog
+        from desktop.ui.tabs.game_sessions_tab import ViewSessionDialog
 
         self.accept()
         dialog = ViewSessionDialog(self.facade, session=session, parent=self)
         dialog.exec()
 
     def _open_redemption_by_id(self, redemption_id: int):
-        from ui.tabs.redemptions_tab import RedemptionViewDialog
+        from desktop.ui.tabs.redemptions_tab import RedemptionViewDialog
         parent = self.parent()
         if parent and hasattr(parent, "main_window"):
             main_window = parent.main_window

@@ -2,16 +2,18 @@
 
 ## Primary Goal
 
-You are assisting with **Sezzions**, the standalone desktop app in this repository.
+You are assisting with **Sezzions**, a casino session tracker.
 
-- Primary entrypoint: `python3 sezzions.py`
-- Product code lives at repo root (`models/`, `repositories/`, `services/`, `ui/`, `tools/`).
+- The **web app** (React + FastAPI) is the active development surface (`web/`, `api/`).
+- The **desktop app** is deprecated and lives in `desktop/` (entrypoint: `python3 desktop/sezzions.py`).
+- Shared backend code lives at root: `models/`, `repositories/`, `services/`, `app_facade.py`, `tools/`.
+- Desktop-only code (PyQt UI) lives in `desktop/ui/`.
 - Legacy code is quarantined in `.LEGACY/` and is reference-only.
 
 ## Rules
 
 1. Prefer minimal, surgical changes.
-2. UI must not talk to the database directly.
+2. Desktop UI (`desktop/ui/`) must not talk to the database directly. Web UI talks to `api/` endpoints.
 3. Preserve current app behavior unless explicitly instructed to change it.
 4. For accounting changes, add or update scenario-based tests to define expected outputs.
 5. Keep docs tidy:

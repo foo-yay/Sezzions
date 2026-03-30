@@ -8,7 +8,7 @@ from datetime import date, datetime
 from typing import Optional
 from app_facade import AppFacade
 from models.purchase import Purchase
-from ui.adjustment_dialogs import ViewAdjustmentsDialog
+from desktop.ui.adjustment_dialogs import ViewAdjustmentsDialog
 from tools.timezone_utils import get_accounting_timezone_name
 
 
@@ -1542,14 +1542,14 @@ class ModernPurchaseViewDialog(QtWidgets.QDialog):
         if not session:
             QtWidgets.QMessageBox.warning(self, "Warning", "Session not found")
             return
-        from ui.tabs.game_sessions_tab import ViewSessionDialog
+        from desktop.ui.tabs.game_sessions_tab import ViewSessionDialog
 
         self.accept()
         dialog = ViewSessionDialog(self.facade, session=session, parent=self)
         dialog.exec()
 
     def _open_redemption_by_id(self, redemption_id: int):
-        from ui.tabs.redemptions_tab import RedemptionViewDialog
+        from desktop.ui.tabs.redemptions_tab import RedemptionViewDialog
         parent = self.parent()
         if parent and hasattr(parent, "main_window"):
             main_window = parent.main_window
