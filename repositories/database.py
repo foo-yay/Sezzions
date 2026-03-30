@@ -127,7 +127,7 @@ class DatabaseManager:
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         ''')
         self._migrate_redemption_methods_table()
@@ -351,7 +351,7 @@ class DatabaseManager:
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE RESTRICT,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY (redemption_id) REFERENCES redemptions(id) ON DELETE CASCADE
             )
         ''')
@@ -376,7 +376,7 @@ class DatabaseManager:
                 expense_entry_time_zone TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         ''')
 
@@ -393,7 +393,7 @@ class DatabaseManager:
                 num_other_income_items INTEGER DEFAULT 0,
                 notes TEXT,
                 PRIMARY KEY (session_date, user_id),
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         ''')
 
@@ -572,6 +572,9 @@ class DatabaseManager:
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_cards_active ON cards(is_active)')
         
         self._connection.commit()
+
+        # Migrate FK rules: RESTRICT/SET NULL → CASCADE on user_id for 4 tables
+        self._migrate_user_fk_cascade()
 
         # Data normalization (idempotent): ensure missing times are treated as 00:00:00
         self._normalize_time_fields()
@@ -1034,6 +1037,102 @@ class DatabaseManager:
                     cursor.execute(f"ALTER TABLE audit_log ADD COLUMN {column_name} {column_def}")
                 except Exception:
                     pass
+
+    def _migrate_user_fk_cascade(self):
+        """Migrate user_id FK rules to CASCADE for: redemption_methods, realized_transactions, expenses, daily_sessions."""
+        cursor = self._connection.cursor()
+
+        # Each entry: (table_name, old_fk_fragment, new_create_sql, columns, has_autoincrement_id)
+        migrations = [
+            (
+                'redemption_methods',
+                "ON DELETE SET NULL",
+                '''CREATE TABLE redemption_methods_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    method_type TEXT,
+                    user_id INTEGER,
+                    is_active INTEGER DEFAULT 1,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )''',
+                'id, name, method_type, user_id, is_active, notes, created_at, updated_at',
+            ),
+            (
+                'realized_transactions',
+                "users(id) ON DELETE RESTRICT",
+                '''CREATE TABLE realized_transactions_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    redemption_date TEXT NOT NULL,
+                    site_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    redemption_id INTEGER NOT NULL,
+                    cost_basis TEXT NOT NULL,
+                    payout TEXT NOT NULL,
+                    net_pl TEXT NOT NULL,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE RESTRICT,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (redemption_id) REFERENCES redemptions(id) ON DELETE CASCADE
+                )''',
+                'id, redemption_date, site_id, user_id, redemption_id, cost_basis, payout, net_pl, notes, created_at',
+            ),
+            (
+                'expenses',
+                "ON DELETE SET NULL",
+                '''CREATE TABLE expenses_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    expense_date TEXT NOT NULL,
+                    expense_time TEXT,
+                    amount TEXT NOT NULL,
+                    vendor TEXT NOT NULL,
+                    description TEXT,
+                    category TEXT,
+                    user_id INTEGER,
+                    expense_entry_time_zone TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )''',
+                'id, expense_date, expense_time, amount, vendor, description, category, user_id, expense_entry_time_zone, created_at, updated_at',
+            ),
+            (
+                'daily_sessions',
+                "ON DELETE RESTRICT",
+                '''CREATE TABLE daily_sessions_new (
+                    session_date TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    total_other_income REAL DEFAULT 0.0,
+                    total_session_pnl REAL DEFAULT 0.0,
+                    net_daily_pnl REAL DEFAULT 0.0,
+                    status TEXT,
+                    num_game_sessions INTEGER DEFAULT 0,
+                    num_other_income_items INTEGER DEFAULT 0,
+                    notes TEXT,
+                    PRIMARY KEY (session_date, user_id),
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )''',
+                'session_date, user_id, total_other_income, total_session_pnl, net_daily_pnl, status, num_game_sessions, num_other_income_items, notes',
+            ),
+        ]
+
+        for table, old_fragment, create_sql, columns in migrations:
+            try:
+                cursor.execute(f"SELECT sql FROM sqlite_master WHERE type='table' AND name='{table}'")
+                row = cursor.fetchone()
+                if not row or old_fragment not in row[0]:
+                    continue  # Already migrated or table doesn't exist
+
+                cursor.execute(create_sql)
+                cursor.execute(f'INSERT INTO {table}_new ({columns}) SELECT {columns} FROM {table}')
+                cursor.execute(f'DROP TABLE {table}')
+                cursor.execute(f'ALTER TABLE {table}_new RENAME TO {table}')
+                self._connection.commit()
+            except Exception:
+                self._connection.rollback()
 
     def _normalize_time_fields(self):
         """Backfill NULL/blank time strings to '00:00:00' (safe to rerun)."""

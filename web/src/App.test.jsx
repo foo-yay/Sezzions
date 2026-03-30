@@ -1118,7 +1118,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /sort a to z/i }));
 
     const rows = screen.getAllByRole("row");
-    const nameCellsAsc = rows.slice(1).map((row) => within(row).getAllByRole("cell")[0]);
+    const nameCellsAsc = rows.map((row) => within(row).getAllByRole("cell")[1]);
     expect(nameCellsAsc[0]).toHaveTextContent("Elliot");
 
     fireEvent.click(screen.getByRole("button", { name: /status options/i }));
@@ -1219,28 +1219,27 @@ describe("App", () => {
     expect(await findUserCell("Alpha")).toBeInTheDocument();
     expect(within(await screen.findByRole("table")).queryByText("Beta")).not.toBeInTheDocument();
 
-    Object.defineProperty(window, "innerHeight", { configurable: true, value: 900, writable: true });
-    Object.defineProperty(window, "scrollY", { configurable: true, value: 0, writable: true });
-    Object.defineProperty(document.body, "scrollHeight", { configurable: true, value: 1000 });
-    Object.defineProperty(document.documentElement, "scrollHeight", { configurable: true, value: 1000 });
-    Object.defineProperty(document.documentElement, "scrollTop", { configurable: true, value: 0, writable: true });
-    fireEvent.scroll(window);
+    const tableViewport = (await screen.findByRole("table")).closest(".table-viewport");
+    expect(tableViewport).not.toBeNull();
+
+    Object.defineProperty(tableViewport, "clientHeight", { configurable: true, value: 600 });
+    Object.defineProperty(tableViewport, "scrollHeight", { configurable: true, value: 1000, writable: true });
+    Object.defineProperty(tableViewport, "scrollTop", { configurable: true, value: 0, writable: true });
+    fireEvent.scroll(tableViewport);
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledTimes(4);
     });
 
-    Object.defineProperty(window, "scrollY", { configurable: true, value: 1200, writable: true });
-    Object.defineProperty(document.body, "scrollHeight", { configurable: true, value: 2280 });
-    Object.defineProperty(document.documentElement, "scrollHeight", { configurable: true, value: 2280 });
-    Object.defineProperty(document.documentElement, "scrollTop", { configurable: true, value: 1200, writable: true });
-    fireEvent.scroll(window);
+    Object.defineProperty(tableViewport, "scrollHeight", { configurable: true, value: 1820, writable: true });
+    Object.defineProperty(tableViewport, "scrollTop", { configurable: true, value: 1220, writable: true });
+    fireEvent.scroll(tableViewport);
 
     expect(await findUserCell("Beta")).toBeInTheDocument();
 
     const rows = within(await screen.findByRole("table")).getAllByRole("row");
-    fireEvent.click(within(rows[1]).getByText("Alpha"));
-    fireEvent.click(within(rows[2]).getByText("Beta"), { ctrlKey: true });
+    fireEvent.click(within(rows[0]).getByText("Alpha"));
+    fireEvent.click(within(rows[1]).getByText("Beta"), { ctrlKey: true });
     expect(screen.getByText(/2 selected/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
@@ -1325,8 +1324,10 @@ describe("App", () => {
     render(<App />);
 
     expect(await findUserCell("User 001")).toBeInTheDocument();
+    expect(screen.getByText("100 shown")).toBeInTheDocument();
+    expect(screen.getByText("151 total")).toBeInTheDocument();
     const table = await screen.findByRole("table");
-    expect(within(table).getAllByRole("row")).toHaveLength(101);
+    expect(within(table).getAllByRole("row")).toHaveLength(100);
     expect(within(table).queryByText("User 151")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /load more users/i })).toBeInTheDocument();
   });
@@ -1406,14 +1407,15 @@ describe("App", () => {
     render(<App />);
 
     expect(await findUserCell("User 001")).toBeInTheDocument();
-    expect(screen.queryByText(/101 total/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/more available/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/100 loaded/i)).not.toBeInTheDocument();
+    expect(screen.getByText("100 shown")).toBeInTheDocument();
+    expect(screen.getByText("100 total")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /load more users/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /load more users/i }));
 
     expect(await findUserCell("User 101")).toBeInTheDocument();
+    expect(screen.getByText("101 shown")).toBeInTheDocument();
+    expect(screen.getByText("101 total")).toBeInTheDocument();
   });
 
   it("falls back when the hosted API repeats the first page for later offsets", async () => {
@@ -1511,6 +1513,8 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /load more users/i }));
 
     expect(await findUserCell("User 151")).toBeInTheDocument();
+    expect(screen.getByText("151 shown")).toBeInTheDocument();
+    expect(screen.getByText("151 total")).toBeInTheDocument();
     expect(global.fetch).toHaveBeenCalledWith(
       "https://api.sezzions.test/v1/workspace/users?limit=500&offset=0",
       expect.objectContaining({

@@ -40,7 +40,7 @@ class HostedWorkspaceRecord(HostedBase):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     account_id: Mapped[str] = mapped_column(
-        ForeignKey("hosted_accounts.id"),
+        ForeignKey("hosted_accounts.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
         index=True,
@@ -55,7 +55,7 @@ class HostedUserRecord(HostedBase):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     workspace_id: Mapped[str] = mapped_column(
-        ForeignKey("hosted_workspaces.id"),
+        ForeignKey("hosted_workspaces.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -70,7 +70,7 @@ class HostedSiteRecord(HostedBase):
     __table_args__ = (UniqueConstraint("workspace_id", "name"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     sc_rate: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
@@ -84,8 +84,8 @@ class HostedCardRecord(HostedBase):
     __table_args__ = (Index("idx_hosted_cards_workspace_user", "workspace_id", "user_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     last_four: Mapped[str | None] = mapped_column(String(8), nullable=True)
     cashback_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -98,7 +98,7 @@ class HostedRedemptionMethodTypeRecord(HostedBase):
     __table_args__ = (UniqueConstraint("workspace_id", "name"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -109,14 +109,14 @@ class HostedRedemptionMethodRecord(HostedBase):
     __table_args__ = (Index("idx_hosted_redemption_methods_workspace_user", "workspace_id", "user_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     method_type_id: Mapped[str | None] = mapped_column(
-        ForeignKey("hosted_redemption_method_types.id"),
+        ForeignKey("hosted_redemption_method_types.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    user_id: Mapped[str | None] = mapped_column(ForeignKey("hosted_users.id"), nullable=True, index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("hosted_users.id", ondelete="CASCADE"), nullable=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -126,7 +126,7 @@ class HostedGameTypeRecord(HostedBase):
     __table_args__ = (UniqueConstraint("workspace_id", "name"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -137,9 +137,9 @@ class HostedGameRecord(HostedBase):
     __table_args__ = (UniqueConstraint("workspace_id", "name"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    game_type_id: Mapped[str] = mapped_column(ForeignKey("hosted_game_types.id"), nullable=False, index=True)
+    game_type_id: Mapped[str] = mapped_column(ForeignKey("hosted_game_types.id", ondelete="CASCADE"), nullable=False, index=True)
     rtp: Mapped[float | None] = mapped_column(Float, nullable=True)
     actual_rtp: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -154,9 +154,9 @@ class HostedPurchaseRecord(HostedBase):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id"), nullable=False, index=True)
-    site_id: Mapped[str] = mapped_column(ForeignKey("hosted_sites.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(ForeignKey("hosted_sites.id", ondelete="CASCADE"), nullable=False, index=True)
     amount: Mapped[str] = mapped_column(String(32), nullable=False)
     sc_received: Mapped[str] = mapped_column(String(32), nullable=False, default="0.00")
     starting_sc_balance: Mapped[str] = mapped_column(String(32), nullable=False, default="0.00")
@@ -165,7 +165,7 @@ class HostedPurchaseRecord(HostedBase):
     purchase_date: Mapped[str] = mapped_column(String(32), nullable=False)
     purchase_time: Mapped[str | None] = mapped_column(String(32), nullable=True)
     purchase_entry_time_zone: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    card_id: Mapped[str | None] = mapped_column(ForeignKey("hosted_cards.id"), nullable=True, index=True)
+    card_id: Mapped[str | None] = mapped_column(ForeignKey("hosted_cards.id", ondelete="SET NULL"), nullable=True, index=True)
     remaining_amount: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(64), nullable=False, default="active")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -177,9 +177,9 @@ class HostedUnrealizedPositionRecord(HostedBase):
     __table_args__ = (UniqueConstraint("workspace_id", "site_id", "user_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
-    site_id: Mapped[str] = mapped_column(ForeignKey("hosted_sites.id"), nullable=False, index=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(ForeignKey("hosted_sites.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id", ondelete="CASCADE"), nullable=False, index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
@@ -191,16 +191,16 @@ class HostedRedemptionRecord(HostedBase):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id"), nullable=False, index=True)
-    site_id: Mapped[str] = mapped_column(ForeignKey("hosted_sites.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(ForeignKey("hosted_sites.id", ondelete="CASCADE"), nullable=False, index=True)
     amount: Mapped[str] = mapped_column(String(32), nullable=False)
     fees: Mapped[str] = mapped_column(String(32), nullable=False, default="0.00")
     redemption_date: Mapped[str] = mapped_column(String(32), nullable=False)
     redemption_time: Mapped[str] = mapped_column(String(32), nullable=False, default="00:00:00")
     redemption_entry_time_zone: Mapped[str | None] = mapped_column(String(128), nullable=True)
     redemption_method_id: Mapped[str | None] = mapped_column(
-        ForeignKey("hosted_redemption_methods.id"),
+        ForeignKey("hosted_redemption_methods.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -223,12 +223,12 @@ class HostedGameSessionRecord(HostedBase):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id"), nullable=False, index=True)
-    site_id: Mapped[str] = mapped_column(ForeignKey("hosted_sites.id"), nullable=False, index=True)
-    game_id: Mapped[str | None] = mapped_column(ForeignKey("hosted_games.id"), nullable=True, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(ForeignKey("hosted_sites.id", ondelete="CASCADE"), nullable=False, index=True)
+    game_id: Mapped[str | None] = mapped_column(ForeignKey("hosted_games.id", ondelete="CASCADE"), nullable=True, index=True)
     game_type_id: Mapped[str | None] = mapped_column(
-        ForeignKey("hosted_game_types.id"),
+        ForeignKey("hosted_game_types.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -270,9 +270,9 @@ class HostedGameSessionEventLinkRecord(HostedBase):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
     game_session_id: Mapped[str] = mapped_column(
-        ForeignKey("hosted_game_sessions.id"),
+        ForeignKey("hosted_game_sessions.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -287,8 +287,8 @@ class HostedGameRtpAggregateRecord(HostedBase):
     __table_args__ = (UniqueConstraint("workspace_id", "game_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
-    game_id: Mapped[str] = mapped_column(ForeignKey("hosted_games.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    game_id: Mapped[str] = mapped_column(ForeignKey("hosted_games.id", ondelete="CASCADE"), nullable=False, index=True)
     total_wager: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     total_delta: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     session_count: Mapped[int] = mapped_column(nullable=False, default=0)
@@ -300,9 +300,9 @@ class HostedRedemptionAllocationRecord(HostedBase):
     __table_args__ = (UniqueConstraint("workspace_id", "redemption_id", "purchase_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
-    redemption_id: Mapped[str] = mapped_column(ForeignKey("hosted_redemptions.id"), nullable=False, index=True)
-    purchase_id: Mapped[str] = mapped_column(ForeignKey("hosted_purchases.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    redemption_id: Mapped[str] = mapped_column(ForeignKey("hosted_redemptions.id", ondelete="CASCADE"), nullable=False, index=True)
+    purchase_id: Mapped[str] = mapped_column(ForeignKey("hosted_purchases.id", ondelete="CASCADE"), nullable=False, index=True)
     allocated_amount: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
@@ -312,11 +312,11 @@ class HostedRealizedTransactionRecord(HostedBase):
     __table_args__ = (Index("idx_hosted_realized_workspace_user_site", "workspace_id", "user_id", "site_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
     redemption_date: Mapped[str] = mapped_column(String(32), nullable=False)
-    site_id: Mapped[str] = mapped_column(ForeignKey("hosted_sites.id"), nullable=False, index=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id"), nullable=False, index=True)
-    redemption_id: Mapped[str] = mapped_column(ForeignKey("hosted_redemptions.id"), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(ForeignKey("hosted_sites.id", ondelete="RESTRICT"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    redemption_id: Mapped[str] = mapped_column(ForeignKey("hosted_redemptions.id", ondelete="CASCADE"), nullable=False, index=True)
     cost_basis: Mapped[str] = mapped_column(String(32), nullable=False)
     payout: Mapped[str] = mapped_column(String(32), nullable=False)
     net_pl: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -328,7 +328,7 @@ class HostedRealizedDailyNoteRecord(HostedBase):
     __table_args__ = (UniqueConstraint("workspace_id", "session_date"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
     session_date: Mapped[str] = mapped_column(String(32), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -338,14 +338,14 @@ class HostedExpenseRecord(HostedBase):
     __table_args__ = (Index("idx_hosted_expenses_workspace_user", "workspace_id", "user_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
     expense_date: Mapped[str] = mapped_column(String(32), nullable=False)
     expense_time: Mapped[str | None] = mapped_column(String(32), nullable=True)
     amount: Mapped[str] = mapped_column(String(32), nullable=False)
     vendor: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    user_id: Mapped[str | None] = mapped_column(ForeignKey("hosted_users.id"), nullable=True, index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("hosted_users.id", ondelete="CASCADE"), nullable=True, index=True)
     expense_entry_time_zone: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
@@ -354,9 +354,9 @@ class HostedDailySessionRecord(HostedBase):
     __table_args__ = (UniqueConstraint("workspace_id", "session_date", "user_id"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
     session_date: Mapped[str] = mapped_column(String(32), nullable=False)
-    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id", ondelete="CASCADE"), nullable=False, index=True)
     total_other_income: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     total_session_pnl: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     net_daily_pnl: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -371,7 +371,7 @@ class HostedDailyDateTaxRecord(HostedBase):
     __table_args__ = (UniqueConstraint("workspace_id", "session_date"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
     session_date: Mapped[str] = mapped_column(String(32), nullable=False)
     net_daily_pnl: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     tax_withholding_rate_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -388,9 +388,9 @@ class HostedAccountAdjustmentRecord(HostedBase):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id"), nullable=False, index=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id"), nullable=False, index=True)
-    site_id: Mapped[str] = mapped_column(ForeignKey("hosted_sites.id"), nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("hosted_workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("hosted_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    site_id: Mapped[str] = mapped_column(ForeignKey("hosted_sites.id", ondelete="CASCADE"), nullable=False, index=True)
     effective_date: Mapped[str] = mapped_column(String(32), nullable=False)
     effective_time: Mapped[str] = mapped_column(String(32), nullable=False, default="00:00:00")
     effective_entry_time_zone: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -430,6 +430,95 @@ def _ensure_hosted_schema_compatibility(engine) -> None:
             with engine.begin() as connection:
                 for statement in statements:
                     connection.execute(text(statement))
+
+    _migrate_fk_ondelete_rules(engine, inspector)
+
+
+# --- FK ondelete migration ------------------------------------------------
+
+# Maps Postgres pg_constraint confdeltype codes to ondelete keywords.
+_PG_DELTYPE = {"a": "NO ACTION", "r": "RESTRICT", "c": "CASCADE", "n": "SET NULL", "d": "SET DEFAULT"}
+
+
+def _desired_fk_ondelete() -> dict[str, dict[str, str]]:
+    """Return {table: {constraint_name: desired_ondelete}} derived from ORM models."""
+    result: dict[str, dict[str, str]] = {}
+    for table in HostedBase.metadata.sorted_tables:
+        tbl_fks: dict[str, str] = {}
+        for fk_constraint in table.foreign_key_constraints:
+            rule = (fk_constraint.ondelete or "NO ACTION").upper()
+            tbl_fks[fk_constraint.name] = rule
+        if tbl_fks:
+            result[table.name] = tbl_fks
+    return result
+
+
+def _migrate_fk_ondelete_rules(engine, inspector) -> None:
+    """Ensure live Postgres FK constraints match the ondelete rules in the ORM models.
+
+    Idempotent: skips constraints that already have the correct rule.
+    """
+    desired = _desired_fk_ondelete()
+    existing_tables = set(inspector.get_table_names())
+    statements: list[str] = []
+
+    for table_name, fk_rules in desired.items():
+        if table_name not in existing_tables:
+            continue
+
+        # Query actual ondelete behaviour from pg_constraint
+        live_fks: dict[str, str] = {}
+        for fk in inspector.get_foreign_keys(table_name):
+            name = fk.get("name")
+            if not name:
+                continue
+            live_fks[name] = True  # we know the constraint exists
+
+        for constraint_name, desired_rule in fk_rules.items():
+            if constraint_name not in live_fks:
+                continue  # constraint doesn't exist yet (create_all will handle it)
+
+            # We cannot cheaply read the current ondelete rule via the inspector,
+            # so query pg_constraint directly.
+            statements.append(
+                f"DO $$ BEGIN "
+                f"IF EXISTS ("
+                f"  SELECT 1 FROM pg_constraint "
+                f"  WHERE conname = '{constraint_name}' "
+                f"  AND confdeltype != '{_ondelete_to_pg_code(desired_rule)}'"
+                f") THEN "
+                f"  ALTER TABLE {table_name} DROP CONSTRAINT {constraint_name}; "
+                f"  {_build_add_constraint_sql(table_name, constraint_name, inspector, desired_rule)} "
+                f"END IF; "
+                f"END $$;"
+            )
+
+    if statements:
+        with engine.begin() as connection:
+            for stmt in statements:
+                connection.execute(text(stmt))
+
+
+def _ondelete_to_pg_code(rule: str) -> str:
+    """Convert an ondelete keyword to a pg_constraint confdeltype code."""
+    mapping = {"NO ACTION": "a", "RESTRICT": "r", "CASCADE": "c", "SET NULL": "n", "SET DEFAULT": "d"}
+    return mapping.get(rule.upper(), "a")
+
+
+def _build_add_constraint_sql(
+    table_name: str, constraint_name: str, inspector, desired_rule: str
+) -> str:
+    """Build an ALTER TABLE ADD CONSTRAINT statement from the inspector metadata."""
+    for fk in inspector.get_foreign_keys(table_name):
+        if fk.get("name") == constraint_name:
+            cols = ", ".join(fk["constrained_columns"])
+            ref_table = fk["referred_table"]
+            ref_cols = ", ".join(fk["referred_columns"])
+            return (
+                f"ALTER TABLE {table_name} ADD CONSTRAINT {constraint_name} "
+                f"FOREIGN KEY ({cols}) REFERENCES {ref_table}({ref_cols}) ON DELETE {desired_rule};"
+            )
+    return ""
 
 
 @lru_cache(maxsize=4)
