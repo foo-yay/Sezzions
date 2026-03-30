@@ -211,6 +211,49 @@ function isTextEntryElement(element) {
   return element.isContentEditable;
 }
 
+function parseNumericValue(text) {
+  if (!text || typeof text !== "string") return null;
+  const trimmed = text.trim();
+  if (!trimmed || ["n/a", "na", "-", "\u2014", "\u2013"].includes(trimmed.toLowerCase())) return null;
+  let cleaned = trimmed.replace(/[$\u20ac\u00a3\u00a5,\s]/g, "");
+  if (cleaned.startsWith("(") && cleaned.endsWith(")")) cleaned = "-" + cleaned.slice(1, -1);
+  if (cleaned.endsWith("%")) cleaned = cleaned.slice(0, -1);
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : null;
+}
+
+function computeCellStats(values) {
+  const count = values.length;
+  const nums = values.map(parseNumericValue).filter((v) => v !== null);
+  if (!nums.length) return { count, numericCount: 0, sum: 0, avg: 0, min: null, max: null };
+  const sum = nums.reduce((a, b) => a + b, 0);
+  return {
+    count,
+    numericCount: nums.length,
+    sum,
+    avg: sum / nums.length,
+    min: Math.min(...nums),
+    max: Math.max(...nums)
+  };
+}
+
+function getCellDisplayValue(user, columnKey) {
+  if (columnKey === "status") return user.is_active ? "Active" : "Inactive";
+  return String(user[columnKey] || "");
+}
+
+function HighlightMatch({ text, query }) {
+  if (!query || !text) return text || "";
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+  if (parts.length === 1) return text;
+  return parts.map((part, i) =>
+    part.toLowerCase() === query.toLowerCase()
+      ? <mark key={i} className="search-highlight">{part}</mark>
+      : part
+  );
+}
+
 const initialUserColumnFilters = {
   name: [],
   email: [],
@@ -308,13 +351,12 @@ function StatusModal({ overallTone, statusItems, onClose, onRetryHostedConnectio
       >
         <div className="modal-header">
           <div>
-            <p className="section-kicker">Hosted Status</p>
             <h2 id="status-modal-title">Connection Health</h2>
           </div>
           <button className="ghost-button" type="button" onClick={onClose}>Close</button>
         </div>
 
-        <div className="status-overview-card">
+        <div className="status-overview-strip">
           <span className={`status-dot large ${overallTone}`} aria-hidden="true" />
           <div>
             <strong>Overall status</strong>
@@ -360,15 +402,12 @@ function NotificationsModal({ onClose }) {
       >
         <div className="modal-header">
           <div>
-            <p className="section-kicker">Notifications</p>
-            <h2 id="notifications-modal-title">Notification Center</h2>
+            <h2 id="notifications-modal-title">Notifications</h2>
           </div>
           <button className="ghost-button" type="button" onClick={onClose}>Close</button>
         </div>
 
-        <section className="detail-section">
-          <p className="status-note">No notifications.</p>
-        </section>
+        <p className="status-note">No notifications.</p>
       </section>
     </div>
   );
@@ -386,20 +425,17 @@ function AccountModal({ accountOwner, accountRole, accountStatus, workspaceName,
       >
         <div className="modal-header">
           <div>
-            <p className="section-kicker">My Account</p>
-            <h2 id="account-modal-title">Hosted Account</h2>
+            <h2 id="account-modal-title">My Account</h2>
           </div>
           <button className="ghost-button" type="button" onClick={onClose}>Close</button>
         </div>
 
-        <section className="detail-section">
-          <dl className="detail-grid compact-grid">
-            <div><dt>Owner</dt><dd>{accountOwner}</dd></div>
-            <div><dt>Role</dt><dd>{accountRole}</dd></div>
-            <div><dt>Status</dt><dd>{accountStatus}</dd></div>
-            <div><dt>Workspace</dt><dd>{workspaceName}</dd></div>
-          </dl>
-        </section>
+        <dl className="detail-grid compact-grid">
+          <div><dt>Owner</dt><dd>{accountOwner}</dd></div>
+          <div><dt>Role</dt><dd>{accountRole}</dd></div>
+          <div><dt>Status</dt><dd>{accountStatus}</dd></div>
+          <div><dt>Workspace</dt><dd>{workspaceName}</dd></div>
+        </dl>
 
         <div className="modal-actions modal-actions-end">
           <button className="ghost-button" type="button" onClick={onSignOut}>Sign Out</button>
@@ -421,15 +457,12 @@ function SettingsModal({ onClose }) {
       >
         <div className="modal-header">
           <div>
-            <p className="section-kicker">Settings</p>
             <h2 id="settings-modal-title">Settings</h2>
           </div>
           <button className="ghost-button" type="button" onClick={onClose}>Close</button>
         </div>
 
-        <section className="detail-section">
-          <p className="status-note">No settings available.</p>
-        </section>
+        <p className="status-note">No settings available.</p>
       </section>
     </div>
   );
@@ -448,15 +481,11 @@ function ConfirmationModal({ title, message, confirmLabel = "Confirm", cancelLab
       >
         <div className="modal-header">
           <div>
-            <p className="section-kicker">Confirm Action</p>
             <h2 id="confirmation-modal-title">{title}</h2>
           </div>
-          <button className="ghost-button" type="button" onClick={onCancel}>Close</button>
         </div>
 
-        <section className="detail-section">
-          <p id="confirmation-modal-message" className="status-note">{message}</p>
-        </section>
+        <p id="confirmation-modal-message" className="status-note">{message}</p>
 
         <div className="modal-actions modal-actions-end">
           <button className="ghost-button" type="button" onClick={onCancel}>{cancelLabel}</button>
@@ -467,15 +496,14 @@ function ConfirmationModal({ title, message, confirmLabel = "Confirm", cancelLab
   );
 }
 
-function downloadUsersCsv(users) {
+function downloadUsersCsv(users, columns) {
+  const activeColumns = columns || userTableColumns;
   const rows = [
-    ["Name", "Email", "Status", "Notes"],
-    ...users.map((user) => [
-      user.name,
-      user.email || "",
-      user.is_active ? "Active" : "Inactive",
-      user.notes || ""
-    ])
+    activeColumns.map((c) => c.label),
+    ...users.map((user) => activeColumns.map((c) => {
+      if (c.key === "status") return user.is_active ? "Active" : "Inactive";
+      return String(user[c.key] || "");
+    }))
   ];
   const csv = rows
     .map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(","))
@@ -740,6 +768,142 @@ function UserHeaderFilterMenu({
   );
 }
 
+function TableContextMenu({ position, items, onClose }) {
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    function handleClick(event) {
+      if (menuRef.current && !menuRef.current.contains(event.target)) onClose();
+    }
+    function handleKey(event) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [onClose]);
+
+  // Adjust position so menu doesn't overflow viewport
+  const style = {
+    position: "fixed",
+    zIndex: 1500,
+    left: Math.min(position.x, window.innerWidth - 220),
+    top: Math.min(position.y, window.innerHeight - items.length * 36 - 16),
+  };
+
+  return (
+    <div className="table-context-menu" ref={menuRef} style={style} role="menu">
+      {items.map((item, i) =>
+        item.divider
+          ? <div key={i} className="context-menu-divider" role="separator" />
+          : (
+            <button
+              key={i}
+              className={`context-menu-item${item.danger ? " danger" : ""}`}
+              type="button"
+              role="menuitem"
+              disabled={item.disabled}
+              onClick={() => { item.action(); onClose(); }}
+            >
+              {item.label}
+            </button>
+          )
+      )}
+    </div>
+  );
+}
+
+function ExportModal({ filteredUsers, selectedUsers, selectedCells, allColumns, onExport, onClose }) {
+  const hasSelection = selectedUsers.length > 0;
+  const hasCellSelection = selectedCells.size > 0;
+  const [scope, setScope] = useState(hasSelection ? "selected" : "filtered");
+  const [enabledColumns, setEnabledColumns] = useState(() => new Set(allColumns.map((c) => c.key)));
+
+  const scopeOptions = [
+    { value: "filtered", label: `All shown (${filteredUsers.length})` },
+    ...(hasSelection ? [{ value: "selected", label: `Selected rows (${selectedUsers.length})` }] : []),
+  ];
+
+  const dataUsers = scope === "selected" ? selectedUsers : filteredUsers;
+  const activeColumns = allColumns.filter((c) => enabledColumns.has(c.key));
+  const previewRows = dataUsers.slice(0, 5);
+
+  function toggleColumn(key) {
+    setEnabledColumns((current) => {
+      const next = new Set(current);
+      if (next.has(key)) { if (next.size > 1) next.delete(key); } else next.add(key);
+      return next;
+    });
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="modal-card export-modal" aria-modal="true" role="dialog">
+        <header className="modal-header">
+          <h3>Export CSV</h3>
+          <button className="ghost-button" type="button" onClick={onClose}>Close</button>
+        </header>
+
+        <div className="export-modal-body">
+          <div className="export-section">
+            <label className="export-label">Data scope</label>
+            <div className="export-scope-options">
+              {scopeOptions.map((opt) => (
+                <label key={opt.value} className="export-radio-label">
+                  <input type="radio" name="export-scope" value={opt.value} checked={scope === opt.value} onChange={() => setScope(opt.value)} />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="export-section">
+            <label className="export-label">Columns</label>
+            <div className="export-column-options">
+              {allColumns.map((col) => (
+                <label key={col.key} className="export-checkbox-label">
+                  <input type="checkbox" checked={enabledColumns.has(col.key)} onChange={() => toggleColumn(col.key)} />
+                  {col.label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="export-section">
+            <label className="export-label">Preview ({dataUsers.length} row{dataUsers.length !== 1 ? "s" : ""})</label>
+            <div className="export-preview-scroll">
+              <table className="export-preview-table">
+                <thead>
+                  <tr>{activeColumns.map((c) => <th key={c.key}>{c.label}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {previewRows.map((user, i) => (
+                    <tr key={i}>
+                      {activeColumns.map((c) => (
+                        <td key={c.key}>{c.key === "status" ? (user.is_active ? "Active" : "Inactive") : String(user[c.key] || "")}</td>
+                      ))}
+                    </tr>
+                  ))}
+                  {dataUsers.length > 5 ? <tr><td colSpan={activeColumns.length} className="export-preview-more">... and {dataUsers.length - 5} more</td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div className="modal-actions modal-actions-end">
+          <button className="primary-button" type="button" onClick={() => { onExport(dataUsers, activeColumns); onClose(); }}>
+            Export {dataUsers.length} Row{dataUsers.length !== 1 ? "s" : ""}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function UserModal({
   mode,
   user,
@@ -769,36 +933,30 @@ function UserModal({
         >
           <div className="modal-header">
             <div>
-              <p className="section-kicker">Setup / Users</p>
               <h2 id="user-modal-title">View User</h2>
             </div>
             <button className="ghost-button" type="button" onClick={onClose}>{closeLabel}</button>
           </div>
 
-          <section className="detail-section">
-            <p className="section-kicker">User Details</p>
-            <div className="detail-columns">
-              <dl className="detail-grid single-column-grid">
-                <div><dt>Name</dt><dd>{user.name}</dd></div>
-                <div><dt>Email</dt><dd>{user.email || "-"}</dd></div>
-              </dl>
-              <dl className="detail-grid single-column-grid">
-                <div>
-                  <dt>Status</dt>
-                  <dd>
-                    <span className={user.is_active ? "status-chip active" : "status-chip inactive"}>
-                      {user.is_active ? "Active" : "Inactive"}
-                    </span>
-                  </dd>
-                </div>
-              </dl>
-            </div>
-          </section>
+          <div className="user-detail-body">
+            <dl className="detail-grid user-detail-grid">
+              <div><dt>Name</dt><dd>{user.name}</dd></div>
+              <div><dt>Email</dt><dd>{user.email || "-"}</dd></div>
+              <div>
+                <dt>Status</dt>
+                <dd>
+                  <span className={user.is_active ? "status-chip active" : "status-chip inactive"}>
+                    {user.is_active ? "Active" : "Inactive"}
+                  </span>
+                </dd>
+              </div>
+            </dl>
 
-          <section className="detail-section">
-            <p className="section-kicker">Notes</p>
-            <div className="notes-display">{user.notes || "-"}</div>
-          </section>
+            <div className="user-detail-notes">
+              <p className="detail-label">Notes</p>
+              <div className="notes-display">{user.notes || "-"}</div>
+            </div>
+          </div>
 
           <div className="modal-actions modal-actions-split">
             <div className="toolbar-row">
@@ -806,7 +964,6 @@ function UserModal({
             </div>
             <div className="toolbar-row">
               <button className="primary-button" type="button" onClick={onRequestEdit}>Edit User</button>
-              <button className="ghost-button" type="button" onClick={onClose}>{closeLabel}</button>
             </div>
           </div>
         </section>
@@ -825,7 +982,6 @@ function UserModal({
       >
         <div className="modal-header">
           <div>
-            <p className="section-kicker">Setup / Users</p>
             <h2 id="user-modal-title">{title}</h2>
           </div>
           <button className="ghost-button" type="button" onClick={onClose}>
@@ -900,7 +1056,6 @@ function UserModal({
         {submitError ? <p className="submit-error">{submitError}</p> : null}
 
         <div className="modal-actions modal-actions-end">
-          <button className="ghost-button" type="button" onClick={onClose}>{closeLabel}</button>
           <button className="primary-button" type="button" onClick={onSubmit} disabled={nameInvalid}>
             Save User
           </button>
@@ -914,6 +1069,7 @@ export default function App() {
   const usersScrollGateRef = useRef({ armed: false, lastScrollTop: 0 });
   const usersPagingRequestRef = useRef(false);
   const usersTableViewportRef = useRef(null);
+  const userNavCursorRef = useRef(null);
   const [currentRoute, setCurrentRoute] = useState(() => readCurrentRoute());
   const isMigrationPage = currentRoute === "/migration";
   const [railCollapsed, setRailCollapsed] = useState(false);
@@ -948,11 +1104,21 @@ export default function App() {
   const [openUserHeaderMenu, setOpenUserHeaderMenu] = useState(null);
   const [selectedUserIds, setSelectedUserIds] = useState([]);
   const [selectionAnchorUserId, setSelectionAnchorUserId] = useState(null);
+  const [selectedColumnKeys, setSelectedColumnKeys] = useState(new Set());
+  const [selectedCells, setSelectedCells] = useState(new Set());
+  const cellAnchorRef = useRef(null);
   const [usersTotalCount, setUsersTotalCount] = useState(null);
   const [usersNextOffset, setUsersNextOffset] = useState(0);
   const [usersHasMore, setUsersHasMore] = useState(false);
   const [usersLoadingInitial, setUsersLoadingInitial] = useState(false);
   const [usersLoadingMore, setUsersLoadingMore] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [columnWidths, setColumnWidths] = useState(null);
+  const columnResizeRef = useRef(null);
+  const headerRef = useRef(null);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+
   const [userModalMode, setUserModalMode] = useState(null);
   const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [userForm, setUserForm] = useState(initialUserForm);
@@ -1089,11 +1255,9 @@ export default function App() {
 
     document.addEventListener("mousedown", handlePointerDown);
     window.addEventListener("resize", handleViewportChange);
-    window.addEventListener("scroll", handleViewportChange, true);
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("resize", handleViewportChange);
-      window.removeEventListener("scroll", handleViewportChange, true);
     };
   }, [openUserHeaderMenu]);
 
@@ -1107,6 +1271,7 @@ export default function App() {
       || settingsModalOpen
       || userModalMode
       || confirmationState
+      || exportModalOpen
     );
 
     if (!anyModalOpen) {
@@ -1170,6 +1335,11 @@ export default function App() {
         return;
       }
 
+      if (exportModalOpen) {
+        setExportModalOpen(false);
+        return;
+      }
+
       if (notificationsModalOpen) {
         setNotificationsModalOpen(false);
       }
@@ -1177,7 +1347,120 @@ export default function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [accountModalOpen, confirmationState, notificationsModalOpen, openUserHeaderMenu, settingsModalOpen, statusModalOpen, userModalMode, userModalDirty]);
+  }, [accountModalOpen, confirmationState, exportModalOpen, notificationsModalOpen, openUserHeaderMenu, settingsModalOpen, statusModalOpen, userModalMode, userModalDirty]);
+
+  useEffect(() => {
+    if (setupTab !== "users") return undefined;
+
+    function handleArrowNav(event) {
+      // Ctrl+C: copy selected cells as TSV
+      if (event.key === "c" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+        if (isTextEntryElement(document.activeElement)) return;
+        if (selectedCells.size) {
+          event.preventDefault();
+          copyCellsAsTSV();
+          return;
+        }
+        if (selectedUserIds.length) {
+          event.preventDefault();
+          copyRowsAsTSV();
+          return;
+        }
+        return;
+      }
+
+      if (event.key === "a" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+        if (isTextEntryElement(document.activeElement)) return;
+        if (confirmationState || userModalMode || openUserHeaderMenu) return;
+        if (!filteredUsers.length) return;
+        event.preventDefault();
+        // Toggle: if all filtered are already selected, deselect all
+        if (selectedUserIds.length === filteredUsers.length && filteredUsers.every((u) => selectedUserIds.includes(u.id))) {
+          setSelectedUserIds([]);
+          setSelectionAnchorUserId(null);
+          userNavCursorRef.current = null;
+        } else {
+          setSelectedUserIds(filteredUsers.map((u) => u.id));
+          setSelectionAnchorUserId(filteredUsers[0].id);
+          userNavCursorRef.current = filteredUsers[filteredUsers.length - 1].id;
+        }
+        return;
+      }
+
+      // Ctrl+F: focus search field
+      if (event.key === "f" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+        if (confirmationState || userModalMode || openUserHeaderMenu) return;
+        event.preventDefault();
+        const searchInput = document.getElementById("users-search-input");
+        if (searchInput) searchInput.focus();
+        return;
+      }
+
+      // Escape: clear search field if focused and has content, otherwise blur
+      if (event.key === "Escape") {
+        const searchInput = document.getElementById("users-search-input");
+        if (document.activeElement === searchInput) {
+          event.preventDefault();
+          if (usersSearch) {
+            setUsersSearch("");
+          } else {
+            searchInput.blur();
+          }
+          return;
+        }
+      }
+
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown" && event.key !== "Enter") return;
+      if (isTextEntryElement(document.activeElement)) return;
+      if (confirmationState || userModalMode || openUserHeaderMenu) return;
+
+      if (event.key === "Enter") {
+        if (selectedUserIds.length === 1) {
+          const user = filteredUsers.find((u) => u.id === selectedUserIds[0]);
+          if (user) openUserModal("view", user);
+        }
+        return;
+      }
+
+      if (!filteredUsers.length || !selectedUserIds.length) return;
+
+      event.preventDefault();
+      const orderedIds = filteredUsers.map((u) => u.id);
+      const cursorId = userNavCursorRef.current ?? selectedUserIds[selectedUserIds.length - 1];
+      const currentIndex = orderedIds.indexOf(cursorId);
+      if (currentIndex === -1) return;
+
+      const nextIndex = event.key === "ArrowDown"
+        ? Math.min(currentIndex + 1, orderedIds.length - 1)
+        : Math.max(currentIndex - 1, 0);
+      const nextId = orderedIds[nextIndex];
+      userNavCursorRef.current = nextId;
+
+      if (event.shiftKey) {
+        setSelectedUserIds(() => {
+          const anchor = selectionAnchorUserId && orderedIds.includes(selectionAnchorUserId)
+            ? orderedIds.indexOf(selectionAnchorUserId)
+            : currentIndex;
+          const [start, end] = anchor < nextIndex ? [anchor, nextIndex] : [nextIndex, anchor];
+          return orderedIds.slice(start, end + 1);
+        });
+      } else {
+        setSelectedUserIds([nextId]);
+        setSelectionAnchorUserId(nextId);
+      }
+
+      const viewport = usersTableViewportRef.current;
+      if (viewport) {
+        requestAnimationFrame(() => {
+          const row = viewport.querySelector(`tbody tr:nth-child(${nextIndex + 1})`);
+          if (row) row.scrollIntoView({ block: "nearest" });
+        });
+      }
+    }
+
+    window.addEventListener("keydown", handleArrowNav);
+    return () => window.removeEventListener("keydown", handleArrowNav);
+  }, [confirmationState, filteredUsers, openUserHeaderMenu, selectedCells, selectedUserIds, selectionAnchorUserId, setupTab, userModalMode]);
 
   const userSuggestions = useMemo(() => ({
     names: [...new Set(users.map((user) => user.name).filter(Boolean))],
@@ -1207,6 +1490,9 @@ export default function App() {
   function clearUserSelection() {
     setSelectedUserIds([]);
     setSelectionAnchorUserId(null);
+    setSelectedCells(new Set());
+    setSelectedColumnKeys(new Set());
+    cellAnchorRef.current = null;
   }
 
   function closeUserModalImmediately() {
@@ -1240,6 +1526,7 @@ export default function App() {
   }
 
   async function loadUsers(accessToken, { append = false } = {}) {
+
     if (!accessToken) {
       setUsers([]);
       setUsersTotalCount(null);
@@ -1382,6 +1669,10 @@ export default function App() {
 
   function handleUserRowSelection(event, userId) {
     event.preventDefault();
+    // Clear cell/column selection when doing row selection
+    setSelectedCells(new Set());
+    setSelectedColumnKeys(new Set());
+    cellAnchorRef.current = null;
     const orderedIds = filteredUsers.map((user) => user.id);
 
     if (event.shiftKey && selectionAnchorUserId && orderedIds.includes(selectionAnchorUserId)) {
@@ -1405,6 +1696,280 @@ export default function App() {
 
     setSelectedUserIds([userId]);
     setSelectionAnchorUserId(userId);
+    userNavCursorRef.current = userId;
+  }
+
+  function handleCellClick(event, userId, columnKey) {
+    if (!event.altKey) return false; // only Alt/Option+click enters cell mode
+    event.stopPropagation();
+    event.preventDefault();
+
+    // Clear row selection when entering cell mode
+    setSelectedUserIds([]);
+    setSelectionAnchorUserId(null);
+
+    const cellId = `${userId}:${columnKey}`;
+    const columnKeys = userTableColumns.map((c) => c.key);
+
+    if (event.shiftKey && cellAnchorRef.current) {
+      // Rectangular range from anchor to this cell
+      const anchor = cellAnchorRef.current;
+      const orderedIds = filteredUsers.map((u) => u.id);
+      const anchorRowIdx = orderedIds.indexOf(anchor.userId);
+      const targetRowIdx = orderedIds.indexOf(userId);
+      const anchorColIdx = columnKeys.indexOf(anchor.columnKey);
+      const targetColIdx = columnKeys.indexOf(columnKey);
+      if (anchorRowIdx === -1 || targetRowIdx === -1) return true;
+
+      const [rowStart, rowEnd] = anchorRowIdx < targetRowIdx ? [anchorRowIdx, targetRowIdx] : [targetRowIdx, anchorRowIdx];
+      const [colStart, colEnd] = anchorColIdx < targetColIdx ? [anchorColIdx, targetColIdx] : [targetColIdx, anchorColIdx];
+
+      const next = new Set();
+      for (let r = rowStart; r <= rowEnd; r++) {
+        for (let c = colStart; c <= colEnd; c++) {
+          next.add(`${orderedIds[r]}:${columnKeys[c]}`);
+        }
+      }
+      setSelectedCells(next);
+      setSelectedColumnKeys(new Set());
+    } else {
+      // Alt+click: toggle individual cell (Ctrl+Alt adds to selection)
+      if (event.metaKey || event.ctrlKey) {
+        setSelectedCells((current) => {
+          const next = new Set(current);
+          if (next.has(cellId)) next.delete(cellId); else next.add(cellId);
+          return next;
+        });
+      } else {
+        setSelectedCells((current) => current.size === 1 && current.has(cellId) ? new Set() : new Set([cellId]));
+      }
+      setSelectedColumnKeys(new Set());
+      cellAnchorRef.current = { userId, columnKey };
+    }
+    return true;
+  }
+
+  function copyCellsAsTSV() {
+    const columnKeys = userTableColumns.map((c) => c.key);
+    const orderedIds = filteredUsers.map((u) => u.id);
+    const rows = [];
+    for (const uid of orderedIds) {
+      const row = [];
+      let hasCell = false;
+      for (const col of columnKeys) {
+        if (selectedCells.has(`${uid}:${col}`)) {
+          const u = filteredUsers.find((x) => x.id === uid);
+          row.push(u ? getCellDisplayValue(u, col) : "");
+          hasCell = true;
+        } else {
+          row.push("");
+        }
+      }
+      if (hasCell) rows.push(row);
+    }
+    const usedCols = columnKeys.map((_, ci) => rows.some((r) => r[ci] !== ""));
+    const tsv = rows.map((r) => r.filter((_, ci) => usedCols[ci]).join("\t")).join("\n");
+    navigator.clipboard.writeText(tsv).catch(() => {});
+  }
+
+  function copyRowsAsTSV() {
+    const columnKeys = userTableColumns.map((c) => c.key);
+    const orderedIds = filteredUsers.map((u) => u.id);
+    const rows = [];
+    for (const uid of orderedIds) {
+      if (!selectedUserIds.includes(uid)) continue;
+      const u = filteredUsers.find((x) => x.id === uid);
+      if (!u) continue;
+      rows.push(columnKeys.map((col) => getCellDisplayValue(u, col)));
+    }
+    const tsv = rows.map((r) => r.join("\t")).join("\n");
+    navigator.clipboard.writeText(tsv).catch(() => {});
+  }
+
+  function handleTableContextMenu(event, user) {
+    event.preventDefault();
+    setContextMenu(null);
+
+    // Detect which cell column was right-clicked
+    let td = event.target;
+    while (td && td.tagName !== "TD") td = td.parentElement;
+    const clickedColumnKey = td?.dataset?.col || null;
+
+    const items = [];
+    const isRowSelected = selectedUserIds.includes(user.id);
+    const hasCellSelection = selectedCells.size > 0;
+    const hasRowSelection = selectedUserIds.length > 0;
+
+    // 1. Copy the specific clicked cell value
+    if (clickedColumnKey) {
+      const cellValue = getCellDisplayValue(user, clickedColumnKey);
+      const truncated = cellValue.length > 30 ? `${cellValue.slice(0, 27)}…` : cellValue;
+      items.push({ label: `Copy "${truncated}"`, action: () => { navigator.clipboard.writeText(cellValue).catch(() => {}); }});
+    }
+
+    // 2. Copy selected cells as TSV (if any)
+    if (hasCellSelection) {
+      items.push({ label: `Copy ${selectedCells.size} cell${selectedCells.size > 1 ? "s" : ""}`, action: copyCellsAsTSV });
+    }
+
+    // 3. Copy selected rows as TSV (if any)
+    if (hasRowSelection) {
+      const count = selectedUserIds.length;
+      items.push({ label: count > 1 ? `Copy ${count} rows` : "Copy row", action: copyRowsAsTSV });
+    }
+
+    items.push({ divider: true });
+
+    // Row actions
+    if (!isRowSelected) {
+      items.push({ label: "Select row", action: () => { setSelectedUserIds([user.id]); setSelectionAnchorUserId(user.id); }});
+      items.push({ divider: true });
+    }
+
+    const targetUsers = isRowSelected ? selectedUsers : [user];
+    const targetCount = targetUsers.length;
+
+    items.push({ label: "View", action: () => openUserModal("view", targetCount === 1 ? targetUsers[0] : user), disabled: targetCount !== 1 });
+    items.push({ label: "Edit", action: () => openUserModal("edit", targetCount === 1 ? targetUsers[0] : user), disabled: targetCount !== 1 });
+    items.push({ divider: true });
+
+    if (hasCellSelection) {
+      items.push({ label: "Clear cell selection", action: () => { setSelectedCells(new Set()); setSelectedColumnKeys(new Set()); cellAnchorRef.current = null; }});
+    }
+
+    items.push({
+      label: targetCount > 1 ? `Delete ${targetCount} users` : "Delete",
+      danger: true,
+      action: () => handleDeleteUser(targetUsers),
+      disabled: !hostedWorkspaceReady
+    });
+
+    setContextMenu({ x: event.clientX, y: event.clientY, items });
+  }
+
+  function getComputedColumnWidths() {
+    // Read current rendered widths from the header grid cells
+    const header = headerRef.current;
+    if (!header) return null;
+    const cells = header.querySelectorAll(".users-table-header-cell");
+    // First cell is checkbox — skip it, return widths for data columns only
+    const widths = [];
+    for (let i = 1; i < cells.length; i++) {
+      widths.push(cells[i].getBoundingClientRect().width);
+    }
+    return widths.length === userTableColumns.length ? widths : null;
+  }
+
+  function getColumnMinWidth(colIndex) {
+    // Measure header label text + filter button + padding to determine smart minimum
+    const header = headerRef.current;
+    if (!header) return 80;
+    const cells = header.querySelectorAll(".users-table-header-cell");
+    const cell = cells[colIndex + 1]; // +1 for checkbox column
+    if (!cell) return 80;
+    const label = cell.querySelector(".users-table-header-label");
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    ctx.font = "0.71rem -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+    const labelW = label ? ctx.measureText(label.textContent || "").width : 30;
+    // label text + sort/filter button (~28px) + cell padding (2×10) + gap (4) + resize handle (5)
+    return Math.ceil(labelW + 57);
+  }
+
+  function handleColumnResizeStart(event, colIndex) {
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    let widths = columnWidths || getComputedColumnWidths();
+    if (!widths) return;
+    widths = [...widths];
+    const startWidth = widths[colIndex];
+
+    // Pre-compute per-column minimums
+    const minWidths = widths.map((_, i) => getColumnMinWidth(i));
+
+    function ensureViewportFill(w) {
+      const viewport = usersTableViewportRef.current;
+      if (!viewport) return w;
+      const available = viewport.clientWidth - 36; // subtract checkbox column
+      const total = w.reduce((a, b) => a + b, 0);
+      if (total < available) {
+        const result = [...w];
+        result[result.length - 1] += available - total;
+        return result;
+      }
+      return w;
+    }
+
+    function onMouseMove(moveEvent) {
+      const delta = moveEvent.clientX - startX;
+      widths[colIndex] = Math.max(minWidths[colIndex], startWidth + delta);
+      setColumnWidths(ensureViewportFill([...widths]));
+    }
+
+    function onMouseUp() {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      columnResizeRef.current = null;
+    }
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    columnResizeRef.current = true;
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }
+
+  function handleColumnAutoFit(colIndex) {
+    let widths = columnWidths || getComputedColumnWidths();
+    if (!widths) return;
+    widths = [...widths];
+
+    const columnKey = userTableColumns[colIndex]?.key;
+    if (!columnKey) return;
+
+    // Use a canvas context to measure text width directly (avoids DOM layout constraints)
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    // Match the table cell font
+    ctx.font = "0.84rem -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+
+    let maxWidth = 60;
+
+    // Measure header label text
+    const header = headerRef.current;
+    if (header) {
+      const headerCells = header.querySelectorAll(".users-table-header-cell");
+      if (headerCells[colIndex + 1]) {
+        const label = headerCells[colIndex + 1].querySelector(".users-table-header-label");
+        if (label) {
+          const textWidth = ctx.measureText(label.textContent || "").width;
+          maxWidth = Math.max(maxWidth, textWidth + 52); // +padding+sort button
+        }
+      }
+    }
+
+    // Measure each row's cell content
+    for (const user of filteredUsers) {
+      const value = getCellDisplayValue(user, columnKey);
+      const textWidth = ctx.measureText(value).width;
+      maxWidth = Math.max(maxWidth, textWidth + 24); // +cell padding
+    }
+
+    widths[colIndex] = Math.min(Math.ceil(maxWidth), 600); // cap at reasonable max
+
+    // Ensure columns fill viewport
+    const viewport = usersTableViewportRef.current;
+    if (viewport) {
+      const available = viewport.clientWidth - 36;
+      const total = widths.reduce((a, b) => a + b, 0);
+      if (total < available) {
+        widths[widths.length - 1] += available - total;
+      }
+    }
+    setColumnWidths([...widths]);
   }
 
   async function loadNextUsersPage() {
@@ -1427,7 +1992,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!usersHasMore || usersFiltersActive || usersLoadingInitial || usersLoadingMore || !hasAuthenticatedSession) {
+    if (setupTab !== "users" || !usersHasMore || usersFiltersActive || usersLoadingInitial || usersLoadingMore || !hasAuthenticatedSession) {
       return undefined;
     }
 
@@ -1458,7 +2023,7 @@ export default function App() {
 
     viewport.addEventListener("scroll", handleViewportScroll, { passive: true });
     return () => viewport.removeEventListener("scroll", handleViewportScroll);
-  }, [hasAuthenticatedSession, usersFiltersActive, usersHasMore, usersLoadingInitial, usersLoadingMore, usersNextOffset]);
+  }, [hasAuthenticatedSession, setupTab, usersFiltersActive, usersHasMore, usersLoadingInitial, usersLoadingMore, usersNextOffset]);
 
   function openUserHeaderOptions(event, columnKey) {
     const buttonRect = event.currentTarget.getBoundingClientRect();
@@ -2244,28 +2809,23 @@ export default function App() {
       <main className="workspace-shell">
         {setupTab === "users" ? (
           <section className="workspace-panel setup-panel users-page" aria-label="Setup Users">
-            <div className="users-page-header">
-              <div className="users-page-title-row">
-                <div>
-                  <p className="section-kicker">Setup</p>
-                  <h2>Users</h2>
-                </div>
-              </div>
-              <div className="users-page-header-copy">
-                <p className="users-page-note">Manage workspace users, inspect individual records, and export the current filtered view.</p>
-              </div>
-            </div>
-
             <div className="users-surface">
-              <div className="sticky-tools users-sticky-tools">
-                <div className="toolbar-row wrap-toolbar users-toolbar-panel">
-                  <button className="primary-button" type="button" onClick={() => openUserModal("create")} disabled={!hostedWorkspaceReady}>Add User</button>
-                  <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("view", selectedUser)} disabled={!hostedWorkspaceReady || selectedUserIds.length !== 1}>View</button>
-                  <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("edit", selectedUser)} disabled={!hostedWorkspaceReady || selectedUserIds.length !== 1}>Edit</button>
-                  <button className="ghost-button" type="button" onClick={() => handleDeleteUser()} disabled={!hostedWorkspaceReady || !selectedUserIds.length}>Delete</button>
-                  <button className="ghost-button" type="button" onClick={() => downloadUsersCsv(filteredUsers)} disabled={!filteredUsers.length}>Export CSV</button>
-                  <button className="ghost-button" type="button" onClick={handleUsersRefresh} disabled={!hostedWorkspaceReady}>Refresh</button>
-                  {devToolsVisible ? <button className="ghost-button" type="button" onClick={handleSeedDemoUsers} disabled={!hostedWorkspaceReady}>Seed 200 Demo Users</button> : null}
+              <div className="users-toolbar">
+                <div className="users-toolbar-top">
+                  <nav className="users-breadcrumb" aria-label="Breadcrumb">
+                    <span className="breadcrumb-segment">Setup</span>
+                    <span className="breadcrumb-separator" aria-hidden="true">›</span>
+                    <h2 className="breadcrumb-segment current" title="Manage workspace users, inspect individual records, and export the current filtered view.">Users</h2>
+                  </nav>
+                  <div className="toolbar-row wrap-toolbar users-toolbar-actions">
+                    <button className="primary-button" type="button" onClick={() => openUserModal("create")} disabled={!hostedWorkspaceReady}>Add User</button>
+                    <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("view", selectedUser)} disabled={!hostedWorkspaceReady || selectedUserIds.length !== 1}>View</button>
+                    <button className="ghost-button" type="button" onClick={() => selectedUser && openUserModal("edit", selectedUser)} disabled={!hostedWorkspaceReady || selectedUserIds.length !== 1}>Edit</button>
+                    <button className="ghost-button" type="button" onClick={() => handleDeleteUser()} disabled={!hostedWorkspaceReady || !selectedUserIds.length}>Delete</button>
+                    <button className="ghost-button" type="button" onClick={() => setExportModalOpen(true)} disabled={!filteredUsers.length}>Export CSV</button>
+                    <button className="ghost-button" type="button" onClick={handleUsersRefresh} disabled={!hostedWorkspaceReady}>Refresh</button>
+                    {devToolsVisible ? <button className="ghost-button" type="button" onClick={handleSeedDemoUsers} disabled={!hostedWorkspaceReady}>Seed 200 Demo Users</button> : null}
+                  </div>
                 </div>
                 <div className="users-search-bar">
                   <label className="users-search-field" htmlFor="users-search-input">
@@ -2287,133 +2847,274 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="users-summary-rail users-summary-rail-top" aria-label="User summary">
-                <div className="users-page-metrics">
-                  <span className="users-metric-chip">{filteredUserCount} shown</span>
-                  <span className="users-metric-chip subdued">{totalUserCount} total</span>
-                  {selectedUserIds.length ? <span className="users-metric-chip accent">{selectedUserIds.length} selected</span> : null}
-                  {usersFiltersActive ? <span className="users-metric-chip subdued">Filtered view</span> : null}
-                </div>
-              </div>
-
-              <div className="users-table-stack">
-                <div className="table-shell">
-                  <div className="table-viewport" ref={usersTableViewportRef}>
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          {userTableColumns.map((column) => {
-                            const sortDirection = usersSort.column === column.key ? usersSort.direction : null;
-                            const filterValues = userColumnFilters[column.key];
-                            return (
-                              <th key={column.key}>
-                                <div className="table-header-menu-wrap">
-                                  <button
-                                    className={sortDirection || filterValues.length ? "table-sort-button active" : "table-sort-button"}
-                                    type="button"
-                                    aria-label={`${column.label} options`}
-                                    onClick={(event) => openUserHeaderOptions(event, column.key)}
-                                  >
-                                    <span>{column.label}</span>
-                                    <span className="table-sort-indicator" aria-hidden="true">
-                                      {sortDirection === "asc"
-                                        ? "↑"
-                                        : sortDirection === "desc"
-                                          ? "↓"
-                                          : filterValues.length
-                                            ? filterValues.length
-                                            : <Icon name="filterMenu" className="app-icon table-filter-icon" />}
-                                    </span>
-                                  </button>
-
-                                  {openUserHeaderMenu?.key === column.key ? (
-                                    <UserHeaderFilterMenu
-                                      column={column}
-                                      options={userFilterOptions[column.key]}
-                                      selectedValues={filterValues}
-                                      sortDirection={sortDirection}
-                                      onClearFilter={() => {
-                                        setUserColumnFilters((current) => ({ ...current, [column.key]: [] }));
-                                        setOpenUserHeaderMenu(null);
-                                      }}
-                                      onSortAsc={() => {
-                                        setUsersSort({ column: column.key, direction: "asc" });
-                                        setOpenUserHeaderMenu(null);
-                                      }}
-                                      onSortDesc={() => {
-                                        setUsersSort({ column: column.key, direction: "desc" });
-                                        setOpenUserHeaderMenu(null);
-                                      }}
-                                      onClearSort={() => {
-                                        setUsersSort({ column: null, direction: "asc" });
-                                        setOpenUserHeaderMenu(null);
-                                      }}
-                                      onApplyFilter={(values) => {
-                                        setUserColumnFilters((current) => ({ ...current, [column.key]: values }));
-                                      }}
-                                      onClose={() => setOpenUserHeaderMenu(null)}
-                                      style={openUserHeaderMenu}
-                                    />
-                                  ) : null}
-                                </div>
-                              </th>
-                            );
-                          })}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredUsers.length ? filteredUsers.map((user) => (
-                          <tr
-                            key={user.id}
-                            className={selectedUserIds.includes(user.id) ? "selected-row" : undefined}
-                            aria-selected={selectedUserIds.includes(user.id)}
-                            onMouseDown={(event) => {
-                              if (event.shiftKey || event.metaKey || event.ctrlKey) {
-                                event.preventDefault();
-                              }
-                            }}
-                            onClick={(event) => handleUserRowSelection(event, user.id)}
-                            onDoubleClick={() => openUserModal("view", user)}
-                          >
-                            <td>{user.name}</td>
-                            <td>{user.email || ""}</td>
-                            <td>
-                              <span className={user.is_active ? "status-chip active" : "status-chip inactive"}>
-                                {user.is_active ? "Active" : "Inactive"}
-                              </span>
-                            </td>
-                            <td className="notes-cell">{(user.notes || "").slice(0, 100) || "-"}</td>
-                          </tr>
-                        )) : (
-                          <tr>
-                            <td colSpan="4" className="empty-state-cell">
-                              {hostedWorkspaceReady ? "No users match the current view." : "Connect the hosted workspace to load users."}
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
+              <div className="users-table-scroll-area table-viewport" ref={usersTableViewportRef} onScroll={(e) => setShowBackToTop(e.currentTarget.scrollTop > 120)}>
+                <div className="users-table-header" ref={headerRef} style={columnWidths ? { gridTemplateColumns: `36px ${columnWidths.map((w) => `${w}px`).join(" ")}`, minWidth: `${36 + columnWidths.reduce((a, b) => a + b, 0)}px` } : undefined}>
+                  <div className="users-table-header-cell users-checkbox-cell">
+                    <input
+                      type="checkbox"
+                      className="row-select-checkbox"
+                      aria-label="Select all rows"
+                      checked={filteredUsers.length > 0 && selectedUserIds.length === filteredUsers.length}
+                      ref={(el) => { if (el) el.indeterminate = selectedUserIds.length > 0 && selectedUserIds.length < filteredUsers.length; }}
+                      onChange={() => {
+                        if (selectedUserIds.length === filteredUsers.length) {
+                          setSelectedUserIds([]);
+                          setSelectionAnchorUserId(null);
+                          userNavCursorRef.current = null;
+                        } else {
+                          setSelectedUserIds(filteredUsers.map((u) => u.id));
+                          setSelectionAnchorUserId(filteredUsers[0]?.id ?? null);
+                          userNavCursorRef.current = filteredUsers[filteredUsers.length - 1]?.id ?? null;
+                        }
+                      }}
+                      disabled={!filteredUsers.length}
+                    />
                   </div>
-                  {usersLoadingMore ? <div className="table-loading-row">Loading more users...</div> : null}
-                  {usersHasMore && !usersLoadingMore ? (
-                    <div className="table-load-more-row">
-                      <button className="ghost-button" type="button" onClick={loadNextUsersPage}>Load More Users</button>
-                    </div>
-                  ) : null}
+                  {userTableColumns.map((column, colIndex) => {
+                    const sortDirection = usersSort.column === column.key ? usersSort.direction : null;
+                    const filterValues = userColumnFilters[column.key];
+                    return (
+                      <div key={column.key} className={`users-table-header-cell${selectedColumnKeys.has(column.key) ? " selected-column" : ""}`} onClick={(event) => {
+                        // Clear row selection when selecting columns
+                        setSelectedUserIds([]);
+                        setSelectionAnchorUserId(null);
+
+                        const columnKeys = userTableColumns.map((c) => c.key);
+                        let nextCols;
+                        if (event.shiftKey && selectedColumnKeys.size) {
+                          const lastKey = [...selectedColumnKeys].pop();
+                          const lastIdx = columnKeys.indexOf(lastKey);
+                          const curIdx = columnKeys.indexOf(column.key);
+                          const [start, end] = lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx];
+                          nextCols = new Set(columnKeys.slice(start, end + 1));
+                        } else if (event.metaKey || event.ctrlKey) {
+                          nextCols = new Set(selectedColumnKeys);
+                          if (nextCols.has(column.key)) nextCols.delete(column.key); else nextCols.add(column.key);
+                        } else {
+                          nextCols = selectedColumnKeys.size === 1 && selectedColumnKeys.has(column.key) ? new Set() : new Set([column.key]);
+                        }
+                        setSelectedColumnKeys(nextCols);
+
+                        // Populate selectedCells with all cells in selected columns
+                        const next = new Set();
+                        for (const user of filteredUsers) {
+                          for (const col of nextCols) {
+                            next.add(`${user.id}:${col}`);
+                          }
+                        }
+                        setSelectedCells(next);
+                        cellAnchorRef.current = null;
+                      }} onContextMenu={(event) => { event.preventDefault(); openUserHeaderOptions(event, column.key); }}>
+                        <span className="users-table-header-label">{column.label}</span>
+                        <button
+                          className={sortDirection || filterValues.length ? "table-sort-button active" : "table-sort-button"}
+                          type="button"
+                          aria-label={`${column.label} options`}
+                          onClick={(event) => { event.stopPropagation(); openUserHeaderOptions(event, column.key); }}
+                        >
+                          <span className="table-sort-indicator" aria-hidden="true">
+                            {sortDirection === "asc"
+                              ? "↑"
+                              : sortDirection === "desc"
+                                ? "↓"
+                                : filterValues.length
+                                  ? filterValues.length
+                                  : <Icon name="filterMenu" className="app-icon table-filter-icon" />}
+                          </span>
+                        </button>
+
+                        {openUserHeaderMenu?.key === column.key ? (
+                          <UserHeaderFilterMenu
+                              column={column}
+                              options={userFilterOptions[column.key]}
+                              selectedValues={filterValues}
+                              sortDirection={sortDirection}
+                              onClearFilter={() => {
+                                setUserColumnFilters((current) => ({ ...current, [column.key]: [] }));
+                                setOpenUserHeaderMenu(null);
+                              }}
+                              onSortAsc={() => {
+                                setUsersSort({ column: column.key, direction: "asc" });
+                                setOpenUserHeaderMenu(null);
+                              }}
+                              onSortDesc={() => {
+                                setUsersSort({ column: column.key, direction: "desc" });
+                                setOpenUserHeaderMenu(null);
+                              }}
+                              onClearSort={() => {
+                                setUsersSort({ column: null, direction: "asc" });
+                                setOpenUserHeaderMenu(null);
+                              }}
+                              onApplyFilter={(values) => {
+                                setUserColumnFilters((current) => ({ ...current, [column.key]: values }));
+                              }}
+                            onClose={() => setOpenUserHeaderMenu(null)}
+                            style={openUserHeaderMenu}
+                          />
+                        ) : null}
+                        <div
+                          className="column-resize-handle"
+                          onMouseDown={(event) => handleColumnResizeStart(event, colIndex)}
+                          onDoubleClick={(event) => { event.stopPropagation(); handleColumnAutoFit(colIndex); }}
+                          onClick={(event) => event.stopPropagation()}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
+
+                <table className="data-table users-data-table" style={columnWidths ? { tableLayout: "fixed" } : undefined}>
+                  <colgroup>
+                    <col style={{ width: "36px" }} />
+                    {columnWidths
+                      ? columnWidths.map((w, i) => <col key={i} style={{ width: `${w}px` }} />)
+                      : <>
+                          <col style={{ width: "20%" }} />
+                          <col style={{ width: "30%" }} />
+                          <col style={{ width: "12%" }} />
+                          <col />
+                        </>
+                    }
+                  </colgroup>
+                  <tbody>
+                    {filteredUsers.length ? filteredUsers.map((user) => (
+                      <tr
+                        key={user.id}
+                        className={selectedUserIds.includes(user.id) ? "selected-row" : undefined}
+                        aria-selected={selectedUserIds.includes(user.id)}
+                        onMouseDown={(event) => {
+                          if (event.shiftKey || event.metaKey || event.ctrlKey) {
+                            event.preventDefault();
+                          }
+                        }}
+                        onClick={(event) => handleUserRowSelection(event, user.id)}
+                        onDoubleClick={() => openUserModal("view", user)}
+                        onContextMenu={(event) => handleTableContextMenu(event, user)}
+                      >
+                        <td className="row-checkbox-cell" onClick={(event) => event.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="row-select-checkbox"
+                            aria-label={`Select ${user.name}`}
+                            checked={selectedUserIds.includes(user.id)}
+                            onChange={() => {
+                              setSelectedUserIds((current) =>
+                                current.includes(user.id)
+                                  ? current.filter((id) => id !== user.id)
+                                  : [...current, user.id]
+                              );
+                              setSelectionAnchorUserId(user.id);
+                            }}
+                          />
+                        </td>
+                        <td data-col="name" className={selectedCells.has(`${user.id}:name`) ? "selected-cell" : selectedColumnKeys.has("name") ? "selected-column-cell" : undefined} onClick={(event) => { if (handleCellClick(event, user.id, "name")) return; }}><HighlightMatch text={user.name} query={usersSearch} /></td>
+                        <td data-col="email" className={selectedCells.has(`${user.id}:email`) ? "selected-cell" : selectedColumnKeys.has("email") ? "selected-column-cell" : undefined} onClick={(event) => { if (handleCellClick(event, user.id, "email")) return; }}><HighlightMatch text={user.email || ""} query={usersSearch} /></td>
+                        <td data-col="status" className={selectedCells.has(`${user.id}:status`) ? "selected-cell" : selectedColumnKeys.has("status") ? "selected-column-cell" : undefined} onClick={(event) => { if (handleCellClick(event, user.id, "status")) return; }}>
+                          <span className={user.is_active ? "status-chip active" : "status-chip inactive"}>
+                            {user.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                        <td data-col="notes" className={`notes-cell${selectedCells.has(`${user.id}:notes`) ? " selected-cell" : selectedColumnKeys.has("notes") ? " selected-column-cell" : ""}`} onClick={(event) => { if (handleCellClick(event, user.id, "notes")) return; }} title={(user.notes || "").length > 100 ? user.notes : undefined}><HighlightMatch text={(user.notes || "").slice(0, 100) || "-"} query={usersSearch} /></td>
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td colSpan="5" className="empty-state-cell">
+                          <div className="empty-state-graphic">
+                            <svg width="64" height="64" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+                              <rect x="8" y="16" width="48" height="36" rx="4" stroke="rgba(255,255,255,0.12)" strokeWidth="1.5" />
+                              <line x1="8" y1="28" x2="56" y2="28" stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
+                              <line x1="8" y1="38" x2="56" y2="38" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+                              <line x1="28" y1="16" x2="28" y2="52" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+                              <circle cx="32" cy="40" r="8" stroke="rgba(126,195,172,0.25)" strokeWidth="1.5" />
+                              <line x1="38" y1="46" x2="44" y2="52" stroke="rgba(126,195,172,0.25)" strokeWidth="1.5" strokeLinecap="round" />
+                            </svg>
+                            <p>{hostedWorkspaceReady
+                              ? (usersSearch
+                                ? <>No results for &ldquo;{usersSearch}&rdquo;. <button className="inline-link-button" type="button" onClick={() => { setUsersSearch(""); clearUserSelection(); }}>Clear search</button></>
+                                : "No users match the current view.")
+                              : "Connect the hosted workspace to load users."
+                            }</p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>{/* end .users-table-scroll-area */}
+
                 <div className="users-summary-rail users-summary-rail-bottom" aria-label="User summary">
                   <div className="users-page-metrics">
                     <span className="users-metric-chip">{filteredUserCount} shown</span>
                     <span className="users-metric-chip subdued">{totalUserCount} total</span>
                     {selectedUserIds.length ? <span className="users-metric-chip accent">{selectedUserIds.length} selected</span> : null}
                     {usersFiltersActive ? <span className="users-metric-chip subdued">Filtered view</span> : null}
+                    {selectedCells.size ? (() => {
+                      const cellValues = [];
+                      for (const cellId of selectedCells) {
+                        const [userId, colKey] = cellId.split(":");
+                        const user = filteredUsers.find((u) => u.id === userId);
+                        if (user) cellValues.push(getCellDisplayValue(user, colKey));
+                      }
+                      const stats = computeCellStats(cellValues);
+                      return (
+                        <>
+                          <span className="users-metric-chip column-agg">Count: {stats.count}</span>
+                          {stats.numericCount > 0 ? (
+                            <>
+                              <span className="users-metric-chip column-agg">Sum: {stats.sum.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
+                              <span className="users-metric-chip column-agg">Avg: {stats.avg.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
+                              <span className="users-metric-chip column-agg">Min: {stats.min}</span>
+                              <span className="users-metric-chip column-agg">Max: {stats.max}</span>
+                            </>
+                          ) : null}
+                          {stats.numericCount === 0 ? <span className="users-metric-chip column-agg">{new Set(cellValues).size} unique</span> : null}
+                        </>
+                      );
+                    })() : null}
                   </div>
-                </div>
-              </div>
-            </div>
+                  <div className="users-summary-actions">
+                    {usersHasMore && !usersFiltersActive ? (
+                      <button className="ghost-button" type="button" onClick={loadNextUsersPage} disabled={usersLoadingMore}>
+                        {usersLoadingMore ? "Loading..." : "Load More Users"}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>{/* end .users-summary-rail-bottom */}
+
+              <button
+                className={`back-to-top-button${showBackToTop ? " visible" : ""}`}
+                type="button"
+                aria-label="Back to top"
+                onClick={() => {
+                  const viewport = usersTableViewportRef.current;
+                  if (viewport) viewport.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+              >
+                ↑
+              </button>
+            </div>{/* end .users-surface */}
           </section>
       ) : null}
       </main>
+
+      {contextMenu ? (
+        <TableContextMenu
+          position={{ x: contextMenu.x, y: contextMenu.y }}
+          items={contextMenu.items}
+          onClose={() => setContextMenu(null)}
+        />
+      ) : null}
+
+      {exportModalOpen ? (
+        <ExportModal
+          filteredUsers={filteredUsers}
+          selectedUsers={selectedUsers}
+          selectedCells={selectedCells}
+          allColumns={userTableColumns}
+          onExport={(users, columns) => downloadUsersCsv(users, columns)}
+          onClose={() => setExportModalOpen(false)}
+        />
+      ) : null}
 
       {notificationsModalOpen ? (
         <NotificationsModal onClose={() => setNotificationsModalOpen(false)} />

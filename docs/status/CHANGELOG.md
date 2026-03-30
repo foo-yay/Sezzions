@@ -12,6 +12,37 @@ Rules:
 ## 2026-03-29
 
 ```yaml
+id: 2026-03-29-19
+type: feat
+areas: [web, docs, tests]
+issue: none
+summary: "Reframe hosted Users into a contained scrolling data grid"
+details: >
+  Reworked the hosted Users experience into a single framed data-grid surface.
+  The Setup/Users intro now lives inside the framed surface so it scrolls away
+  under the rounded top edge before the action/search controls pin in place.
+  The row area then continues beneath sticky table headers, and the bottom
+  stats rail acts as an integrated opaque footer without extra nested chrome
+  or translucent corners.
+
+  Implemented:
+  - contained hosted Users frame with rounded outer borders
+  - scoped scroll viewport that lets the Setup/Users intro scroll away first
+  - internal row viewport with sticky hosted Users headers
+  - simplified integrated footer rail with shown/total/selected stats and load-more action
+  - removed the extra footer status copy from the hosted Users surface
+  - updated frontend tests for viewport-based paging and the single summary rail
+
+  Validation:
+  - cd web && npm test -- --run
+files_changed:
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - web/src/styles.css
+  - docs/status/CHANGELOG.md
+```
+
+```yaml
 id: 2026-03-29-18
 type: feat
 areas: [web, docs, tests]

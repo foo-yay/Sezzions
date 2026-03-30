@@ -1118,7 +1118,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /sort a to z/i }));
 
     const rows = screen.getAllByRole("row");
-    const nameCellsAsc = rows.slice(1).map((row) => within(row).getAllByRole("cell")[0]);
+    const nameCellsAsc = rows.map((row) => within(row).getAllByRole("cell")[1]);
     expect(nameCellsAsc[0]).toHaveTextContent("Elliot");
 
     fireEvent.click(screen.getByRole("button", { name: /status options/i }));
@@ -1238,9 +1238,9 @@ describe("App", () => {
     expect(await findUserCell("Beta")).toBeInTheDocument();
 
     const rows = within(await screen.findByRole("table")).getAllByRole("row");
-    fireEvent.click(within(rows[1]).getByText("Alpha"));
-    fireEvent.click(within(rows[2]).getByText("Beta"), { ctrlKey: true });
-    expect(screen.getAllByText(/2 selected/i)).toHaveLength(2);
+    fireEvent.click(within(rows[0]).getByText("Alpha"));
+    fireEvent.click(within(rows[1]).getByText("Beta"), { ctrlKey: true });
+    expect(screen.getByText(/2 selected/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
     const deleteDialog = await screen.findByRole("alertdialog", { name: /delete users\?/i });
@@ -1324,10 +1324,10 @@ describe("App", () => {
     render(<App />);
 
     expect(await findUserCell("User 001")).toBeInTheDocument();
-    expect(screen.getAllByText("100 shown")).toHaveLength(2);
-    expect(screen.getAllByText("151 total")).toHaveLength(2);
+    expect(screen.getByText("100 shown")).toBeInTheDocument();
+    expect(screen.getByText("151 total")).toBeInTheDocument();
     const table = await screen.findByRole("table");
-    expect(within(table).getAllByRole("row")).toHaveLength(101);
+    expect(within(table).getAllByRole("row")).toHaveLength(100);
     expect(within(table).queryByText("User 151")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /load more users/i })).toBeInTheDocument();
   });
@@ -1407,15 +1407,15 @@ describe("App", () => {
     render(<App />);
 
     expect(await findUserCell("User 001")).toBeInTheDocument();
-    expect(screen.getAllByText("100 shown")).toHaveLength(2);
-    expect(screen.getAllByText("100 total")).toHaveLength(2);
+    expect(screen.getByText("100 shown")).toBeInTheDocument();
+    expect(screen.getByText("100 total")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /load more users/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /load more users/i }));
 
     expect(await findUserCell("User 101")).toBeInTheDocument();
-    expect(screen.getAllByText("101 shown")).toHaveLength(2);
-    expect(screen.getAllByText("101 total")).toHaveLength(2);
+    expect(screen.getByText("101 shown")).toBeInTheDocument();
+    expect(screen.getByText("101 total")).toBeInTheDocument();
   });
 
   it("falls back when the hosted API repeats the first page for later offsets", async () => {
@@ -1513,8 +1513,8 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /load more users/i }));
 
     expect(await findUserCell("User 151")).toBeInTheDocument();
-    expect(screen.getAllByText("151 shown")).toHaveLength(2);
-    expect(screen.getAllByText("151 total")).toHaveLength(2);
+    expect(screen.getByText("151 shown")).toBeInTheDocument();
+    expect(screen.getByText("151 total")).toBeInTheDocument();
     expect(global.fetch).toHaveBeenCalledWith(
       "https://api.sezzions.test/v1/workspace/users?limit=500&offset=0",
       expect.objectContaining({
