@@ -829,6 +829,10 @@ class DatabaseManager:
         if row and 'UNIQUE' in row[0] and 'name' in row[0]:
             # Need to recreate table without UNIQUE constraint on name
             try:
+                # Disable FK enforcement so DROP TABLE doesn't trigger
+                # ON DELETE SET NULL on child tables (e.g. redemptions.redemption_method_id).
+                cursor.execute("PRAGMA foreign_keys=OFF")
+
                 # Create new table
                 cursor.execute('''
                     CREATE TABLE redemption_methods_new (
@@ -857,9 +861,11 @@ class DatabaseManager:
                 # Rename new table
                 cursor.execute('ALTER TABLE redemption_methods_new RENAME TO redemption_methods')
                 
+                cursor.execute("PRAGMA foreign_keys=ON")
                 self._connection.commit()
             except Exception as e:
                 # If migration fails, roll back and continue
+                cursor.execute("PRAGMA foreign_keys=ON")
                 self._connection.rollback()
                 pass
 
@@ -1126,12 +1132,17 @@ class DatabaseManager:
                 if not row or old_fragment not in row[0]:
                     continue  # Already migrated or table doesn't exist
 
+                # Disable FK enforcement so DROP TABLE doesn't trigger
+                # ON DELETE SET NULL / CASCADE on child tables.
+                cursor.execute("PRAGMA foreign_keys=OFF")
                 cursor.execute(create_sql)
                 cursor.execute(f'INSERT INTO {table}_new ({columns}) SELECT {columns} FROM {table}')
                 cursor.execute(f'DROP TABLE {table}')
                 cursor.execute(f'ALTER TABLE {table}_new RENAME TO {table}')
+                cursor.execute("PRAGMA foreign_keys=ON")
                 self._connection.commit()
             except Exception:
+                cursor.execute("PRAGMA foreign_keys=ON")
                 self._connection.rollback()
 
     def _normalize_time_fields(self):
