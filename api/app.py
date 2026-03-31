@@ -13,6 +13,7 @@ from services.hosted.persistence import get_hosted_session_factory
 from services.hosted.uploaded_sqlite_inspection_service import (
     HostedUploadedSQLiteInspectionService,
 )
+from services.hosted.workspace_site_service import HostedWorkspaceSiteService
 from services.hosted.workspace_user_service import HostedWorkspaceUserService
 from services.hosted.workspace_import_planning_service import (
     HostedWorkspaceImportPlanningService,
@@ -37,6 +38,27 @@ class HostedWorkspaceUserUpdateRequest(BaseModel):
 
 class HostedWorkspaceUserBatchDeleteRequest(BaseModel):
     user_ids: list[str]
+
+
+class HostedWorkspaceSiteCreateRequest(BaseModel):
+    name: str
+    url: str | None = None
+    sc_rate: float = 1.0
+    playthrough_requirement: float = 1.0
+    notes: str | None = None
+
+
+class HostedWorkspaceSiteUpdateRequest(BaseModel):
+    name: str
+    url: str | None = None
+    sc_rate: float = 1.0
+    playthrough_requirement: float = 1.0
+    notes: str | None = None
+    is_active: bool = True
+
+
+class HostedWorkspaceSiteBatchDeleteRequest(BaseModel):
+    site_ids: list[str]
 
 cors_config = load_hosted_backend_config(required=False, require_db_password=False)
 app.add_middleware(
@@ -79,6 +101,16 @@ def get_hosted_workspace_user_service() -> HostedWorkspaceUserService:
 
     session_factory = get_hosted_session_factory(config.sqlalchemy_url)
     return HostedWorkspaceUserService(session_factory)
+
+
+def get_hosted_workspace_site_service() -> HostedWorkspaceSiteService:
+    try:
+        config = load_hosted_backend_config(require_db_password=True)
+    except HostedConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    session_factory = get_hosted_session_factory(config.sqlalchemy_url)
+    return HostedWorkspaceSiteService(session_factory)
 
 
 def get_hosted_uploaded_sqlite_inspection_service() -> HostedUploadedSQLiteInspectionService:
@@ -225,6 +257,120 @@ def workspace_users_batch_delete(
         deleted_count = service.delete_users(
             supabase_user_id=session.user_id,
             user_ids=payload.user_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"deleted_count": deleted_count}
+
+
+# ── Sites ──────────────────────────────────────────────────────
+
+
+@app.get("/v1/workspace/sites")
+def workspace_sites_list(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceSiteService = Depends(get_hosted_workspace_site_service),
+) -> dict[str, object]:
+    try:
+        page = service.list_sites_page(
+            supabase_user_id=session.user_id,
+            limit=limit,
+            offset=offset,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return {
+        "sites": [site.as_dict() if hasattr(site, "as_dict") else site for site in page["sites"]],
+        "offset": page["offset"],
+        "limit": page["limit"],
+        "next_offset": page["next_offset"],
+        "total_count": page["total_count"],
+        "has_more": page["has_more"],
+    }
+
+
+@app.post("/v1/workspace/sites")
+def workspace_sites_create(
+    payload: HostedWorkspaceSiteCreateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceSiteService = Depends(get_hosted_workspace_site_service),
+) -> dict[str, object]:
+    try:
+        site = service.create_site(
+            supabase_user_id=session.user_id,
+            name=payload.name,
+            url=payload.url,
+            sc_rate=payload.sc_rate,
+            playthrough_requirement=payload.playthrough_requirement,
+            notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return site.as_dict() if hasattr(site, "as_dict") else site
+
+
+@app.patch("/v1/workspace/sites/{site_id}")
+def workspace_sites_update(
+    site_id: str = Path(...),
+    payload: HostedWorkspaceSiteUpdateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceSiteService = Depends(get_hosted_workspace_site_service),
+) -> dict[str, object]:
+    try:
+        site = service.update_site(
+            supabase_user_id=session.user_id,
+            site_id=site_id,
+            name=payload.name,
+            url=payload.url,
+            sc_rate=payload.sc_rate,
+            playthrough_requirement=payload.playthrough_requirement,
+            notes=payload.notes,
+            is_active=payload.is_active,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return site.as_dict() if hasattr(site, "as_dict") else site
+
+
+@app.delete("/v1/workspace/sites/{site_id}", status_code=status.HTTP_204_NO_CONTENT)
+def workspace_sites_delete(
+    site_id: str = Path(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceSiteService = Depends(get_hosted_workspace_site_service),
+) -> Response:
+    try:
+        service.delete_site(
+            supabase_user_id=session.user_id,
+            site_id=site_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/v1/workspace/sites/batch-delete")
+def workspace_sites_batch_delete(
+    payload: HostedWorkspaceSiteBatchDeleteRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceSiteService = Depends(get_hosted_workspace_site_service),
+) -> dict[str, int]:
+    try:
+        deleted_count = service.delete_sites(
+            supabase_user_id=session.user_id,
+            site_ids=payload.site_ids,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
