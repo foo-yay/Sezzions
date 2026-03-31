@@ -6,10 +6,11 @@ import NotificationsModal from "./common/NotificationsModal";
 import AccountModal from "./common/AccountModal";
 import SettingsModal from "./common/SettingsModal";
 import UsersTab from "./UsersTab/UsersTab";
+import SitesTab from "./SitesTab/SitesTab";
 
 const setupTabs = [
   { key: "users", label: "Users", icon: "users", enabled: true },
-  { key: "sites", label: "Sites", icon: "sites", enabled: false },
+  { key: "sites", label: "Sites", icon: "sites", enabled: true },
   { key: "cards", label: "Cards", icon: "cards", enabled: false },
   { key: "method-types", label: "Method Types", icon: "methodTypes", enabled: false },
   { key: "redemption-methods", label: "Redemption Methods", icon: "redemptionMethods", enabled: false },
@@ -184,6 +185,12 @@ export default function AppShell({ auth }) {
       <main className="workspace-shell">
         {setupTab === "users" ? (
           <UsersTab
+            apiBaseUrl={auth.apiBaseUrl}
+            hostedWorkspaceReady={auth.hostedWorkspaceReady}
+          />
+        ) : null}
+        {setupTab === "sites" ? (
+          <SitesTab
             apiBaseUrl={auth.apiBaseUrl}
             hostedWorkspaceReady={auth.hostedWorkspaceReady}
           />

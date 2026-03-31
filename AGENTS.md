@@ -16,6 +16,7 @@ This file defines how humans and AI agents should work in this repository.
 - Web UI (`web/src/`) talks to `api/` endpoints, which call `services/hosted/`.
 - Business rules live in services.
 - Keep behavior changes intentional: prefer tests that assert business outputs.
+- **DRY / Reusability (Doctrinal)**: When two or more entities share the same structural pattern (CRUD repos, API routes, React table tabs, etc.), extract the shared logic into a reusable source — do not copy-paste and adapt per entity. Before writing new code, search the codebase for existing implementations. Shared components must have generic names (not entity-prefixed). See `docs/PROJECT_SPEC.md` §2 "Design Principles" for the full rules.
 
 ## Documentation Rules
 

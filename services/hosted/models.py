@@ -75,3 +75,46 @@ class HostedUser:
             "notes": self.notes,
             "is_active": self.is_active,
         }
+
+
+@dataclass
+class HostedSite:
+    """Sweepstakes site/casino owned by a hosted workspace."""
+
+    name: str
+    workspace_id: Optional[str] = None
+    url: Optional[str] = None
+    sc_rate: float = 1.0
+    playthrough_requirement: float = 1.0
+    is_active: bool = True
+    notes: Optional[str] = None
+    id: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("Site name is required")
+
+        if self.url is not None:
+            self.url = self.url.strip() or None
+
+        if self.notes is not None:
+            self.notes = self.notes.strip() or None
+
+        if self.sc_rate < 0:
+            raise ValueError("SC rate must be non-negative")
+
+        if self.playthrough_requirement < 0:
+            raise ValueError("Playthrough requirement must be non-negative")
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "workspace_id": self.workspace_id,
+            "name": self.name,
+            "url": self.url,
+            "sc_rate": self.sc_rate,
+            "playthrough_requirement": self.playthrough_requirement,
+            "is_active": self.is_active,
+            "notes": self.notes,
+        }

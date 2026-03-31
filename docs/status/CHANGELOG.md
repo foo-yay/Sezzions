@@ -9,6 +9,52 @@ Rules:
 
 ---
 
+## 2026-03-31
+
+```yaml
+id: 2026-03-31-02
+type: bugfix
+areas: [backend, database]
+issue: "#242"
+summary: "Fix FK cascade migration silently nulling redemption_method_id"
+details: >
+  _migrate_user_fk_cascade() and _migrate_redemption_methods_table() ran
+  DROP TABLE with PRAGMA foreign_keys=ON, which triggered ON DELETE SET NULL
+  on redemptions.redemption_method_id, silently nulling 288 method assignments.
+  Added PRAGMA foreign_keys=OFF/ON around all table-rebuild migrations.
+  Restored affected data from the 3/30 auto-backup.
+
+files_changed:
+  - repositories/database.py
+```
+
+```yaml
+id: 2026-03-31-01
+type: feature
+areas: [web, api, backend]
+issue: "#242"
+pr: "#243"
+summary: "Port Setup > Sites CRUD to hosted web app"
+details: >
+  Full Sites management tab for the hosted web app: list/create/edit/delete
+  with inline editing, status toggles, and confirmation dialogs matching the
+  Users tab pattern. Backend: HostedSite SQLAlchemy model, hosted_site_repository,
+  workspace_site_service, 5 API endpoints. Frontend: SitesTab, SiteModal,
+  sitesConstants, sitesUtils. Added DRY/reusability design principles to
+  PROJECT_SPEC.md, copilot-instructions.md, and AGENTS.md.
+
+files_changed:
+  - api/app.py
+  - models/hosted_site.py
+  - repositories/hosted_site_repository.py
+  - services/hosted/workspace_site_service.py
+  - web/src/components/SitesTab/ (new)
+  - web/src/components/AppShell.jsx
+  - docs/PROJECT_SPEC.md
+  - .github/copilot-instructions.md
+  - AGENTS.md
+```
+
 ## 2026-03-30
 
 ```yaml
