@@ -1081,7 +1081,7 @@ export default function SitesTab({ apiBaseUrl, hostedWorkspaceReady }) {
         </div>
 
         <div className="users-table-scroll-area table-viewport" ref={sitesTableViewportRef} onScroll={(e) => setShowBackToTop(e.currentTarget.scrollTop > 120)}>
-          <div className="users-table-header" ref={headerRef} style={columnWidths ? { gridTemplateColumns: `36px ${columnWidths.map((w) => `${w}px`).join(" ")}`, minWidth: `${36 + columnWidths.reduce((a, b) => a + b, 0)}px` } : undefined}>
+          <div className="users-table-header" ref={headerRef} style={columnWidths ? { gridTemplateColumns: `36px ${columnWidths.map((w) => `${w}px`).join(" ")}`, minWidth: `${36 + columnWidths.reduce((a, b) => a + b, 0)}px` } : { gridTemplateColumns: "36px 18% 22% 10% 12% 10% 1fr" }}>
             <div className="users-table-header-cell users-checkbox-cell">
               <input
                 type="checkbox"
