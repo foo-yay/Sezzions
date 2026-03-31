@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 
 import { authHeaders, describeFetchFailure, getAccessToken } from "../services/api";
 
@@ -66,7 +67,7 @@ export default function MigrationShell({ auth }) {
           </p>
         </div>
         <div className="migration-actions">
-          <a className="ghost-button" href="/#/">Back to Hosted App</a>
+          <Link className="ghost-button" to="/">Back to Hosted App</Link>
           {auth.sessionEmail ? (
             <button className="ghost-button" type="button" onClick={auth.handleSignOut}>Sign Out</button>
           ) : (

@@ -12,6 +12,33 @@ Rules:
 ## 2026-03-31
 
 ```yaml
+id: 2026-03-31-03
+type: feature
+areas: [web]
+issue: "#244"
+summary: "Add URL-based routing with React Router for Setup tabs"
+details: >
+  Replaced hash-based routing (/#/migration, manual hashchange listeners)
+  with React Router v6 (BrowserRouter, Routes, useParams, useNavigate, Link).
+  Setup tabs are now at /setup/:tabKey, migration at /migration. useAuth uses
+  React Router's useLocation() for OAuth return route persistence instead of
+  reading window.location directly. Vite dev server configured with SPA
+  historyApiFallback. All 19 tests updated to use MemoryRouter wrapper.
+
+files_changed:
+  - web/src/main.jsx
+  - web/src/App.jsx
+  - web/src/App.test.jsx
+  - web/src/components/AppShell.jsx
+  - web/src/components/MarketingShell.jsx
+  - web/src/components/MigrationShell.jsx
+  - web/src/hooks/useAuth.js
+  - web/src/services/routing.js
+  - web/vite.config.js
+  - web/package.json
+```
+
+```yaml
 id: 2026-03-31-02
 type: bugfix
 areas: [backend, database]

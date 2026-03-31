@@ -1,9 +1,8 @@
 export const oauthReturnRouteStorageKey = "sezzions.oauthReturnRoute";
 
 export function readCurrentRoute() {
-  const hashRoute = window.location.hash.replace(/^#/, "").replace(/\/+$/, "") || "";
-  const pathRoute = window.location.pathname.replace(/\/+$/, "") || "/";
-  return hashRoute || pathRoute;
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  return pathname;
 }
 
 export function rememberOAuthReturnRoute(route) {
@@ -29,8 +28,8 @@ export function applyRoute(route) {
     return;
   }
   const normalizedRoute = route === "/" ? "/" : route.replace(/\/+$/, "");
-  const nextHash = normalizedRoute === "/" ? "#/" : `#${normalizedRoute}`;
-  if (window.location.hash !== nextHash) {
-    window.location.hash = nextHash;
+  if (window.location.pathname !== normalizedRoute) {
+    window.history.replaceState(null, "", normalizedRoute);
+    window.dispatchEvent(new PopStateEvent("popstate"));
   }
 }

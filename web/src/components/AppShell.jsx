@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import Icon from "./common/Icon";
 import StatusModal from "./common/StatusModal";
@@ -19,10 +20,15 @@ const setupTabs = [
   { key: "tools", label: "Tools", icon: "tools", enabled: false }
 ];
 
+const validTabKeys = new Set(setupTabs.map((t) => t.key));
+
 export default function AppShell({ auth }) {
+  const { tabKey } = useParams();
+  const navigate = useNavigate();
+  const setupTab = validTabKeys.has(tabKey) ? tabKey : "users";
+
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [setupNavOpen, setSetupNavOpen] = useState(false);
-  const [setupTab, setSetupTab] = useState("users");
   const [notificationsModalOpen, setNotificationsModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
@@ -156,7 +162,7 @@ export default function AppShell({ auth }) {
                   aria-label={tab.label}
                   title={tab.label}
                   disabled={!tab.enabled}
-                  onClick={() => setSetupTab(tab.key)}
+                  onClick={() => navigate(`/setup/${tab.key}`)}
                 >
                   <span className="rail-nav-main">
                     <span className="rail-item-icon" aria-hidden="true"><Icon name={tab.icon} className="app-icon" /></span>
@@ -172,11 +178,11 @@ export default function AppShell({ auth }) {
         <div className="rail-footer-group">
           <div className="rail-footer">
             {railCollapsed ? (
-              <a className="header-utility-button rail-footer-icon" href="/#/migration" aria-label="Open migration upload" title="Migration Upload">
+              <Link className="header-utility-button rail-footer-icon" to="/migration" aria-label="Open migration upload" title="Migration Upload">
                 <span aria-hidden="true"><Icon name="upload" className="app-icon" /></span>
-              </a>
+              </Link>
             ) : (
-              <a className="ghost-button full-width" href="/#/migration">Migration Upload</a>
+              <Link className="ghost-button full-width" to="/migration">Migration Upload</Link>
             )}
           </div>
         </div>
