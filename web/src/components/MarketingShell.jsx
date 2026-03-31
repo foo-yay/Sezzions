@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 export default function MarketingShell({ auth }) {
   return (
     <div className="marketing-shell">
@@ -10,7 +12,7 @@ export default function MarketingShell({ auth }) {
           </p>
           <div className="toolbar-row">
             <button className="primary-button" type="button" onClick={auth.handleGoogleSignIn}>Continue With Google</button>
-            <a className="ghost-button" href="/#/migration">Open Migration Upload</a>
+            <Link className="ghost-button" to="/migration">Open Migration Upload</Link>
           </div>
         </div>
 

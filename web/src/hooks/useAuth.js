@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 
 import { supabase, supabaseConfigError, supabaseConfigured } from "../lib/supabaseClient";
 import { authHeaders, classifyStatusTone, describeFetchFailure } from "../services/api";
-import { applyRoute, consumeOAuthReturnRoute, readCurrentRoute, rememberOAuthReturnRoute } from "../services/routing";
+import { applyRoute, consumeOAuthReturnRoute, rememberOAuthReturnRoute } from "../services/routing";
 
 export function useAuth() {
+  const location = useLocation();
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim() || null;
 
   const [sessionEmail, setSessionEmail] = useState(null);
@@ -206,7 +208,7 @@ export function useAuth() {
       const email = data.session?.user?.email || null;
       if (data.session?.access_token) {
         const pendingRoute = consumeOAuthReturnRoute();
-        if (pendingRoute && pendingRoute !== readCurrentRoute()) {
+        if (pendingRoute && pendingRoute !== location.pathname) {
           applyRoute(pendingRoute);
         }
       }
@@ -225,7 +227,7 @@ export function useAuth() {
       const email = nextSession?.user?.email || null;
       if (nextSession?.access_token) {
         const pendingRoute = consumeOAuthReturnRoute();
-        if (pendingRoute && pendingRoute !== readCurrentRoute()) {
+        if (pendingRoute && pendingRoute !== location.pathname) {
           applyRoute(pendingRoute);
         }
       }
@@ -252,7 +254,7 @@ export function useAuth() {
       return;
     }
 
-    rememberOAuthReturnRoute(readCurrentRoute());
+    rememberOAuthReturnRoute(location.pathname);
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",

@@ -162,7 +162,7 @@ Hosted backend foundation (Issue #203):
 - The first protected hosted API endpoint is `GET /v1/session`.
 - `GET /v1/session` must require a bearer token, verify the Supabase access token against Supabase JWKS, and return the authenticated session identity summary.
 - After successful Google sign-in, the web shell should call `GET /v1/session` with the Supabase access token and reflect the protected API handshake status in the UI.
-- When Google sign-in is initiated from a staged hash-routed page such as `/#/migration`, the OAuth redirect target must preserve that current URL so the browser returns to the same page after authentication.
+- When Google sign-in is initiated from a routed page such as `/migration`, the OAuth return route must be preserved locally (via sessionStorage) so the app restores the same page after authentication.
 - The first hosted persistence slice after auth is `POST /v1/account/bootstrap`.
 - `POST /v1/account/bootstrap` must require a bearer token and idempotently create or return the hosted account/workspace records for the authenticated Supabase user.
 - Hosted account identity is keyed by Supabase user id and tracks the owner email plus auth provider separately from the legacy SQLite business-domain `users` table.
@@ -188,7 +188,7 @@ Hosted backend foundation (Issue #203):
 - Deleting a hosted workspace user must require explicit user intent in the UI and must reject cross-workspace access.
 - After hosted bootstrap succeeds, the signed-in web app should transition from the temporary marketing shell into a real hosted application shell with Setup navigation.
 - After Google sign-in succeeds, the hosted web app should keep the signed-in application shell visible even if the protected API handshake or hosted bootstrap cannot be reached, and it should expose retryable status instead of hiding Setup behind a successful bootstrap.
-- Because Supabase OAuth redirect allow-list validation may reject hash-routed URLs, the hosted web app must preserve hash-route return targets locally and use an allowlist-safe origin redirect for Google sign-in.
+- Because Supabase OAuth redirect allow-list validation may reject non-origin URLs, the hosted web app must preserve return route targets locally (via sessionStorage) and use an allowlist-safe origin redirect for Google sign-in.
 - The first real hosted app shell slice is `Setup -> Users`, and it should preserve desktop-style behaviors where practical: search, refresh, CSV export, add/view/edit/delete workflows, visible active/inactive state, and highlighted validation for required fields.
 - The hosted web shell should follow the desktop information architecture where practical: primary sections presented as top-level tabs, with Setup sub-tabs rendered beneath the active primary section rather than in a permanent left navigation rail.
 - Hosted account ownership, workspace metadata, sign-out, and migration-entry actions should be accessible through compact account/settings utilities instead of large always-visible header blocks.
@@ -211,8 +211,8 @@ Hosted backend foundation (Issue #203):
 - `POST /v1/workspace/import-upload-plan` must require a bearer token and accept a browser-uploaded SQLite file as multipart form data for read-only inspection.
 - The upload-planning endpoint must write the uploaded file to a temporary location only long enough to inspect it, return a read-only inventory summary, and delete the temporary file afterward.
 - Invalid, empty, or unreadable uploads must fail safely with an actionable `400` response and must not create hosted business-domain records.
-- The staged web frontend may expose this as a temporary authenticated migration page, but on static hosting without SPA rewrites it should use a hash route such as `/#/migration` rather than relying on a direct server path.
-- Hash-routed staged pages must react to hash changes client-side rather than only reading the route once at initial page load.
+- The staged web frontend may expose this as a temporary authenticated migration page at `/migration` using React Router pathname-based routing.
+- Client-side routing uses React Router v6 (BrowserRouter) with pathname-based routes; the Vite dev server and production deployment must support SPA history-API fallback.
 - The hosted API must permit CORS preflight and authenticated browser requests from `https://dev.sezzions.com` and `http://localhost:5173` by default, with environment override support for additional origins.
 - If direct local JWT decoding is not compatible with the live Supabase token format, the API may validate the bearer token through Supabase's `/auth/v1/user` endpoint before returning `401`.
 - The `/auth/v1/user` validation fallback must include a Supabase publishable/anon key, either from hosted backend configuration or from the web client's protected handshake request.

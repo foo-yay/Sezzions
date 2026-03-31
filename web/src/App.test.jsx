@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 
 import App from "./App";
 
@@ -36,6 +37,14 @@ vi.mock("./lib/supabaseClient", () => ({
 }));
 
 describe("App", () => {
+  function renderApp(initialRoute = "/") {
+    return render(
+      <MemoryRouter initialEntries={[initialRoute]}>
+        <App />
+      </MemoryRouter>
+    );
+  }
+
   afterEach(() => {
     cleanup();
     window.sessionStorage.clear();
@@ -43,7 +52,6 @@ describe("App", () => {
   });
 
   beforeEach(() => {
-    window.history.pushState({}, "", "/#/");
     window.sessionStorage.clear();
     vi.stubEnv("VITE_API_BASE_URL", "https://api.sezzions.test");
     vi.stubEnv("VITE_SUPABASE_ANON_KEY", "");
@@ -141,7 +149,7 @@ describe("App", () => {
   }
 
   it("shows the Sezzions web heading", async () => {
-    render(<App />);
+    renderApp();
 
     expect(
       screen.getByRole("heading", { name: /sezzions for the web/i })
@@ -155,7 +163,7 @@ describe("App", () => {
   });
 
   it("starts Google sign-in when the button is clicked", async () => {
-    render(<App />);
+    renderApp();
 
     fireEvent.click(screen.getAllByRole("button", { name: /continue with google/i })[0]);
 
@@ -170,10 +178,8 @@ describe("App", () => {
     expect(window.sessionStorage.getItem("sezzions.oauthReturnRoute")).toBe("/");
   });
 
-  it("preserves a hash-routed return target before Google sign-in", async () => {
-    window.history.pushState({}, "", "/#/migration");
-
-    render(<App />);
+  it("preserves a return target before Google sign-in", async () => {
+    renderApp("/migration");
 
     fireEvent.click(screen.getByRole("button", { name: /continue with google/i }));
 
@@ -201,7 +207,7 @@ describe("App", () => {
       error: null
     });
 
-    render(<App />);
+    renderApp();
 
     expect(await screen.findByRole("heading", { name: /sezzions - sweepstakes session tracker/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open my account/i })).toBeInTheDocument();
@@ -298,7 +304,7 @@ describe("App", () => {
         })
       });
 
-    render(<App />);
+    renderApp();
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenNthCalledWith(
@@ -373,7 +379,7 @@ describe("App", () => {
       })
       .mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
-    render(<App />);
+    renderApp();
 
     expect(await screen.findByRole("heading", { name: /sezzions - sweepstakes session tracker/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open my account/i })).toHaveAttribute("title", "owner@sezzions.com");
@@ -397,7 +403,7 @@ describe("App", () => {
       error: null
     });
 
-    render(<App />);
+    renderApp();
 
     fireEvent.click(await screen.findByRole("button", { name: /open settings/i }));
     const dialog = await screen.findByRole("dialog", { name: /settings/i });
@@ -481,7 +487,7 @@ describe("App", () => {
           ])
       });
 
-    render(<App />);
+    renderApp();
 
     const elliotCell = await findUserCell("Elliot");
     fireEvent.doubleClick(elliotCell);
@@ -569,7 +575,7 @@ describe("App", () => {
         })
       });
 
-    render(<App />);
+    renderApp();
 
     fireEvent.click(await screen.findByRole("button", { name: /add user/i }));
     const createDialog = await screen.findByRole("dialog", { name: /add user/i });
@@ -687,7 +693,7 @@ describe("App", () => {
         })
       });
 
-    render(<App />);
+    renderApp();
 
     const elliotCell = await findUserCell("Elliot");
     fireEvent.click(elliotCell);
@@ -801,7 +807,7 @@ describe("App", () => {
         text: async () => ""
       });
 
-    render(<App />);
+    renderApp();
 
     const elliotCell = await findUserCell("Elliot");
     fireEvent.click(elliotCell);
@@ -902,7 +908,7 @@ describe("App", () => {
         ])
       });
 
-    render(<App />);
+    renderApp();
 
     await findUserCell("Elliot");
     fireEvent.click(screen.getByRole("button", { name: /add user/i }));
@@ -1007,7 +1013,7 @@ describe("App", () => {
         ])
       });
 
-    render(<App />);
+    renderApp();
 
     await findUserCell("Zelda");
     fireEvent.click(screen.getByRole("button", { name: /status options/i }));
@@ -1110,7 +1116,7 @@ describe("App", () => {
           ])
       });
 
-    render(<App />);
+    renderApp();
 
     await findUserCell("Zelda");
 
@@ -1214,7 +1220,7 @@ describe("App", () => {
       throw new Error(`Unexpected fetch ${normalizedUrl} ${options?.method || "GET"}`);
     });
 
-    render(<App />);
+    renderApp();
 
     expect(await findUserCell("Alpha")).toBeInTheDocument();
     expect(within(await screen.findByRole("table")).queryByText("Beta")).not.toBeInTheDocument();
@@ -1321,7 +1327,7 @@ describe("App", () => {
         })
       });
 
-    render(<App />);
+    renderApp();
 
     expect(await findUserCell("User 001")).toBeInTheDocument();
     expect(screen.getByText("100 shown")).toBeInTheDocument();
@@ -1404,7 +1410,7 @@ describe("App", () => {
         })
       });
 
-    render(<App />);
+    renderApp();
 
     expect(await findUserCell("User 001")).toBeInTheDocument();
     expect(screen.getByText("100 shown")).toBeInTheDocument();
@@ -1507,7 +1513,7 @@ describe("App", () => {
         })
       });
 
-    render(<App />);
+    renderApp();
 
     expect(await findUserCell("User 001")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /load more users/i }));
@@ -1526,7 +1532,6 @@ describe("App", () => {
   });
 
   it("uploads a sqlite file from the migration page and renders the inventory summary", async () => {
-    window.history.pushState({}, "", "/#/migration");
     authMocks.getSession.mockResolvedValue({
       data: {
         session: {
@@ -1605,7 +1610,7 @@ describe("App", () => {
         })
       });
 
-    render(<App />);
+    renderApp("/migration");
 
     const uploadInput = await screen.findByLabelText(/sqlite database file/i);
     const file = new File(["sqlite"], "sezzions.db", { type: "application/octet-stream" });
