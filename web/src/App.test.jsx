@@ -1590,10 +1590,6 @@ describe("App", () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ users: [] })
-      })
-      .mockResolvedValueOnce({
-        ok: true,
         json: async () => ({
           status: "ready",
           detail: "Uploaded SQLite inventory is ready.",
@@ -1618,7 +1614,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenNthCalledWith(
-        5,
+        4,
         "https://api.sezzions.test/v1/workspace/import-upload-plan",
         expect.objectContaining({
           method: "POST",
