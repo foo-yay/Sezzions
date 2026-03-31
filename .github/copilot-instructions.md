@@ -16,12 +16,13 @@ You are assisting with **Sezzions**, a casino session tracker.
 2. Desktop UI (`desktop/ui/`) must not talk to the database directly. Web UI talks to `api/` endpoints.
 3. Preserve current app behavior unless explicitly instructed to change it.
 4. For accounting changes, add or update scenario-based tests to define expected outputs.
-5. Keep docs tidy:
+5. **DRY / Reusability**: When implementing a pattern that already exists (or will exist for multiple entities), extract shared logic into a reusable source (utility, base class, generic component, shared hook) rather than copy-pasting per entity. Before writing new code, search the codebase for existing implementations of the same pattern. See `docs/PROJECT_SPEC.md` §2 "Design Principles" for the full doctrinal rules.
+6. Keep docs tidy:
    - Update canonical docs in `docs/`
    - Decisions go in `docs/adr/`
    - Status updates go in `docs/status/`
    - Archive old docs in `docs/archive/`
-6. Avoid documentation sprawl:
+7. Avoid documentation sprawl:
    - Prefer updating `docs/PROJECT_SPEC.md` over creating new docs
    - Add a changelog entry to `docs/status/CHANGELOG.md` for noteworthy changes
    - Prefer GitHub Issues for new work items

@@ -93,6 +93,25 @@ Key rules:
 - UI must not talk to the database directly.
 - **Transaction Atomicity**: All multi-step database operations (create/update/delete with cascading recalculations) use `with self.db.transaction()` context manager in `AppFacade` to ensure atomicity. Operations either fully succeed or fully roll back—no partial writes.
 
+### Design Principles (Doctrinal)
+
+These principles are **canonical** and apply to all new code across both the desktop and hosted/web stacks.
+
+1. **DRY by default — extract shared patterns, don't duplicate them.**
+   When two or more entities, layers, or features share the same structural pattern (e.g., CRUD operations, validation shapes, API route scaffolding, React table behavior), extract the shared logic into a single reusable source (utility function, base class, generic component, shared hook, etc.) rather than copy-pasting and adapting per entity. Each entity should only contain the code that is *unique to that entity*; everything else should be called from a common source.
+
+2. **Parallel stacks are acceptable; parallel *copies* are not.**
+   Desktop and hosted/web may have separate repository and service implementations (different ORMs, different ID types, different auth models). That structural separation is intentional. But within each stack, common patterns must be consolidated. For example: if every hosted repository implements the same `list_by_workspace_id` / `create` / `update` / `delete` / `delete_many` shape, that shape should be a shared generic rather than N separate files with the same boilerplate.
+
+3. **Frontend components should be generic by default.**
+   Table infrastructure (header menus, filter trees, context menus, export modals, column resize, keyboard navigation) should be shared across all entity tabs. Entity-specific tabs should compose these shared components with entity-specific configuration (column definitions, form fields, API endpoints), not duplicate the entire component tree.
+
+4. **Before writing new code, check if the pattern already exists.**
+   Agents and developers must search the codebase for existing implementations of the same pattern before creating new files. If a reusable version already exists, use it. If an existing implementation is entity-specific but could be generalized, generalize it rather than duplicating it.
+
+5. **Name shared code for what it does, not which entity first used it.**
+   Shared components and utilities should have generic names (e.g., `HeaderFilterMenu`, not `UserHeaderFilterMenu`) so they communicate reusability. If a component is created for one entity but is structurally generic, rename it when the second consumer appears.
+
 ### Primary Entrypoint
 - Run the desktop app via `python3 desktop/sezzions.py` (from repo root)
 - Source runtime default is `./sezzions.db`.
