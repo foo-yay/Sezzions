@@ -458,7 +458,7 @@ export default function CardsTab({ apiBaseUrl, hostedWorkspaceReady }) {
         if (confirmationState || cardModalMode || openCardHeaderMenu) return;
         event.preventDefault();
         const searchInput = document.getElementById("cards-search-input");
-        if (searchInput) searchInput.focus();
+        if (searchInput) { searchInput.focus(); searchInput.select(); }
         return;
       }
 

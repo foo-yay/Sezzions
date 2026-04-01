@@ -442,7 +442,7 @@ export default function SitesTab({ apiBaseUrl, hostedWorkspaceReady }) {
         if (confirmationState || siteModalMode || openSiteHeaderMenu) return;
         event.preventDefault();
         const searchInput = document.getElementById("sites-search-input");
-        if (searchInput) searchInput.focus();
+        if (searchInput) { searchInput.focus(); searchInput.select(); }
         return;
       }
 

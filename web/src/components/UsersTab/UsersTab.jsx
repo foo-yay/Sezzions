@@ -442,7 +442,7 @@ export default function UsersTab({ apiBaseUrl, hostedWorkspaceReady }) {
         if (confirmationState || userModalMode || openUserHeaderMenu) return;
         event.preventDefault();
         const searchInput = document.getElementById("users-search-input");
-        if (searchInput) searchInput.focus();
+        if (searchInput) { searchInput.focus(); searchInput.select(); }
         return;
       }
 
