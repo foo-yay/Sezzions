@@ -118,3 +118,50 @@ class HostedSite:
             "is_active": self.is_active,
             "notes": self.notes,
         }
+
+
+@dataclass
+class HostedCard:
+    """Payment card owned by a hosted workspace user."""
+
+    name: str
+    user_id: str
+    workspace_id: Optional[str] = None
+    last_four: Optional[str] = None
+    cashback_rate: float = 0.0
+    is_active: bool = True
+    notes: Optional[str] = None
+    id: Optional[str] = None
+    user_name: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("Card name is required")
+
+        if not self.user_id:
+            raise ValueError("User is required")
+
+        if self.last_four is not None:
+            self.last_four = self.last_four.strip() or None
+            if self.last_four and len(self.last_four) != 4:
+                raise ValueError("Last four must be exactly 4 characters")
+
+        if self.cashback_rate < 0 or self.cashback_rate > 100:
+            raise ValueError("Cashback rate must be between 0 and 100")
+
+        if self.notes is not None:
+            self.notes = self.notes.strip() or None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "workspace_id": self.workspace_id,
+            "user_id": self.user_id,
+            "user_name": self.user_name,
+            "name": self.name,
+            "last_four": self.last_four,
+            "cashback_rate": self.cashback_rate,
+            "is_active": self.is_active,
+            "notes": self.notes,
+        }

@@ -13,6 +13,7 @@ from services.hosted.persistence import get_hosted_session_factory
 from services.hosted.uploaded_sqlite_inspection_service import (
     HostedUploadedSQLiteInspectionService,
 )
+from services.hosted.workspace_card_service import HostedWorkspaceCardService
 from services.hosted.workspace_site_service import HostedWorkspaceSiteService
 from services.hosted.workspace_user_service import HostedWorkspaceUserService
 from services.hosted.workspace_import_planning_service import (
@@ -59,6 +60,28 @@ class HostedWorkspaceSiteUpdateRequest(BaseModel):
 
 class HostedWorkspaceSiteBatchDeleteRequest(BaseModel):
     site_ids: list[str]
+
+
+class HostedWorkspaceCardCreateRequest(BaseModel):
+    name: str
+    user_id: str
+    last_four: str | None = None
+    cashback_rate: float = 0.0
+    notes: str | None = None
+
+
+class HostedWorkspaceCardUpdateRequest(BaseModel):
+    name: str
+    user_id: str
+    last_four: str | None = None
+    cashback_rate: float = 0.0
+    notes: str | None = None
+    is_active: bool = True
+
+
+class HostedWorkspaceCardBatchDeleteRequest(BaseModel):
+    card_ids: list[str]
+
 
 cors_config = load_hosted_backend_config(required=False, require_db_password=False)
 app.add_middleware(
@@ -111,6 +134,16 @@ def get_hosted_workspace_site_service() -> HostedWorkspaceSiteService:
 
     session_factory = get_hosted_session_factory(config.sqlalchemy_url)
     return HostedWorkspaceSiteService(session_factory)
+
+
+def get_hosted_workspace_card_service() -> HostedWorkspaceCardService:
+    try:
+        config = load_hosted_backend_config(require_db_password=True)
+    except HostedConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    session_factory = get_hosted_session_factory(config.sqlalchemy_url)
+    return HostedWorkspaceCardService(session_factory)
 
 
 def get_hosted_uploaded_sqlite_inspection_service() -> HostedUploadedSQLiteInspectionService:
@@ -371,6 +404,119 @@ def workspace_sites_batch_delete(
         deleted_count = service.delete_sites(
             supabase_user_id=session.user_id,
             site_ids=payload.site_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"deleted_count": deleted_count}
+
+
+# ── Cards ────────────────────────────────────────────────────────────────
+
+@app.get("/v1/workspace/cards")
+def workspace_cards_list(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceCardService = Depends(get_hosted_workspace_card_service),
+) -> dict[str, object]:
+    try:
+        page = service.list_cards_page(
+            supabase_user_id=session.user_id,
+            limit=limit,
+            offset=offset,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return {
+        "cards": [card.as_dict() if hasattr(card, "as_dict") else card for card in page["cards"]],
+        "offset": page["offset"],
+        "limit": page["limit"],
+        "next_offset": page["next_offset"],
+        "total_count": page["total_count"],
+        "has_more": page["has_more"],
+    }
+
+
+@app.post("/v1/workspace/cards")
+def workspace_cards_create(
+    payload: HostedWorkspaceCardCreateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceCardService = Depends(get_hosted_workspace_card_service),
+) -> dict[str, object]:
+    try:
+        card = service.create_card(
+            supabase_user_id=session.user_id,
+            name=payload.name,
+            user_id=payload.user_id,
+            last_four=payload.last_four,
+            cashback_rate=payload.cashback_rate,
+            notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return card.as_dict() if hasattr(card, "as_dict") else card
+
+
+@app.patch("/v1/workspace/cards/{card_id}")
+def workspace_cards_update(
+    card_id: str = Path(...),
+    payload: HostedWorkspaceCardUpdateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceCardService = Depends(get_hosted_workspace_card_service),
+) -> dict[str, object]:
+    try:
+        card = service.update_card(
+            supabase_user_id=session.user_id,
+            card_id=card_id,
+            name=payload.name,
+            user_id=payload.user_id,
+            last_four=payload.last_four,
+            cashback_rate=payload.cashback_rate,
+            notes=payload.notes,
+            is_active=payload.is_active,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return card.as_dict() if hasattr(card, "as_dict") else card
+
+
+@app.delete("/v1/workspace/cards/{card_id}", status_code=status.HTTP_204_NO_CONTENT)
+def workspace_cards_delete(
+    card_id: str = Path(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceCardService = Depends(get_hosted_workspace_card_service),
+) -> Response:
+    try:
+        service.delete_card(
+            supabase_user_id=session.user_id,
+            card_id=card_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/v1/workspace/cards/batch-delete")
+def workspace_cards_batch_delete(
+    payload: HostedWorkspaceCardBatchDeleteRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceCardService = Depends(get_hosted_workspace_card_service),
+) -> dict[str, int]:
+    try:
+        deleted_count = service.delete_cards(
+            supabase_user_id=session.user_id,
+            card_ids=payload.card_ids,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
