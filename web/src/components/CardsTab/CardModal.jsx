@@ -1,4 +1,5 @@
 import { initialCardForm } from "./cardsConstants";
+import TypeaheadSelect from "../common/TypeaheadSelect";
 
 export default function CardModal({
   mode,
@@ -116,18 +117,18 @@ export default function CardModal({
 
           <label className="field-label" htmlFor="card-user-input">User</label>
           <div>
-            <select
+            <TypeaheadSelect
               id="card-user-input"
-              className={userIdInvalid ? "text-input invalid" : "text-input"}
+              options={users.map((user) => ({
+                value: user.id,
+                label: user.name || user.email || user.id
+              }))}
               value={form.user_id}
+              onChange={(userId) => setForm((current) => ({ ...current, user_id: userId }))}
+              placeholder="Search users..."
               disabled={readOnly}
-              onChange={(event) => setForm((current) => ({ ...current, user_id: event.target.value }))}
-            >
-              <option value="">Select a user...</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>{user.display_name || user.email || user.id}</option>
-              ))}
-            </select>
+              invalid={userIdInvalid}
+            />
             {userIdInvalid ? <p className="field-error">User is required.</p> : null}
           </div>
 
