@@ -1104,9 +1104,41 @@ h2.breadcrumb-segment {
   width: 100%;
 }
 
+.typeahead-input-wrap {
+  position: relative;
+  width: 100%;
+}
+
 .typeahead-input {
   padding-right: 32px !important;
   cursor: text;
+  background: transparent;
+  position: relative;
+  z-index: 1;
+}
+
+.typeahead-ghost {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  pointer-events: none;
+  overflow: hidden;
+  white-space: nowrap;
+  font: inherit;
+  z-index: 0;
+}
+
+.typeahead-ghost-typed {
+  visibility: hidden;
+}
+
+.typeahead-ghost-suffix {
+  color: rgba(126, 195, 172, 0.40);
 }
 
 .typeahead-chevron {
@@ -1118,6 +1150,7 @@ h2.breadcrumb-segment {
   color: #7e8792;
   font-size: 0.72rem;
   line-height: 1;
+  z-index: 2;
 }
 
 .typeahead-dropdown {
