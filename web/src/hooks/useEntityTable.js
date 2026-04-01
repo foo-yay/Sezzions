@@ -305,9 +305,17 @@ export default function useEntityTable(config, { apiBaseUrl, hostedWorkspaceRead
     if (!extraLoaders.length) return;
     const results = {};
     await Promise.all(
-      extraLoaders.map(async ({ key, load }) => {
+      extraLoaders.map(async (loader) => {
         try {
-          results[key] = await load(accessToken, apiBaseUrl);
+          if (typeof loader.load === "function") {
+            results[loader.key] = await loader.load(accessToken, apiBaseUrl);
+          } else if (loader.endpoint) {
+            const res = await fetch(`${apiBaseUrl}${loader.endpoint}`, { headers: authHeaders(accessToken) });
+            if (res.ok) {
+              const json = await res.json();
+              results[loader.key] = loader.responseKey ? json[loader.responseKey] : json;
+            }
+          }
         } catch {
           // Extra loaders are supplementary; silent failure is acceptable
         }
