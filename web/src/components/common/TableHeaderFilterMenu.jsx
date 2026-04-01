@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { buildFilterTree, filterTreeNodes } from "./usersUtils";
+import { buildFilterTree, filterTreeNodes } from "../../utils/tableUtils";
 import FilterTreeNode from "./FilterTreeNode";
 
-export default function UserHeaderFilterMenu({
+export default function TableHeaderFilterMenu({
   column,
   options,
   selectedValues,
