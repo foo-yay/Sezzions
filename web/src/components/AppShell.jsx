@@ -8,11 +8,12 @@ import AccountModal from "./common/AccountModal";
 import SettingsModal from "./common/SettingsModal";
 import UsersTab from "./UsersTab/UsersTab";
 import SitesTab from "./SitesTab/SitesTab";
+import CardsTab from "./CardsTab/CardsTab";
 
 const setupTabs = [
   { key: "users", label: "Users", icon: "users", enabled: true },
   { key: "sites", label: "Sites", icon: "sites", enabled: true },
-  { key: "cards", label: "Cards", icon: "cards", enabled: false },
+  { key: "cards", label: "Cards", icon: "cards", enabled: true },
   { key: "method-types", label: "Method Types", icon: "methodTypes", enabled: false },
   { key: "redemption-methods", label: "Redemption Methods", icon: "redemptionMethods", enabled: false },
   { key: "game-types", label: "Game Types", icon: "gameTypes", enabled: false },
@@ -197,6 +198,12 @@ export default function AppShell({ auth }) {
         ) : null}
         {setupTab === "sites" ? (
           <SitesTab
+            apiBaseUrl={auth.apiBaseUrl}
+            hostedWorkspaceReady={auth.hostedWorkspaceReady}
+          />
+        ) : null}
+        {setupTab === "cards" ? (
+          <CardsTab
             apiBaseUrl={auth.apiBaseUrl}
             hostedWorkspaceReady={auth.hostedWorkspaceReady}
           />
