@@ -17,7 +17,8 @@ You are assisting with **Sezzions**, a casino session tracker.
 3. Preserve current app behavior unless explicitly instructed to change it.
 4. For accounting changes, add or update scenario-based tests to define expected outputs.
 5. **DRY / Reusability**: When implementing a pattern that already exists (or will exist for multiple entities), extract shared logic into a reusable source (utility, base class, generic component, shared hook) rather than copy-pasting per entity. Before writing new code, search the codebase for existing implementations of the same pattern. See `docs/PROJECT_SPEC.md` §2 "Design Principles" for the full doctrinal rules.
-6. Keep docs tidy:
+6. **Stop-and-extract enforcement**: If a change requires the same edit in 2+ files, extract the shared logic first (or file an Issue for the extraction). Do not apply the same patch to N files. See `docs/PROJECT_SPEC.md` §2 principle 6.
+7. Keep docs tidy:
    - Update canonical docs in `docs/`
    - Decisions go in `docs/adr/`
    - Status updates go in `docs/status/`

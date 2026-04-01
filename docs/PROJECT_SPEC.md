@@ -112,6 +112,12 @@ These principles are **canonical** and apply to all new code across both the des
 5. **Name shared code for what it does, not which entity first used it.**
    Shared components and utilities should have generic names (e.g., `HeaderFilterMenu`, not `UserHeaderFilterMenu`) so they communicate reusability. If a component is created for one entity but is structurally generic, rename it when the second consumer appears.
 
+6. **Stop-and-extract rule (enforcement).**
+   If a change requires the same edit in two or more files (e.g., updating search behavior in UsersTab, SitesTab, and CardsTab), that is a signal that the shared logic has not been extracted yet. The correct response is: (a) extract the shared code into a reusable component/hook/utility first, (b) migrate existing consumers, then (c) make the original change once. Do not apply the same patch to N files and move on — that creates maintenance debt and violates principle 1. If extraction is too large for the current task, file a GitHub Issue for the extraction and note the tech debt explicitly in the PR description.
+
+7. **Composition over duplication — configure, don't clone.**
+   Each entity tab (Users, Sites, Cards, etc.) should be a thin configuration layer on top of shared infrastructure. The entity-specific file provides: column definitions, form fields, API endpoint paths, cell renderers, and validation rules. Everything else — search bar behavior, keyboard shortcuts, table rendering, selection state, pagination, sort, filter trees, context menus, CSV export — belongs in shared hooks and components. If an entity tab file exceeds ~300 lines, it likely contains logic that should be shared.
+
 ### Primary Entrypoint
 - Run the desktop app via `python3 desktop/sezzions.py` (from repo root)
 - Source runtime default is `./sezzions.db`.
