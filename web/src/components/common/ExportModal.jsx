@@ -1,21 +1,18 @@
 import { useState } from "react";
 
-import { userTableColumns } from "./usersConstants";
-
-export default function ExportModal({ filteredUsers, selectedUsers, selectedCells, allColumns, onExport, onClose }) {
-  const hasSelection = selectedUsers.length > 0;
-  const hasCellSelection = selectedCells.size > 0;
+export default function ExportModal({ filteredItems, selectedItems, selectedCells, allColumns, getCellDisplayValue, onExport, onClose }) {
+  const hasSelection = selectedItems.length > 0;
   const [scope, setScope] = useState(hasSelection ? "selected" : "filtered");
   const [enabledColumns, setEnabledColumns] = useState(() => new Set(allColumns.map((c) => c.key)));
 
   const scopeOptions = [
-    { value: "filtered", label: `All shown (${filteredUsers.length})` },
-    ...(hasSelection ? [{ value: "selected", label: `Selected rows (${selectedUsers.length})` }] : []),
+    { value: "filtered", label: `All shown (${filteredItems.length})` },
+    ...(hasSelection ? [{ value: "selected", label: `Selected rows (${selectedItems.length})` }] : []),
   ];
 
-  const dataUsers = scope === "selected" ? selectedUsers : filteredUsers;
+  const dataItems = scope === "selected" ? selectedItems : filteredItems;
   const activeColumns = allColumns.filter((c) => enabledColumns.has(c.key));
-  const previewRows = dataUsers.slice(0, 5);
+  const previewRows = dataItems.slice(0, 5);
 
   function toggleColumn(key) {
     setEnabledColumns((current) => {
@@ -59,21 +56,21 @@ export default function ExportModal({ filteredUsers, selectedUsers, selectedCell
           </div>
 
           <div className="export-section">
-            <label className="export-label">Preview ({dataUsers.length} row{dataUsers.length !== 1 ? "s" : ""})</label>
+            <label className="export-label">Preview ({dataItems.length} row{dataItems.length !== 1 ? "s" : ""})</label>
             <div className="export-preview-scroll">
               <table className="export-preview-table">
                 <thead>
                   <tr>{activeColumns.map((c) => <th key={c.key}>{c.label}</th>)}</tr>
                 </thead>
                 <tbody>
-                  {previewRows.map((user, i) => (
+                  {previewRows.map((item, i) => (
                     <tr key={i}>
                       {activeColumns.map((c) => (
-                        <td key={c.key}>{c.key === "status" ? (user.is_active ? "Active" : "Inactive") : String(user[c.key] || "")}</td>
+                        <td key={c.key}>{getCellDisplayValue ? getCellDisplayValue(item, c.key) : String(item[c.key] || "")}</td>
                       ))}
                     </tr>
                   ))}
-                  {dataUsers.length > 5 ? <tr><td colSpan={activeColumns.length} className="export-preview-more">... and {dataUsers.length - 5} more</td></tr> : null}
+                  {dataItems.length > 5 ? <tr><td colSpan={activeColumns.length} className="export-preview-more">... and {dataItems.length - 5} more</td></tr> : null}
                 </tbody>
               </table>
             </div>
@@ -81,8 +78,8 @@ export default function ExportModal({ filteredUsers, selectedUsers, selectedCell
         </div>
 
         <div className="modal-actions modal-actions-end">
-          <button className="primary-button" type="button" onClick={() => { onExport(dataUsers, activeColumns); onClose(); }}>
-            Export {dataUsers.length} Row{dataUsers.length !== 1 ? "s" : ""}
+          <button className="primary-button" type="button" onClick={() => { onExport(dataItems, activeColumns); onClose(); }}>
+            Export {dataItems.length} Row{dataItems.length !== 1 ? "s" : ""}
           </button>
         </div>
       </section>

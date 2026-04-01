@@ -9,6 +9,40 @@ Rules:
 
 ---
 
+## 2026-04-01
+
+```yaml
+id: 2026-04-01-01
+type: refactor
+areas: [web]
+issue: "#248"
+pr: "#249"
+summary: "Extract shared EntityTable hook + component from duplicated tab code"
+details: >
+  Three entity tabs (Users, Sites, Cards) shared ~73% identical code across
+  ~4,195 lines. Extracted shared useEntityTable hook (~600 lines), EntityTable
+  component (~300 lines), tableUtils (~175 lines), and 4 shared components
+  into common/. Each tab reduced to ~120-145 line thin config layer.
+  Net: -2,528 lines, bundle 520.66→464.10 kB (10.8% smaller).
+
+files_changed:
+  - web/src/hooks/useEntityTable.js (new)
+  - web/src/components/common/EntityTable.jsx (new)
+  - web/src/utils/tableUtils.js (new)
+  - web/src/components/common/ExportModal.jsx (moved)
+  - web/src/components/common/FilterTreeNode.jsx (moved)
+  - web/src/components/common/TableContextMenu.jsx (moved)
+  - web/src/components/common/TableHeaderFilterMenu.jsx (moved+renamed)
+  - web/src/components/UsersTab/UsersTab.jsx (rewritten)
+  - web/src/components/SitesTab/SitesTab.jsx (rewritten)
+  - web/src/components/CardsTab/CardsTab.jsx (rewritten)
+  - web/src/components/UsersTab/usersUtils.js (slimmed)
+  - web/src/components/SitesTab/sitesUtils.js (slimmed)
+  - web/src/components/CardsTab/cardsUtils.js (slimmed)
+```
+
+---
+
 ## 2026-03-31
 
 ```yaml

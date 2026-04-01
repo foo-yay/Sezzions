@@ -1,4 +1,4 @@
-import { collectLeafValues, getNodeSelectionState } from "./usersUtils";
+import { collectLeafValues, getNodeSelectionState } from "../../utils/tableUtils";
 
 export default function FilterTreeNode({ node, depth, selectedValues, onToggle }) {
   const selectionState = getNodeSelectionState(node, selectedValues);
