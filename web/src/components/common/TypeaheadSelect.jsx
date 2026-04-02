@@ -12,7 +12,8 @@ export default function TypeaheadSelect({
   onChange,
   placeholder = "Search...",
   disabled = false,
-  invalid = false
+  invalid = false,
+  allowClear = false
 }) {
   const [inputText, setInputText] = useState("");
   const [open, setOpen] = useState(false);
@@ -123,6 +124,10 @@ export default function TypeaheadSelect({
       // Do NOT call preventDefault — let native Tab focus-advance happen
       if (filtered.length > 0 && inputText.trim()) {
         commitBestMatch({ blur: false });
+      } else if (allowClear && !inputText.trim()) {
+        setOpen(false);
+        onChange("");
+        setInputText("");
       } else {
         setOpen(false);
         const selected = options.find((opt) => opt.value === value);
@@ -143,9 +148,13 @@ export default function TypeaheadSelect({
       if (committingRef.current) return;
       if (containerRef.current && !containerRef.current.contains(document.activeElement)) {
         setOpen(false);
-        // Revert to the currently committed value's label
-        const selected = options.find((opt) => opt.value === value);
-        setInputText(selected ? selected.label : "");
+        if (allowClear && !inputText.trim()) {
+          onChange("");
+          setInputText("");
+        } else {
+          const selected = options.find((opt) => opt.value === value);
+          setInputText(selected ? selected.label : "");
+        }
       }
     });
   }
@@ -164,16 +173,34 @@ export default function TypeaheadSelect({
     function handlePointerDown(event) {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
         setOpen(false);
-        const selected = options.find((opt) => opt.value === value);
-        setInputText(selected ? selected.label : "");
+        if (allowClear && !inputRef.current?.value.trim()) {
+          onChange("");
+          setInputText("");
+        } else {
+          const selected = options.find((opt) => opt.value === value);
+          setInputText(selected ? selected.label : "");
+        }
       }
     }
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [open, options, value]);
+  }, [open, options, value, allowClear, onChange]);
 
   // Ghost text: the full suggestion shown faintly behind the input
   const showGhost = open && ghostText && inputText.trim() && ghostText.toLowerCase() !== inputText.trim().toLowerCase();
+  const showClear = allowClear && !disabled && value;
+
+  function handleClear(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    committingRef.current = true;
+    onChange("");
+    setInputText("");
+    setOpen(false);
+    setHighlightIndex(0);
+    inputRef.current?.focus();
+    requestAnimationFrame(() => { committingRef.current = false; });
+  }
 
   return (
     <div className="typeahead-select" ref={containerRef}>
@@ -187,7 +214,7 @@ export default function TypeaheadSelect({
         <input
           id={id}
           ref={inputRef}
-          className={`text-input typeahead-input${invalid ? " invalid" : ""}`}
+          className={`text-input typeahead-input${invalid ? " invalid" : ""}${showClear ? " typeahead-has-clear" : ""}`}
           type="text"
           autoComplete="off"
           placeholder={placeholder}
@@ -204,6 +231,17 @@ export default function TypeaheadSelect({
           aria-activedescendant={highlightIndex >= 0 ? `${id}-opt-${highlightIndex}` : undefined}
         />
       </div>
+      {showClear ? (
+        <button
+          className="typeahead-clear"
+          type="button"
+          aria-label="Clear selection"
+          tabIndex={-1}
+          onMouseDown={handleClear}
+        >
+          &#x2715;
+        </button>
+      ) : null}
       <span className="typeahead-chevron" aria-hidden="true">
         {open ? "\u25B4" : "\u25BE"}
       </span>

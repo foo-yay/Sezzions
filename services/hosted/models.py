@@ -168,6 +168,42 @@ class HostedCard:
 
 
 @dataclass
+class HostedRedemptionMethod:
+    """Redemption method (e.g., 'Chase checking', 'Coinbase BTC') owned by a hosted workspace."""
+
+    name: str
+    method_type_id: str
+    user_id: str
+    workspace_id: Optional[str] = None
+    is_active: bool = True
+    notes: Optional[str] = None
+    id: Optional[str] = None
+    user_name: Optional[str] = None
+    method_type_name: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("Redemption method name is required")
+
+        if self.notes is not None:
+            self.notes = self.notes.strip() or None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "workspace_id": self.workspace_id,
+            "name": self.name,
+            "method_type_id": self.method_type_id,
+            "method_type_name": self.method_type_name,
+            "user_id": self.user_id,
+            "user_name": self.user_name,
+            "is_active": self.is_active,
+            "notes": self.notes,
+        }
+
+
+@dataclass
 class HostedRedemptionMethodType:
     """Redemption method type (e.g., Bank, Crypto, Check) owned by a hosted workspace."""
 

@@ -14,6 +14,9 @@ from services.hosted.uploaded_sqlite_inspection_service import (
     HostedUploadedSQLiteInspectionService,
 )
 from services.hosted.workspace_card_service import HostedWorkspaceCardService
+from services.hosted.workspace_redemption_method_service import (
+    HostedWorkspaceRedemptionMethodService,
+)
 from services.hosted.workspace_redemption_method_type_service import (
     HostedWorkspaceRedemptionMethodTypeService,
 )
@@ -101,6 +104,25 @@ class HostedWorkspaceRedemptionMethodTypeBatchDeleteRequest(BaseModel):
     redemption_method_type_ids: list[str]
 
 
+class HostedWorkspaceRedemptionMethodCreateRequest(BaseModel):
+    name: str
+    method_type_id: str
+    user_id: str
+    notes: str | None = None
+
+
+class HostedWorkspaceRedemptionMethodUpdateRequest(BaseModel):
+    name: str
+    method_type_id: str
+    user_id: str
+    notes: str | None = None
+    is_active: bool = True
+
+
+class HostedWorkspaceRedemptionMethodBatchDeleteRequest(BaseModel):
+    redemption_method_ids: list[str]
+
+
 cors_config = load_hosted_backend_config(required=False, require_db_password=False)
 app.add_middleware(
     CORSMiddleware,
@@ -172,6 +194,16 @@ def get_hosted_workspace_redemption_method_type_service() -> HostedWorkspaceRede
 
     session_factory = get_hosted_session_factory(config.sqlalchemy_url)
     return HostedWorkspaceRedemptionMethodTypeService(session_factory)
+
+
+def get_hosted_workspace_redemption_method_service() -> HostedWorkspaceRedemptionMethodService:
+    try:
+        config = load_hosted_backend_config(require_db_password=True)
+    except HostedConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    session_factory = get_hosted_session_factory(config.sqlalchemy_url)
+    return HostedWorkspaceRedemptionMethodService(session_factory)
 
 
 def get_hosted_uploaded_sqlite_inspection_service() -> HostedUploadedSQLiteInspectionService:
@@ -669,6 +701,134 @@ def workspace_redemption_method_types_batch_delete(
         deleted_count = service.delete_method_types(
             supabase_user_id=session.user_id,
             method_type_ids=payload.redemption_method_type_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"deleted_count": deleted_count}
+
+
+# ── Redemption Methods ───────────────────────────────────────────────────
+
+
+@app.get("/v1/workspace/redemption-methods")
+def workspace_redemption_methods_list(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceRedemptionMethodService = Depends(
+        get_hosted_workspace_redemption_method_service
+    ),
+) -> dict[str, object]:
+    try:
+        page = service.list_methods_page(
+            supabase_user_id=session.user_id,
+            limit=limit,
+            offset=offset,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return {
+        "redemption_methods": [
+            m.as_dict() if hasattr(m, "as_dict") else m
+            for m in page["redemption_methods"]
+        ],
+        "offset": page["offset"],
+        "limit": page["limit"],
+        "next_offset": page["next_offset"],
+        "total_count": page["total_count"],
+        "has_more": page["has_more"],
+    }
+
+
+@app.post("/v1/workspace/redemption-methods")
+def workspace_redemption_methods_create(
+    payload: HostedWorkspaceRedemptionMethodCreateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceRedemptionMethodService = Depends(
+        get_hosted_workspace_redemption_method_service
+    ),
+) -> dict[str, object]:
+    try:
+        method = service.create_method(
+            supabase_user_id=session.user_id,
+            name=payload.name,
+            method_type_id=payload.method_type_id,
+            user_id=payload.user_id,
+            notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return method.as_dict() if hasattr(method, "as_dict") else method
+
+
+@app.patch("/v1/workspace/redemption-methods/{method_id}")
+def workspace_redemption_methods_update(
+    method_id: str = Path(...),
+    payload: HostedWorkspaceRedemptionMethodUpdateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceRedemptionMethodService = Depends(
+        get_hosted_workspace_redemption_method_service
+    ),
+) -> dict[str, object]:
+    try:
+        method = service.update_method(
+            supabase_user_id=session.user_id,
+            method_id=method_id,
+            name=payload.name,
+            method_type_id=payload.method_type_id,
+            user_id=payload.user_id,
+            notes=payload.notes,
+            is_active=payload.is_active,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return method.as_dict() if hasattr(method, "as_dict") else method
+
+
+@app.delete(
+    "/v1/workspace/redemption-methods/{method_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def workspace_redemption_methods_delete(
+    method_id: str = Path(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceRedemptionMethodService = Depends(
+        get_hosted_workspace_redemption_method_service
+    ),
+) -> Response:
+    try:
+        service.delete_method(
+            supabase_user_id=session.user_id,
+            method_id=method_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/v1/workspace/redemption-methods/batch-delete")
+def workspace_redemption_methods_batch_delete(
+    payload: HostedWorkspaceRedemptionMethodBatchDeleteRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceRedemptionMethodService = Depends(
+        get_hosted_workspace_redemption_method_service
+    ),
+) -> dict[str, int]:
+    try:
+        deleted_count = service.delete_methods(
+            supabase_user_id=session.user_id,
+            method_ids=payload.redemption_method_ids,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
