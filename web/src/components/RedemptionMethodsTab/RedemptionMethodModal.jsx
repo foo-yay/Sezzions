@@ -122,6 +122,7 @@ export default function RedemptionMethodModal({
               onChange={(mtId) => setForm((current) => ({ ...current, method_type_id: mtId }))}
               placeholder="Search method types..."
               disabled={readOnly}
+              allowClear
             />
           </div>
 
@@ -137,6 +138,7 @@ export default function RedemptionMethodModal({
               onChange={(userId) => setForm((current) => ({ ...current, user_id: userId }))}
               placeholder="Search users..."
               disabled={readOnly}
+              allowClear
             />
           </div>
 
