@@ -124,6 +124,10 @@ export default function TypeaheadSelect({
       // Do NOT call preventDefault — let native Tab focus-advance happen
       if (filtered.length > 0 && inputText.trim()) {
         commitBestMatch({ blur: false });
+      } else if (allowClear && !inputText.trim()) {
+        setOpen(false);
+        onChange("");
+        setInputText("");
       } else {
         setOpen(false);
         const selected = options.find((opt) => opt.value === value);
