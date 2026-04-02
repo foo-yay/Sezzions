@@ -22,6 +22,9 @@ from services.hosted.workspace_redemption_method_type_service import (
 )
 from services.hosted.workspace_site_service import HostedWorkspaceSiteService
 from services.hosted.workspace_user_service import HostedWorkspaceUserService
+from services.hosted.workspace_game_type_service import (
+    HostedWorkspaceGameTypeService,
+)
 from services.hosted.workspace_import_planning_service import (
     HostedWorkspaceImportPlanningService,
 )
@@ -123,6 +126,21 @@ class HostedWorkspaceRedemptionMethodBatchDeleteRequest(BaseModel):
     redemption_method_ids: list[str]
 
 
+class HostedWorkspaceGameTypeCreateRequest(BaseModel):
+    name: str
+    notes: str | None = None
+
+
+class HostedWorkspaceGameTypeUpdateRequest(BaseModel):
+    name: str
+    notes: str | None = None
+    is_active: bool = True
+
+
+class HostedWorkspaceGameTypeBatchDeleteRequest(BaseModel):
+    game_type_ids: list[str]
+
+
 cors_config = load_hosted_backend_config(required=False, require_db_password=False)
 app.add_middleware(
     CORSMiddleware,
@@ -204,6 +222,16 @@ def get_hosted_workspace_redemption_method_service() -> HostedWorkspaceRedemptio
 
     session_factory = get_hosted_session_factory(config.sqlalchemy_url)
     return HostedWorkspaceRedemptionMethodService(session_factory)
+
+
+def get_hosted_workspace_game_type_service() -> HostedWorkspaceGameTypeService:
+    try:
+        config = load_hosted_backend_config(require_db_password=True)
+    except HostedConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    session_factory = get_hosted_session_factory(config.sqlalchemy_url)
+    return HostedWorkspaceGameTypeService(session_factory)
 
 
 def get_hosted_uploaded_sqlite_inspection_service() -> HostedUploadedSQLiteInspectionService:
@@ -829,6 +857,130 @@ def workspace_redemption_methods_batch_delete(
         deleted_count = service.delete_methods(
             supabase_user_id=session.user_id,
             method_ids=payload.redemption_method_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"deleted_count": deleted_count}
+
+
+# ── Game Types ───────────────────────────────────────────────────────────
+
+
+@app.get("/v1/workspace/game-types")
+def workspace_game_types_list(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceGameTypeService = Depends(
+        get_hosted_workspace_game_type_service
+    ),
+) -> dict[str, object]:
+    try:
+        page = service.list_game_types_page(
+            supabase_user_id=session.user_id,
+            limit=limit,
+            offset=offset,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return {
+        "game_types": [
+            gt.as_dict() if hasattr(gt, "as_dict") else gt
+            for gt in page["game_types"]
+        ],
+        "offset": page["offset"],
+        "limit": page["limit"],
+        "next_offset": page["next_offset"],
+        "total_count": page["total_count"],
+        "has_more": page["has_more"],
+    }
+
+
+@app.post("/v1/workspace/game-types")
+def workspace_game_types_create(
+    payload: HostedWorkspaceGameTypeCreateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceGameTypeService = Depends(
+        get_hosted_workspace_game_type_service
+    ),
+) -> dict[str, object]:
+    try:
+        game_type = service.create_game_type(
+            supabase_user_id=session.user_id,
+            name=payload.name,
+            notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return game_type.as_dict() if hasattr(game_type, "as_dict") else game_type
+
+
+@app.patch("/v1/workspace/game-types/{game_type_id}")
+def workspace_game_types_update(
+    game_type_id: str = Path(...),
+    payload: HostedWorkspaceGameTypeUpdateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceGameTypeService = Depends(
+        get_hosted_workspace_game_type_service
+    ),
+) -> dict[str, object]:
+    try:
+        game_type = service.update_game_type(
+            supabase_user_id=session.user_id,
+            game_type_id=game_type_id,
+            name=payload.name,
+            notes=payload.notes,
+            is_active=payload.is_active,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return game_type.as_dict() if hasattr(game_type, "as_dict") else game_type
+
+
+@app.delete(
+    "/v1/workspace/game-types/{game_type_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def workspace_game_types_delete(
+    game_type_id: str = Path(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceGameTypeService = Depends(
+        get_hosted_workspace_game_type_service
+    ),
+) -> Response:
+    try:
+        service.delete_game_type(
+            supabase_user_id=session.user_id,
+            game_type_id=game_type_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/v1/workspace/game-types/batch-delete")
+def workspace_game_types_batch_delete(
+    payload: HostedWorkspaceGameTypeBatchDeleteRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceGameTypeService = Depends(
+        get_hosted_workspace_game_type_service
+    ),
+) -> dict[str, int]:
+    try:
+        deleted_count = service.delete_game_types(
+            supabase_user_id=session.user_id,
+            game_type_ids=payload.game_type_ids,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

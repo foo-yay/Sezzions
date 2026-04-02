@@ -229,3 +229,31 @@ class HostedRedemptionMethodType:
             "is_active": self.is_active,
             "notes": self.notes,
         }
+
+
+@dataclass
+class HostedGameType:
+    """Game type (e.g., Slots, Table Games, Live Dealer) owned by a hosted workspace."""
+
+    name: str
+    workspace_id: Optional[str] = None
+    is_active: bool = True
+    notes: Optional[str] = None
+    id: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("Game type name is required")
+
+        if self.notes is not None:
+            self.notes = self.notes.strip() or None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "workspace_id": self.workspace_id,
+            "name": self.name,
+            "is_active": self.is_active,
+            "notes": self.notes,
+        }
