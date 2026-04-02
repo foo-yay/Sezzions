@@ -144,9 +144,13 @@ export default function TypeaheadSelect({
       if (committingRef.current) return;
       if (containerRef.current && !containerRef.current.contains(document.activeElement)) {
         setOpen(false);
-        // Revert to the currently committed value's label
-        const selected = options.find((opt) => opt.value === value);
-        setInputText(selected ? selected.label : "");
+        if (allowClear && !inputText.trim()) {
+          onChange("");
+          setInputText("");
+        } else {
+          const selected = options.find((opt) => opt.value === value);
+          setInputText(selected ? selected.label : "");
+        }
       }
     });
   }
@@ -165,13 +169,18 @@ export default function TypeaheadSelect({
     function handlePointerDown(event) {
       if (containerRef.current && !containerRef.current.contains(event.target)) {
         setOpen(false);
-        const selected = options.find((opt) => opt.value === value);
-        setInputText(selected ? selected.label : "");
+        if (allowClear && !inputRef.current?.value.trim()) {
+          onChange("");
+          setInputText("");
+        } else {
+          const selected = options.find((opt) => opt.value === value);
+          setInputText(selected ? selected.label : "");
+        }
       }
     }
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
-  }, [open, options, value]);
+  }, [open, options, value, allowClear, onChange]);
 
   // Ghost text: the full suggestion shown faintly behind the input
   const showGhost = open && ghostText && inputText.trim() && ghostText.toLowerCase() !== inputText.trim().toLowerCase();
