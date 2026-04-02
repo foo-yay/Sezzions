@@ -47,8 +47,8 @@ class HostedWorkspaceRedemptionMethodService:
         *,
         supabase_user_id: str,
         name: str,
-        method_type_id: str | None = None,
-        user_id: str | None = None,
+        method_type_id: str,
+        user_id: str,
         notes: str | None = None,
     ) -> HostedRedemptionMethod:
         candidate = HostedRedemptionMethod(
@@ -78,8 +78,8 @@ class HostedWorkspaceRedemptionMethodService:
         supabase_user_id: str,
         method_id: str,
         name: str,
-        method_type_id: str | None = None,
-        user_id: str | None = None,
+        method_type_id: str,
+        user_id: str,
         notes: str | None = None,
         is_active: bool = True,
     ) -> HostedRedemptionMethod:

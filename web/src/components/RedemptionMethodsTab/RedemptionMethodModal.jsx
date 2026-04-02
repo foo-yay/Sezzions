@@ -18,6 +18,9 @@ export default function RedemptionMethodModal({
   const readOnly = mode === "view";
   const title = mode === "create" ? "Add Redemption Method" : mode === "edit" ? "Edit Redemption Method" : "View Redemption Method";
   const nameInvalid = !form.name.trim();
+  const methodTypeInvalid = !form.method_type_id;
+  const userInvalid = !form.user_id;
+  const formInvalid = nameInvalid || methodTypeInvalid || userInvalid;
   const closeLabel = readOnly ? "Close" : "Cancel";
 
   if (readOnly && method) {
@@ -40,8 +43,8 @@ export default function RedemptionMethodModal({
           <div className="user-detail-body">
             <dl className="detail-grid user-detail-grid">
               <div><dt>Name</dt><dd>{method.name}</dd></div>
-              <div><dt>Method Type</dt><dd>{method.method_type_name || "\u2014"}</dd></div>
-              <div><dt>User</dt><dd>{method.user_name || "\u2014"}</dd></div>
+              <div><dt>Method Type</dt><dd>{method.method_type_name}</dd></div>
+              <div><dt>User</dt><dd>{method.user_name}</dd></div>
               <div>
                 <dt>Status</dt>
                 <dd>
@@ -120,10 +123,10 @@ export default function RedemptionMethodModal({
               }))}
               value={form.method_type_id}
               onChange={(mtId) => setForm((current) => ({ ...current, method_type_id: mtId }))}
-              placeholder="Search method types..."
+              placeholder="Required"
               disabled={readOnly}
-              allowClear
             />
+            {methodTypeInvalid ? <p className="field-error">Method type is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="rm-user-input">User</label>
@@ -136,10 +139,10 @@ export default function RedemptionMethodModal({
               }))}
               value={form.user_id}
               onChange={(userId) => setForm((current) => ({ ...current, user_id: userId }))}
-              placeholder="Search users..."
+              placeholder="Required"
               disabled={readOnly}
-              allowClear
             />
+            {userInvalid ? <p className="field-error">User is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="rm-active-input">Active</label>
@@ -173,7 +176,7 @@ export default function RedemptionMethodModal({
             className="primary-button"
             type="button"
             onClick={onSubmit}
-            disabled={nameInvalid}
+            disabled={formInvalid}
           >
             Save Method
           </button>

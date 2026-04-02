@@ -106,15 +106,15 @@ class HostedWorkspaceRedemptionMethodTypeBatchDeleteRequest(BaseModel):
 
 class HostedWorkspaceRedemptionMethodCreateRequest(BaseModel):
     name: str
-    method_type_id: str | None = None
-    user_id: str | None = None
+    method_type_id: str
+    user_id: str
     notes: str | None = None
 
 
 class HostedWorkspaceRedemptionMethodUpdateRequest(BaseModel):
     name: str
-    method_type_id: str | None = None
-    user_id: str | None = None
+    method_type_id: str
+    user_id: str
     notes: str | None = None
     is_active: bool = True
 

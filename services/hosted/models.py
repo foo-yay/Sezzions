@@ -172,8 +172,8 @@ class HostedRedemptionMethod:
     """Redemption method (e.g., 'Chase checking', 'Coinbase BTC') owned by a hosted workspace."""
 
     name: str
-    method_type_id: Optional[str] = None
-    user_id: Optional[str] = None
+    method_type_id: str
+    user_id: str
     workspace_id: Optional[str] = None
     is_active: bool = True
     notes: Optional[str] = None

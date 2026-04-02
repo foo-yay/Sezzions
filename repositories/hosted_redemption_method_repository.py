@@ -30,8 +30,8 @@ class HostedRedemptionMethodRepository:
                 user_alias.name.label("user_name"),
                 type_alias.name.label("method_type_name"),
             )
-            .outerjoin(user_alias, HostedRedemptionMethodRecord.user_id == user_alias.id)
-            .outerjoin(type_alias, HostedRedemptionMethodRecord.method_type_id == type_alias.id)
+            .join(user_alias, HostedRedemptionMethodRecord.user_id == user_alias.id)
+            .join(type_alias, HostedRedemptionMethodRecord.method_type_id == type_alias.id)
             .where(HostedRedemptionMethodRecord.workspace_id == workspace_id)
             .order_by(HostedRedemptionMethodRecord.name.asc(), HostedRedemptionMethodRecord.id.asc())
             .offset(offset)
@@ -64,8 +64,8 @@ class HostedRedemptionMethodRepository:
                 user_alias.name.label("user_name"),
                 type_alias.name.label("method_type_name"),
             )
-            .outerjoin(user_alias, HostedRedemptionMethodRecord.user_id == user_alias.id)
-            .outerjoin(type_alias, HostedRedemptionMethodRecord.method_type_id == type_alias.id)
+            .join(user_alias, HostedRedemptionMethodRecord.user_id == user_alias.id)
+            .join(type_alias, HostedRedemptionMethodRecord.method_type_id == type_alias.id)
             .where(
                 HostedRedemptionMethodRecord.id == method_id,
                 HostedRedemptionMethodRecord.workspace_id == workspace_id,
@@ -81,8 +81,8 @@ class HostedRedemptionMethodRepository:
         *,
         workspace_id: str,
         name: str,
-        method_type_id: str | None = None,
-        user_id: str | None = None,
+        method_type_id: str,
+        user_id: str,
         is_active: bool = True,
         notes: str | None = None,
     ) -> HostedRedemptionMethod:
@@ -107,8 +107,8 @@ class HostedRedemptionMethodRepository:
         method_id: str,
         workspace_id: str,
         name: str,
-        method_type_id: str | None,
-        user_id: str | None,
+        method_type_id: str,
+        user_id: str,
         is_active: bool,
         notes: str | None,
     ) -> HostedRedemptionMethod | None:
