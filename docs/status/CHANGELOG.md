@@ -12,6 +12,35 @@ Rules:
 ## 2026-04-01
 
 ```yaml
+id: 2026-04-01-02
+type: feature
+areas: [web, api]
+issue: "#252"
+summary: "Redemption Methods — full-stack web implementation"
+details: >
+  Full-stack Redemption Methods entity with two FK relationships (user_id, method_type_id).
+  Backend: HostedRedemptionMethod model, repository with two-FK outerjoin pattern (users +
+  method types), workspace service, 5 API endpoints at /v1/workspace/redemption-methods.
+  Frontend: thin EntityTable config with extraLoaders for both users and method types,
+  RedemptionMethodModal with two TypeaheadSelect dropdowns. Tab enabled in AppShell.
+
+files_changed:
+  - services/hosted/models.py (add HostedRedemptionMethod)
+  - repositories/hosted_redemption_method_repository.py (new)
+  - services/hosted/workspace_redemption_method_service.py (new)
+  - api/app.py (add endpoints + request models + dependency)
+  - web/src/components/RedemptionMethodsTab/RedemptionMethodsTab.jsx (new)
+  - web/src/components/RedemptionMethodsTab/RedemptionMethodModal.jsx (new)
+  - web/src/components/RedemptionMethodsTab/redemptionMethodsConstants.js (new)
+  - web/src/components/RedemptionMethodsTab/redemptionMethodsUtils.js (new)
+  - web/src/components/AppShell.jsx (enable tab + import)
+```
+
+---
+
+## 2026-04-01
+
+```yaml
 id: 2026-04-01-01
 type: refactor
 areas: [web]
