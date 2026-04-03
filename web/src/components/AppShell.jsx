@@ -12,6 +12,7 @@ import CardsTab from "./CardsTab/CardsTab";
 import MethodTypesTab from "./MethodTypesTab/MethodTypesTab";
 import RedemptionMethodsTab from "./RedemptionMethodsTab/RedemptionMethodsTab";
 import GameTypesTab from "./GameTypesTab/GameTypesTab";
+import GamesTab from "./GamesTab/GamesTab";
 
 const setupTabs = [
   { key: "users", label: "Users", icon: "users", enabled: true },
@@ -20,7 +21,7 @@ const setupTabs = [
   { key: "method-types", label: "Method Types", icon: "methodTypes", enabled: true },
   { key: "redemption-methods", label: "Redemption Methods", icon: "redemptionMethods", enabled: true },
   { key: "game-types", label: "Game Types", icon: "gameTypes", enabled: true },
-  { key: "games", label: "Games", icon: "games", enabled: false },
+  { key: "games", label: "Games", icon: "games", enabled: true },
   { key: "tools", label: "Tools", icon: "tools", enabled: false }
 ];
 
@@ -225,6 +226,12 @@ export default function AppShell({ auth }) {
         ) : null}
         {setupTab === "game-types" ? (
           <GameTypesTab
+            apiBaseUrl={auth.apiBaseUrl}
+            hostedWorkspaceReady={auth.hostedWorkspaceReady}
+          />
+        ) : null}
+        {setupTab === "games" ? (
+          <GamesTab
             apiBaseUrl={auth.apiBaseUrl}
             hostedWorkspaceReady={auth.hostedWorkspaceReady}
           />
