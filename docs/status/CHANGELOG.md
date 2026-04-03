@@ -9,6 +9,32 @@ Rules:
 
 ---
 
+## 2026-04-02
+
+```yaml
+id: 2026-04-02-01
+type: feature
+areas: [web, api]
+issue: "#255"
+summary: "Games — full-stack web implementation"
+details: >
+  Full-stack Games entity (name, game_type_id FK, rtp, actual_rtp, is_active, notes)
+  following EntityTable + FK pattern (same as Redemption Methods).
+  Backend: HostedGame model, hosted_game_repository with game_types JOIN,
+  workspace_game_service, 5 API endpoints at /v1/workspace/games.
+  Frontend: thin EntityTable config with GameModal (TypeaheadSelect for game type,
+  optional RTP numeric field, read-only Actual RTP display). Tab enabled in AppShell.
+  Persistence record (HostedGameRecord) already existed.
+
+files_changed:
+  - services/hosted/models.py (add HostedGame)
+  - repositories/hosted_game_repository.py (new)
+  - services/hosted/workspace_game_service.py (new)
+  - api/app.py (request models + dependency + 5 endpoints)
+  - web/src/components/GamesTab/ (new — 4 files)
+  - web/src/components/AppShell.jsx (enable games tab)
+```
+
 ## 2026-04-01
 
 ```yaml

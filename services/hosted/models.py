@@ -257,3 +257,47 @@ class HostedGameType:
             "is_active": self.is_active,
             "notes": self.notes,
         }
+
+
+@dataclass
+class HostedGame:
+    """Game (e.g., 'Sugar Rush', 'Gates of Olympus') owned by a hosted workspace."""
+
+    name: str
+    game_type_id: str
+    workspace_id: Optional[str] = None
+    rtp: Optional[float] = None
+    actual_rtp: float = 0.0
+    is_active: bool = True
+    notes: Optional[str] = None
+    id: Optional[str] = None
+    game_type_name: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("Game name is required")
+
+        if not self.game_type_id:
+            raise ValueError("Game type is required")
+
+        if self.rtp is not None:
+            self.rtp = float(self.rtp)
+            if not 0 <= self.rtp <= 100:
+                raise ValueError("RTP must be between 0 and 100")
+
+        if self.notes is not None:
+            self.notes = self.notes.strip() or None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "workspace_id": self.workspace_id,
+            "name": self.name,
+            "game_type_id": self.game_type_id,
+            "game_type_name": self.game_type_name,
+            "rtp": self.rtp,
+            "actual_rtp": self.actual_rtp,
+            "is_active": self.is_active,
+            "notes": self.notes,
+        }
