@@ -141,7 +141,7 @@ export default function GameModal({
               min="0"
               max="100"
               step="0.01"
-              placeholder="Optional (0\u2013100)"
+              placeholder="Optional (0-100)"
               value={form.rtp}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, rtp: event.target.value }))}

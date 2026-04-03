@@ -13,7 +13,8 @@ export default function TypeaheadSelect({
   placeholder = "Search...",
   disabled = false,
   invalid = false,
-  allowClear = false
+  allowClear = false,
+  noMatchText = "No matching items"
 }) {
   const [inputText, setInputText] = useState("");
   const [open, setOpen] = useState(false);
@@ -272,7 +273,7 @@ export default function TypeaheadSelect({
       ) : null}
       {open && filtered.length === 0 ? (
         <ul id={`${id}-listbox`} className="typeahead-dropdown" role="listbox">
-          <li className="typeahead-option typeahead-no-results">No matching users</li>
+          <li className="typeahead-option typeahead-no-results">{noMatchText}</li>
         </ul>
       ) : null}
     </div>
