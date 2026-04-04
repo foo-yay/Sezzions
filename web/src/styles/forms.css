@@ -64,16 +64,12 @@
   gap: 10px;
 }
 
-/* ── Shared label style inside purchase form ── */
+/* ── Shared label overrides inside purchase form ── */
 
-.pf-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #7ec3ac;
+.purchase-form .field-label {
   white-space: nowrap;
   margin: 0;
+  padding-top: 0;
 }
 
 /* ── Date/Time inline row ── */
@@ -109,9 +105,9 @@
   align-items: center;
   gap: 6px;
   margin: 0 0 8px;
-  font-size: 0.72rem;
+  font-size: 0.74rem;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #7ec3ac;
 }
@@ -129,7 +125,7 @@
   align-items: center;
 }
 
-.pf-grid .pf-label {
+.pf-grid .field-label {
   text-align: right;
 }
 
@@ -174,7 +170,7 @@
   align-items: flex-start;
 }
 
-.pf-notes-row .pf-label {
+.pf-notes-row .field-label {
   padding-top: 8px;
   flex-shrink: 0;
 }

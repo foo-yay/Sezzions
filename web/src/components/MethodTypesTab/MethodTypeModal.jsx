@@ -21,7 +21,7 @@ export default function MethodTypeModal({
     return (
       <div className="modal-backdrop" role="presentation" onClick={onClose}>
         <section
-          className="modal-card method-type-modal"
+          className="modal-card entity-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="method-type-modal-title"
@@ -34,8 +34,8 @@ export default function MethodTypeModal({
             <button className="ghost-button" type="button" onClick={onClose}>{closeLabel}</button>
           </div>
 
-          <div className="user-detail-body">
-            <dl className="detail-grid user-detail-grid">
+          <div className="modal-detail-body">
+            <dl className="detail-grid modal-detail-grid">
               <div><dt>Name</dt><dd>{methodType.name}</dd></div>
               <div>
                 <dt>Status</dt>
@@ -47,8 +47,8 @@ export default function MethodTypeModal({
               </div>
             </dl>
 
-            <div className="user-detail-notes">
-              <p className="detail-label">Notes</p>
+            <div className="modal-detail-notes">
+              <p className="field-label">Notes</p>
               <div className="notes-display">{methodType.notes || "-"}</div>
             </div>
           </div>
@@ -69,7 +69,7 @@ export default function MethodTypeModal({
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section
-        className="modal-card method-type-modal"
+        className="modal-card entity-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="method-type-modal-title"

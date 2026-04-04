@@ -27,7 +27,7 @@ export default function RedemptionMethodModal({
     return (
       <div className="modal-backdrop" role="presentation" onClick={onClose}>
         <section
-          className="modal-card site-modal"
+          className="modal-card entity-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="redemption-method-modal-title"
@@ -40,8 +40,8 @@ export default function RedemptionMethodModal({
             <button className="ghost-button" type="button" onClick={onClose}>{closeLabel}</button>
           </div>
 
-          <div className="user-detail-body">
-            <dl className="detail-grid user-detail-grid">
+          <div className="modal-detail-body">
+            <dl className="detail-grid modal-detail-grid">
               <div><dt>Name</dt><dd>{method.name}</dd></div>
               <div><dt>Method Type</dt><dd>{method.method_type_name}</dd></div>
               <div><dt>User</dt><dd>{method.user_name}</dd></div>
@@ -55,8 +55,8 @@ export default function RedemptionMethodModal({
               </div>
             </dl>
 
-            <div className="user-detail-notes">
-              <p className="detail-label">Notes</p>
+            <div className="modal-detail-notes">
+              <p className="field-label">Notes</p>
               <div className="notes-display">{method.notes || "-"}</div>
             </div>
           </div>
@@ -77,7 +77,7 @@ export default function RedemptionMethodModal({
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section
-        className="modal-card site-modal"
+        className="modal-card entity-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="redemption-method-modal-title"

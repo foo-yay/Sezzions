@@ -28,7 +28,7 @@ export default function CardModal({
     return (
       <div className="modal-backdrop" role="presentation" onClick={onClose}>
         <section
-          className="modal-card site-modal"
+          className="modal-card entity-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="card-modal-title"
@@ -41,8 +41,8 @@ export default function CardModal({
             <button className="ghost-button" type="button" onClick={onClose}>{closeLabel}</button>
           </div>
 
-          <div className="user-detail-body">
-            <dl className="detail-grid user-detail-grid">
+          <div className="modal-detail-body">
+            <dl className="detail-grid modal-detail-grid">
               <div><dt>Name</dt><dd>{card.name}</dd></div>
               <div><dt>User</dt><dd>{card.user_name || "\u2014"}</dd></div>
               <div><dt>Last Four</dt><dd>{card.last_four || "\u2014"}</dd></div>
@@ -57,8 +57,8 @@ export default function CardModal({
               </div>
             </dl>
 
-            <div className="user-detail-notes">
-              <p className="detail-label">Notes</p>
+            <div className="modal-detail-notes">
+              <p className="field-label">Notes</p>
               <div className="notes-display">{card.notes || "-"}</div>
             </div>
           </div>
@@ -79,7 +79,7 @@ export default function CardModal({
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section
-        className="modal-card site-modal"
+        className="modal-card entity-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="card-modal-title"

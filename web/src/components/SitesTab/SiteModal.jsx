@@ -25,7 +25,7 @@ export default function SiteModal({
     return (
       <div className="modal-backdrop" role="presentation" onClick={onClose}>
         <section
-          className="modal-card site-modal"
+          className="modal-card entity-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="site-modal-title"
@@ -38,8 +38,8 @@ export default function SiteModal({
             <button className="ghost-button" type="button" onClick={onClose}>{closeLabel}</button>
           </div>
 
-          <div className="user-detail-body">
-            <dl className="detail-grid user-detail-grid">
+          <div className="modal-detail-body">
+            <dl className="detail-grid modal-detail-grid">
               <div><dt>Name</dt><dd>{site.name}</dd></div>
               <div><dt>URL</dt><dd>{site.url || "-"}</dd></div>
               <div><dt>SC Rate</dt><dd>{site.sc_rate}</dd></div>
@@ -54,8 +54,8 @@ export default function SiteModal({
               </div>
             </dl>
 
-            <div className="user-detail-notes">
-              <p className="detail-label">Notes</p>
+            <div className="modal-detail-notes">
+              <p className="field-label">Notes</p>
               <div className="notes-display">{site.notes || "-"}</div>
             </div>
           </div>
@@ -76,7 +76,7 @@ export default function SiteModal({
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section
-        className="modal-card site-modal"
+        className="modal-card entity-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="site-modal-title"

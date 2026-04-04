@@ -142,9 +142,9 @@ h3 {
 .status-card dt,
 .detail-grid dt {
   margin: 0 0 10px;
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #7ec3ac;
 }
@@ -954,27 +954,18 @@ h2.breadcrumb-segment {
   grid-template-columns: 1fr;
 }
 
-.user-detail-body {
+.modal-detail-body {
   display: grid;
   gap: 16px;
 }
 
-.user-detail-grid {
+.modal-detail-grid {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
-.user-detail-notes {
+.modal-detail-notes {
   display: grid;
   gap: 6px;
-}
-
-.detail-label {
-  margin: 0;
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #7ec3ac;
 }
 
 .notes-display {
@@ -1742,13 +1733,7 @@ h2.breadcrumb-segment {
   gap: 8px;
 }
 
-.export-label {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #b8c0ca;
-}
+
 
 .export-scope-options,
 .export-column-options {
@@ -1858,7 +1843,7 @@ h2.breadcrumb-segment {
   width: min(520px, 100%);
 }
 
-.user-modal {
+.entity-modal {
   width: min(720px, 100%);
 }
 
@@ -1887,7 +1872,6 @@ h2.breadcrumb-segment {
 
 .field-label {
   margin: 0;
-  font-size: 0.74rem;
   padding-top: 10px;
 }
 

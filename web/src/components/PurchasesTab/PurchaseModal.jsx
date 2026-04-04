@@ -139,8 +139,8 @@ export default function PurchaseModal({
             <button className="ghost-button" type="button" onClick={onClose}>{closeLabel}</button>
           </div>
 
-          <div className="user-detail-body">
-            <dl className="detail-grid user-detail-grid">
+          <div className="modal-detail-body">
+            <dl className="detail-grid modal-detail-grid">
               <div><dt>Date</dt><dd>{purchase.purchase_date}</dd></div>
               <div><dt>Time</dt><dd>{purchase.purchase_time || "—"}</dd></div>
               <div><dt>User</dt><dd>{purchase.user_name || "—"}</dd></div>
@@ -161,8 +161,8 @@ export default function PurchaseModal({
               </div>
             </dl>
 
-            <div className="user-detail-notes">
-              <p className="detail-label">Notes</p>
+            <div className="modal-detail-notes">
+              <p className="field-label">Notes</p>
               <div className="notes-display">{purchase.notes || "-"}</div>
             </div>
           </div>
@@ -201,7 +201,7 @@ export default function PurchaseModal({
         <div className="purchase-form">
           {/* ── Date / Time — compact inline, pre-filled ── */}
           <div className="pf-datetime-row">
-            <label className="pf-label" htmlFor="purchase-date-input">Date</label>
+            <label className="field-label" htmlFor="purchase-date-input">Date</label>
             <input
               id="purchase-date-input"
               className={dateInvalid ? "text-input invalid" : "text-input"}
@@ -210,7 +210,7 @@ export default function PurchaseModal({
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, purchase_date: event.target.value }))}
             />
-            <label className="pf-label" htmlFor="purchase-time-input">Time</label>
+            <label className="field-label" htmlFor="purchase-time-input">Time</label>
             <input
               id="purchase-time-input"
               className="text-input"
@@ -227,7 +227,7 @@ export default function PurchaseModal({
             <p className="pf-section-title"><span>💳</span> Purchase Details</p>
             <div className="pf-grid">
               {/* Left column first for tab order: User → Site → Card */}
-              <label className="pf-label" htmlFor="purchase-user-input" style={{gridRow: 1, gridColumn: 1}}>User</label>
+              <label className="field-label" htmlFor="purchase-user-input" style={{gridRow: 1, gridColumn: 1}}>User</label>
               <div className="pf-cell" ref={userRef} style={{gridRow: 1, gridColumn: 2}}>
                 <TypeaheadSelect
                   id="purchase-user-input"
@@ -249,7 +249,7 @@ export default function PurchaseModal({
                   title={userInvalid ? "Required" : undefined}
                 />
               </div>
-              <label className="pf-label" htmlFor="purchase-site-input" style={{gridRow: 2, gridColumn: 1}}>Site</label>
+              <label className="field-label" htmlFor="purchase-site-input" style={{gridRow: 2, gridColumn: 1}}>Site</label>
               <div className="pf-cell" style={{gridRow: 2, gridColumn: 2}}>
                 <TypeaheadSelect
                   id="purchase-site-input"
@@ -262,7 +262,7 @@ export default function PurchaseModal({
                   title={siteInvalid ? "Required" : undefined}
                 />
               </div>
-              <label className="pf-label" htmlFor="purchase-card-input" style={{gridRow: 3, gridColumn: 1}}>Card</label>
+              <label className="field-label" htmlFor="purchase-card-input" style={{gridRow: 3, gridColumn: 1}}>Card</label>
               <div className="pf-cell" style={{gridRow: 3, gridColumn: 2}}>
                 <TypeaheadSelect
                   id="purchase-card-input"
@@ -288,7 +288,7 @@ export default function PurchaseModal({
               </div>
 
               {/* Right column: Amount → (skip Cashback) → SC Recv'd → Post SC */}
-              <label className="pf-label" htmlFor="purchase-amount-input" style={{gridRow: 1, gridColumn: 3}}>Amount</label>
+              <label className="field-label" htmlFor="purchase-amount-input" style={{gridRow: 1, gridColumn: 3}}>Amount</label>
               <div className="pf-cell" style={{gridRow: 1, gridColumn: 4}}>
                 <input
                   id="purchase-amount-input"
@@ -311,7 +311,7 @@ export default function PurchaseModal({
                   }}
                 />
               </div>
-              <label className="pf-label" htmlFor="purchase-cashback-input" style={{gridRow: 2, gridColumn: 3}}>Cashback</label>
+              <label className="field-label" htmlFor="purchase-cashback-input" style={{gridRow: 2, gridColumn: 3}}>Cashback</label>
               <div className="pf-cell" style={{gridRow: 2, gridColumn: 4}}>
                 <input
                   id="purchase-cashback-input"
@@ -330,7 +330,7 @@ export default function PurchaseModal({
                   }))}
                 />
               </div>
-              <label className="pf-label" htmlFor="purchase-sc-received-input" style={{gridRow: 3, gridColumn: 3}}>SC Recv'd</label>
+              <label className="field-label" htmlFor="purchase-sc-received-input" style={{gridRow: 3, gridColumn: 3}}>SC Recv'd</label>
               <div className="pf-cell" style={{gridRow: 3, gridColumn: 4}}>
                 <input
                   id="purchase-sc-received-input"
@@ -344,7 +344,7 @@ export default function PurchaseModal({
                   onChange={(event) => setForm((current) => ({ ...current, sc_received: event.target.value }))}
                 />
               </div>
-              <label className="pf-label" htmlFor="purchase-starting-sc-input" style={{gridRow: 4, gridColumn: 3}}>Post SC</label>
+              <label className="field-label" htmlFor="purchase-starting-sc-input" style={{gridRow: 4, gridColumn: 3}}>Post SC</label>
               <div className="pf-cell" style={{gridRow: 4, gridColumn: 4}}>
                 <input
                   id="purchase-starting-sc-input"
@@ -371,7 +371,7 @@ export default function PurchaseModal({
 
           {/* ── Notes — always visible, compact ── */}
           <div className="pf-notes-row">
-            <label className="pf-label" htmlFor="purchase-notes-input">Notes</label>
+            <label className="field-label" htmlFor="purchase-notes-input">Notes</label>
             <textarea
               id="purchase-notes-input"
               className="text-input"
