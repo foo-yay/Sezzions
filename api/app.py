@@ -1317,6 +1317,33 @@ def workspace_purchases_delete(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@app.get("/v1/workspace/purchases/expected-balance")
+def workspace_purchases_expected_balance(
+    user_id: str = Query(...),
+    site_id: str = Query(...),
+    purchase_date: str = Query(...),
+    purchase_time: str | None = Query(None),
+    exclude_purchase_id: str | None = Query(None),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspacePurchaseService = Depends(
+        get_hosted_workspace_purchase_service
+    ),
+) -> dict[str, str]:
+    try:
+        return service.compute_expected_balance(
+            supabase_user_id=session.user_id,
+            user_id=user_id,
+            site_id=site_id,
+            purchase_date=purchase_date,
+            purchase_time=purchase_time,
+            exclude_purchase_id=exclude_purchase_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
 @app.post("/v1/workspace/purchases/batch-delete")
 def workspace_purchases_batch_delete(
     payload: HostedWorkspacePurchaseBatchDeleteRequest = Body(...),

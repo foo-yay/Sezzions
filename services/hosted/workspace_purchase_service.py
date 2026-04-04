@@ -368,3 +368,58 @@ class HostedWorkspacePurchaseService:
             )
 
         return workspace
+
+    def compute_expected_balance(
+        self,
+        *,
+        supabase_user_id: str,
+        user_id: str,
+        site_id: str,
+        purchase_date: str,
+        purchase_time: str | None = None,
+        exclude_purchase_id: str | None = None,
+    ) -> dict[str, str]:
+        """Compute expected pre-purchase SC balance at a given timestamp.
+
+        Walks all purchases for the user+site chronologically and returns the
+        ``starting_sc_balance`` of the most recent purchase strictly before the
+        cutoff.  When game sessions, redemptions, and adjustments are ported,
+        this method should be expanded to include those anchors (matching the
+        desktop ``GameSessionService.compute_expected_balances`` algorithm).
+        """
+        cutoff_time = purchase_time or "00:00:00"
+        if len(cutoff_time) == 5:
+            cutoff_time = f"{cutoff_time}:00"
+        cutoff = (purchase_date, cutoff_time)
+
+        with self.session_factory() as session:
+            workspace = self._require_workspace(session, supabase_user_id)
+            purchases = self.purchase_repository.list_by_workspace_user_and_site(
+                session, workspace.id, user_id, site_id,
+            )
+
+        expected_total = Decimal("0.00")
+        for p in purchases:
+            p_time = p.purchase_time or "00:00:00"
+            if len(p_time) == 5:
+                p_time = f"{p_time}:00"
+            p_key = (p.purchase_date, p_time, p.id or "")
+
+            # Only consider purchases strictly before the cutoff (date, time, id).
+            if (p.purchase_date, p_time) > cutoff:
+                continue
+            if (p.purchase_date, p_time) == cutoff:
+                # Same timestamp: include only those with id < exclude id
+                if exclude_purchase_id is not None and p.id and p.id >= exclude_purchase_id:
+                    continue
+                if exclude_purchase_id is None:
+                    continue
+
+            if exclude_purchase_id is not None and p.id == exclude_purchase_id:
+                continue
+
+            # Each purchase is authoritative: its starting_sc_balance is the
+            # known post-purchase total.
+            expected_total = Decimal(str(p.starting_sc_balance))
+
+        return {"expected_total": str(expected_total)}

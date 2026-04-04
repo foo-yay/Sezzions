@@ -135,6 +135,7 @@ export default function PurchasesTab({ apiBaseUrl, hostedWorkspaceReady }) {
           users={table.extraData.users || []}
           sites={table.extraData.sites || []}
           cards={table.extraData.cards || []}
+          apiBaseUrl={apiBaseUrl}
           onClose={table.requestCloseModal}
           onRequestEdit={() => table.selectedItem && table.openModal("edit", table.selectedItem)}
           onRequestDelete={() => table.selectedItem && table.handleDelete([table.selectedItem])}

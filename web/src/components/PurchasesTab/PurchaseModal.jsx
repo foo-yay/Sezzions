@@ -1,5 +1,6 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
 import { getPurchaseColumnValue } from "./purchasesUtils";
+import { getAccessToken, authHeaders } from "../../services/api";
 import TypeaheadSelect from "../common/TypeaheadSelect";
 
 export default function PurchaseModal({
@@ -15,6 +16,7 @@ export default function PurchaseModal({
   users,
   sites,
   cards,
+  apiBaseUrl,
 }) {
   const readOnly = mode === "view";
   const title = mode === "create" ? "Add Purchase" : mode === "edit" ? "Edit Purchase" : "View Purchase";
@@ -55,6 +57,70 @@ export default function PurchaseModal({
     },
     [cards],
   );
+
+  // ── Balance Check ─────────────────────────────────────────────────────────
+  const [balanceCheck, setBalanceCheck] = useState(null); // { status, message }
+
+  useEffect(() => {
+    if (readOnly) return;
+    // Need user, site, date, and post-purchase SC to compute
+    if (!form.user_id || !form.site_id || !form.purchase_date || !form.starting_sc_balance) {
+      setBalanceCheck(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const token = await getAccessToken();
+        if (!token || controller.signal.aborted) return;
+        const params = new URLSearchParams({
+          user_id: form.user_id,
+          site_id: form.site_id,
+          purchase_date: form.purchase_date,
+        });
+        if (form.purchase_time) params.set("purchase_time", form.purchase_time);
+        if (mode === "edit" && purchase?.id) params.set("exclude_purchase_id", purchase.id);
+
+        const res = await fetch(
+          `${apiBaseUrl}/v1/workspace/purchases/expected-balance?${params}`,
+          { headers: authHeaders(token), signal: controller.signal },
+        );
+        if (!res.ok || controller.signal.aborted) {
+          setBalanceCheck(null);
+          return;
+        }
+        const data = await res.json();
+        const expectedTotal = Number(data.expected_total);
+        const enteredSC = Number(form.starting_sc_balance);
+        const delta = enteredSC - expectedTotal;
+
+        if (Math.abs(delta) <= 0.01) {
+          setBalanceCheck({
+            status: "match",
+            message: `Matches expected balance (${expectedTotal.toFixed(2)} SC)`,
+          });
+        } else if (delta > 0.01) {
+          setBalanceCheck({
+            status: "higher",
+            message: `+ ${delta.toFixed(2)} SC above expected (${expectedTotal.toFixed(2)} SC)`,
+          });
+        } else {
+          setBalanceCheck({
+            status: "lower",
+            message: `- WARNING: ${Math.abs(delta).toFixed(2)} SC less than expected (${expectedTotal.toFixed(2)} SC)`,
+          });
+        }
+      } catch {
+        if (!controller.signal.aborted) setBalanceCheck(null);
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [readOnly, form.user_id, form.site_id, form.purchase_date, form.purchase_time, form.starting_sc_balance, mode, purchase?.id, apiBaseUrl]);
 
   if (readOnly && purchase) {
     return (
@@ -295,6 +361,13 @@ export default function PurchaseModal({
               </div>
             </div>
           </div>
+
+          {/* ── Balance Check ── */}
+          {balanceCheck ? (
+            <div className={`pf-balance-check pf-balance-${balanceCheck.status}`}>
+              {balanceCheck.message}
+            </div>
+          ) : null}
 
           {/* ── Notes — always visible, compact ── */}
           <div className="pf-notes-row">

@@ -152,6 +152,20 @@
   min-width: 0;
 }
 
+/* ── Balance Check ── */
+
+.pf-balance-check {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+.pf-balance-match  { color: #2e7d32; border-color: #2e7d32; }
+.pf-balance-higher { color: #f57c00; border-color: #f57c00; }
+.pf-balance-lower  { color: #c0392b; border-color: #c0392b; }
+
 /* ── Notes row ── */
 
 .pf-notes-row {
