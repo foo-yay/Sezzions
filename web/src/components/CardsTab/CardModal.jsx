@@ -103,6 +103,7 @@ export default function CardModal({
               type="text"
               list="card-name-suggestions"
               placeholder="Required"
+              title={nameInvalid ? "Name is required" : undefined}
               value={form.name}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
@@ -112,7 +113,6 @@ export default function CardModal({
                 <option key={name} value={name} />
               ))}
             </datalist>
-            {nameInvalid ? <p className="field-error">Name is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="card-user-input">User</label>
@@ -128,8 +128,8 @@ export default function CardModal({
               placeholder="Search users..."
               disabled={readOnly}
               invalid={userIdInvalid}
+              title={userIdInvalid ? "User is required" : undefined}
             />
-            {userIdInvalid ? <p className="field-error">User is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="card-last-four-input">Last Four</label>
@@ -140,11 +140,11 @@ export default function CardModal({
               type="text"
               maxLength={4}
               placeholder="Optional (4 digits)"
+              title={lastFourInvalid ? "Must be exactly 4 characters" : undefined}
               value={form.last_four}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, last_four: event.target.value }))}
             />
-            {lastFourInvalid ? <p className="field-error">Must be exactly 4 characters.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="card-cashback-input">Cashback Rate</label>
@@ -157,11 +157,12 @@ export default function CardModal({
               min="0"
               max="100"
               placeholder="0.00"
+              title={cashbackInvalid ? "Cashback rate must be 0\u2013100" : undefined}
               value={form.cashback_rate}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, cashback_rate: event.target.value }))}
             />
-            {cashbackInvalid ? <p className="field-error">Cashback rate must be 0–100.</p> : null}
+
           </div>
 
           <label className="field-label" htmlFor="card-active-input">Active</label>

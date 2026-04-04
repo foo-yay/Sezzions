@@ -179,8 +179,9 @@ export default function PurchaseModal({
                   }}
                   placeholder="Select…"
                   disabled={readOnly}
+                  invalid={userInvalid}
+                  title={userInvalid ? "Required" : undefined}
                 />
-                {userInvalid ? <p className="field-error">Required</p> : null}
               </div>
               <label className="pf-label" htmlFor="purchase-amount-input">Amount</label>
               <div className="pf-cell">
@@ -191,6 +192,7 @@ export default function PurchaseModal({
                   min="0.01"
                   step="0.01"
                   placeholder="0.00"
+                  title={amountInvalid ? "Required" : undefined}
                   value={form.amount}
                   readOnly={readOnly}
                   onChange={(event) => {
@@ -203,7 +205,6 @@ export default function PurchaseModal({
                     });
                   }}
                 />
-                {amountInvalid ? <p className="field-error">Required</p> : null}
               </div>
 
               {/* Row 1: Site | Cashback */}
@@ -216,8 +217,9 @@ export default function PurchaseModal({
                   onChange={(siteId) => setForm((current) => ({ ...current, site_id: siteId }))}
                   placeholder="Select…"
                   disabled={readOnly}
+                  invalid={siteInvalid}
+                  title={siteInvalid ? "Required" : undefined}
                 />
-                {siteInvalid ? <p className="field-error">Required</p> : null}
               </div>
               <label className="pf-label" htmlFor="purchase-cashback-input">Cashback</label>
               <div className="pf-cell">
@@ -260,8 +262,9 @@ export default function PurchaseModal({
                   placeholder={form.user_id ? "Select…" : "Pick user first"}
                   disabled={readOnly}
                   noMatchText="No cards for this user"
+                  invalid={cardInvalid}
+                  title={cardInvalid ? "Required" : undefined}
                 />
-                {cardInvalid ? <p className="field-error">Required</p> : null}
               </div>
               <label className="pf-label" htmlFor="purchase-sc-received-input">SC Recv'd</label>
               <div className="pf-cell">
@@ -290,11 +293,11 @@ export default function PurchaseModal({
                   min="0"
                   step="0.01"
                   placeholder="0.00"
+                  title={scBalanceInvalid ? "Required" : undefined}
                   value={form.starting_sc_balance}
                   readOnly={readOnly}
                   onChange={(event) => setForm((current) => ({ ...current, starting_sc_balance: event.target.value }))}
                 />
-                {scBalanceInvalid ? <p className="field-error">Required</p> : null}
               </div>
             </div>
           </div>

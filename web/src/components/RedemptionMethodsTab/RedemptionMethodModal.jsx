@@ -101,6 +101,7 @@ export default function RedemptionMethodModal({
               type="text"
               list="rm-name-suggestions"
               placeholder="Required"
+              title={nameInvalid ? "Name is required" : undefined}
               value={form.name}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
@@ -110,7 +111,6 @@ export default function RedemptionMethodModal({
                 <option key={name} value={name} />
               ))}
             </datalist>
-            {nameInvalid ? <p className="field-error">Name is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="rm-method-type-input">Method Type</label>
@@ -125,8 +125,9 @@ export default function RedemptionMethodModal({
               onChange={(mtId) => setForm((current) => ({ ...current, method_type_id: mtId }))}
               placeholder="Required"
               disabled={readOnly}
+              invalid={methodTypeInvalid}
+              title={methodTypeInvalid ? "Method type is required" : undefined}
             />
-            {methodTypeInvalid ? <p className="field-error">Method type is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="rm-user-input">User</label>
@@ -141,8 +142,9 @@ export default function RedemptionMethodModal({
               onChange={(userId) => setForm((current) => ({ ...current, user_id: userId }))}
               placeholder="Required"
               disabled={readOnly}
+              invalid={userInvalid}
+              title={userInvalid ? "User is required" : undefined}
             />
-            {userInvalid ? <p className="field-error">User is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="rm-active-input">Active</label>

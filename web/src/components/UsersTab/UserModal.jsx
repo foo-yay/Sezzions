@@ -94,6 +94,7 @@ export default function UserModal({
               type="text"
               list="user-name-suggestions"
               placeholder="Required"
+              title={nameInvalid ? "Name is required" : undefined}
               value={form.name}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
@@ -103,7 +104,6 @@ export default function UserModal({
                 <option key={name} value={name} />
               ))}
             </datalist>
-            {nameInvalid ? <p className="field-error">Name is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="user-email-input">Email</label>

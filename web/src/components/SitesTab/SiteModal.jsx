@@ -100,6 +100,7 @@ export default function SiteModal({
               type="text"
               list="site-name-suggestions"
               placeholder="Required"
+              title={nameInvalid ? "Name is required" : undefined}
               value={form.name}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
@@ -109,7 +110,6 @@ export default function SiteModal({
                 <option key={name} value={name} />
               ))}
             </datalist>
-            {nameInvalid ? <p className="field-error">Name is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="site-url-input">URL</label>
@@ -134,11 +134,11 @@ export default function SiteModal({
               step="any"
               min="0"
               placeholder="1.0"
+              title={scRateInvalid ? "SC rate must be a non-negative number" : undefined}
               value={form.sc_rate}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, sc_rate: event.target.value }))}
             />
-            {scRateInvalid ? <p className="field-error">SC rate must be a non-negative number.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="site-playthrough-input">Playthrough</label>
@@ -150,11 +150,11 @@ export default function SiteModal({
               step="any"
               min="0"
               placeholder="1.0"
+              title={playthroughInvalid ? "Playthrough must be a non-negative number" : undefined}
               value={form.playthrough_requirement}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, playthrough_requirement: event.target.value }))}
             />
-            {playthroughInvalid ? <p className="field-error">Playthrough must be a non-negative number.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="site-active-input">Active</label>

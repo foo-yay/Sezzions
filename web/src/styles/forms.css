@@ -152,11 +152,6 @@
   min-width: 0;
 }
 
-.pf-cell .field-error {
-  margin: 2px 0 0;
-  font-size: 0.72rem;
-}
-
 /* ── Notes row ── */
 
 .pf-notes-row {

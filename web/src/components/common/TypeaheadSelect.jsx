@@ -14,7 +14,8 @@ export default function TypeaheadSelect({
   disabled = false,
   invalid = false,
   allowClear = false,
-  noMatchText = "No matching items"
+  noMatchText = "No matching items",
+  title,
 }) {
   const [inputText, setInputText] = useState("");
   const [open, setOpen] = useState(false);
@@ -219,6 +220,7 @@ export default function TypeaheadSelect({
           type="text"
           autoComplete="off"
           placeholder={placeholder}
+          title={title}
           value={inputText}
           disabled={disabled}
           onChange={handleInputChange}

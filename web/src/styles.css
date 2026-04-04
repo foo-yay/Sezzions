@@ -130,8 +130,7 @@ h3 {
 .shell-copy,
 .status-note,
 .sidebar-copy,
-.submit-error,
-.field-error {
+.submit-error {
   line-height: 1.6;
   color: var(--muted);
 }
@@ -1909,7 +1908,6 @@ h2.breadcrumb-segment {
   resize: vertical;
 }
 
-.field-error,
 .submit-error {
   margin: 8px 0 0;
   color: var(--danger);
