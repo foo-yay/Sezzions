@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 
@@ -299,5 +300,94 @@ class HostedGame:
             "rtp": self.rtp,
             "actual_rtp": self.actual_rtp,
             "is_active": self.is_active,
+            "notes": self.notes,
+        }
+
+
+@dataclass
+class HostedPurchase:
+    """A purchase transaction (FIFO cost-basis lot) owned by a hosted workspace."""
+
+    user_id: str
+    site_id: str
+    amount: str
+    purchase_date: str
+    workspace_id: Optional[str] = None
+    purchase_time: Optional[str] = None
+    sc_received: Optional[str] = None
+    starting_sc_balance: str = "0.00"
+    starting_redeemable_balance: str = "0.00"
+    cashback_earned: str = "0.00"
+    cashback_is_manual: bool = False
+    card_id: Optional[str] = None
+    remaining_amount: Optional[str] = None
+    status: str = "active"
+    notes: Optional[str] = None
+    id: Optional[str] = None
+    # Joined display names
+    user_name: Optional[str] = None
+    site_name: Optional[str] = None
+    card_name: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if not self.user_id:
+            raise ValueError("User is required")
+
+        if not self.site_id:
+            raise ValueError("Site is required")
+
+        if not self.amount:
+            raise ValueError("Amount is required")
+        try:
+            amt = Decimal(str(self.amount))
+        except (InvalidOperation, ValueError) as exc:
+            raise ValueError("Amount must be a valid number") from exc
+        if amt <= 0:
+            raise ValueError("Amount must be greater than zero")
+        self.amount = str(amt)
+
+        if not self.purchase_date or not self.purchase_date.strip():
+            raise ValueError("Purchase date is required")
+        self.purchase_date = self.purchase_date.strip()
+
+        if self.purchase_time is not None:
+            self.purchase_time = self.purchase_time.strip() or None
+
+        # Default sc_received to amount if not provided
+        if self.sc_received is None:
+            self.sc_received = self.amount
+        else:
+            try:
+                Decimal(str(self.sc_received))
+            except (InvalidOperation, ValueError) as exc:
+                raise ValueError("SC received must be a valid number") from exc
+
+        # Default remaining_amount to amount if not provided
+        if self.remaining_amount is None:
+            self.remaining_amount = self.amount
+
+        if self.notes is not None:
+            self.notes = self.notes.strip() or None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "workspace_id": self.workspace_id,
+            "user_id": self.user_id,
+            "user_name": self.user_name,
+            "site_id": self.site_id,
+            "site_name": self.site_name,
+            "amount": self.amount,
+            "sc_received": self.sc_received,
+            "starting_sc_balance": self.starting_sc_balance,
+            "starting_redeemable_balance": self.starting_redeemable_balance,
+            "cashback_earned": self.cashback_earned,
+            "cashback_is_manual": self.cashback_is_manual,
+            "purchase_date": self.purchase_date,
+            "purchase_time": self.purchase_time,
+            "card_id": self.card_id,
+            "card_name": self.card_name,
+            "remaining_amount": self.remaining_amount,
+            "status": self.status,
             "notes": self.notes,
         }

@@ -31,6 +31,9 @@ from services.hosted.workspace_game_service import (
 from services.hosted.workspace_import_planning_service import (
     HostedWorkspaceImportPlanningService,
 )
+from services.hosted.workspace_purchase_service import (
+    HostedWorkspacePurchaseService,
+)
 
 
 app = FastAPI(title="Sezzions Hosted API", version="0.1.0")
@@ -163,6 +166,39 @@ class HostedWorkspaceGameBatchDeleteRequest(BaseModel):
     game_ids: list[str]
 
 
+class HostedWorkspacePurchaseCreateRequest(BaseModel):
+    user_id: str
+    site_id: str
+    amount: str
+    purchase_date: str
+    purchase_time: str | None = None
+    sc_received: str | None = None
+    starting_sc_balance: str = "0.00"
+    cashback_earned: str = "0.00"
+    cashback_is_manual: bool = False
+    card_id: str | None = None
+    notes: str | None = None
+
+
+class HostedWorkspacePurchaseUpdateRequest(BaseModel):
+    user_id: str
+    site_id: str
+    amount: str
+    purchase_date: str
+    purchase_time: str | None = None
+    sc_received: str | None = None
+    starting_sc_balance: str = "0.00"
+    cashback_earned: str = "0.00"
+    cashback_is_manual: bool = False
+    card_id: str | None = None
+    status: str = "active"
+    notes: str | None = None
+
+
+class HostedWorkspacePurchaseBatchDeleteRequest(BaseModel):
+    purchase_ids: list[str]
+
+
 cors_config = load_hosted_backend_config(required=False, require_db_password=False)
 app.add_middleware(
     CORSMiddleware,
@@ -264,6 +300,16 @@ def get_hosted_workspace_game_service() -> HostedWorkspaceGameService:
 
     session_factory = get_hosted_session_factory(config.sqlalchemy_url)
     return HostedWorkspaceGameService(session_factory)
+
+
+def get_hosted_workspace_purchase_service() -> HostedWorkspacePurchaseService:
+    try:
+        config = load_hosted_backend_config(require_db_password=True)
+    except HostedConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    session_factory = get_hosted_session_factory(config.sqlalchemy_url)
+    return HostedWorkspacePurchaseService(session_factory)
 
 
 def get_hosted_uploaded_sqlite_inspection_service() -> HostedUploadedSQLiteInspectionService:
@@ -1141,6 +1187,148 @@ def workspace_games_batch_delete(
         deleted_count = service.delete_games(
             supabase_user_id=session.user_id,
             game_ids=payload.game_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"deleted_count": deleted_count}
+
+
+# ── Purchases ────────────────────────────────────────────────────────────────
+
+
+@app.get("/v1/workspace/purchases")
+def workspace_purchases_list(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspacePurchaseService = Depends(
+        get_hosted_workspace_purchase_service
+    ),
+) -> dict[str, object]:
+    try:
+        page = service.list_purchases_page(
+            supabase_user_id=session.user_id,
+            limit=limit,
+            offset=offset,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return {
+        "purchases": [
+            p.as_dict() if hasattr(p, "as_dict") else p
+            for p in page["purchases"]
+        ],
+        "offset": page["offset"],
+        "limit": page["limit"],
+        "next_offset": page["next_offset"],
+        "total_count": page["total_count"],
+        "has_more": page["has_more"],
+    }
+
+
+@app.post("/v1/workspace/purchases")
+def workspace_purchases_create(
+    payload: HostedWorkspacePurchaseCreateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspacePurchaseService = Depends(
+        get_hosted_workspace_purchase_service
+    ),
+) -> dict[str, object]:
+    try:
+        purchase = service.create_purchase(
+            supabase_user_id=session.user_id,
+            user_id=payload.user_id,
+            site_id=payload.site_id,
+            amount=payload.amount,
+            purchase_date=payload.purchase_date,
+            purchase_time=payload.purchase_time,
+            sc_received=payload.sc_received,
+            starting_sc_balance=payload.starting_sc_balance,
+            cashback_earned=payload.cashback_earned,
+            cashback_is_manual=payload.cashback_is_manual,
+            card_id=payload.card_id,
+            notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return purchase.as_dict() if hasattr(purchase, "as_dict") else purchase
+
+
+@app.patch("/v1/workspace/purchases/{purchase_id}")
+def workspace_purchases_update(
+    purchase_id: str = Path(...),
+    payload: HostedWorkspacePurchaseUpdateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspacePurchaseService = Depends(
+        get_hosted_workspace_purchase_service
+    ),
+) -> dict[str, object]:
+    try:
+        purchase = service.update_purchase(
+            supabase_user_id=session.user_id,
+            purchase_id=purchase_id,
+            user_id=payload.user_id,
+            site_id=payload.site_id,
+            amount=payload.amount,
+            purchase_date=payload.purchase_date,
+            purchase_time=payload.purchase_time,
+            sc_received=payload.sc_received,
+            starting_sc_balance=payload.starting_sc_balance,
+            cashback_earned=payload.cashback_earned,
+            cashback_is_manual=payload.cashback_is_manual,
+            card_id=payload.card_id,
+            status=payload.status,
+            notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return purchase.as_dict() if hasattr(purchase, "as_dict") else purchase
+
+
+@app.delete(
+    "/v1/workspace/purchases/{purchase_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def workspace_purchases_delete(
+    purchase_id: str = Path(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspacePurchaseService = Depends(
+        get_hosted_workspace_purchase_service
+    ),
+) -> Response:
+    try:
+        service.delete_purchase(
+            supabase_user_id=session.user_id,
+            purchase_id=purchase_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/v1/workspace/purchases/batch-delete")
+def workspace_purchases_batch_delete(
+    payload: HostedWorkspacePurchaseBatchDeleteRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspacePurchaseService = Depends(
+        get_hosted_workspace_purchase_service
+    ),
+) -> dict[str, int]:
+    try:
+        deleted_count = service.delete_purchases(
+            supabase_user_id=session.user_id,
+            purchase_ids=payload.purchase_ids,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
