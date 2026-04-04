@@ -9,6 +9,36 @@ Rules:
 
 ---
 
+## 2026-04-03
+
+```yaml
+id: 2026-04-03-01
+type: feature
+areas: [services]
+issue: "#258"
+summary: "Phase 2 — Accounting Engine Core (hosted services + tests)"
+details: >
+  Ported the four core accounting services from the desktop layer to the hosted
+  (SQLAlchemy / web) layer: HostedTimestampService (timestamp uniqueness enforcement),
+  HostedFIFOService (FIFO cost-basis calculation), HostedRecalculationService
+  (bulk FIFO + realized-transaction rebuilds with full/scoped/all-pairs modes),
+  and HostedEventLinkService (temporal BEFORE/DURING/AFTER classification of
+  purchases and redemptions relative to game sessions). Includes 53 tests covering
+  happy paths, edge cases (deleted records, canceled redemptions, free SC, close-
+  balance Net Loss, synthetic BASIS_USD_CORRECTION adjustments), failure injection,
+  and idempotency invariants.
+
+files_changed:
+  - services/hosted/hosted_timestamp_service.py (new)
+  - services/hosted/hosted_fifo_service.py (new)
+  - services/hosted/hosted_recalculation_service.py (new)
+  - services/hosted/hosted_event_link_service.py (new)
+  - tests/services/hosted/test_hosted_timestamp_service.py (new — 11 tests)
+  - tests/services/hosted/test_hosted_fifo_service.py (new — 11 tests)
+  - tests/services/hosted/test_hosted_recalculation_service.py (new — 15 tests)
+  - tests/services/hosted/test_hosted_event_link_service.py (new — 16 tests)
+```
+
 ## 2026-04-02
 
 ```yaml
