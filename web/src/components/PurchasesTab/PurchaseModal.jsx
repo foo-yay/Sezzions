@@ -1,3 +1,4 @@
+import { useRef, useEffect, useCallback } from "react";
 import { getPurchaseColumnValue } from "./purchasesUtils";
 import TypeaheadSelect from "../common/TypeaheadSelect";
 
@@ -22,13 +23,36 @@ export default function PurchaseModal({
   const amountRaw = form.amount;
   const amountInvalid = !amountRaw || isNaN(Number(amountRaw)) || Number(amountRaw) <= 0;
   const dateInvalid = !form.purchase_date;
-  const formInvalid = userInvalid || siteInvalid || amountInvalid || dateInvalid;
+  const cardInvalid = !form.card_id;
+  const scBalanceRaw = form.starting_sc_balance;
+  const scBalanceInvalid = !scBalanceRaw || scBalanceRaw === "" || isNaN(Number(scBalanceRaw)) || Number(scBalanceRaw) < 0;
+  const formInvalid = userInvalid || siteInvalid || amountInvalid || dateInvalid || cardInvalid || scBalanceInvalid;
   const closeLabel = readOnly ? "Close" : "Cancel";
+
+  // Auto-focus first form field on mount
+  const dateRef = useRef(null);
+  useEffect(() => {
+    if (!readOnly && dateRef.current) {
+      dateRef.current.focus();
+    }
+  }, [readOnly]);
 
   // Filter cards by selected user
   const filteredCards = form.user_id
     ? cards.filter((c) => c.user_id === form.user_id)
     : cards;
+
+  // Auto-calculate cashback when amount or card changes
+  const calculateCashback = useCallback(
+    (amount, cardId) => {
+      if (!cardId || !amount || isNaN(Number(amount)) || Number(amount) <= 0) return "";
+      const card = cards.find((c) => c.id === cardId);
+      if (!card || !card.cashback_rate || Number(card.cashback_rate) <= 0) return "";
+      const cashback = Number(amount) * Number(card.cashback_rate) / 100;
+      return cashback.toFixed(2);
+    },
+    [cards],
+  );
 
   if (readOnly && purchase) {
     return (
@@ -53,10 +77,10 @@ export default function PurchaseModal({
               <div><dt>Time</dt><dd>{purchase.purchase_time || "—"}</dd></div>
               <div><dt>User</dt><dd>{purchase.user_name || "—"}</dd></div>
               <div><dt>Site</dt><dd>{purchase.site_name || "—"}</dd></div>
+              <div><dt>Card</dt><dd>{purchase.card_name || "—"}</dd></div>
               <div><dt>Amount</dt><dd>{getPurchaseColumnValue(purchase, "amount")}</dd></div>
               <div><dt>SC Received</dt><dd>{getPurchaseColumnValue(purchase, "sc_received")}</dd></div>
               <div><dt>Post-Purchase SC</dt><dd>{getPurchaseColumnValue(purchase, "starting_sc_balance")}</dd></div>
-              <div><dt>Card</dt><dd>{purchase.card_name || "—"}</dd></div>
               <div><dt>Cashback</dt><dd>{getPurchaseColumnValue(purchase, "cashback_earned")}</dd></div>
               <div><dt>Remaining</dt><dd>{getPurchaseColumnValue(purchase, "remaining_amount")}</dd></div>
               <div>
@@ -110,6 +134,7 @@ export default function PurchaseModal({
           <label className="field-label" htmlFor="purchase-date-input">Date</label>
           <div>
             <input
+              ref={dateRef}
               id="purchase-date-input"
               className={dateInvalid ? "text-input invalid" : "text-input"}
               type="date"
@@ -149,6 +174,10 @@ export default function PurchaseModal({
                   user_id: userId,
                   // Clear card if user changes (card is user-scoped)
                   card_id: userId === current.user_id ? current.card_id : "",
+                  // Recalculate cashback if card is cleared
+                  ...(userId !== current.user_id
+                    ? { cashback_earned: "", cashback_is_manual: false }
+                    : {}),
                 }));
               }}
               placeholder="Required"
@@ -173,6 +202,30 @@ export default function PurchaseModal({
             {siteInvalid ? <p className="field-error">Site is required.</p> : null}
           </div>
 
+          <label className="field-label" htmlFor="purchase-card-input">Card</label>
+          <div>
+            <TypeaheadSelect
+              id="purchase-card-input"
+              options={filteredCards.map((c) => ({
+                value: c.id,
+                label: c.name + (c.last_four ? ` (${c.last_four})` : ""),
+              }))}
+              value={form.card_id}
+              onChange={(cardId) => {
+                setForm((current) => {
+                  const newCashback = current.cashback_is_manual
+                    ? current.cashback_earned
+                    : calculateCashback(current.amount, cardId);
+                  return { ...current, card_id: cardId, cashback_earned: newCashback };
+                });
+              }}
+              placeholder="Required"
+              disabled={readOnly}
+              noMatchText="No cards for this user"
+            />
+            {cardInvalid ? <p className="field-error">Card is required.</p> : null}
+          </div>
+
           <label className="field-label" htmlFor="purchase-amount-input">Amount ($)</label>
           <div>
             <input
@@ -184,7 +237,15 @@ export default function PurchaseModal({
               placeholder="Required"
               value={form.amount}
               readOnly={readOnly}
-              onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}
+              onChange={(event) => {
+                const newAmount = event.target.value;
+                setForm((current) => {
+                  const newCashback = current.cashback_is_manual
+                    ? current.cashback_earned
+                    : calculateCashback(newAmount, current.card_id);
+                  return { ...current, amount: newAmount, cashback_earned: newCashback };
+                });
+              }}
             />
             {amountInvalid ? <p className="field-error">Amount must be greater than zero.</p> : null}
           </div>
@@ -208,32 +269,16 @@ export default function PurchaseModal({
           <div>
             <input
               id="purchase-starting-sc-input"
-              className="text-input"
+              className={scBalanceInvalid ? "text-input invalid" : "text-input"}
               type="number"
               min="0"
               step="0.01"
-              placeholder="Optional"
+              placeholder="Required"
               value={form.starting_sc_balance}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, starting_sc_balance: event.target.value }))}
             />
-          </div>
-
-          <label className="field-label" htmlFor="purchase-card-input">Card</label>
-          <div>
-            <TypeaheadSelect
-              id="purchase-card-input"
-              options={filteredCards.map((c) => ({
-                value: c.id,
-                label: c.name + (c.last_four ? ` (${c.last_four})` : ""),
-              }))}
-              value={form.card_id}
-              onChange={(cardId) => setForm((current) => ({ ...current, card_id: cardId }))}
-              placeholder="Optional"
-              disabled={readOnly}
-              allowClear
-              noMatchText="No cards for this user"
-            />
+            {scBalanceInvalid ? <p className="field-error">Post-Purchase SC is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="purchase-cashback-input">Cashback ($)</label>
@@ -244,10 +289,14 @@ export default function PurchaseModal({
               type="number"
               min="0"
               step="0.01"
-              placeholder="Optional"
+              placeholder="Auto-calculated"
               value={form.cashback_earned}
               readOnly={readOnly}
-              onChange={(event) => setForm((current) => ({ ...current, cashback_earned: event.target.value }))}
+              onChange={(event) => setForm((current) => ({
+                ...current,
+                cashback_earned: event.target.value,
+                cashback_is_manual: true,
+              }))}
             />
           </div>
 

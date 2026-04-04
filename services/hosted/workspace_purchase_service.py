@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
 from repositories.hosted_account_repository import HostedAccountRepository
+from repositories.hosted_card_repository import HostedCardRepository
 from repositories.hosted_purchase_repository import HostedPurchaseRepository
 from repositories.hosted_workspace_repository import HostedWorkspaceRepository
+from services.hosted.hosted_recalculation_service import HostedRecalculationService
 from services.hosted.models import HostedPurchase, HostedWorkspace
 
 
@@ -14,6 +18,8 @@ class HostedWorkspacePurchaseService:
         self.account_repository = HostedAccountRepository()
         self.workspace_repository = HostedWorkspaceRepository()
         self.purchase_repository = HostedPurchaseRepository()
+        self.card_repository = HostedCardRepository()
+        self.recalculation_service = HostedRecalculationService()
 
     def list_purchases_page(
         self,
@@ -50,12 +56,12 @@ class HostedWorkspacePurchaseService:
         site_id: str,
         amount: str,
         purchase_date: str,
+        card_id: str,
+        starting_sc_balance: str,
         purchase_time: str | None = None,
         sc_received: str | None = None,
-        starting_sc_balance: str = "0.00",
         cashback_earned: str = "0.00",
         cashback_is_manual: bool = False,
-        card_id: str | None = None,
         notes: str | None = None,
     ) -> HostedPurchase:
         candidate = HostedPurchase(
@@ -74,6 +80,14 @@ class HostedWorkspacePurchaseService:
 
         with self.session_factory() as session:
             workspace = self._require_workspace(session, supabase_user_id)
+
+            # Auto-calculate cashback if not manually set
+            if not cashback_is_manual:
+                computed = self._calculate_cashback(
+                    session, workspace.id, candidate.amount, candidate.card_id
+                )
+                candidate.cashback_earned = computed
+
             created = self.purchase_repository.create(
                 session,
                 workspace_id=workspace.id,
@@ -90,8 +104,21 @@ class HostedWorkspacePurchaseService:
                 remaining_amount=candidate.remaining_amount,
                 notes=candidate.notes,
             )
+
+            # Rebuild FIFO for this (user, site) pair
+            self.recalculation_service.rebuild_fifo_for_pair(
+                session,
+                workspace_id=workspace.id,
+                user_id=candidate.user_id,
+                site_id=candidate.site_id,
+            )
+
             session.commit()
-            return created
+
+            # Re-fetch to get updated remaining_amount after FIFO rebuild
+            return self.purchase_repository.get_by_id_and_workspace_id(
+                session, purchase_id=created.id, workspace_id=workspace.id
+            ) or created
 
     def update_purchase(
         self,
@@ -102,12 +129,12 @@ class HostedWorkspacePurchaseService:
         site_id: str,
         amount: str,
         purchase_date: str,
+        card_id: str,
+        starting_sc_balance: str,
         purchase_time: str | None = None,
         sc_received: str | None = None,
-        starting_sc_balance: str = "0.00",
         cashback_earned: str = "0.00",
         cashback_is_manual: bool = False,
-        card_id: str | None = None,
         status: str = "active",
         notes: str | None = None,
     ) -> HostedPurchase:
@@ -128,6 +155,50 @@ class HostedWorkspacePurchaseService:
 
         with self.session_factory() as session:
             workspace = self._require_workspace(session, supabase_user_id)
+
+            # Fetch existing purchase for consumed-amount checks
+            existing = self.purchase_repository.get_by_id_and_workspace_id(
+                session, purchase_id=purchase_id, workspace_id=workspace.id
+            )
+            if existing is None:
+                raise LookupError("Hosted purchase was not found in the authenticated workspace.")
+
+            old_amount = Decimal(str(existing.amount))
+            old_remaining = Decimal(str(existing.remaining_amount or existing.amount))
+            consumed = old_amount - old_remaining
+
+            # Consumed protection: prevent amount / date changes if purchase has been consumed
+            new_amount = Decimal(str(candidate.amount))
+            if consumed > 0:
+                if new_amount != old_amount:
+                    raise ValueError(
+                        "Cannot change amount on a purchase that has been partially or fully consumed by redemptions."
+                    )
+                if candidate.purchase_date != existing.purchase_date:
+                    raise ValueError(
+                        "Cannot change date on a purchase that has been partially or fully consumed by redemptions."
+                    )
+
+            # Proportional remaining_amount adjustment when amount changes
+            if new_amount != old_amount and old_amount > 0:
+                ratio = old_remaining / old_amount
+                candidate.remaining_amount = str(
+                    (new_amount * ratio).quantize(Decimal("0.01"))
+                )
+            else:
+                candidate.remaining_amount = str(old_remaining)
+
+            # Auto-calculate cashback if not manually set
+            if not cashback_is_manual:
+                computed = self._calculate_cashback(
+                    session, workspace.id, candidate.amount, candidate.card_id
+                )
+                candidate.cashback_earned = computed
+
+            # Track whether (user, site) pair changed for FIFO rebuild
+            old_user_id = existing.user_id
+            old_site_id = existing.site_id
+
             updated = self.purchase_repository.update(
                 session,
                 purchase_id=purchase_id,
@@ -149,8 +220,28 @@ class HostedWorkspacePurchaseService:
             if updated is None:
                 raise LookupError("Hosted purchase was not found in the authenticated workspace.")
 
+            # Rebuild FIFO for affected (user, site) pair(s)
+            self.recalculation_service.rebuild_fifo_for_pair(
+                session,
+                workspace_id=workspace.id,
+                user_id=candidate.user_id,
+                site_id=candidate.site_id,
+            )
+            # If (user, site) changed, also rebuild the old pair
+            if old_user_id != candidate.user_id or old_site_id != candidate.site_id:
+                self.recalculation_service.rebuild_fifo_for_pair(
+                    session,
+                    workspace_id=workspace.id,
+                    user_id=old_user_id,
+                    site_id=old_site_id,
+                )
+
             session.commit()
-            return updated
+
+            # Re-fetch to get updated remaining_amount after FIFO rebuild
+            return self.purchase_repository.get_by_id_and_workspace_id(
+                session, purchase_id=purchase_id, workspace_id=workspace.id
+            ) or updated
 
     def delete_purchase(
         self,
@@ -160,6 +251,22 @@ class HostedWorkspacePurchaseService:
     ) -> None:
         with self.session_factory() as session:
             workspace = self._require_workspace(session, supabase_user_id)
+
+            # Fetch existing purchase for consumed-amount checks
+            existing = self.purchase_repository.get_by_id_and_workspace_id(
+                session, purchase_id=purchase_id, workspace_id=workspace.id
+            )
+            if existing is None:
+                raise LookupError("Hosted purchase was not found in the authenticated workspace.")
+
+            old_amount = Decimal(str(existing.amount))
+            old_remaining = Decimal(str(existing.remaining_amount or existing.amount))
+            consumed = old_amount - old_remaining
+            if consumed > 0:
+                raise ValueError(
+                    "Cannot delete a purchase that has been partially or fully consumed by redemptions."
+                )
+
             deleted = self.purchase_repository.delete(
                 session,
                 purchase_id=purchase_id,
@@ -167,6 +274,14 @@ class HostedWorkspacePurchaseService:
             )
             if not deleted:
                 raise LookupError("Hosted purchase was not found in the authenticated workspace.")
+
+            # Rebuild FIFO for affected (user, site) pair
+            self.recalculation_service.rebuild_fifo_for_pair(
+                session,
+                workspace_id=workspace.id,
+                user_id=existing.user_id,
+                site_id=existing.site_id,
+            )
 
             session.commit()
 
@@ -182,6 +297,26 @@ class HostedWorkspacePurchaseService:
 
         with self.session_factory() as session:
             workspace = self._require_workspace(session, supabase_user_id)
+
+            # Check consumed protection for each purchase in the batch
+            affected_pairs: set[tuple[str, str]] = set()
+            for pid in normalized_ids:
+                existing = self.purchase_repository.get_by_id_and_workspace_id(
+                    session, purchase_id=pid, workspace_id=workspace.id
+                )
+                if existing is None:
+                    raise LookupError(
+                        "One or more hosted purchases were not found in the authenticated workspace."
+                    )
+                old_amount = Decimal(str(existing.amount))
+                old_remaining = Decimal(str(existing.remaining_amount or existing.amount))
+                consumed = old_amount - old_remaining
+                if consumed > 0:
+                    raise ValueError(
+                        "Cannot delete a purchase that has been partially or fully consumed by redemptions."
+                    )
+                affected_pairs.add((existing.user_id, existing.site_id))
+
             deleted_count = self.purchase_repository.delete_many(
                 session,
                 purchase_ids=normalized_ids,
@@ -192,8 +327,32 @@ class HostedWorkspacePurchaseService:
                     "One or more hosted purchases were not found in the authenticated workspace."
                 )
 
+            # Rebuild FIFO for all affected (user, site) pairs
+            for user_id, site_id in affected_pairs:
+                self.recalculation_service.rebuild_fifo_for_pair(
+                    session,
+                    workspace_id=workspace.id,
+                    user_id=user_id,
+                    site_id=site_id,
+                )
+
             session.commit()
             return deleted_count
+
+    def _calculate_cashback(
+        self, session, workspace_id: str, amount: str, card_id: str | None
+    ) -> str:
+        if not card_id:
+            return "0.00"
+        card = self.card_repository.get_by_id_and_workspace_id(
+            session, card_id=card_id, workspace_id=workspace_id
+        )
+        if card is None or card.cashback_rate is None or float(card.cashback_rate) <= 0:
+            return "0.00"
+        amt = Decimal(str(amount))
+        rate = Decimal(str(card.cashback_rate))
+        cashback = (amt * rate / Decimal("100")).quantize(Decimal("0.01"))
+        return str(cashback)
 
     def _require_workspace(self, session, supabase_user_id: str) -> HostedWorkspace:
         account = self.account_repository.get_by_supabase_user_id(session, supabase_user_id)

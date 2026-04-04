@@ -20,7 +20,7 @@ def _session_factory():
 
 
 def _bootstrap(session_factory):
-    """Bootstrap account + workspace + create a user and site for FK references."""
+    """Bootstrap account + workspace + create a user, site, and card for FK references."""
     bootstrap = HostedAccountBootstrapService(session_factory)
     result = bootstrap.bootstrap_account_workspace(
         supabase_user_id="owner-123",
@@ -39,7 +39,16 @@ def _bootstrap(session_factory):
         name="Test Site",
     )
 
-    return result, user, site
+    card_service = HostedWorkspaceCardService(session_factory)
+    card = card_service.create_card(
+        supabase_user_id="owner-123",
+        name="Default Card",
+        user_id=user.id,
+        last_four="0000",
+        cashback_rate=2.0,
+    )
+
+    return result, user, site, card
 
 
 # ── Happy path ───────────────────────────────────────────────────────────────
@@ -47,7 +56,7 @@ def _bootstrap(session_factory):
 
 def test_create_purchase_basic() -> None:
     engine, session_factory = _session_factory()
-    _, user, site = _bootstrap(session_factory)
+    _, user, site, card = _bootstrap(session_factory)
     service = HostedWorkspacePurchaseService(session_factory)
 
     try:
@@ -57,6 +66,8 @@ def test_create_purchase_basic() -> None:
             site_id=site.id,
             amount="50.00",
             purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="100.00",
             purchase_time="10:30:00",
             notes="Test purchase",
         )
@@ -74,14 +85,15 @@ def test_create_purchase_basic() -> None:
     assert purchase.status == "active"
     assert purchase.user_name == "Test User"
     assert purchase.site_name == "Test Site"
-    assert purchase.card_name is None
+    assert purchase.card_name == "Default Card"
+    assert purchase.starting_sc_balance == "100.00"
 
 
 def test_create_purchase_with_card() -> None:
     engine, session_factory = _session_factory()
-    _, user, site = _bootstrap(session_factory)
+    _, user, site, card = _bootstrap(session_factory)
     card_service = HostedWorkspaceCardService(session_factory)
-    card = card_service.create_card(
+    visa = card_service.create_card(
         supabase_user_id="owner-123",
         name="Visa",
         user_id=user.id,
@@ -97,18 +109,19 @@ def test_create_purchase_with_card() -> None:
             site_id=site.id,
             amount="100.00",
             purchase_date="2025-01-15",
-            card_id=card.id,
+            card_id=visa.id,
+            starting_sc_balance="200.00",
         )
     finally:
         engine.dispose()
 
-    assert purchase.card_id == card.id
+    assert purchase.card_id == visa.id
     assert purchase.card_name == "Visa"
 
 
 def test_create_purchase_explicit_sc_received() -> None:
     engine, session_factory = _session_factory()
-    _, user, site = _bootstrap(session_factory)
+    _, user, site, card = _bootstrap(session_factory)
     service = HostedWorkspacePurchaseService(session_factory)
 
     try:
@@ -118,6 +131,8 @@ def test_create_purchase_explicit_sc_received() -> None:
             site_id=site.id,
             amount="50.00",
             purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="100.00",
             sc_received="75.00",
         )
     finally:
@@ -129,7 +144,7 @@ def test_create_purchase_explicit_sc_received() -> None:
 
 def test_list_purchases_returns_workspace_scoped() -> None:
     engine, session_factory = _session_factory()
-    _, user, site = _bootstrap(session_factory)
+    _, user, site, card = _bootstrap(session_factory)
     service = HostedWorkspacePurchaseService(session_factory)
 
     try:
@@ -139,6 +154,8 @@ def test_list_purchases_returns_workspace_scoped() -> None:
             site_id=site.id,
             amount="25.00",
             purchase_date="2025-01-10",
+            card_id=card.id,
+            starting_sc_balance="50.00",
         )
         service.create_purchase(
             supabase_user_id="owner-123",
@@ -146,6 +163,8 @@ def test_list_purchases_returns_workspace_scoped() -> None:
             site_id=site.id,
             amount="75.00",
             purchase_date="2025-01-11",
+            card_id=card.id,
+            starting_sc_balance="150.00",
         )
         page = service.list_purchases_page(
             supabase_user_id="owner-123",
@@ -164,7 +183,7 @@ def test_list_purchases_returns_workspace_scoped() -> None:
 
 def test_update_purchase() -> None:
     engine, session_factory = _session_factory()
-    _, user, site = _bootstrap(session_factory)
+    _, user, site, card = _bootstrap(session_factory)
     service = HostedWorkspacePurchaseService(session_factory)
 
     try:
@@ -174,6 +193,8 @@ def test_update_purchase() -> None:
             site_id=site.id,
             amount="50.00",
             purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="100.00",
         )
         updated = service.update_purchase(
             supabase_user_id="owner-123",
@@ -182,6 +203,8 @@ def test_update_purchase() -> None:
             site_id=site.id,
             amount="75.00",
             purchase_date="2025-01-16",
+            card_id=card.id,
+            starting_sc_balance="150.00",
             notes="Updated",
         )
     finally:
@@ -196,7 +219,7 @@ def test_update_purchase() -> None:
 
 def test_delete_purchase() -> None:
     engine, session_factory = _session_factory()
-    _, user, site = _bootstrap(session_factory)
+    _, user, site, card = _bootstrap(session_factory)
     service = HostedWorkspacePurchaseService(session_factory)
 
     try:
@@ -206,6 +229,8 @@ def test_delete_purchase() -> None:
             site_id=site.id,
             amount="50.00",
             purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="100.00",
         )
         service.delete_purchase(
             supabase_user_id="owner-123",
@@ -223,7 +248,7 @@ def test_delete_purchase() -> None:
 
 def test_batch_delete_purchases() -> None:
     engine, session_factory = _session_factory()
-    _, user, site = _bootstrap(session_factory)
+    _, user, site, card = _bootstrap(session_factory)
     service = HostedWorkspacePurchaseService(session_factory)
 
     try:
@@ -233,6 +258,8 @@ def test_batch_delete_purchases() -> None:
             site_id=site.id,
             amount="10.00",
             purchase_date="2025-01-01",
+            card_id=card.id,
+            starting_sc_balance="10.00",
         )
         p2 = service.create_purchase(
             supabase_user_id="owner-123",
@@ -240,6 +267,8 @@ def test_batch_delete_purchases() -> None:
             site_id=site.id,
             amount="20.00",
             purchase_date="2025-01-02",
+            card_id=card.id,
+            starting_sc_balance="30.00",
         )
         service.create_purchase(
             supabase_user_id="owner-123",
@@ -247,6 +276,8 @@ def test_batch_delete_purchases() -> None:
             site_id=site.id,
             amount="30.00",
             purchase_date="2025-01-03",
+            card_id=card.id,
+            starting_sc_balance="60.00",
         )
         deleted_count = service.delete_purchases(
             supabase_user_id="owner-123",
@@ -268,7 +299,7 @@ def test_batch_delete_purchases() -> None:
 
 def test_create_purchase_no_time() -> None:
     engine, session_factory = _session_factory()
-    _, user, site = _bootstrap(session_factory)
+    _, user, site, card = _bootstrap(session_factory)
     service = HostedWorkspacePurchaseService(session_factory)
 
     try:
@@ -278,6 +309,8 @@ def test_create_purchase_no_time() -> None:
             site_id=site.id,
             amount="50.00",
             purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="100.00",
         )
     finally:
         engine.dispose()
@@ -287,7 +320,7 @@ def test_create_purchase_no_time() -> None:
 
 def test_create_purchase_cashback_manual() -> None:
     engine, session_factory = _session_factory()
-    _, user, site = _bootstrap(session_factory)
+    _, user, site, card = _bootstrap(session_factory)
     service = HostedWorkspacePurchaseService(session_factory)
 
     try:
@@ -297,6 +330,8 @@ def test_create_purchase_cashback_manual() -> None:
             site_id=site.id,
             amount="100.00",
             purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="200.00",
             cashback_earned="3.50",
             cashback_is_manual=True,
         )
@@ -327,7 +362,7 @@ def test_list_purchases_empty_workspace() -> None:
 
 def test_list_purchases_pagination() -> None:
     engine, session_factory = _session_factory()
-    _, user, site = _bootstrap(session_factory)
+    _, user, site, card = _bootstrap(session_factory)
     service = HostedWorkspacePurchaseService(session_factory)
 
     try:
@@ -338,6 +373,8 @@ def test_list_purchases_pagination() -> None:
                 site_id=site.id,
                 amount="10.00",
                 purchase_date=f"2025-01-{10 + i:02d}",
+                card_id=card.id,
+                starting_sc_balance="100.00",
             )
         page1 = service.list_purchases_page(
             supabase_user_id="owner-123",
@@ -379,7 +416,7 @@ def test_delete_nonexistent_purchase_raises() -> None:
 
 def test_update_nonexistent_purchase_raises() -> None:
     engine, session_factory = _session_factory()
-    _, user, site = _bootstrap(session_factory)
+    _, user, site, card = _bootstrap(session_factory)
     service = HostedWorkspacePurchaseService(session_factory)
 
     try:
@@ -391,6 +428,8 @@ def test_update_nonexistent_purchase_raises() -> None:
                 site_id=site.id,
                 amount="50.00",
                 purchase_date="2025-01-15",
+                card_id=card.id,
+                starting_sc_balance="100.00",
             )
     finally:
         engine.dispose()
@@ -398,7 +437,7 @@ def test_update_nonexistent_purchase_raises() -> None:
 
 def test_batch_delete_partial_raises() -> None:
     engine, session_factory = _session_factory()
-    _, user, site = _bootstrap(session_factory)
+    _, user, site, card = _bootstrap(session_factory)
     service = HostedWorkspacePurchaseService(session_factory)
 
     try:
@@ -408,6 +447,8 @@ def test_batch_delete_partial_raises() -> None:
             site_id=site.id,
             amount="10.00",
             purchase_date="2025-01-01",
+            card_id=card.id,
+            starting_sc_balance="10.00",
         )
         with pytest.raises(LookupError, match="not found"):
             service.delete_purchases(
@@ -513,3 +554,280 @@ def test_model_as_dict() -> None:
     assert d["purchase_date"] == "2025-01-01"
     assert d["sc_received"] == "50.00"
     assert d["remaining_amount"] == "50.00"
+
+
+# ── Auto-cashback calculation ────────────────────────────────────────────────
+
+
+def test_auto_cashback_from_card_rate() -> None:
+    """When cashback_is_manual=False, cashback should be auto-calculated from card rate."""
+    engine, session_factory = _session_factory()
+    _, user, site, card = _bootstrap(session_factory)
+    # card has cashback_rate=2.0
+    service = HostedWorkspacePurchaseService(session_factory)
+
+    try:
+        purchase = service.create_purchase(
+            supabase_user_id="owner-123",
+            user_id=user.id,
+            site_id=site.id,
+            amount="100.00",
+            purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="200.00",
+        )
+    finally:
+        engine.dispose()
+
+    # 100.00 * 2.0 / 100 = 2.00
+    assert purchase.cashback_earned == "2.00"
+    assert purchase.cashback_is_manual is False
+
+
+def test_auto_cashback_not_overridden_when_manual() -> None:
+    """When cashback_is_manual=True, auto-calc should not override the explicit value."""
+    engine, session_factory = _session_factory()
+    _, user, site, card = _bootstrap(session_factory)
+    service = HostedWorkspacePurchaseService(session_factory)
+
+    try:
+        purchase = service.create_purchase(
+            supabase_user_id="owner-123",
+            user_id=user.id,
+            site_id=site.id,
+            amount="100.00",
+            purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="200.00",
+            cashback_earned="5.00",
+            cashback_is_manual=True,
+        )
+    finally:
+        engine.dispose()
+
+    assert purchase.cashback_earned == "5.00"
+    assert purchase.cashback_is_manual is True
+
+
+def test_auto_cashback_recalculated_on_update() -> None:
+    """When amount changes and cashback is auto, cashback should be recalculated."""
+    engine, session_factory = _session_factory()
+    _, user, site, card = _bootstrap(session_factory)
+    service = HostedWorkspacePurchaseService(session_factory)
+
+    try:
+        created = service.create_purchase(
+            supabase_user_id="owner-123",
+            user_id=user.id,
+            site_id=site.id,
+            amount="100.00",
+            purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="200.00",
+        )
+        assert created.cashback_earned == "2.00"
+
+        updated = service.update_purchase(
+            supabase_user_id="owner-123",
+            purchase_id=created.id,
+            user_id=user.id,
+            site_id=site.id,
+            amount="200.00",
+            purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="400.00",
+        )
+    finally:
+        engine.dispose()
+
+    # 200.00 * 2.0 / 100 = 4.00
+    assert updated.cashback_earned == "4.00"
+
+
+# ── Consumed protection ─────────────────────────────────────────────────────
+
+
+def test_consumed_purchase_blocks_amount_change() -> None:
+    """If purchase has been consumed (remaining < amount), cannot change amount."""
+    engine, session_factory = _session_factory()
+    _, user, site, card = _bootstrap(session_factory)
+    service = HostedWorkspacePurchaseService(session_factory)
+
+    try:
+        created = service.create_purchase(
+            supabase_user_id="owner-123",
+            user_id=user.id,
+            site_id=site.id,
+            amount="100.00",
+            purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="200.00",
+        )
+        # Simulate consumption by directly updating remaining_amount via repository
+        with session_factory() as session:
+            from repositories.hosted_workspace_repository import HostedWorkspaceRepository
+            ws = HostedWorkspaceRepository().get_by_account_id(
+                session,
+                service.account_repository.get_by_supabase_user_id(session, "owner-123").id,
+            )
+            service.purchase_repository.update(
+                session,
+                purchase_id=created.id,
+                workspace_id=ws.id,
+                user_id=user.id,
+                site_id=site.id,
+                amount="100.00",
+                purchase_date="2025-01-15",
+                card_id=card.id,
+                starting_sc_balance="200.00",
+                remaining_amount="50.00",  # Half consumed
+            )
+            session.commit()
+
+        with pytest.raises(ValueError, match="consumed"):
+            service.update_purchase(
+                supabase_user_id="owner-123",
+                purchase_id=created.id,
+                user_id=user.id,
+                site_id=site.id,
+                amount="150.00",  # Trying to change amount
+                purchase_date="2025-01-15",
+                card_id=card.id,
+                starting_sc_balance="200.00",
+            )
+    finally:
+        engine.dispose()
+
+
+def test_consumed_purchase_blocks_date_change() -> None:
+    """If purchase has been consumed, cannot change date."""
+    engine, session_factory = _session_factory()
+    _, user, site, card = _bootstrap(session_factory)
+    service = HostedWorkspacePurchaseService(session_factory)
+
+    try:
+        created = service.create_purchase(
+            supabase_user_id="owner-123",
+            user_id=user.id,
+            site_id=site.id,
+            amount="100.00",
+            purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="200.00",
+        )
+        # Simulate consumption
+        with session_factory() as session:
+            from repositories.hosted_workspace_repository import HostedWorkspaceRepository
+            ws = HostedWorkspaceRepository().get_by_account_id(
+                session,
+                service.account_repository.get_by_supabase_user_id(session, "owner-123").id,
+            )
+            service.purchase_repository.update(
+                session,
+                purchase_id=created.id,
+                workspace_id=ws.id,
+                user_id=user.id,
+                site_id=site.id,
+                amount="100.00",
+                purchase_date="2025-01-15",
+                card_id=card.id,
+                starting_sc_balance="200.00",
+                remaining_amount="50.00",
+            )
+            session.commit()
+
+        with pytest.raises(ValueError, match="consumed"):
+            service.update_purchase(
+                supabase_user_id="owner-123",
+                purchase_id=created.id,
+                user_id=user.id,
+                site_id=site.id,
+                amount="100.00",
+                purchase_date="2025-02-01",  # Trying to change date
+                card_id=card.id,
+                starting_sc_balance="200.00",
+            )
+    finally:
+        engine.dispose()
+
+
+def test_consumed_purchase_blocks_delete() -> None:
+    """Cannot delete a purchase that has been consumed."""
+    engine, session_factory = _session_factory()
+    _, user, site, card = _bootstrap(session_factory)
+    service = HostedWorkspacePurchaseService(session_factory)
+
+    try:
+        created = service.create_purchase(
+            supabase_user_id="owner-123",
+            user_id=user.id,
+            site_id=site.id,
+            amount="100.00",
+            purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="200.00",
+        )
+        # Simulate consumption
+        with session_factory() as session:
+            from repositories.hosted_workspace_repository import HostedWorkspaceRepository
+            ws = HostedWorkspaceRepository().get_by_account_id(
+                session,
+                service.account_repository.get_by_supabase_user_id(session, "owner-123").id,
+            )
+            service.purchase_repository.update(
+                session,
+                purchase_id=created.id,
+                workspace_id=ws.id,
+                user_id=user.id,
+                site_id=site.id,
+                amount="100.00",
+                purchase_date="2025-01-15",
+                card_id=card.id,
+                starting_sc_balance="200.00",
+                remaining_amount="50.00",
+            )
+            session.commit()
+
+        with pytest.raises(ValueError, match="consumed"):
+            service.delete_purchase(
+                supabase_user_id="owner-123",
+                purchase_id=created.id,
+            )
+    finally:
+        engine.dispose()
+
+
+def test_proportional_remaining_on_amount_change() -> None:
+    """When amount changes on unconsumed purchase, remaining_amount adjusts proportionally."""
+    engine, session_factory = _session_factory()
+    _, user, site, card = _bootstrap(session_factory)
+    service = HostedWorkspacePurchaseService(session_factory)
+
+    try:
+        created = service.create_purchase(
+            supabase_user_id="owner-123",
+            user_id=user.id,
+            site_id=site.id,
+            amount="100.00",
+            purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="200.00",
+        )
+        assert created.remaining_amount == "100.00"
+
+        # Change amount from 100 to 200 — remaining should go from 100 → 200 (ratio 1.0)
+        updated = service.update_purchase(
+            supabase_user_id="owner-123",
+            purchase_id=created.id,
+            user_id=user.id,
+            site_id=site.id,
+            amount="200.00",
+            purchase_date="2025-01-15",
+            card_id=card.id,
+            starting_sc_balance="400.00",
+        )
+    finally:
+        engine.dispose()
+
+    assert updated.amount == "200.00"
+    assert updated.remaining_amount == "200.00"

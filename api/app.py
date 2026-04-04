@@ -171,12 +171,12 @@ class HostedWorkspacePurchaseCreateRequest(BaseModel):
     site_id: str
     amount: str
     purchase_date: str
+    card_id: str
+    starting_sc_balance: str
     purchase_time: str | None = None
     sc_received: str | None = None
-    starting_sc_balance: str = "0.00"
     cashback_earned: str = "0.00"
     cashback_is_manual: bool = False
-    card_id: str | None = None
     notes: str | None = None
 
 
@@ -185,12 +185,12 @@ class HostedWorkspacePurchaseUpdateRequest(BaseModel):
     site_id: str
     amount: str
     purchase_date: str
+    card_id: str
+    starting_sc_balance: str
     purchase_time: str | None = None
     sc_received: str | None = None
-    starting_sc_balance: str = "0.00"
     cashback_earned: str = "0.00"
     cashback_is_manual: bool = False
-    card_id: str | None = None
     status: str = "active"
     notes: str | None = None
 
