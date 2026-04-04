@@ -1,9 +1,19 @@
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function nowTimeISO() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+}
+
 export const initialPurchaseForm = {
   user_id: "",
   site_id: "",
   amount: "",
-  purchase_date: "",
-  purchase_time: "",
+  purchase_date: todayISO(),
+  purchase_time: nowTimeISO(),
   sc_received: "",
   starting_sc_balance: "",
   cashback_earned: "",

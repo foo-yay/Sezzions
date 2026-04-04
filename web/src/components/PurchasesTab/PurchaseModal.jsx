@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback } from "react";
 import { getPurchaseColumnValue } from "./purchasesUtils";
 import TypeaheadSelect from "../common/TypeaheadSelect";
 
@@ -29,14 +29,13 @@ export default function PurchaseModal({
   const formInvalid = userInvalid || siteInvalid || amountInvalid || dateInvalid || cardInvalid || scBalanceInvalid;
   const closeLabel = readOnly ? "Close" : "Cancel";
 
-  // Collapsible notes state
-  const [notesOpen, setNotesOpen] = useState(() => !!(form.notes && form.notes.trim()));
-
-  // Auto-focus first form field on mount
-  const dateRef = useRef(null);
+  // Auto-focus User field on mount (date/time are pre-filled)
+  const userRef = useRef(null);
   useEffect(() => {
-    if (!readOnly && dateRef.current) {
-      dateRef.current.focus();
+    if (!readOnly && userRef.current) {
+      // TypeaheadSelect exposes the input via the wrapper; find the actual input
+      const input = userRef.current.querySelector ? userRef.current.querySelector("input") : userRef.current;
+      if (input) input.focus();
     }
   }, [readOnly]);
 
@@ -133,55 +132,40 @@ export default function PurchaseModal({
           </button>
         </div>
 
-        <div className="form-grid">
-          {/* ── Date / Time section ── */}
-          <div className="form-section">
-            <div className="form-datetime-row">
-              <div className="field-group">
-                <label className="field-label" htmlFor="purchase-date-input">Date</label>
-                <input
-                  ref={dateRef}
-                  id="purchase-date-input"
-                  className={dateInvalid ? "text-input invalid" : "text-input"}
-                  type="date"
-                  value={form.purchase_date}
-                  readOnly={readOnly}
-                  onChange={(event) => setForm((current) => ({ ...current, purchase_date: event.target.value }))}
-                />
-              </div>
-              <div className="field-spacer" />
-              <div className="field-group">
-                <label className="field-label" htmlFor="purchase-time-input">Time</label>
-                <input
-                  id="purchase-time-input"
-                  className="text-input"
-                  type="time"
-                  step="1"
-                  placeholder="Optional"
-                  value={form.purchase_time}
-                  readOnly={readOnly}
-                  onChange={(event) => setForm((current) => ({ ...current, purchase_time: event.target.value }))}
-                />
-              </div>
-            </div>
-            {dateInvalid ? <p className="field-error" style={{ marginTop: 6 }}>Date is required.</p> : null}
+        <div className="purchase-form">
+          {/* ── Date / Time — compact inline, pre-filled ── */}
+          <div className="pf-datetime-row">
+            <label className="pf-label" htmlFor="purchase-date-input">Date</label>
+            <input
+              id="purchase-date-input"
+              className={dateInvalid ? "text-input invalid" : "text-input"}
+              type="date"
+              value={form.purchase_date}
+              readOnly={readOnly}
+              onChange={(event) => setForm((current) => ({ ...current, purchase_date: event.target.value }))}
+            />
+            <label className="pf-label" htmlFor="purchase-time-input">Time</label>
+            <input
+              id="purchase-time-input"
+              className="text-input"
+              type="time"
+              step="1"
+              value={form.purchase_time}
+              readOnly={readOnly}
+              onChange={(event) => setForm((current) => ({ ...current, purchase_time: event.target.value }))}
+            />
           </div>
 
-          {/* ── Purchase Details section ── */}
-          <p className="form-section-header">
-            <i className="form-section-header-icon">💳</i> Purchase Details
-          </p>
-          <div className="form-section">
-            <div className="form-details-grid">
+          {/* ── Purchase Details — 4-column grid ── */}
+          <div className="pf-section">
+            <p className="pf-section-title"><span>💳</span> Purchase Details</p>
+            <div className="pf-grid">
               {/* Row 0: User | Amount */}
-              <label className="field-label" htmlFor="purchase-user-input">User</label>
-              <div className="field-stack field-cell">
+              <label className="pf-label" htmlFor="purchase-user-input">User</label>
+              <div className="pf-cell" ref={userRef}>
                 <TypeaheadSelect
                   id="purchase-user-input"
-                  options={users.map((u) => ({
-                    value: u.id,
-                    label: u.name,
-                  }))}
+                  options={users.map((u) => ({ value: u.id, label: u.name }))}
                   value={form.user_id}
                   onChange={(userId) => {
                     setForm((current) => ({
@@ -193,20 +177,20 @@ export default function PurchaseModal({
                         : {}),
                     }));
                   }}
-                  placeholder="Required"
+                  placeholder="Select…"
                   disabled={readOnly}
                 />
-                {userInvalid ? <p className="field-error">User is required.</p> : null}
+                {userInvalid ? <p className="field-error">Required</p> : null}
               </div>
-              <label className="field-label" htmlFor="purchase-amount-input">Amount ($)</label>
-              <div className="field-stack field-cell">
+              <label className="pf-label" htmlFor="purchase-amount-input">Amount</label>
+              <div className="pf-cell">
                 <input
                   id="purchase-amount-input"
                   className={amountInvalid ? "text-input invalid" : "text-input"}
                   type="number"
                   min="0.01"
                   step="0.01"
-                  placeholder="Required"
+                  placeholder="0.00"
                   value={form.amount}
                   readOnly={readOnly}
                   onChange={(event) => {
@@ -219,36 +203,34 @@ export default function PurchaseModal({
                     });
                   }}
                 />
-                {amountInvalid ? <p className="field-error">Amount must be &gt; 0.</p> : null}
+                {amountInvalid ? <p className="field-error">Required</p> : null}
               </div>
 
               {/* Row 1: Site | Cashback */}
-              <label className="field-label" htmlFor="purchase-site-input">Site</label>
-              <div className="field-stack field-cell">
+              <label className="pf-label" htmlFor="purchase-site-input">Site</label>
+              <div className="pf-cell">
                 <TypeaheadSelect
                   id="purchase-site-input"
-                  options={sites.map((s) => ({
-                    value: s.id,
-                    label: s.name,
-                  }))}
+                  options={sites.map((s) => ({ value: s.id, label: s.name }))}
                   value={form.site_id}
                   onChange={(siteId) => setForm((current) => ({ ...current, site_id: siteId }))}
-                  placeholder="Required"
+                  placeholder="Select…"
                   disabled={readOnly}
                 />
-                {siteInvalid ? <p className="field-error">Site is required.</p> : null}
+                {siteInvalid ? <p className="field-error">Required</p> : null}
               </div>
-              <label className="field-label" htmlFor="purchase-cashback-input">Cashback ($)</label>
-              <div className="field-stack field-cell">
+              <label className="pf-label" htmlFor="purchase-cashback-input">Cashback</label>
+              <div className="pf-cell">
                 <input
                   id="purchase-cashback-input"
                   className="text-input"
                   type="number"
                   min="0"
                   step="0.01"
-                  placeholder="Auto-calculated"
+                  placeholder="Auto"
                   value={form.cashback_earned}
                   readOnly={readOnly}
+                  tabIndex={-1}
                   onChange={(event) => setForm((current) => ({
                     ...current,
                     cashback_earned: event.target.value,
@@ -258,8 +240,8 @@ export default function PurchaseModal({
               </div>
 
               {/* Row 2: Card | SC Received */}
-              <label className="field-label" htmlFor="purchase-card-input">Card</label>
-              <div className="field-stack field-cell">
+              <label className="pf-label" htmlFor="purchase-card-input">Card</label>
+              <div className="pf-cell">
                 <TypeaheadSelect
                   id="purchase-card-input"
                   options={filteredCards.map((c) => ({
@@ -275,21 +257,21 @@ export default function PurchaseModal({
                       return { ...current, card_id: cardId, cashback_earned: newCashback };
                     });
                   }}
-                  placeholder="Required"
+                  placeholder={form.user_id ? "Select…" : "Pick user first"}
                   disabled={readOnly}
                   noMatchText="No cards for this user"
                 />
-                {cardInvalid ? <p className="field-error">Card is required.</p> : null}
+                {cardInvalid ? <p className="field-error">Required</p> : null}
               </div>
-              <label className="field-label" htmlFor="purchase-sc-received-input">SC Received</label>
-              <div className="field-stack field-cell">
+              <label className="pf-label" htmlFor="purchase-sc-received-input">SC Recv'd</label>
+              <div className="pf-cell">
                 <input
                   id="purchase-sc-received-input"
                   className="text-input"
                   type="number"
                   min="0"
                   step="0.01"
-                  placeholder="Defaults to amount"
+                  placeholder="= Amount"
                   value={form.sc_received}
                   readOnly={readOnly}
                   onChange={(event) => setForm((current) => ({ ...current, sc_received: event.target.value }))}
@@ -299,46 +281,37 @@ export default function PurchaseModal({
               {/* Row 3: [empty] | Post-Purchase SC */}
               <span />
               <span />
-              <label className="field-label" htmlFor="purchase-starting-sc-input">Post-Purchase SC</label>
-              <div className="field-stack field-cell">
+              <label className="pf-label" htmlFor="purchase-starting-sc-input">Post SC</label>
+              <div className="pf-cell">
                 <input
                   id="purchase-starting-sc-input"
                   className={scBalanceInvalid ? "text-input invalid" : "text-input"}
                   type="number"
                   min="0"
                   step="0.01"
-                  placeholder="Required"
+                  placeholder="0.00"
                   value={form.starting_sc_balance}
                   readOnly={readOnly}
                   onChange={(event) => setForm((current) => ({ ...current, starting_sc_balance: event.target.value }))}
                 />
-                {scBalanceInvalid ? <p className="field-error">Post-Purchase SC is required.</p> : null}
+                {scBalanceInvalid ? <p className="field-error">Required</p> : null}
               </div>
             </div>
           </div>
 
-          {/* ── Collapsible Notes ── */}
-          <button
-            type="button"
-            className={"form-notes-toggle" + (notesOpen ? " expanded" : "")}
-            onClick={() => setNotesOpen((o) => !o)}
-          >
-            <i className="form-notes-toggle-icon">▶</i>
-            {notesOpen ? "Hide Notes" : "📝 Add Notes…"}
-          </button>
-          {notesOpen ? (
-            <div className="form-section">
-              <textarea
-                id="purchase-notes-input"
-                className="notes-input"
-                placeholder="Optional"
-                rows={3}
-                value={form.notes}
-                readOnly={readOnly}
-                onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
-              />
-            </div>
-          ) : null}
+          {/* ── Notes — always visible, compact ── */}
+          <div className="pf-notes-row">
+            <label className="pf-label" htmlFor="purchase-notes-input">Notes</label>
+            <textarea
+              id="purchase-notes-input"
+              className="text-input"
+              placeholder="Optional"
+              rows={2}
+              value={form.notes}
+              readOnly={readOnly}
+              onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+            />
+          </div>
         </div>
 
         {submitError ? <p className="submit-error">{submitError}</p> : null}
