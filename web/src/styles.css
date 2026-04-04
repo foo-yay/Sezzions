@@ -740,37 +740,9 @@ h3 {
   overflow-y: auto;
   overflow-x: auto;
   overscroll-behavior: contain;
-  /* Firefox scrollbar */
-  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
-  scrollbar-width: thin;
 }
 
-/* WebKit scrollbar */
-.users-table-scroll-area::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.users-table-scroll-area::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.users-table-scroll-area::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.10);
-  border-radius: 4px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-
-.users-table-scroll-area::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.20);
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-
-.users-table-scroll-area::-webkit-scrollbar-corner {
-  background: transparent;
-}
+/* Scrollbar theming is now global — see styles/scrollbar.css */
 
 .users-intro-band {
   padding: 14px 14px 0;

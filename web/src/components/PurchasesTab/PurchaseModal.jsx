@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { getPurchaseColumnValue } from "./purchasesUtils";
 import TypeaheadSelect from "../common/TypeaheadSelect";
 
@@ -28,6 +28,9 @@ export default function PurchaseModal({
   const scBalanceInvalid = !scBalanceRaw || scBalanceRaw === "" || isNaN(Number(scBalanceRaw)) || Number(scBalanceRaw) < 0;
   const formInvalid = userInvalid || siteInvalid || amountInvalid || dateInvalid || cardInvalid || scBalanceInvalid;
   const closeLabel = readOnly ? "Close" : "Cancel";
+
+  // Collapsible notes state
+  const [notesOpen, setNotesOpen] = useState(() => !!(form.notes && form.notes.trim()));
 
   // Auto-focus first form field on mount
   const dateRef = useRef(null);
@@ -131,185 +134,211 @@ export default function PurchaseModal({
         </div>
 
         <div className="form-grid">
-          <label className="field-label" htmlFor="purchase-date-input">Date</label>
-          <div>
-            <input
-              ref={dateRef}
-              id="purchase-date-input"
-              className={dateInvalid ? "text-input invalid" : "text-input"}
-              type="date"
-              value={form.purchase_date}
-              readOnly={readOnly}
-              onChange={(event) => setForm((current) => ({ ...current, purchase_date: event.target.value }))}
-            />
-            {dateInvalid ? <p className="field-error">Date is required.</p> : null}
+          {/* ── Date / Time section ── */}
+          <div className="form-section">
+            <div className="form-datetime-row">
+              <div className="field-group">
+                <label className="field-label" htmlFor="purchase-date-input">Date</label>
+                <input
+                  ref={dateRef}
+                  id="purchase-date-input"
+                  className={dateInvalid ? "text-input invalid" : "text-input"}
+                  type="date"
+                  value={form.purchase_date}
+                  readOnly={readOnly}
+                  onChange={(event) => setForm((current) => ({ ...current, purchase_date: event.target.value }))}
+                />
+              </div>
+              <div className="field-spacer" />
+              <div className="field-group">
+                <label className="field-label" htmlFor="purchase-time-input">Time</label>
+                <input
+                  id="purchase-time-input"
+                  className="text-input"
+                  type="time"
+                  step="1"
+                  placeholder="Optional"
+                  value={form.purchase_time}
+                  readOnly={readOnly}
+                  onChange={(event) => setForm((current) => ({ ...current, purchase_time: event.target.value }))}
+                />
+              </div>
+            </div>
+            {dateInvalid ? <p className="field-error" style={{ marginTop: 6 }}>Date is required.</p> : null}
           </div>
 
-          <label className="field-label" htmlFor="purchase-time-input">Time</label>
-          <div>
-            <input
-              id="purchase-time-input"
-              className="text-input"
-              type="time"
-              step="1"
-              placeholder="Optional"
-              value={form.purchase_time}
-              readOnly={readOnly}
-              onChange={(event) => setForm((current) => ({ ...current, purchase_time: event.target.value }))}
-            />
+          {/* ── Purchase Details section ── */}
+          <p className="form-section-header">
+            <i className="form-section-header-icon">💳</i> Purchase Details
+          </p>
+          <div className="form-section">
+            <div className="form-details-grid">
+              {/* Row 0: User | Amount */}
+              <label className="field-label" htmlFor="purchase-user-input">User</label>
+              <div className="field-stack field-cell">
+                <TypeaheadSelect
+                  id="purchase-user-input"
+                  options={users.map((u) => ({
+                    value: u.id,
+                    label: u.name,
+                  }))}
+                  value={form.user_id}
+                  onChange={(userId) => {
+                    setForm((current) => ({
+                      ...current,
+                      user_id: userId,
+                      card_id: userId === current.user_id ? current.card_id : "",
+                      ...(userId !== current.user_id
+                        ? { cashback_earned: "", cashback_is_manual: false }
+                        : {}),
+                    }));
+                  }}
+                  placeholder="Required"
+                  disabled={readOnly}
+                />
+                {userInvalid ? <p className="field-error">User is required.</p> : null}
+              </div>
+              <label className="field-label" htmlFor="purchase-amount-input">Amount ($)</label>
+              <div className="field-stack field-cell">
+                <input
+                  id="purchase-amount-input"
+                  className={amountInvalid ? "text-input invalid" : "text-input"}
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  placeholder="Required"
+                  value={form.amount}
+                  readOnly={readOnly}
+                  onChange={(event) => {
+                    const newAmount = event.target.value;
+                    setForm((current) => {
+                      const newCashback = current.cashback_is_manual
+                        ? current.cashback_earned
+                        : calculateCashback(newAmount, current.card_id);
+                      return { ...current, amount: newAmount, cashback_earned: newCashback };
+                    });
+                  }}
+                />
+                {amountInvalid ? <p className="field-error">Amount must be &gt; 0.</p> : null}
+              </div>
+
+              {/* Row 1: Site | Cashback */}
+              <label className="field-label" htmlFor="purchase-site-input">Site</label>
+              <div className="field-stack field-cell">
+                <TypeaheadSelect
+                  id="purchase-site-input"
+                  options={sites.map((s) => ({
+                    value: s.id,
+                    label: s.name,
+                  }))}
+                  value={form.site_id}
+                  onChange={(siteId) => setForm((current) => ({ ...current, site_id: siteId }))}
+                  placeholder="Required"
+                  disabled={readOnly}
+                />
+                {siteInvalid ? <p className="field-error">Site is required.</p> : null}
+              </div>
+              <label className="field-label" htmlFor="purchase-cashback-input">Cashback ($)</label>
+              <div className="field-stack field-cell">
+                <input
+                  id="purchase-cashback-input"
+                  className="text-input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Auto-calculated"
+                  value={form.cashback_earned}
+                  readOnly={readOnly}
+                  onChange={(event) => setForm((current) => ({
+                    ...current,
+                    cashback_earned: event.target.value,
+                    cashback_is_manual: true,
+                  }))}
+                />
+              </div>
+
+              {/* Row 2: Card | SC Received */}
+              <label className="field-label" htmlFor="purchase-card-input">Card</label>
+              <div className="field-stack field-cell">
+                <TypeaheadSelect
+                  id="purchase-card-input"
+                  options={filteredCards.map((c) => ({
+                    value: c.id,
+                    label: c.name + (c.last_four ? ` (${c.last_four})` : ""),
+                  }))}
+                  value={form.card_id}
+                  onChange={(cardId) => {
+                    setForm((current) => {
+                      const newCashback = current.cashback_is_manual
+                        ? current.cashback_earned
+                        : calculateCashback(current.amount, cardId);
+                      return { ...current, card_id: cardId, cashback_earned: newCashback };
+                    });
+                  }}
+                  placeholder="Required"
+                  disabled={readOnly}
+                  noMatchText="No cards for this user"
+                />
+                {cardInvalid ? <p className="field-error">Card is required.</p> : null}
+              </div>
+              <label className="field-label" htmlFor="purchase-sc-received-input">SC Received</label>
+              <div className="field-stack field-cell">
+                <input
+                  id="purchase-sc-received-input"
+                  className="text-input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Defaults to amount"
+                  value={form.sc_received}
+                  readOnly={readOnly}
+                  onChange={(event) => setForm((current) => ({ ...current, sc_received: event.target.value }))}
+                />
+              </div>
+
+              {/* Row 3: [empty] | Post-Purchase SC */}
+              <span />
+              <span />
+              <label className="field-label" htmlFor="purchase-starting-sc-input">Post-Purchase SC</label>
+              <div className="field-stack field-cell">
+                <input
+                  id="purchase-starting-sc-input"
+                  className={scBalanceInvalid ? "text-input invalid" : "text-input"}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Required"
+                  value={form.starting_sc_balance}
+                  readOnly={readOnly}
+                  onChange={(event) => setForm((current) => ({ ...current, starting_sc_balance: event.target.value }))}
+                />
+                {scBalanceInvalid ? <p className="field-error">Post-Purchase SC is required.</p> : null}
+              </div>
+            </div>
           </div>
 
-          <label className="field-label" htmlFor="purchase-user-input">User</label>
-          <div>
-            <TypeaheadSelect
-              id="purchase-user-input"
-              options={users.map((u) => ({
-                value: u.id,
-                label: u.name,
-              }))}
-              value={form.user_id}
-              onChange={(userId) => {
-                setForm((current) => ({
-                  ...current,
-                  user_id: userId,
-                  // Clear card if user changes (card is user-scoped)
-                  card_id: userId === current.user_id ? current.card_id : "",
-                  // Recalculate cashback if card is cleared
-                  ...(userId !== current.user_id
-                    ? { cashback_earned: "", cashback_is_manual: false }
-                    : {}),
-                }));
-              }}
-              placeholder="Required"
-              disabled={readOnly}
-            />
-            {userInvalid ? <p className="field-error">User is required.</p> : null}
-          </div>
-
-          <label className="field-label" htmlFor="purchase-site-input">Site</label>
-          <div>
-            <TypeaheadSelect
-              id="purchase-site-input"
-              options={sites.map((s) => ({
-                value: s.id,
-                label: s.name,
-              }))}
-              value={form.site_id}
-              onChange={(siteId) => setForm((current) => ({ ...current, site_id: siteId }))}
-              placeholder="Required"
-              disabled={readOnly}
-            />
-            {siteInvalid ? <p className="field-error">Site is required.</p> : null}
-          </div>
-
-          <label className="field-label" htmlFor="purchase-card-input">Card</label>
-          <div>
-            <TypeaheadSelect
-              id="purchase-card-input"
-              options={filteredCards.map((c) => ({
-                value: c.id,
-                label: c.name + (c.last_four ? ` (${c.last_four})` : ""),
-              }))}
-              value={form.card_id}
-              onChange={(cardId) => {
-                setForm((current) => {
-                  const newCashback = current.cashback_is_manual
-                    ? current.cashback_earned
-                    : calculateCashback(current.amount, cardId);
-                  return { ...current, card_id: cardId, cashback_earned: newCashback };
-                });
-              }}
-              placeholder="Required"
-              disabled={readOnly}
-              noMatchText="No cards for this user"
-            />
-            {cardInvalid ? <p className="field-error">Card is required.</p> : null}
-          </div>
-
-          <label className="field-label" htmlFor="purchase-amount-input">Amount ($)</label>
-          <div>
-            <input
-              id="purchase-amount-input"
-              className={amountInvalid ? "text-input invalid" : "text-input"}
-              type="number"
-              min="0.01"
-              step="0.01"
-              placeholder="Required"
-              value={form.amount}
-              readOnly={readOnly}
-              onChange={(event) => {
-                const newAmount = event.target.value;
-                setForm((current) => {
-                  const newCashback = current.cashback_is_manual
-                    ? current.cashback_earned
-                    : calculateCashback(newAmount, current.card_id);
-                  return { ...current, amount: newAmount, cashback_earned: newCashback };
-                });
-              }}
-            />
-            {amountInvalid ? <p className="field-error">Amount must be greater than zero.</p> : null}
-          </div>
-
-          <label className="field-label" htmlFor="purchase-sc-received-input">SC Received</label>
-          <div>
-            <input
-              id="purchase-sc-received-input"
-              className="text-input"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="Defaults to amount"
-              value={form.sc_received}
-              readOnly={readOnly}
-              onChange={(event) => setForm((current) => ({ ...current, sc_received: event.target.value }))}
-            />
-          </div>
-
-          <label className="field-label" htmlFor="purchase-starting-sc-input">Post-Purchase SC</label>
-          <div>
-            <input
-              id="purchase-starting-sc-input"
-              className={scBalanceInvalid ? "text-input invalid" : "text-input"}
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="Required"
-              value={form.starting_sc_balance}
-              readOnly={readOnly}
-              onChange={(event) => setForm((current) => ({ ...current, starting_sc_balance: event.target.value }))}
-            />
-            {scBalanceInvalid ? <p className="field-error">Post-Purchase SC is required.</p> : null}
-          </div>
-
-          <label className="field-label" htmlFor="purchase-cashback-input">Cashback ($)</label>
-          <div>
-            <input
-              id="purchase-cashback-input"
-              className="text-input"
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="Auto-calculated"
-              value={form.cashback_earned}
-              readOnly={readOnly}
-              onChange={(event) => setForm((current) => ({
-                ...current,
-                cashback_earned: event.target.value,
-                cashback_is_manual: true,
-              }))}
-            />
-          </div>
-
-          <label className="field-label field-label-top" htmlFor="purchase-notes-input">Notes</label>
-          <textarea
-            id="purchase-notes-input"
-            className="notes-input"
-            placeholder="Optional"
-            rows={3}
-            value={form.notes}
-            readOnly={readOnly}
-            onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
-          />
+          {/* ── Collapsible Notes ── */}
+          <button
+            type="button"
+            className={"form-notes-toggle" + (notesOpen ? " expanded" : "")}
+            onClick={() => setNotesOpen((o) => !o)}
+          >
+            <i className="form-notes-toggle-icon">▶</i>
+            {notesOpen ? "Hide Notes" : "📝 Add Notes…"}
+          </button>
+          {notesOpen ? (
+            <div className="form-section">
+              <textarea
+                id="purchase-notes-input"
+                className="notes-input"
+                placeholder="Optional"
+                rows={3}
+                value={form.notes}
+                readOnly={readOnly}
+                onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+              />
+            </div>
+          ) : null}
         </div>
 
         {submitError ? <p className="submit-error">{submitError}</p> : null}

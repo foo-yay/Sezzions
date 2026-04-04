@@ -1,0 +1,167 @@
+/* ──────────────────────────────────────────────────
+   Form section layout — grouped dialog styles
+   Mirrors desktop SectionBackground / grid patterns.
+   CSS-variable-driven for future theme support.
+   ────────────────────────────────────────────────── */
+
+:root {
+  --section-bg: rgba(255, 255, 255, 0.03);
+  --section-border: rgba(255, 255, 255, 0.06);
+  --input-bg: rgba(255, 255, 255, 0.04);
+}
+
+/* ── Section container (SectionBackground equivalent) ── */
+
+.form-section {
+  background: var(--section-bg);
+  border: 1px solid var(--section-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+/* When form-grid is inside a purchase-modal, switch to vertical stack */
+.purchase-modal .form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Section header (emoji + title label) ── */
+
+.form-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #7ec3ac;
+}
+
+.form-section-header-icon {
+  font-style: normal;
+  font-size: 0.92rem;
+}
+
+/* ── Date / Time horizontal row ── */
+
+.form-datetime-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.form-datetime-row .field-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-datetime-row .field-group label {
+  white-space: nowrap;
+  padding-top: 0;
+  margin: 0;
+}
+
+.form-datetime-row .field-spacer {
+  width: 20px;
+  flex-shrink: 0;
+}
+
+.form-datetime-row input[type="date"],
+.form-datetime-row input[type="time"] {
+  width: auto;
+  min-width: 0;
+}
+
+/* ── 2-column detail grid (left selects, right amounts) ── */
+
+.form-details-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(120px, 160px);
+  gap: 10px 24px;
+  align-items: center;
+}
+
+.form-details-grid .field-label {
+  text-align: right;
+  padding-top: 0;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.form-details-grid .field-cell {
+  min-width: 0;
+}
+
+.form-details-grid .field-cell-full {
+  grid-column: 1 / -1;
+}
+
+/* Stacked field: input above error message */
+.form-details-grid .field-stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.form-details-grid .field-stack .field-error {
+  margin: 4px 0 0;
+}
+
+/* ── Collapsible notes toggle ── */
+
+.form-notes-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  border: none;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  transition: color 160ms ease;
+}
+
+.form-notes-toggle:hover {
+  color: var(--text);
+}
+
+.form-notes-toggle-icon {
+  font-style: normal;
+  font-size: 0.9rem;
+  transition: transform 200ms ease;
+}
+
+.form-notes-toggle.expanded .form-notes-toggle-icon {
+  transform: rotate(90deg);
+}
+
+/* Compact notes inside collapsible section */
+.form-section .notes-input {
+  min-height: 80px;
+}
+
+/* ── Responsive: collapse to single column ── */
+
+@media (max-width: 640px) {
+  .form-details-grid {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px 16px;
+  }
+
+  .form-datetime-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .form-datetime-row .field-spacer {
+    display: none;
+  }
+}

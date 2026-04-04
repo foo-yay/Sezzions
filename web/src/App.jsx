@@ -5,6 +5,8 @@ import AppShell from "./components/AppShell";
 import MarketingShell from "./components/MarketingShell";
 import MigrationShell from "./components/MigrationShell";
 import "./styles.css";
+import "./styles/scrollbar.css";
+import "./styles/forms.css";
 
 export default function App() {
   const auth = useAuth();
