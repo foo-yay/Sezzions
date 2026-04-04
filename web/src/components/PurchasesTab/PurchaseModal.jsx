@@ -160,9 +160,9 @@ export default function PurchaseModal({
           <div className="pf-section">
             <p className="pf-section-title"><span>💳</span> Purchase Details</p>
             <div className="pf-grid">
-              {/* Row 0: User | Amount */}
-              <label className="pf-label" htmlFor="purchase-user-input">User</label>
-              <div className="pf-cell" ref={userRef}>
+              {/* Left column first for tab order: User → Site → Card */}
+              <label className="pf-label" htmlFor="purchase-user-input" style={{gridRow: 1, gridColumn: 1}}>User</label>
+              <div className="pf-cell" ref={userRef} style={{gridRow: 1, gridColumn: 2}}>
                 <TypeaheadSelect
                   id="purchase-user-input"
                   options={users.map((u) => ({ value: u.id, label: u.name }))}
@@ -183,33 +183,8 @@ export default function PurchaseModal({
                   title={userInvalid ? "Required" : undefined}
                 />
               </div>
-              <label className="pf-label" htmlFor="purchase-amount-input">Amount</label>
-              <div className="pf-cell">
-                <input
-                  id="purchase-amount-input"
-                  className={amountInvalid ? "text-input invalid" : "text-input"}
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  placeholder="0.00"
-                  title={amountInvalid ? "Required" : undefined}
-                  value={form.amount}
-                  readOnly={readOnly}
-                  onChange={(event) => {
-                    const newAmount = event.target.value;
-                    setForm((current) => {
-                      const newCashback = current.cashback_is_manual
-                        ? current.cashback_earned
-                        : calculateCashback(newAmount, current.card_id);
-                      return { ...current, amount: newAmount, cashback_earned: newCashback };
-                    });
-                  }}
-                />
-              </div>
-
-              {/* Row 1: Site | Cashback */}
-              <label className="pf-label" htmlFor="purchase-site-input">Site</label>
-              <div className="pf-cell">
+              <label className="pf-label" htmlFor="purchase-site-input" style={{gridRow: 2, gridColumn: 1}}>Site</label>
+              <div className="pf-cell" style={{gridRow: 2, gridColumn: 2}}>
                 <TypeaheadSelect
                   id="purchase-site-input"
                   options={sites.map((s) => ({ value: s.id, label: s.name }))}
@@ -221,29 +196,8 @@ export default function PurchaseModal({
                   title={siteInvalid ? "Required" : undefined}
                 />
               </div>
-              <label className="pf-label" htmlFor="purchase-cashback-input">Cashback</label>
-              <div className="pf-cell">
-                <input
-                  id="purchase-cashback-input"
-                  className="text-input"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="Auto"
-                  value={form.cashback_earned}
-                  readOnly={readOnly}
-                  tabIndex={-1}
-                  onChange={(event) => setForm((current) => ({
-                    ...current,
-                    cashback_earned: event.target.value,
-                    cashback_is_manual: true,
-                  }))}
-                />
-              </div>
-
-              {/* Row 2: Card | SC Received */}
-              <label className="pf-label" htmlFor="purchase-card-input">Card</label>
-              <div className="pf-cell">
+              <label className="pf-label" htmlFor="purchase-card-input" style={{gridRow: 3, gridColumn: 1}}>Card</label>
+              <div className="pf-cell" style={{gridRow: 3, gridColumn: 2}}>
                 <TypeaheadSelect
                   id="purchase-card-input"
                   options={filteredCards.map((c) => ({
@@ -266,8 +220,52 @@ export default function PurchaseModal({
                   title={cardInvalid ? "Required" : undefined}
                 />
               </div>
-              <label className="pf-label" htmlFor="purchase-sc-received-input">SC Recv'd</label>
-              <div className="pf-cell">
+
+              {/* Right column: Amount → (skip Cashback) → SC Recv'd → Post SC */}
+              <label className="pf-label" htmlFor="purchase-amount-input" style={{gridRow: 1, gridColumn: 3}}>Amount</label>
+              <div className="pf-cell" style={{gridRow: 1, gridColumn: 4}}>
+                <input
+                  id="purchase-amount-input"
+                  className={amountInvalid ? "text-input invalid" : "text-input"}
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  placeholder="0.00"
+                  title={amountInvalid ? "Required" : undefined}
+                  value={form.amount}
+                  readOnly={readOnly}
+                  onChange={(event) => {
+                    const newAmount = event.target.value;
+                    setForm((current) => {
+                      const newCashback = current.cashback_is_manual
+                        ? current.cashback_earned
+                        : calculateCashback(newAmount, current.card_id);
+                      return { ...current, amount: newAmount, cashback_earned: newCashback };
+                    });
+                  }}
+                />
+              </div>
+              <label className="pf-label" htmlFor="purchase-cashback-input" style={{gridRow: 2, gridColumn: 3}}>Cashback</label>
+              <div className="pf-cell" style={{gridRow: 2, gridColumn: 4}}>
+                <input
+                  id="purchase-cashback-input"
+                  className="text-input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Auto"
+                  value={form.cashback_earned}
+                  readOnly={readOnly}
+                  tabIndex={-1}
+                  onChange={(event) => setForm((current) => ({
+                    ...current,
+                    cashback_earned: event.target.value,
+                    cashback_is_manual: true,
+                  }))}
+                />
+              </div>
+              <label className="pf-label" htmlFor="purchase-sc-received-input" style={{gridRow: 3, gridColumn: 3}}>SC Recv'd</label>
+              <div className="pf-cell" style={{gridRow: 3, gridColumn: 4}}>
                 <input
                   id="purchase-sc-received-input"
                   className="text-input"
@@ -280,12 +278,8 @@ export default function PurchaseModal({
                   onChange={(event) => setForm((current) => ({ ...current, sc_received: event.target.value }))}
                 />
               </div>
-
-              {/* Row 3: [empty] | Post-Purchase SC */}
-              <span />
-              <span />
-              <label className="pf-label" htmlFor="purchase-starting-sc-input">Post SC</label>
-              <div className="pf-cell">
+              <label className="pf-label" htmlFor="purchase-starting-sc-input" style={{gridRow: 4, gridColumn: 3}}>Post SC</label>
+              <div className="pf-cell" style={{gridRow: 4, gridColumn: 4}}>
                 <input
                   id="purchase-starting-sc-input"
                   className={scBalanceInvalid ? "text-input invalid" : "text-input"}
