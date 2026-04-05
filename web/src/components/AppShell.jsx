@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import Icon from "./common/Icon";
 import StatusModal from "./common/StatusModal";
@@ -23,28 +23,19 @@ const setupTabs = [
   { key: "redemption-methods", label: "Redemption Methods", icon: "redemptionMethods", enabled: true },
   { key: "game-types", label: "Game Types", icon: "gameTypes", enabled: true },
   { key: "games", label: "Games", icon: "games", enabled: true },
+  { key: "purchases", label: "Purchases", icon: "purchases", enabled: true },
   { key: "tools", label: "Tools", icon: "tools", enabled: false }
 ];
 
-const activityTabs = [
-  { key: "purchases", label: "Purchases", icon: "purchases", enabled: true },
-];
-
 const validSetupKeys = new Set(setupTabs.map((t) => t.key));
-const validActivityKeys = new Set(activityTabs.map((t) => t.key));
 
 export default function AppShell({ auth }) {
   const { tabKey } = useParams();
-  const location = useLocation();
   const navigate = useNavigate();
-  const section = location.pathname.startsWith("/activity") ? "activity" : "setup";
-  const activeTab = section === "activity"
-    ? (validActivityKeys.has(tabKey) ? tabKey : "purchases")
-    : (validSetupKeys.has(tabKey) ? tabKey : "users");
+  const activeTab = validSetupKeys.has(tabKey) ? tabKey : "users";
 
   const [railCollapsed, setRailCollapsed] = useState(false);
-  const [setupNavOpen, setSetupNavOpen] = useState(section === "setup");
-  const [activityNavOpen, setActivityNavOpen] = useState(section === "activity");
+  const [setupNavOpen, setSetupNavOpen] = useState(true);
   const [notificationsModalOpen, setNotificationsModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
@@ -172,59 +163,13 @@ export default function AppShell({ auth }) {
               {setupTabs.map((tab) => (
                 <button
                   key={tab.key}
-                  className={section === "setup" && tab.key === activeTab ? "rail-nav-button rail-subnav-button active" : "rail-nav-button rail-subnav-button"}
+                  className={tab.key === activeTab ? "rail-nav-button rail-subnav-button active" : "rail-nav-button rail-subnav-button"}
                   type="button"
-                  aria-current={section === "setup" && tab.key === activeTab ? "page" : undefined}
+                  aria-current={tab.key === activeTab ? "page" : undefined}
                   aria-label={tab.label}
                   title={tab.label}
                   disabled={!tab.enabled}
                   onClick={() => navigate(`/setup/${tab.key}`)}
-                >
-                  <span className="rail-nav-main">
-                    <span className="rail-item-icon" aria-hidden="true"><Icon name={tab.icon} className="app-icon" /></span>
-                    <span className="rail-nav-label">{tab.label}</span>
-                  </span>
-                  {!tab.enabled ? <span className="rail-nav-tag">Soon</span> : null}
-                </button>
-              ))}
-            </nav>
-          ) : null}
-        </div>
-
-        <div className="rail-section-block">
-          <button
-            className="rail-group-toggle"
-            type="button"
-            aria-expanded={!railCollapsed && activityNavOpen}
-            aria-label={railCollapsed ? "Expand activity navigation" : "Toggle activity navigation"}
-            title="Activity"
-            onClick={() => {
-              if (railCollapsed) {
-                setRailCollapsed(false);
-                return;
-              }
-              setActivityNavOpen((current) => !current);
-            }}
-          >
-            <span className="rail-nav-main">
-              <span className="rail-item-icon" aria-hidden="true"><Icon name="purchases" className="app-icon" /></span>
-              {!railCollapsed ? <span className="rail-group-label">Activity</span> : null}
-            </span>
-            {!railCollapsed ? <span className="rail-group-icon" aria-hidden="true"><Icon name={activityNavOpen ? "chevronDown" : "chevronRight"} className="app-icon rail-chevron-icon" /></span> : null}
-          </button>
-
-          {!railCollapsed && activityNavOpen ? (
-            <nav className="rail-nav rail-subnav" aria-label="Activity navigation">
-              {activityTabs.map((tab) => (
-                <button
-                  key={tab.key}
-                  className={section === "activity" && tab.key === activeTab ? "rail-nav-button rail-subnav-button active" : "rail-nav-button rail-subnav-button"}
-                  type="button"
-                  aria-current={section === "activity" && tab.key === activeTab ? "page" : undefined}
-                  aria-label={tab.label}
-                  title={tab.label}
-                  disabled={!tab.enabled}
-                  onClick={() => navigate(`/activity/${tab.key}`)}
                 >
                   <span className="rail-nav-main">
                     <span className="rail-item-icon" aria-hidden="true"><Icon name={tab.icon} className="app-icon" /></span>
@@ -251,49 +196,49 @@ export default function AppShell({ auth }) {
       </aside>
 
       <main className="workspace-shell">
-        {section === "setup" && activeTab === "users" ? (
+        {activeTab === "users" ? (
           <UsersTab
             apiBaseUrl={auth.apiBaseUrl}
             hostedWorkspaceReady={auth.hostedWorkspaceReady}
           />
         ) : null}
-        {section === "setup" && activeTab === "sites" ? (
+        {activeTab === "sites" ? (
           <SitesTab
             apiBaseUrl={auth.apiBaseUrl}
             hostedWorkspaceReady={auth.hostedWorkspaceReady}
           />
         ) : null}
-        {section === "setup" && activeTab === "cards" ? (
+        {activeTab === "cards" ? (
           <CardsTab
             apiBaseUrl={auth.apiBaseUrl}
             hostedWorkspaceReady={auth.hostedWorkspaceReady}
           />
         ) : null}
-        {section === "setup" && activeTab === "method-types" ? (
+        {activeTab === "method-types" ? (
           <MethodTypesTab
             apiBaseUrl={auth.apiBaseUrl}
             hostedWorkspaceReady={auth.hostedWorkspaceReady}
           />
         ) : null}
-        {section === "setup" && activeTab === "redemption-methods" ? (
+        {activeTab === "redemption-methods" ? (
           <RedemptionMethodsTab
             apiBaseUrl={auth.apiBaseUrl}
             hostedWorkspaceReady={auth.hostedWorkspaceReady}
           />
         ) : null}
-        {section === "setup" && activeTab === "game-types" ? (
+        {activeTab === "game-types" ? (
           <GameTypesTab
             apiBaseUrl={auth.apiBaseUrl}
             hostedWorkspaceReady={auth.hostedWorkspaceReady}
           />
         ) : null}
-        {section === "setup" && activeTab === "games" ? (
+        {activeTab === "games" ? (
           <GamesTab
             apiBaseUrl={auth.apiBaseUrl}
             hostedWorkspaceReady={auth.hostedWorkspaceReady}
           />
         ) : null}
-        {section === "activity" && activeTab === "purchases" ? (
+        {activeTab === "purchases" ? (
           <PurchasesTab
             apiBaseUrl={auth.apiBaseUrl}
             hostedWorkspaceReady={auth.hostedWorkspaceReady}

@@ -18,10 +18,7 @@ export default function App() {
         path="/setup/:tabKey"
         element={auth.sessionEmail ? <AppShell auth={auth} /> : <MarketingShell auth={auth} />}
       />
-      <Route
-        path="/activity/:tabKey"
-        element={auth.sessionEmail ? <AppShell auth={auth} /> : <MarketingShell auth={auth} />}
-      />
+      <Route path="/activity/:tabKey" element={<Navigate to="/setup/purchases" replace />} />
       <Route
         path="/"
         element={auth.sessionEmail ? <Navigate to="/setup/users" replace /> : <MarketingShell auth={auth} />}
