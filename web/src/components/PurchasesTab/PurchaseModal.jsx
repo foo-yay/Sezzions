@@ -126,7 +126,7 @@ export default function PurchaseModal({
     return (
       <div className="modal-backdrop" role="presentation" onClick={onClose}>
         <section
-          className="modal-card purchase-modal"
+          className="modal-card entity-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="purchase-modal-title"
@@ -183,7 +183,7 @@ export default function PurchaseModal({
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section
-        className="modal-card purchase-modal"
+        className="modal-card entity-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="purchase-modal-title"
@@ -374,7 +374,7 @@ export default function PurchaseModal({
             <label className="field-label" htmlFor="purchase-notes-input">Notes</label>
             <textarea
               id="purchase-notes-input"
-              className="text-input"
+              className="notes-input"
               placeholder="Optional"
               rows={2}
               value={form.notes}

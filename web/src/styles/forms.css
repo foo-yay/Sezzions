@@ -39,24 +39,8 @@
    Purchase-form specific (pf-*) — compact dialog
    ══════════════════════════════════════════════════ */
 
-.purchase-modal {
-  width: min(660px, 100%);
-  gap: 12px;
-  padding: 16px 20px;
-}
-
-.purchase-modal .modal-header {
-  padding-bottom: 10px;
-}
-
-.purchase-modal .modal-header h2 {
-  font-size: 1.1rem;
-}
-
-.purchase-modal .modal-actions {
-  margin-top: 0;
-  padding-top: 10px;
-}
+/* purchase-modal container — uses entity-modal for sizing;
+   no extra overrides needed (shares standard modal spacing). */
 
 .purchase-form {
   display: flex;
@@ -116,6 +100,12 @@
   font-size: 0.88rem;
 }
 
+.pf-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 /* ── 4-column detail grid ── */
 
 .pf-grid {
@@ -129,24 +119,6 @@
   text-align: right;
 }
 
-/* Compact all inputs inside the purchase form */
-.purchase-form .text-input,
-.purchase-form textarea.text-input {
-  padding: 6px 10px;
-  font-size: 0.88rem;
-  border-radius: 8px;
-}
-
-.purchase-form textarea.text-input {
-  resize: vertical;
-  min-height: 48px;
-}
-
-.pf-cell {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
 
 /* ── Balance Check ── */
 
