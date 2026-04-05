@@ -1,0 +1,170 @@
+/* ──────────────────────────────────────────────────
+   Form section layout — grouped dialog styles
+   CSS-variable-driven for future theme support.
+   ────────────────────────────────────────────────── */
+
+:root {
+  --section-bg: rgba(255, 255, 255, 0.03);
+  --section-border: rgba(255, 255, 255, 0.06);
+  --input-bg: rgba(255, 255, 255, 0.04);
+}
+
+/* ── Generic form section (SectionBackground) ── */
+
+.form-section {
+  background: var(--section-bg);
+  border: 1px solid var(--section-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.form-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #7ec3ac;
+}
+
+.form-section-header-icon {
+  font-style: normal;
+  font-size: 0.88rem;
+}
+
+/* ══════════════════════════════════════════════════
+   Purchase-form specific (pf-*) — compact dialog
+   ══════════════════════════════════════════════════ */
+
+/* purchase-modal container — uses entity-modal for sizing;
+   no extra overrides needed (shares standard modal spacing). */
+
+.purchase-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Shared label overrides inside purchase form ── */
+
+.purchase-form .field-label {
+  white-space: nowrap;
+  margin: 0;
+  padding-top: 0;
+}
+
+/* ── Date/Time inline row ── */
+
+.pf-datetime-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--section-bg);
+  border: 1px solid var(--section-border);
+  border-radius: 10px;
+}
+
+.pf-datetime-row input[type="date"],
+.pf-datetime-row input[type="time"] {
+  width: auto;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+/* ── Section wrapper ── */
+
+.pf-section {
+  background: var(--section-bg);
+  border: 1px solid var(--section-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.pf-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #7ec3ac;
+}
+
+.pf-section-title span {
+  font-size: 0.88rem;
+}
+
+.pf-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ── 4-column detail grid ── */
+
+.pf-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(100px, 140px);
+  gap: 8px 18px;
+  align-items: center;
+}
+
+.pf-grid .field-label {
+  text-align: right;
+}
+
+
+/* ── Balance Check ── */
+
+.pf-balance-check {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+.pf-balance-match  { color: #2e7d32; border-color: #2e7d32; }
+.pf-balance-higher { color: #f57c00; border-color: #f57c00; }
+.pf-balance-lower  { color: #c0392b; border-color: #c0392b; }
+
+/* ── Notes row ── */
+
+.pf-notes-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.pf-notes-row .field-label {
+  padding-top: 8px;
+  flex-shrink: 0;
+}
+
+.pf-notes-row textarea {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Responsive: collapse to single column ── */
+
+@media (max-width: 580px) {
+  .pf-grid {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px 12px;
+  }
+
+  .pf-datetime-row {
+    flex-wrap: wrap;
+  }
+
+  .pf-notes-row {
+    flex-direction: column;
+  }
+}

@@ -27,7 +27,7 @@ export default function RedemptionMethodModal({
     return (
       <div className="modal-backdrop" role="presentation" onClick={onClose}>
         <section
-          className="modal-card site-modal"
+          className="modal-card entity-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="redemption-method-modal-title"
@@ -40,8 +40,8 @@ export default function RedemptionMethodModal({
             <button className="ghost-button" type="button" onClick={onClose}>{closeLabel}</button>
           </div>
 
-          <div className="user-detail-body">
-            <dl className="detail-grid user-detail-grid">
+          <div className="modal-detail-body">
+            <dl className="detail-grid modal-detail-grid">
               <div><dt>Name</dt><dd>{method.name}</dd></div>
               <div><dt>Method Type</dt><dd>{method.method_type_name}</dd></div>
               <div><dt>User</dt><dd>{method.user_name}</dd></div>
@@ -55,8 +55,8 @@ export default function RedemptionMethodModal({
               </div>
             </dl>
 
-            <div className="user-detail-notes">
-              <p className="detail-label">Notes</p>
+            <div className="modal-detail-notes">
+              <p className="field-label">Notes</p>
               <div className="notes-display">{method.notes || "-"}</div>
             </div>
           </div>
@@ -77,7 +77,7 @@ export default function RedemptionMethodModal({
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section
-        className="modal-card site-modal"
+        className="modal-card entity-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="redemption-method-modal-title"
@@ -101,6 +101,7 @@ export default function RedemptionMethodModal({
               type="text"
               list="rm-name-suggestions"
               placeholder="Required"
+              title={nameInvalid ? "Name is required" : undefined}
               value={form.name}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
@@ -110,7 +111,6 @@ export default function RedemptionMethodModal({
                 <option key={name} value={name} />
               ))}
             </datalist>
-            {nameInvalid ? <p className="field-error">Name is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="rm-method-type-input">Method Type</label>
@@ -125,8 +125,9 @@ export default function RedemptionMethodModal({
               onChange={(mtId) => setForm((current) => ({ ...current, method_type_id: mtId }))}
               placeholder="Required"
               disabled={readOnly}
+              invalid={methodTypeInvalid}
+              title={methodTypeInvalid ? "Method type is required" : undefined}
             />
-            {methodTypeInvalid ? <p className="field-error">Method type is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="rm-user-input">User</label>
@@ -141,8 +142,9 @@ export default function RedemptionMethodModal({
               onChange={(userId) => setForm((current) => ({ ...current, user_id: userId }))}
               placeholder="Required"
               disabled={readOnly}
+              invalid={userInvalid}
+              title={userInvalid ? "User is required" : undefined}
             />
-            {userInvalid ? <p className="field-error">User is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="rm-active-input">Active</label>

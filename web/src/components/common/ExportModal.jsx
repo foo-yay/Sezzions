@@ -32,7 +32,7 @@ export default function ExportModal({ filteredItems, selectedItems, selectedCell
 
         <div className="export-modal-body">
           <div className="export-section">
-            <label className="export-label">Data scope</label>
+            <label className="field-label">Data scope</label>
             <div className="export-scope-options">
               {scopeOptions.map((opt) => (
                 <label key={opt.value} className="export-radio-label">
@@ -44,7 +44,7 @@ export default function ExportModal({ filteredItems, selectedItems, selectedCell
           </div>
 
           <div className="export-section">
-            <label className="export-label">Columns</label>
+            <label className="field-label">Columns</label>
             <div className="export-column-options">
               {allColumns.map((col) => (
                 <label key={col.key} className="export-checkbox-label">
@@ -56,7 +56,7 @@ export default function ExportModal({ filteredItems, selectedItems, selectedCell
           </div>
 
           <div className="export-section">
-            <label className="export-label">Preview ({dataItems.length} row{dataItems.length !== 1 ? "s" : ""})</label>
+            <label className="field-label">Preview ({dataItems.length} row{dataItems.length !== 1 ? "s" : ""})</label>
             <div className="export-preview-scroll">
               <table className="export-preview-table">
                 <thead>

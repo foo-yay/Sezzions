@@ -28,7 +28,7 @@ export default function CardModal({
     return (
       <div className="modal-backdrop" role="presentation" onClick={onClose}>
         <section
-          className="modal-card site-modal"
+          className="modal-card entity-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="card-modal-title"
@@ -41,8 +41,8 @@ export default function CardModal({
             <button className="ghost-button" type="button" onClick={onClose}>{closeLabel}</button>
           </div>
 
-          <div className="user-detail-body">
-            <dl className="detail-grid user-detail-grid">
+          <div className="modal-detail-body">
+            <dl className="detail-grid modal-detail-grid">
               <div><dt>Name</dt><dd>{card.name}</dd></div>
               <div><dt>User</dt><dd>{card.user_name || "\u2014"}</dd></div>
               <div><dt>Last Four</dt><dd>{card.last_four || "\u2014"}</dd></div>
@@ -57,8 +57,8 @@ export default function CardModal({
               </div>
             </dl>
 
-            <div className="user-detail-notes">
-              <p className="detail-label">Notes</p>
+            <div className="modal-detail-notes">
+              <p className="field-label">Notes</p>
               <div className="notes-display">{card.notes || "-"}</div>
             </div>
           </div>
@@ -79,7 +79,7 @@ export default function CardModal({
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section
-        className="modal-card site-modal"
+        className="modal-card entity-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="card-modal-title"
@@ -103,6 +103,7 @@ export default function CardModal({
               type="text"
               list="card-name-suggestions"
               placeholder="Required"
+              title={nameInvalid ? "Name is required" : undefined}
               value={form.name}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
@@ -112,7 +113,6 @@ export default function CardModal({
                 <option key={name} value={name} />
               ))}
             </datalist>
-            {nameInvalid ? <p className="field-error">Name is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="card-user-input">User</label>
@@ -128,8 +128,8 @@ export default function CardModal({
               placeholder="Search users..."
               disabled={readOnly}
               invalid={userIdInvalid}
+              title={userIdInvalid ? "User is required" : undefined}
             />
-            {userIdInvalid ? <p className="field-error">User is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="card-last-four-input">Last Four</label>
@@ -140,11 +140,11 @@ export default function CardModal({
               type="text"
               maxLength={4}
               placeholder="Optional (4 digits)"
+              title={lastFourInvalid ? "Must be exactly 4 characters" : undefined}
               value={form.last_four}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, last_four: event.target.value }))}
             />
-            {lastFourInvalid ? <p className="field-error">Must be exactly 4 characters.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="card-cashback-input">Cashback Rate</label>
@@ -157,11 +157,12 @@ export default function CardModal({
               min="0"
               max="100"
               placeholder="0.00"
+              title={cashbackInvalid ? "Cashback rate must be 0\u2013100" : undefined}
               value={form.cashback_rate}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, cashback_rate: event.target.value }))}
             />
-            {cashbackInvalid ? <p className="field-error">Cashback rate must be 0–100.</p> : null}
+
           </div>
 
           <label className="field-label" htmlFor="card-active-input">Active</label>

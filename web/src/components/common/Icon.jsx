@@ -122,6 +122,13 @@ export default function Icon({ name, className }) {
           <path d="M14.5 6.5a3.5 3.5 0 0 0-4.95 4.95l-4.05 4.05a1.5 1.5 0 1 0 2.12 2.12l4.05-4.05a3.5 3.5 0 0 0 4.95-4.95l-2.12 2.12-2.12-2.12 2.12-2.12Z" />
         </svg>
       );
+    case "purchases":
+      return (
+        <svg {...svgProps}>
+          <path d="M12 2v20" />
+          <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+        </svg>
+      );
     case "upload":
       return (
         <svg {...svgProps}>

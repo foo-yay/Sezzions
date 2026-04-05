@@ -29,7 +29,7 @@ export default function GameModal({
     return (
       <div className="modal-backdrop" role="presentation" onClick={onClose}>
         <section
-          className="modal-card game-modal"
+          className="modal-card entity-modal"
           role="dialog"
           aria-modal="true"
           aria-labelledby="game-modal-title"
@@ -42,8 +42,8 @@ export default function GameModal({
             <button className="ghost-button" type="button" onClick={onClose}>{closeLabel}</button>
           </div>
 
-          <div className="user-detail-body">
-            <dl className="detail-grid user-detail-grid">
+          <div className="modal-detail-body">
+            <dl className="detail-grid modal-detail-grid">
               <div><dt>Name</dt><dd>{game.name}</dd></div>
               <div><dt>Game Type</dt><dd>{game.game_type_name}</dd></div>
               <div><dt>Expected RTP</dt><dd>{getGameColumnValue(game, "rtp")}</dd></div>
@@ -58,8 +58,8 @@ export default function GameModal({
               </div>
             </dl>
 
-            <div className="user-detail-notes">
-              <p className="detail-label">Notes</p>
+            <div className="modal-detail-notes">
+              <p className="field-label">Notes</p>
               <div className="notes-display">{game.notes || "-"}</div>
             </div>
           </div>
@@ -80,7 +80,7 @@ export default function GameModal({
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section
-        className="modal-card game-modal"
+        className="modal-card entity-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="game-modal-title"
@@ -104,6 +104,7 @@ export default function GameModal({
               type="text"
               list="game-name-suggestions"
               placeholder="Required"
+              title={nameInvalid ? "Name is required" : undefined}
               value={form.name}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
@@ -113,7 +114,6 @@ export default function GameModal({
                 <option key={name} value={name} />
               ))}
             </datalist>
-            {nameInvalid ? <p className="field-error">Name is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="game-type-input">Game Type</label>
@@ -128,8 +128,9 @@ export default function GameModal({
               onChange={(gtId) => setForm((current) => ({ ...current, game_type_id: gtId }))}
               placeholder="Required"
               disabled={readOnly}
+              invalid={gameTypeInvalid}
+              title={gameTypeInvalid ? "Game type is required" : undefined}
             />
-            {gameTypeInvalid ? <p className="field-error">Game type is required.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="game-rtp-input">Expected RTP (%)</label>
@@ -142,11 +143,11 @@ export default function GameModal({
               max="100"
               step="0.01"
               placeholder="Optional (0-100)"
+              title={rtpInvalid ? "RTP must be between 0 and 100" : undefined}
               value={form.rtp}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, rtp: event.target.value }))}
             />
-            {rtpInvalid ? <p className="field-error">RTP must be between 0 and 100.</p> : null}
           </div>
 
           <label className="field-label" htmlFor="game-active-input">Active</label>

@@ -12,6 +12,23 @@ Rules:
 ## 2026-04-03
 
 ```yaml
+id: 2026-04-03-02
+type: feature
+areas: [api, web, services, repositories, models]
+issue: "#260"
+summary: "Phase 3a — Purchases Tab (full-stack CRUD)"
+details: >
+  Full-stack Purchases entity: HostedPurchase model with Decimal validation,
+  HostedPurchaseRepository with FK joins (users, sites, cards),
+  HostedWorkspacePurchaseService, 5 API endpoints at /v1/workspace/purchases,
+  PurchasesTab + PurchaseModal frontend with TypeaheadSelect for FKs,
+  Activity nav group in AppShell with /activity/:tabKey routing,
+  purchases icon in Icon component. 22 new tests (model + service + edge cases).
+```
+
+## 2026-04-03
+
+```yaml
 id: 2026-04-03-01
 type: feature
 areas: [services]
