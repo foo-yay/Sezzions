@@ -91,24 +91,29 @@ export default function PurchaseModal({
           return;
         }
         const data = await res.json();
-        const expectedTotal = Number(data.expected_total);
+        // Backend returns the expected pre-purchase balance (last known post-SC).
+        // Add sc_received to get the expected post-purchase balance, which is
+        // what starting_sc_balance (Post SC) actually represents.
+        const prePurchase = Number(data.expected_total);
+        const scReceived = Number(form.sc_received || form.amount || 0);
+        const expectedPost = prePurchase + scReceived;
         const enteredSC = Number(form.starting_sc_balance);
-        const delta = enteredSC - expectedTotal;
+        const delta = enteredSC - expectedPost;
 
         if (Math.abs(delta) <= 0.01) {
           setBalanceCheck({
             status: "match",
-            message: `Matches expected balance (${expectedTotal.toFixed(2)} SC)`,
+            message: `Matches expected balance (${expectedPost.toFixed(2)} SC)`,
           });
         } else if (delta > 0.01) {
           setBalanceCheck({
             status: "higher",
-            message: `+ ${delta.toFixed(2)} SC above expected (${expectedTotal.toFixed(2)} SC)`,
+            message: `+ ${delta.toFixed(2)} SC above expected (${expectedPost.toFixed(2)} SC)`,
           });
         } else {
           setBalanceCheck({
             status: "lower",
-            message: `- WARNING: ${Math.abs(delta).toFixed(2)} SC less than expected (${expectedTotal.toFixed(2)} SC)`,
+            message: `- WARNING: ${Math.abs(delta).toFixed(2)} SC less than expected (${expectedPost.toFixed(2)} SC)`,
           });
         }
       } catch {
@@ -120,7 +125,7 @@ export default function PurchaseModal({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [readOnly, form.user_id, form.site_id, form.purchase_date, form.purchase_time, form.starting_sc_balance, mode, purchase?.id, apiBaseUrl]);
+  }, [readOnly, form.user_id, form.site_id, form.purchase_date, form.purchase_time, form.starting_sc_balance, form.sc_received, form.amount, mode, purchase?.id, apiBaseUrl]);
 
   if (readOnly && purchase) {
     return (
