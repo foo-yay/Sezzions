@@ -391,3 +391,101 @@ class HostedPurchase:
             "status": self.status,
             "notes": self.notes,
         }
+
+
+@dataclass
+class HostedRedemption:
+    """A redemption (cash-out) transaction owned by a hosted workspace."""
+
+    user_id: str
+    site_id: str
+    amount: str
+    redemption_date: str
+    workspace_id: Optional[str] = None
+    redemption_time: str = "00:00:00"
+    redemption_entry_time_zone: Optional[str] = None
+    redemption_method_id: Optional[str] = None
+    fees: str = "0.00"
+    is_free_sc: bool = False
+    receipt_date: Optional[str] = None
+    processed: bool = False
+    more_remaining: bool = False
+    notes: Optional[str] = None
+    status: str = "PENDING"
+    canceled_at: Optional[str] = None
+    cancel_reason: Optional[str] = None
+    id: Optional[str] = None
+    # Joined display names (read-only)
+    user_name: Optional[str] = None
+    site_name: Optional[str] = None
+    method_name: Optional[str] = None
+    # Accounting fields (read-only, from realized transactions)
+    cost_basis: Optional[str] = None
+    net_pl: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if not self.user_id:
+            raise ValueError("User is required")
+
+        if not self.site_id:
+            raise ValueError("Site is required")
+
+        if not self.amount:
+            raise ValueError("Amount is required")
+        try:
+            amt = Decimal(str(self.amount))
+        except (InvalidOperation, ValueError) as exc:
+            raise ValueError("Amount must be a valid number") from exc
+        if amt < 0:
+            raise ValueError("Amount must be zero or greater")
+        self.amount = str(amt)
+
+        if not self.redemption_date or not self.redemption_date.strip():
+            raise ValueError("Redemption date is required")
+        self.redemption_date = self.redemption_date.strip()
+
+        if self.redemption_time is not None:
+            self.redemption_time = self.redemption_time.strip() or "00:00:00"
+
+        if self.fees:
+            try:
+                f = Decimal(str(self.fees))
+            except (InvalidOperation, ValueError) as exc:
+                raise ValueError("Fees must be a valid number") from exc
+            if f < 0:
+                raise ValueError("Fees must be zero or greater")
+            self.fees = str(f)
+        else:
+            self.fees = "0.00"
+
+        if self.notes is not None:
+            self.notes = self.notes.strip() or None
+
+        if self.cancel_reason is not None:
+            self.cancel_reason = self.cancel_reason.strip() or None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "workspace_id": self.workspace_id,
+            "user_id": self.user_id,
+            "user_name": self.user_name,
+            "site_id": self.site_id,
+            "site_name": self.site_name,
+            "amount": self.amount,
+            "fees": self.fees,
+            "redemption_date": self.redemption_date,
+            "redemption_time": self.redemption_time,
+            "redemption_method_id": self.redemption_method_id,
+            "method_name": self.method_name,
+            "is_free_sc": self.is_free_sc,
+            "receipt_date": self.receipt_date,
+            "processed": self.processed,
+            "more_remaining": self.more_remaining,
+            "status": self.status,
+            "canceled_at": self.canceled_at,
+            "cancel_reason": self.cancel_reason,
+            "cost_basis": self.cost_basis,
+            "net_pl": self.net_pl,
+            "notes": self.notes,
+        }

@@ -14,6 +14,7 @@ import RedemptionMethodsTab from "./RedemptionMethodsTab/RedemptionMethodsTab";
 import GameTypesTab from "./GameTypesTab/GameTypesTab";
 import GamesTab from "./GamesTab/GamesTab";
 import PurchasesTab from "./PurchasesTab/PurchasesTab";
+import RedemptionsTab from "./RedemptionsTab/RedemptionsTab";
 
 const setupTabs = [
   { key: "users", label: "Users", icon: "users", enabled: true },
@@ -24,6 +25,7 @@ const setupTabs = [
   { key: "game-types", label: "Game Types", icon: "gameTypes", enabled: true },
   { key: "games", label: "Games", icon: "games", enabled: true },
   { key: "purchases", label: "Purchases", icon: "purchases", enabled: true },
+  { key: "redemptions", label: "Redemptions", icon: "redemptions", enabled: true },
   { key: "tools", label: "Tools", icon: "tools", enabled: false }
 ];
 
@@ -240,6 +242,12 @@ export default function AppShell({ auth }) {
         ) : null}
         {activeTab === "purchases" ? (
           <PurchasesTab
+            apiBaseUrl={auth.apiBaseUrl}
+            hostedWorkspaceReady={auth.hostedWorkspaceReady}
+          />
+        ) : null}
+        {activeTab === "redemptions" ? (
+          <RedemptionsTab
             apiBaseUrl={auth.apiBaseUrl}
             hostedWorkspaceReady={auth.hostedWorkspaceReady}
           />
