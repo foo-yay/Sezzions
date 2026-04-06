@@ -34,6 +34,9 @@ from services.hosted.workspace_import_planning_service import (
 from services.hosted.workspace_purchase_service import (
     HostedWorkspacePurchaseService,
 )
+from services.hosted.workspace_redemption_service import (
+    HostedWorkspaceRedemptionService,
+)
 
 
 app = FastAPI(title="Sezzions Hosted API", version="0.1.0")
@@ -199,6 +202,45 @@ class HostedWorkspacePurchaseBatchDeleteRequest(BaseModel):
     purchase_ids: list[str]
 
 
+class HostedWorkspaceRedemptionCreateRequest(BaseModel):
+    user_id: str
+    site_id: str
+    amount: str
+    redemption_date: str
+    redemption_time: str | None = None
+    redemption_method_id: str | None = None
+    fees: str = "0.00"
+    is_free_sc: bool = False
+    receipt_date: str | None = None
+    processed: bool = False
+    more_remaining: bool = False
+    notes: str | None = None
+
+
+class HostedWorkspaceRedemptionUpdateRequest(BaseModel):
+    user_id: str
+    site_id: str
+    amount: str
+    redemption_date: str
+    redemption_time: str | None = None
+    redemption_method_id: str | None = None
+    fees: str = "0.00"
+    is_free_sc: bool = False
+    receipt_date: str | None = None
+    processed: bool = False
+    more_remaining: bool = False
+    status: str = "PENDING"
+    notes: str | None = None
+
+
+class HostedWorkspaceRedemptionBatchDeleteRequest(BaseModel):
+    redemption_ids: list[str]
+
+
+class HostedWorkspaceRedemptionCancelRequest(BaseModel):
+    reason: str | None = None
+
+
 cors_config = load_hosted_backend_config(required=False, require_db_password=False)
 app.add_middleware(
     CORSMiddleware,
@@ -310,6 +352,16 @@ def get_hosted_workspace_purchase_service() -> HostedWorkspacePurchaseService:
 
     session_factory = get_hosted_session_factory(config.sqlalchemy_url)
     return HostedWorkspacePurchaseService(session_factory)
+
+
+def get_hosted_workspace_redemption_service() -> HostedWorkspaceRedemptionService:
+    try:
+        config = load_hosted_backend_config(require_db_password=True)
+    except HostedConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    session_factory = get_hosted_session_factory(config.sqlalchemy_url)
+    return HostedWorkspaceRedemptionService(session_factory)
 
 
 def get_hosted_uploaded_sqlite_inspection_service() -> HostedUploadedSQLiteInspectionService:
@@ -1363,6 +1415,196 @@ def workspace_purchases_batch_delete(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return {"deleted_count": deleted_count}
+
+
+# ── Redemptions ────────────────────────────────────────────────
+
+
+@app.get("/v1/workspace/redemptions")
+def workspace_redemptions_list(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceRedemptionService = Depends(
+        get_hosted_workspace_redemption_service
+    ),
+) -> dict[str, object]:
+    try:
+        page = service.list_redemptions_page(
+            supabase_user_id=session.user_id,
+            limit=limit,
+            offset=offset,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return {
+        "redemptions": [
+            r.as_dict() if hasattr(r, "as_dict") else r
+            for r in page["redemptions"]
+        ],
+        "offset": page["offset"],
+        "limit": page["limit"],
+        "next_offset": page["next_offset"],
+        "total_count": page["total_count"],
+        "has_more": page["has_more"],
+    }
+
+
+@app.post("/v1/workspace/redemptions")
+def workspace_redemptions_create(
+    payload: HostedWorkspaceRedemptionCreateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceRedemptionService = Depends(
+        get_hosted_workspace_redemption_service
+    ),
+) -> dict[str, object]:
+    try:
+        redemption = service.create_redemption(
+            supabase_user_id=session.user_id,
+            user_id=payload.user_id,
+            site_id=payload.site_id,
+            amount=payload.amount,
+            redemption_date=payload.redemption_date,
+            redemption_time=payload.redemption_time,
+            redemption_method_id=payload.redemption_method_id,
+            fees=payload.fees,
+            is_free_sc=payload.is_free_sc,
+            receipt_date=payload.receipt_date,
+            processed=payload.processed,
+            more_remaining=payload.more_remaining,
+            notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return redemption.as_dict() if hasattr(redemption, "as_dict") else redemption
+
+
+@app.patch("/v1/workspace/redemptions/{redemption_id}")
+def workspace_redemptions_update(
+    redemption_id: str = Path(...),
+    payload: HostedWorkspaceRedemptionUpdateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceRedemptionService = Depends(
+        get_hosted_workspace_redemption_service
+    ),
+) -> dict[str, object]:
+    try:
+        redemption = service.update_redemption(
+            supabase_user_id=session.user_id,
+            redemption_id=redemption_id,
+            user_id=payload.user_id,
+            site_id=payload.site_id,
+            amount=payload.amount,
+            redemption_date=payload.redemption_date,
+            redemption_time=payload.redemption_time,
+            redemption_method_id=payload.redemption_method_id,
+            fees=payload.fees,
+            is_free_sc=payload.is_free_sc,
+            receipt_date=payload.receipt_date,
+            processed=payload.processed,
+            more_remaining=payload.more_remaining,
+            status=payload.status,
+            notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return redemption.as_dict() if hasattr(redemption, "as_dict") else redemption
+
+
+@app.delete(
+    "/v1/workspace/redemptions/{redemption_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def workspace_redemptions_delete(
+    redemption_id: str = Path(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceRedemptionService = Depends(
+        get_hosted_workspace_redemption_service
+    ),
+) -> Response:
+    try:
+        service.delete_redemption(
+            supabase_user_id=session.user_id,
+            redemption_id=redemption_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/v1/workspace/redemptions/batch-delete")
+def workspace_redemptions_batch_delete(
+    payload: HostedWorkspaceRedemptionBatchDeleteRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceRedemptionService = Depends(
+        get_hosted_workspace_redemption_service
+    ),
+) -> dict[str, int]:
+    try:
+        deleted_count = service.delete_redemptions(
+            supabase_user_id=session.user_id,
+            redemption_ids=payload.redemption_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"deleted_count": deleted_count}
+
+
+@app.post("/v1/workspace/redemptions/{redemption_id}/cancel")
+def workspace_redemptions_cancel(
+    redemption_id: str = Path(...),
+    payload: HostedWorkspaceRedemptionCancelRequest = Body(
+        HostedWorkspaceRedemptionCancelRequest()
+    ),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceRedemptionService = Depends(
+        get_hosted_workspace_redemption_service
+    ),
+) -> dict[str, object]:
+    try:
+        redemption = service.cancel_redemption(
+            supabase_user_id=session.user_id,
+            redemption_id=redemption_id,
+            reason=payload.reason,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return redemption.as_dict() if hasattr(redemption, "as_dict") else redemption
+
+
+@app.post("/v1/workspace/redemptions/{redemption_id}/uncancel")
+def workspace_redemptions_uncancel(
+    redemption_id: str = Path(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceRedemptionService = Depends(
+        get_hosted_workspace_redemption_service
+    ),
+) -> dict[str, object]:
+    try:
+        redemption = service.uncancel_redemption(
+            supabase_user_id=session.user_id,
+            redemption_id=redemption_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return redemption.as_dict() if hasattr(redemption, "as_dict") else redemption
 
 
 @app.get("/v1/workspace/import-plan")

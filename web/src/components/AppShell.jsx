@@ -14,6 +14,7 @@ import RedemptionMethodsTab from "./RedemptionMethodsTab/RedemptionMethodsTab";
 import GameTypesTab from "./GameTypesTab/GameTypesTab";
 import GamesTab from "./GamesTab/GamesTab";
 import PurchasesTab from "./PurchasesTab/PurchasesTab";
+import RedemptionsTab from "./RedemptionsTab/RedemptionsTab";
 
 const setupTabs = [
   { key: "users", label: "Users", icon: "users", enabled: true },
@@ -23,16 +24,20 @@ const setupTabs = [
   { key: "redemption-methods", label: "Redemption Methods", icon: "redemptionMethods", enabled: true },
   { key: "game-types", label: "Game Types", icon: "gameTypes", enabled: true },
   { key: "games", label: "Games", icon: "games", enabled: true },
-  { key: "purchases", label: "Purchases", icon: "purchases", enabled: true },
   { key: "tools", label: "Tools", icon: "tools", enabled: false }
 ];
 
-const validSetupKeys = new Set(setupTabs.map((t) => t.key));
+const topLevelTabs = [
+  { key: "purchases", label: "Purchases", icon: "purchases" },
+  { key: "redemptions", label: "Redemptions", icon: "redemptions" }
+];
+
+const allValidKeys = new Set([...setupTabs.map((t) => t.key), ...topLevelTabs.map((t) => t.key)]);
 
 export default function AppShell({ auth }) {
   const { tabKey } = useParams();
   const navigate = useNavigate();
-  const activeTab = validSetupKeys.has(tabKey) ? tabKey : "users";
+  const activeTab = allValidKeys.has(tabKey) ? tabKey : "users";
 
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [setupNavOpen, setSetupNavOpen] = useState(true);
@@ -136,6 +141,25 @@ export default function AppShell({ auth }) {
       </header>
 
       <aside className={railCollapsed ? "workspace-rail collapsed" : "workspace-rail"}>
+        <nav className={railCollapsed ? "rail-toplevel-nav collapsed" : "rail-toplevel-nav"} aria-label="Main navigation">
+          {topLevelTabs.map((tab) => (
+            <button
+              key={tab.key}
+              className={tab.key === activeTab ? "rail-nav-button active" : "rail-nav-button"}
+              type="button"
+              aria-current={tab.key === activeTab ? "page" : undefined}
+              aria-label={tab.label}
+              title={tab.label}
+              onClick={() => navigate(`/setup/${tab.key}`)}
+            >
+              <span className="rail-nav-main">
+                <span className="rail-item-icon" aria-hidden="true"><Icon name={tab.icon} className="app-icon" /></span>
+                {!railCollapsed ? <span className="rail-nav-label">{tab.label}</span> : null}
+              </span>
+            </button>
+          ))}
+        </nav>
+
         <div className="rail-section-block">
           <button
             className="rail-group-toggle"
@@ -240,6 +264,12 @@ export default function AppShell({ auth }) {
         ) : null}
         {activeTab === "purchases" ? (
           <PurchasesTab
+            apiBaseUrl={auth.apiBaseUrl}
+            hostedWorkspaceReady={auth.hostedWorkspaceReady}
+          />
+        ) : null}
+        {activeTab === "redemptions" ? (
+          <RedemptionsTab
             apiBaseUrl={auth.apiBaseUrl}
             hostedWorkspaceReady={auth.hostedWorkspaceReady}
           />

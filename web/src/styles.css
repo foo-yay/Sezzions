@@ -286,7 +286,7 @@ h3 {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  gap: 22px;
+  gap: 16px;
   background:
     radial-gradient(circle at top left, rgba(212, 107, 61, 0.16), transparent 30%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 24%),
@@ -459,6 +459,7 @@ h3 {
 
 .workspace-rail.collapsed {
   padding: 0;
+  gap: 0;
   align-items: center;
   border-radius: 16px;
   overflow: hidden;
@@ -489,8 +490,29 @@ h3 {
   border-radius: 10px;
 }
 
+.rail-toplevel-nav {
+  display: grid;
+  gap: 10px;
+}
+
+.workspace-rail.collapsed .rail-toplevel-nav {
+  width: 100%;
+  justify-items: center;
+  padding: 12px 0;
+}
+
+.rail-toplevel-nav.collapsed .rail-nav-button {
+  justify-content: center;
+  padding: 0;
+  width: var(--nav-collapsed-button-size);
+  min-width: var(--nav-collapsed-button-size);
+  min-height: var(--nav-collapsed-button-size);
+  border-radius: 10px;
+}
+
 .workspace-rail.collapsed .rail-group-toggle:hover,
-.workspace-rail.collapsed .rail-footer-icon:hover {
+.workspace-rail.collapsed .rail-footer-icon:hover,
+.rail-toplevel-nav.collapsed .rail-nav-button:hover {
   transform: translateY(-1px) scale(1.03);
 }
 
