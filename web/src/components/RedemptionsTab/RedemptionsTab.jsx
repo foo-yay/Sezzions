@@ -44,8 +44,8 @@ const redemptionsConfig = {
     fees: redemption.fees ?? "",
     redemption_date: redemption.redemption_date || "",
     redemption_time: redemption.redemption_time || "",
+    redemption_method_type_id: redemption.method_type_id || "",
     redemption_method_id: redemption.redemption_method_id || "",
-    is_free_sc: Boolean(redemption.is_free_sc),
     receipt_date: redemption.receipt_date || "",
     processed: Boolean(redemption.processed),
     more_remaining: Boolean(redemption.more_remaining),
@@ -59,7 +59,6 @@ const redemptionsConfig = {
     redemption_time: form.redemption_time || null,
     redemption_method_id: form.redemption_method_id || null,
     fees: form.fees || "0.00",
-    is_free_sc: Boolean(form.is_free_sc),
     receipt_date: form.receipt_date || null,
     processed: Boolean(form.processed),
     more_remaining: Boolean(form.more_remaining),
@@ -95,6 +94,7 @@ const redemptionsConfig = {
   extraLoaders: [
     { key: "users", endpoint: "/v1/workspace/users?limit=500&offset=0", responseKey: "users" },
     { key: "sites", endpoint: "/v1/workspace/sites?limit=500&offset=0", responseKey: "sites" },
+    { key: "methodTypes", endpoint: "/v1/workspace/redemption-method-types?limit=500&offset=0", responseKey: "redemption_method_types" },
     { key: "redemptionMethods", endpoint: "/v1/workspace/redemption-methods?limit=500&offset=0", responseKey: "redemption_methods" },
   ],
 };
@@ -162,6 +162,7 @@ export default function RedemptionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
           users={table.extraData.users || []}
           sites={table.extraData.sites || []}
           redemptionMethods={table.extraData.redemptionMethods || []}
+          methodTypes={table.extraData.methodTypes || []}
           apiBaseUrl={apiBaseUrl}
           onClose={table.requestCloseModal}
           onRequestEdit={() => table.selectedItem && table.openModal("edit", table.selectedItem)}
