@@ -1659,26 +1659,35 @@ h2.breadcrumb-segment {
   color: #ffc8b0;
 }
 
-/* ── Redemption row coloring (desktop parity) ─────────────────────────────── */
+/* ── Redemption receipt status pills ───────────────────────────────────────── */
 
-.redemption-row-loss td {
-  color: #c0392b !important;
-}
-.redemption-row-canceled td {
-  color: #95a5a6 !important;
-}
-.redemption-row-pending-cancel td {
-  color: #8e44ad !important;
-}
-.redemption-row-pending td {
-  color: #e67e22 !important;
-}
-
-.redemption-receipt-status {
-  font-weight: 600;
-  font-size: 0.8rem;
+.receipt-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.receipt-pill.pending {
+  background: rgba(230, 126, 34, 0.18);
+  color: #f0a060;
+}
+.receipt-pill.canceled {
+  background: rgba(149, 165, 166, 0.18);
+  color: #b0bec5;
+}
+.receipt-pill.pending-cancel {
+  background: rgba(142, 68, 173, 0.18);
+  color: #c084e0;
+}
+.receipt-pill.loss {
+  background: rgba(192, 57, 43, 0.18);
+  color: #e07060;
 }
 
 .empty-state-cell {

@@ -102,7 +102,14 @@ function renderRedemptionCell(redemption, columnKey, search) {
   if (columnKey === "receipt_date") {
     const display = getRedemptionColumnValue(redemption, "receipt_date");
     if (display === "PENDING" || display === "CANCELED" || display === "PENDING CANCEL") {
-      return <span className="redemption-receipt-status">{display}</span>;
+      const pillClass = display === "PENDING" && Number(redemption.amount) === 0
+        ? "loss"
+        : display === "CANCELED"
+          ? "canceled"
+          : display === "PENDING CANCEL"
+            ? "pending-cancel"
+            : "pending";
+      return <span className={`receipt-pill ${pillClass}`}>{display}</span>;
     }
     return <HighlightMatch text={display} query={search} />;
   }
@@ -121,15 +128,6 @@ function renderRedemptionCell(redemption, columnKey, search) {
   return <HighlightMatch text={getRedemptionColumnValue(redemption, columnKey)} query={search} />;
 }
 
-// ── Row class for status-based coloring ─────────────────────────────────────
-
-function getRedemptionRowClassName(redemption) {
-  if (redemption.status === "CANCELED") return "redemption-row-canceled";
-  if (redemption.status === "PENDING_CANCEL") return "redemption-row-pending-cancel";
-  if (Number(redemption.amount) === 0) return "redemption-row-loss";
-  if (redemption.status === "PENDING" && !redemption.receipt_date) return "redemption-row-pending";
-  return "";
-}
 
 // ── Component ───────────────────────────────────────────────────────────────
 
@@ -152,6 +150,12 @@ export default function RedemptionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
   const pendingSelected = selectedRedemptions.filter(
     (r) => r.status === "PENDING"
   );
+
+  const hasUnreceivedSelected = selectedRedemptions.length > 0
+    && selectedRedemptions.some((r) => r.status === "PENDING" && !r.receipt_date);
+
+  const hasUnprocessedSelected = selectedRedemptions.length > 0
+    && selectedRedemptions.some((r) => !r.processed);
 
   async function handleCancel() {
     if (!canCancel) return;
@@ -235,10 +239,18 @@ export default function RedemptionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
 
   const extraButtons = (
     <>
-      <button className="ghost-button" type="button" onClick={() => setMarkReceivedOpen(true)} disabled={!pendingSelected.length}>Mark Received</button>
-      <button className="ghost-button" type="button" onClick={handleMarkProcessed} disabled={!pendingSelected.length}>Mark Processed</button>
-      <button className="ghost-button" type="button" onClick={handleCancel} disabled={!canCancel}>Cancel</button>
-      <button className="ghost-button" type="button" onClick={handleUncancel} disabled={!canUncancel}>Uncancel</button>
+      {hasUnreceivedSelected && (
+        <button className="ghost-button" type="button" onClick={() => setMarkReceivedOpen(true)}>Mark Received</button>
+      )}
+      {hasUnprocessedSelected && (
+        <button className="ghost-button" type="button" onClick={handleMarkProcessed}>Mark Processed</button>
+      )}
+      {canCancel && (
+        <button className="ghost-button" type="button" onClick={handleCancel}>Cancel</button>
+      )}
+      {canUncancel && (
+        <button className="ghost-button" type="button" onClick={handleUncancel}>Uncancel</button>
+      )}
     </>
   );
 
@@ -251,7 +263,6 @@ export default function RedemptionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
         columns={redemptionTableColumns}
         getCellDisplayValue={getRedemptionColumnValue}
         renderCell={renderRedemptionCell}
-        getRowClassName={getRedemptionRowClassName}
         defaultColumnWidths={["11%", "9%", "8%", "9%", "8%", "8%", "7%", "9%", "9%", "7%"]}
         defaultHeaderGridTemplate="36px 11% 9% 8% 9% 8% 8% 7% 9% 9% 7% 1fr"
         extraToolbarButtons={extraButtons}
