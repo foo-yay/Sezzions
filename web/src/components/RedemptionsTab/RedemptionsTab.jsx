@@ -149,8 +149,8 @@ export default function RedemptionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
       columns={redemptionTableColumns}
       getCellDisplayValue={getRedemptionColumnValue}
       renderCell={renderRedemptionCell}
-      defaultColumnWidths={["9%", "10%", "10%", "9%", "7%", "10%", "7%", "8%", "9%", "8%", "8%", "1fr"]}
-      defaultHeaderGridTemplate="36px 9% 10% 10% 9% 7% 10% 7% 8% 9% 8% 8% 1fr"
+      defaultColumnWidths={["8%", "8%", "7%", "8%", "6%", "10%", "6%", "9%", "8%", "8%", "7%"]}
+      defaultHeaderGridTemplate="36px 8% 8% 7% 8% 6% 10% 6% 9% 8% 8% 7% 1fr"
     >
       {table.modalMode ? (
         <RedemptionModal

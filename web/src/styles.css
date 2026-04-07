@@ -1400,6 +1400,11 @@ h2.breadcrumb-segment {
   white-space: nowrap;
 }
 
+.data-table td[data-col="status"] {
+  overflow: visible;
+  text-overflow: clip;
+}
+
 .table-sort-button {
   width: 100%;
   min-height: 26px;
