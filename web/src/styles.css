@@ -1700,11 +1700,15 @@ h2.breadcrumb-segment {
   color: var(--muted);
   cursor: pointer;
   user-select: none;
-  margin-left: 4px;
 }
 .quick-filter-check input[type="checkbox"] {
   accent-color: var(--accent);
   cursor: pointer;
+}
+
+.users-toolbar-secondary {
+  gap: 12px;
+  padding-top: 2px;
 }
 
 .empty-state-cell {

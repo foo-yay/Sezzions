@@ -24,6 +24,7 @@ export default function EntityTable({
   defaultColumnWidths,
   defaultHeaderGridTemplate,
   extraToolbarButtons,
+  extraToolbarRow,
   getRowClassName,
   children,
 }) {
@@ -144,6 +145,11 @@ export default function EntityTable({
               <button className="ghost-button" type="button" onClick={handleRefresh} disabled={!hostedWorkspaceReady}>Refresh</button>
               {extraToolbarButtons}
             </div>
+            {extraToolbarRow && (
+              <div className="toolbar-row wrap-toolbar users-toolbar-secondary">
+                {extraToolbarRow}
+              </div>
+            )}
           </div>
           <div className="users-search-bar">
             <label className="users-search-field" htmlFor={`${entityName}-search-input`}>

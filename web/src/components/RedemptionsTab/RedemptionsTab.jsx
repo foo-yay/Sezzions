@@ -263,6 +263,11 @@ export default function RedemptionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
       {canUncancel && (
         <button className="ghost-button" type="button" onClick={handleUncancel}>Uncancel</button>
       )}
+    </>
+  );
+
+  const quickFilterRow = (
+    <>
       <label className="quick-filter-check" title="Show only redemptions with no receipt date">
         <input type="checkbox" checked={pendingOnly} onChange={(e) => setPendingOnly(e.target.checked)} />
         Pending
@@ -286,6 +291,7 @@ export default function RedemptionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
         defaultColumnWidths={["11%", "9%", "8%", "9%", "8%", "8%", "7%", "9%", "9%", "7%"]}
         defaultHeaderGridTemplate="36px 11% 9% 8% 9% 8% 8% 7% 9% 9% 7% 1fr"
         extraToolbarButtons={extraButtons}
+        extraToolbarRow={quickFilterRow}
       >
         {table.modalMode ? (
           <RedemptionModal
