@@ -1690,6 +1690,23 @@ h2.breadcrumb-segment {
   color: #e07060;
 }
 
+/* ── Quick filter checkboxes ──────────────────────────────────────────────── */
+
+.quick-filter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  margin-left: 4px;
+}
+.quick-filter-check input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .empty-state-cell {
   color: var(--muted);
   text-align: center;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import useEntityTable from "../../hooks/useEntityTable";
 import EntityTable from "../common/EntityTable";
 import HighlightMatch from "../common/HighlightMatch";
@@ -132,8 +132,20 @@ function renderRedemptionCell(redemption, columnKey, search) {
 // ── Component ───────────────────────────────────────────────────────────────
 
 export default function RedemptionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
-  const table = useEntityTable(redemptionsConfig, { apiBaseUrl, hostedWorkspaceReady });
+  const [pendingOnly, setPendingOnly] = useState(false);
+  const [unprocessedOnly, setUnprocessedOnly] = useState(false);
   const [markReceivedOpen, setMarkReceivedOpen] = useState(false);
+
+  const quickFilter = useCallback((r) => {
+    if (pendingOnly) {
+      const st = r.status || "PENDING";
+      if (r.receipt_date || st === "CANCELED" || st === "PENDING_CANCEL") return false;
+    }
+    if (unprocessedOnly && r.processed) return false;
+    return true;
+  }, [pendingOnly, unprocessedOnly]);
+
+  const table = useEntityTable(redemptionsConfig, { apiBaseUrl, hostedWorkspaceReady, quickFilter });
 
   // ── Quick action helpers ────────────────────────────────────────────────
 
@@ -251,6 +263,14 @@ export default function RedemptionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
       {canUncancel && (
         <button className="ghost-button" type="button" onClick={handleUncancel}>Uncancel</button>
       )}
+      <label className="quick-filter-check" title="Show only redemptions with no receipt date">
+        <input type="checkbox" checked={pendingOnly} onChange={(e) => setPendingOnly(e.target.checked)} />
+        Pending
+      </label>
+      <label className="quick-filter-check" title="Show only redemptions that are not processed">
+        <input type="checkbox" checked={unprocessedOnly} onChange={(e) => setUnprocessedOnly(e.target.checked)} />
+        Unprocessed
+      </label>
     </>
   );
 
