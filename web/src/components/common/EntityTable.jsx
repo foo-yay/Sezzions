@@ -24,6 +24,7 @@ export default function EntityTable({
   defaultColumnWidths,
   defaultHeaderGridTemplate,
   extraToolbarButtons,
+  getRowClassName,
   children,
 }) {
   const {
@@ -260,7 +261,7 @@ export default function EntityTable({
               {filteredItems.length ? filteredItems.map((item) => (
                 <tr
                   key={item.id}
-                  className={selectedIds.includes(item.id) ? "selected-row" : undefined}
+                  className={[selectedIds.includes(item.id) ? "selected-row" : "", getRowClassName ? getRowClassName(item) : ""].filter(Boolean).join(" ") || undefined}
                   aria-selected={selectedIds.includes(item.id)}
                   onMouseDown={(event) => {
                     if (event.shiftKey || event.metaKey || event.ctrlKey) {

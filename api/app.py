@@ -241,6 +241,15 @@ class HostedWorkspaceRedemptionCancelRequest(BaseModel):
     reason: str | None = None
 
 
+class HostedWorkspaceRedemptionBulkMarkReceivedRequest(BaseModel):
+    redemption_ids: list[str]
+    receipt_date: str | None = None
+
+
+class HostedWorkspaceRedemptionBulkMarkProcessedRequest(BaseModel):
+    redemption_ids: list[str]
+
+
 cors_config = load_hosted_backend_config(required=False, require_db_password=False)
 app.add_middleware(
     CORSMiddleware,
@@ -1605,6 +1614,49 @@ def workspace_redemptions_uncancel(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return redemption.as_dict() if hasattr(redemption, "as_dict") else redemption
+
+
+@app.post("/v1/workspace/redemptions/bulk-mark-received")
+def workspace_redemptions_bulk_mark_received(
+    payload: HostedWorkspaceRedemptionBulkMarkReceivedRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceRedemptionService = Depends(
+        get_hosted_workspace_redemption_service
+    ),
+) -> dict[str, int]:
+    try:
+        updated_count = service.bulk_mark_received(
+            supabase_user_id=session.user_id,
+            redemption_ids=payload.redemption_ids,
+            receipt_date=payload.receipt_date,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"updated_count": updated_count}
+
+
+@app.post("/v1/workspace/redemptions/bulk-mark-processed")
+def workspace_redemptions_bulk_mark_processed(
+    payload: HostedWorkspaceRedemptionBulkMarkProcessedRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceRedemptionService = Depends(
+        get_hosted_workspace_redemption_service
+    ),
+) -> dict[str, int]:
+    try:
+        updated_count = service.bulk_mark_processed(
+            supabase_user_id=session.user_id,
+            redemption_ids=payload.redemption_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"updated_count": updated_count}
 
 
 @app.get("/v1/workspace/import-plan")

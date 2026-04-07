@@ -9,6 +9,28 @@ Rules:
 
 ---
 
+## 2026-04-06
+
+```yaml
+id: 2026-04-06-01
+type: feature
+areas: [api, web, services, repositories, docs]
+issue: "#263"
+summary: "Redemptions Tab: desktop parity — columns, row coloring, quick actions"
+details: >
+  Aligned Redemptions table columns to match desktop app order:
+  Date/Time, User, Site, Cost Basis, Amount, Unbased, Type, Receipt,
+  Method, Processed, Notes. Removed web-only columns (Fees, Status chip,
+  Net P&L). Added Unbased (client-computed: max(0, amount-cost_basis)),
+  Processed (✓/blank), full datetime in Date column, PENDING/CANCELED/
+  PENDING CANCEL status text in Receipt column. Added row color coding
+  by status (red=loss, gray=canceled, purple=pending_cancel, orange=pending).
+  Added Cancel/Uncancel buttons (existing endpoints), Mark Received
+  bulk dialog (new endpoint), Mark Processed bulk button (new endpoint).
+  Added getRowClassName prop to EntityTable for reusable row styling.
+  Updated WEB_PORT_PLAN.md with current state and parity tracking matrix.
+```
+
 ## 2026-04-03
 
 ```yaml

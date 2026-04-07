@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update as sa_update
 from sqlalchemy.orm import aliased
 
 from services.hosted.models import HostedRedemption
@@ -223,6 +223,39 @@ class HostedRedemptionRepository:
                 HostedRedemptionRecord.workspace_id == workspace_id,
                 HostedRedemptionRecord.id.in_(normalized_ids),
             )
+        )
+        session.flush()
+        return int(result.rowcount or 0)
+
+    def bulk_set_receipt_date(
+        self, session, *, redemption_ids: list[str], workspace_id: str, receipt_date: str | None
+    ) -> int:
+        if not redemption_ids:
+            return 0
+        result = session.execute(
+            sa_update(HostedRedemptionRecord)
+            .where(
+                HostedRedemptionRecord.workspace_id == workspace_id,
+                HostedRedemptionRecord.id.in_(redemption_ids),
+                HostedRedemptionRecord.status == "PENDING",
+            )
+            .values(receipt_date=receipt_date)
+        )
+        session.flush()
+        return int(result.rowcount or 0)
+
+    def bulk_set_processed(
+        self, session, *, redemption_ids: list[str], workspace_id: str, processed: bool = True
+    ) -> int:
+        if not redemption_ids:
+            return 0
+        result = session.execute(
+            sa_update(HostedRedemptionRecord)
+            .where(
+                HostedRedemptionRecord.workspace_id == workspace_id,
+                HostedRedemptionRecord.id.in_(redemption_ids),
+            )
+            .values(processed=processed)
         )
         session.flush()
         return int(result.rowcount or 0)

@@ -1659,6 +1659,28 @@ h2.breadcrumb-segment {
   color: #ffc8b0;
 }
 
+/* ── Redemption row coloring (desktop parity) ─────────────────────────────── */
+
+.redemption-row-loss td {
+  color: #c0392b !important;
+}
+.redemption-row-canceled td {
+  color: #95a5a6 !important;
+}
+.redemption-row-pending-cancel td {
+  color: #8e44ad !important;
+}
+.redemption-row-pending td {
+  color: #e67e22 !important;
+}
+
+.redemption-receipt-status {
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
 .empty-state-cell {
   color: var(--muted);
   text-align: center;

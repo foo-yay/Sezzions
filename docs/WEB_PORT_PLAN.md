@@ -34,10 +34,10 @@
 | Full stack | Cards | ✅ Complete (FK → User) |
 | Full stack | Redemption Method Types | ✅ Complete |
 | Full stack | Redemption Methods | ✅ Complete (FK → User, Method Type) |
-| Persistence record only | Game Types | `HostedGameTypeRecord` exists, no model/repo/service/API/frontend |
-| Persistence record only | Games | `HostedGameRecord` exists, no model/repo/service/API/frontend |
-| Persistence record only | Purchases | `HostedPurchaseRecord` exists |
-| Persistence record only | Redemptions | `HostedRedemptionRecord` exists |
+| Full stack | Game Types | ✅ Complete (Issue #254) |
+| Full stack | Games | ✅ Complete (Issue #255, FK → Game Type) |
+| Full stack | Purchases | ✅ Complete (Issue #260, Phase 3a) |
+| Full stack | Redemptions | ✅ Complete (Issue #261/262, Phase 3b) — desktop parity polish in Issue #263 |
 | Persistence record only | Game Sessions | `HostedGameSessionRecord` exists |
 
 ### Shared Web Infrastructure
@@ -280,6 +280,27 @@ These are built on top of Phase 2's accounting engine. Order is critical.
 - FIFO reprocessing on accounting-field edits
 
 **Estimated complexity**: VERY HIGH — FIFO integration, status lifecycle, cancel/uncancel, bulk actions.
+
+**Desktop parity status (Issue #263):**
+
+| Feature | Status |
+|---------|--------|
+| Table columns match desktop order (Date/Time, User, Site, Cost Basis, Amount, Unbased, Type, Receipt, Method, Processed, Notes) | ✅ Done |
+| Date column shows full datetime | ✅ Done |
+| Unbased column (client-side computed: max(0, amount - cost_basis)) | ✅ Done |
+| Processed column (✓ / blank) | ✅ Done |
+| Fees/Status/Net P&L removed from table (kept in modal) | ✅ Done |
+| Receipt column shows PENDING/CANCELED/PENDING CANCEL when no date | ✅ Done |
+| Row color coding: red (loss), gray (canceled), purple (pending_cancel), orange (pending) | ✅ Done |
+| Cancel button (single, PENDING w/ no receipt) | ✅ Done (uses existing endpoint) |
+| Uncancel button (single, CANCELED) | ✅ Done (uses existing endpoint) |
+| Mark Received bulk action (date picker dialog) | ✅ Done (new endpoint) |
+| Mark Processed bulk action | ✅ Done (new endpoint) |
+| Adjusted badge on Site column | ⏳ Deferred (depends on adjustments infrastructure) |
+| Timezone indicator on Date column | ⏳ Deferred (depends on travel mode) |
+| Pending / Unprocessed quick-filter checkboxes | ⏳ Deferred (UX enhancement) |
+| PENDING_CANCEL auto-resolution on session end | ⏳ Deferred (depends on Game Sessions) |
+| Active session block on create/cancel | ⏳ Deferred (depends on Game Sessions) |
 
 ### 5c. Game Sessions Tab
 
