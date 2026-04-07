@@ -145,12 +145,12 @@ export default function EntityTable({
               <button className="ghost-button" type="button" onClick={handleRefresh} disabled={!hostedWorkspaceReady}>Refresh</button>
               {extraToolbarButtons}
             </div>
-            {extraToolbarRow && (
-              <div className="toolbar-row wrap-toolbar users-toolbar-secondary">
-                {extraToolbarRow}
-              </div>
-            )}
           </div>
+          {extraToolbarRow && (
+            <div className="toolbar-row users-toolbar-secondary">
+              {extraToolbarRow}
+            </div>
+          )}
           <div className="users-search-bar">
             <label className="users-search-field" htmlFor={`${entityName}-search-input`}>
               <span className="users-search-icon" aria-hidden="true"><Icon name="search" className="app-icon" /></span>

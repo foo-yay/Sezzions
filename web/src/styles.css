@@ -1707,8 +1707,11 @@ h2.breadcrumb-segment {
 }
 
 .users-toolbar-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: 12px;
-  padding-top: 2px;
+  padding: 0 14px 4px;
 }
 
 .empty-state-cell {
