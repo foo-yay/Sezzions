@@ -35,6 +35,7 @@ const purchasesConfig = {
     || (purchase.notes || "").toLowerCase().includes(text)
     || (purchase.amount || "").includes(text),
   numericSortColumns: ["amount", "sc_received", "starting_sc_balance", "cashback_earned", "remaining_amount"],
+  getItemLabel: (p) => `${p.purchase_date || "unknown"} — ${p.user_name || "unknown"}`,
   normalizeForm: normalizePurchaseForm,
   itemToForm: (purchase) => ({
     user_id: purchase.user_id || "",

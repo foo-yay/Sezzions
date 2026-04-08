@@ -35,6 +35,7 @@ export default function useEntityTable(config, { apiBaseUrl, hostedWorkspaceRead
     buildSuggestions,
     extraLoaders = [],
     mergeById = mergeItemsById,
+    getItemLabel = (item) => item.name,
   } = config;
 
   // ── Refs ──────────────────────────────────────────────────────────────────
@@ -962,7 +963,7 @@ export default function useEntityTable(config, { apiBaseUrl, hostedWorkspaceRead
     const singularCap = entitySingular.charAt(0).toUpperCase() + entitySingular.slice(1);
     const pluralCap = entityName.charAt(0).toUpperCase() + entityName.slice(1);
     const prompt = itemsToDelete.length === 1
-      ? `Delete ${entitySingular} '${itemsToDelete[0].name}'? This cannot be undone.`
+      ? `Delete ${entitySingular} '${getItemLabel(itemsToDelete[0])}'? This cannot be undone.`
       : `Delete ${itemsToDelete.length} ${entityName}? This cannot be undone.`;
 
     openConfirmation({

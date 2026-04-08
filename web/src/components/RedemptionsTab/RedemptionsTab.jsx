@@ -40,6 +40,7 @@ const redemptionsConfig = {
     || (redemption.notes || "").toLowerCase().includes(text)
     || (redemption.amount || "").includes(text),
   numericSortColumns: ["amount", "fees", "cost_basis", "unbased"],
+  getItemLabel: (r) => `${r.redemption_date || "unknown"} — ${r.user_name || "unknown"}`,
   normalizeForm: normalizeRedemptionForm,
   itemToForm: (redemption) => ({
     user_id: redemption.user_id || "",
