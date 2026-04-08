@@ -288,8 +288,8 @@ export default function RedemptionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
         columns={redemptionTableColumns}
         getCellDisplayValue={getRedemptionColumnValue}
         renderCell={renderRedemptionCell}
-        defaultColumnWidths={["11%", "9%", "8%", "9%", "8%", "8%", "7%", "9%", "9%", "7%"]}
-        defaultHeaderGridTemplate="36px 11% 9% 8% 9% 8% 8% 7% 9% 9% 7% 1fr"
+        defaultColumnWidths={["130px", "100px", "90px", "100px", "90px", "90px", "75px", "110px", "100px", "95px"]}
+        defaultHeaderGridTemplate="36px 130px 100px 90px 100px 90px 90px 75px 110px 100px 95px 1fr"
         extraToolbarButtons={extraButtons}
         extraToolbarRow={quickFilterRow}
       >
