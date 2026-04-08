@@ -1276,6 +1276,7 @@ h2.breadcrumb-segment {
 .users-table-header-label {
   flex: 1;
   min-width: 0;
+  white-space: nowrap;
 }
 
 .users-table-header-cell .table-sort-button {
@@ -1398,6 +1399,11 @@ h2.breadcrumb-segment {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.data-table td[data-col="status"] {
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .table-sort-button {
@@ -1652,6 +1658,61 @@ h2.breadcrumb-segment {
 .status-chip.inactive {
   background: rgba(239, 136, 99, 0.16);
   color: #ffc8b0;
+}
+
+/* ── Redemption receipt status pills ───────────────────────────────────────── */
+
+.receipt-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.receipt-pill.pending {
+  background: rgba(230, 126, 34, 0.18);
+  color: #f0a060;
+}
+.receipt-pill.canceled {
+  background: rgba(149, 165, 166, 0.18);
+  color: #b0bec5;
+}
+.receipt-pill.pending-cancel {
+  background: rgba(142, 68, 173, 0.18);
+  color: #c084e0;
+}
+.receipt-pill.loss {
+  background: rgba(192, 57, 43, 0.18);
+  color: #e07060;
+}
+
+/* ── Quick filter checkboxes ──────────────────────────────────────────────── */
+
+.quick-filter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.quick-filter-check input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.users-toolbar-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 0 14px 4px;
 }
 
 .empty-state-cell {

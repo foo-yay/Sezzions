@@ -23,8 +23,10 @@ export function normalizeRedemptionForm(form) {
 }
 
 export function getRedemptionColumnValue(redemption, columnKey) {
-  if (columnKey === "status") {
-    return redemption.status || "PENDING";
+  if (columnKey === "redemption_date") {
+    const date = redemption.redemption_date || "—";
+    const time = redemption.redemption_time || "";
+    return time ? `${date} ${time}` : date;
   }
   if (columnKey === "user_name") return redemption.user_name || "—";
   if (columnKey === "site_name") return redemption.site_name || "—";
@@ -32,10 +34,20 @@ export function getRedemptionColumnValue(redemption, columnKey) {
   if (columnKey === "amount") return formatCurrency(redemption.amount);
   if (columnKey === "fees") return formatCurrency(redemption.fees);
   if (columnKey === "cost_basis") return formatCurrency(redemption.cost_basis);
-  if (columnKey === "net_pl") return formatCurrency(redemption.net_pl);
-  if (columnKey === "redemption_date") return redemption.redemption_date || "—";
-  if (columnKey === "receipt_date") return redemption.receipt_date || "—";
+  if (columnKey === "unbased") {
+    const amount = Number(redemption.amount);
+    const costBasis = Number(redemption.cost_basis);
+    if (isNaN(amount) || redemption.cost_basis === null || redemption.cost_basis === undefined) return "—";
+    const unbased = Math.max(0, amount - costBasis);
+    return formatCurrency(unbased);
+  }
+  if (columnKey === "receipt_date") {
+    if (redemption.status === "CANCELED") return "CANCELED";
+    if (redemption.status === "PENDING_CANCEL") return "PENDING CANCEL";
+    if (redemption.receipt_date) return redemption.receipt_date;
+    return "PENDING";
+  }
   if (columnKey === "more_remaining") return redemption.more_remaining ? "Partial" : "Full";
-  if (columnKey === "processed") return redemption.processed ? "Yes" : "No";
+  if (columnKey === "processed") return redemption.processed ? "✓" : "";
   return String(redemption[columnKey] || "");
 }

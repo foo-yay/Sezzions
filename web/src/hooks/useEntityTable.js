@@ -12,7 +12,7 @@ import { computeCellStats, isTextEntryElement, mergeItemsById } from "../utils/t
  * @param {object} config - Entity-specific configuration.
  * @param {object} env    - Runtime environment: { apiBaseUrl, hostedWorkspaceReady }.
  */
-export default function useEntityTable(config, { apiBaseUrl, hostedWorkspaceReady }) {
+export default function useEntityTable(config, { apiBaseUrl, hostedWorkspaceReady, quickFilter }) {
   const {
     entityName,
     entitySingular,
@@ -78,10 +78,12 @@ export default function useEntityTable(config, { apiBaseUrl, hostedWorkspaceRead
   // ── Derived state ─────────────────────────────────────────────────────────
 
   const filteredItems = useMemo(() => {
+    const quickFiltered = quickFilter ? items.filter(quickFilter) : items;
+
     const searchText = search.trim().toLowerCase();
     const searchFiltered = !searchText
-      ? items
-      : items.filter((item) => searchFilter(item, searchText));
+      ? quickFiltered
+      : quickFiltered.filter((item) => searchFilter(item, searchText));
 
     const columnFiltered = searchFiltered.filter((item) => {
       for (const col of columns) {
@@ -111,7 +113,7 @@ export default function useEntityTable(config, { apiBaseUrl, hostedWorkspaceRead
     });
 
     return sort.direction === "desc" ? sorted.reverse() : sorted;
-  }, [columnFilters, items, search, sort]);
+  }, [columnFilters, items, quickFilter, search, sort]);
 
   const filterOptions = useMemo(
     () => buildFilterOptions(items),

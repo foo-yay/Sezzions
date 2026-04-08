@@ -24,6 +24,8 @@ export default function EntityTable({
   defaultColumnWidths,
   defaultHeaderGridTemplate,
   extraToolbarButtons,
+  extraToolbarRow,
+  getRowClassName,
   children,
 }) {
   const {
@@ -144,6 +146,11 @@ export default function EntityTable({
               {extraToolbarButtons}
             </div>
           </div>
+          {extraToolbarRow && (
+            <div className="toolbar-row users-toolbar-secondary">
+              {extraToolbarRow}
+            </div>
+          )}
           <div className="users-search-bar">
             <label className="users-search-field" htmlFor={`${entityName}-search-input`}>
               <span className="users-search-icon" aria-hidden="true"><Icon name="search" className="app-icon" /></span>
@@ -260,7 +267,7 @@ export default function EntityTable({
               {filteredItems.length ? filteredItems.map((item) => (
                 <tr
                   key={item.id}
-                  className={selectedIds.includes(item.id) ? "selected-row" : undefined}
+                  className={[selectedIds.includes(item.id) ? "selected-row" : "", getRowClassName ? getRowClassName(item) : ""].filter(Boolean).join(" ") || undefined}
                   aria-selected={selectedIds.includes(item.id)}
                   onMouseDown={(event) => {
                     if (event.shiftKey || event.metaKey || event.ctrlKey) {

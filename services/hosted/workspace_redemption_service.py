@@ -401,6 +401,40 @@ class HostedWorkspaceRedemptionService:
                 session, redemption_id=redemption_id, workspace_id=workspace.id
             ) or updated
 
+    def bulk_mark_received(
+        self,
+        *,
+        supabase_user_id: str,
+        redemption_ids: list[str],
+        receipt_date: str | None,
+    ) -> int:
+        with self.session_factory() as session:
+            workspace = self._require_workspace(session, supabase_user_id)
+            updated = self.redemption_repository.bulk_set_receipt_date(
+                session,
+                redemption_ids=redemption_ids,
+                workspace_id=workspace.id,
+                receipt_date=receipt_date,
+            )
+            session.commit()
+            return updated
+
+    def bulk_mark_processed(
+        self,
+        *,
+        supabase_user_id: str,
+        redemption_ids: list[str],
+    ) -> int:
+        with self.session_factory() as session:
+            workspace = self._require_workspace(session, supabase_user_id)
+            updated = self.redemption_repository.bulk_set_processed(
+                session,
+                redemption_ids=redemption_ids,
+                workspace_id=workspace.id,
+            )
+            session.commit()
+            return updated
+
     def _require_workspace(self, session, supabase_user_id: str) -> HostedWorkspace:
         account = self.account_repository.get_by_supabase_user_id(session, supabase_user_id)
         if account is None:
