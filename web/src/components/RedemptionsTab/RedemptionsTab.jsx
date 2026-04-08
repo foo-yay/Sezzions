@@ -13,6 +13,7 @@ import {
   redemptionsFallbackPageSize,
 } from "./redemptionsConstants";
 import { normalizeRedemptionForm, getRedemptionColumnValue } from "./redemptionsUtils";
+import { getAccessToken, authHeaders } from "../../services/api";
 
 // ── Entity config ───────────────────────────────────────────────────────────
 
@@ -172,9 +173,10 @@ export default function RedemptionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
   async function handleCancel() {
     if (!canCancel) return;
     try {
+      const token = await getAccessToken();
       const resp = await fetch(`${apiBaseUrl}/v1/workspace/redemptions/${singleSelected.id}/cancel`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${window.__supabaseAccessToken}` },
+        headers: { "Content-Type": "application/json", ...authHeaders(token) },
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
@@ -190,9 +192,10 @@ export default function RedemptionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
   async function handleUncancel() {
     if (!canUncancel) return;
     try {
+      const token = await getAccessToken();
       const resp = await fetch(`${apiBaseUrl}/v1/workspace/redemptions/${singleSelected.id}/uncancel`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${window.__supabaseAccessToken}` },
+        headers: { "Content-Type": "application/json", ...authHeaders(token) },
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
@@ -208,9 +211,10 @@ export default function RedemptionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
   async function handleMarkProcessed() {
     if (!pendingSelected.length) return;
     try {
+      const token = await getAccessToken();
       const resp = await fetch(`${apiBaseUrl}/v1/workspace/redemptions/bulk-mark-processed`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${window.__supabaseAccessToken}` },
+        headers: { "Content-Type": "application/json", ...authHeaders(token) },
         body: JSON.stringify({ redemption_ids: pendingSelected.map((r) => r.id) }),
       });
       if (!resp.ok) {
@@ -227,9 +231,10 @@ export default function RedemptionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
   async function handleMarkReceived(receiptDate) {
     if (!pendingSelected.length) return;
     try {
+      const token = await getAccessToken();
       const resp = await fetch(`${apiBaseUrl}/v1/workspace/redemptions/bulk-mark-received`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${window.__supabaseAccessToken}` },
+        headers: { "Content-Type": "application/json", ...authHeaders(token) },
         body: JSON.stringify({
           redemption_ids: pendingSelected.map((r) => r.id),
           receipt_date: receiptDate || null,
