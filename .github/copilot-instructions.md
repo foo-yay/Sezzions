@@ -28,6 +28,7 @@ You are assisting with **Sezzions**, a casino session tracker.
    - Prefer updating `docs/PROJECT_SPEC.md` over creating new docs
    - Add a changelog entry to `docs/status/CHANGELOG.md` for noteworthy changes
    - Prefer GitHub Issues for new work items
+10. **UI consistency**: When creating new UI elements (modals, dialogs, buttons, toolbars, pills, etc.), first find existing examples of the same element type in the codebase and match their structure, CSS classes, and patterns exactly. Do not invent new class names or markup structures when an established pattern already exists. If you need a class, verify it exists in the stylesheet before using it.
 
 ## Required Workflow (Humans + AI)
 
