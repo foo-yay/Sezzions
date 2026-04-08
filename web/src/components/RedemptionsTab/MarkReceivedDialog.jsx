@@ -11,21 +11,19 @@ export default function MarkReceivedDialog({ count, onSave, onClose }) {
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <section
-        className="modal-card"
+        className="modal-card confirmation-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="mark-received-title"
         onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 400 }}
       >
         <div className="modal-header">
           <div>
             <h2 id="mark-received-title">Mark Received — Set Receipt Date</h2>
           </div>
-          <button className="ghost-button" type="button" onClick={onClose}>Close</button>
         </div>
 
-        <p className="status-note" style={{ color: "var(--muted)" }}>
+        <p className="status-note">
           Set receipt date for {count} redemption{count !== 1 ? "s" : ""}.
         </p>
 
@@ -42,12 +40,10 @@ export default function MarkReceivedDialog({ count, onSave, onClose }) {
           <button className="ghost-button" type="button" onClick={() => setReceiptDate(todayISO())}>Today</button>
         </div>
 
-        <div className="modal-actions modal-actions-split">
+        <div className="modal-actions modal-actions-end">
           <button className="ghost-button" type="button" onClick={() => onSave(null)}>Clear</button>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="ghost-button" type="button" onClick={onClose}>Cancel</button>
-            <button className="primary-button" type="button" onClick={() => onSave(receiptDate)}>Save</button>
-          </div>
+          <button className="ghost-button" type="button" onClick={onClose}>Cancel</button>
+          <button className="primary-button" type="button" onClick={() => onSave(receiptDate)}>Save</button>
         </div>
       </section>
     </div>
