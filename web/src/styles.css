@@ -1276,6 +1276,9 @@ h2.breadcrumb-segment {
 .users-table-header-label {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .users-table-header-cell .table-sort-button {

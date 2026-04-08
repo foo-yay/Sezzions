@@ -122,8 +122,8 @@ export default function PurchasesTab({ apiBaseUrl, hostedWorkspaceReady }) {
       columns={purchaseTableColumns}
       getCellDisplayValue={getPurchaseColumnValue}
       renderCell={renderPurchaseCell}
-      defaultColumnWidths={["10%", "12%", "12%", "10%", "10%", "10%", "10%", "8%", "8%", "8%"]}
-      defaultHeaderGridTemplate="36px 10% 12% 12% 10% 10% 10% 10% 8% 8% 8% 1fr"
+      defaultColumnWidths={["110px", "100px", "100px", "95px", "110px", "140px", "100px", "95px", "100px", "80px"]}
+      defaultHeaderGridTemplate="36px 110px 100px 100px 95px 110px 140px 100px 95px 100px 80px 1fr"
     >
       {table.modalMode ? (
         <PurchaseModal
