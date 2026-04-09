@@ -489,3 +489,102 @@ class HostedRedemption:
             "net_pl": self.net_pl,
             "notes": self.notes,
         }
+
+
+@dataclass
+class HostedGameSession:
+    """A game session (start/end lifecycle) owned by a hosted workspace."""
+
+    user_id: str
+    site_id: str
+    session_date: str
+    workspace_id: Optional[str] = None
+    session_time: str = "00:00:00"
+    start_entry_time_zone: Optional[str] = None
+    game_id: Optional[str] = None
+    game_type_id: Optional[str] = None
+    end_date: Optional[str] = None
+    end_time: Optional[str] = None
+    end_entry_time_zone: Optional[str] = None
+    starting_balance: str = "0.00"
+    ending_balance: str = "0.00"
+    starting_redeemable: str = "0.00"
+    ending_redeemable: str = "0.00"
+    wager_amount: str = "0.00"
+    rtp: Optional[float] = None
+    purchases_during: str = "0.00"
+    redemptions_during: str = "0.00"
+    expected_start_total: Optional[str] = None
+    expected_start_redeemable: Optional[str] = None
+    discoverable_sc: Optional[str] = None
+    delta_total: Optional[str] = None
+    delta_redeem: Optional[str] = None
+    session_basis: Optional[str] = None
+    basis_consumed: Optional[str] = None
+    net_taxable_pl: Optional[str] = None
+    tax_withholding_rate_pct: Optional[float] = None
+    tax_withholding_is_custom: bool = False
+    tax_withholding_amount: Optional[float] = None
+    status: str = "Active"
+    notes: Optional[str] = None
+    deleted_at: Optional[str] = None
+    id: Optional[str] = None
+    # Joined display names (read-only)
+    user_name: Optional[str] = None
+    site_name: Optional[str] = None
+    game_name: Optional[str] = None
+    game_type_name: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if not self.user_id:
+            raise ValueError("User is required")
+        if not self.site_id:
+            raise ValueError("Site is required")
+        if not self.session_date or not self.session_date.strip():
+            raise ValueError("Session date is required")
+        self.session_date = self.session_date.strip()
+        if self.session_time is not None:
+            self.session_time = self.session_time.strip() or "00:00:00"
+        if self.notes is not None:
+            self.notes = self.notes.strip() or None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "workspace_id": self.workspace_id,
+            "user_id": self.user_id,
+            "user_name": self.user_name,
+            "site_id": self.site_id,
+            "site_name": self.site_name,
+            "game_id": self.game_id,
+            "game_name": self.game_name,
+            "game_type_id": self.game_type_id,
+            "game_type_name": self.game_type_name,
+            "session_date": self.session_date,
+            "session_time": self.session_time,
+            "start_entry_time_zone": self.start_entry_time_zone,
+            "end_date": self.end_date,
+            "end_time": self.end_time,
+            "end_entry_time_zone": self.end_entry_time_zone,
+            "starting_balance": self.starting_balance,
+            "ending_balance": self.ending_balance,
+            "starting_redeemable": self.starting_redeemable,
+            "ending_redeemable": self.ending_redeemable,
+            "wager_amount": self.wager_amount,
+            "rtp": self.rtp,
+            "purchases_during": self.purchases_during,
+            "redemptions_during": self.redemptions_during,
+            "expected_start_total": self.expected_start_total,
+            "expected_start_redeemable": self.expected_start_redeemable,
+            "discoverable_sc": self.discoverable_sc,
+            "delta_total": self.delta_total,
+            "delta_redeem": self.delta_redeem,
+            "session_basis": self.session_basis,
+            "basis_consumed": self.basis_consumed,
+            "net_taxable_pl": self.net_taxable_pl,
+            "tax_withholding_rate_pct": self.tax_withholding_rate_pct,
+            "tax_withholding_is_custom": self.tax_withholding_is_custom,
+            "tax_withholding_amount": self.tax_withholding_amount,
+            "status": self.status,
+            "notes": self.notes,
+        }

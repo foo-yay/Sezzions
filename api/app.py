@@ -37,6 +37,9 @@ from services.hosted.workspace_purchase_service import (
 from services.hosted.workspace_redemption_service import (
     HostedWorkspaceRedemptionService,
 )
+from services.hosted.workspace_game_session_service import (
+    HostedWorkspaceGameSessionService,
+)
 
 
 app = FastAPI(title="Sezzions Hosted API", version="0.1.0")
@@ -250,6 +253,56 @@ class HostedWorkspaceRedemptionBulkMarkProcessedRequest(BaseModel):
     redemption_ids: list[str]
 
 
+class HostedWorkspaceGameSessionCreateRequest(BaseModel):
+    user_id: str
+    site_id: str
+    session_date: str
+    session_time: str | None = None
+    start_entry_time_zone: str | None = None
+    game_id: str | None = None
+    game_type_id: str | None = None
+    end_date: str | None = None
+    end_time: str | None = None
+    end_entry_time_zone: str | None = None
+    starting_balance: str = "0.00"
+    ending_balance: str = "0.00"
+    starting_redeemable: str = "0.00"
+    ending_redeemable: str = "0.00"
+    wager_amount: str = "0.00"
+    rtp: float | None = None
+    purchases_during: str = "0.00"
+    redemptions_during: str = "0.00"
+    status: str = "Active"
+    notes: str | None = None
+
+
+class HostedWorkspaceGameSessionUpdateRequest(BaseModel):
+    user_id: str
+    site_id: str
+    session_date: str
+    session_time: str | None = None
+    start_entry_time_zone: str | None = None
+    game_id: str | None = None
+    game_type_id: str | None = None
+    end_date: str | None = None
+    end_time: str | None = None
+    end_entry_time_zone: str | None = None
+    starting_balance: str = "0.00"
+    ending_balance: str = "0.00"
+    starting_redeemable: str = "0.00"
+    ending_redeemable: str = "0.00"
+    wager_amount: str = "0.00"
+    rtp: float | None = None
+    purchases_during: str = "0.00"
+    redemptions_during: str = "0.00"
+    status: str = "Active"
+    notes: str | None = None
+
+
+class HostedWorkspaceGameSessionBatchDeleteRequest(BaseModel):
+    game_session_ids: list[str]
+
+
 cors_config = load_hosted_backend_config(required=False, require_db_password=False)
 app.add_middleware(
     CORSMiddleware,
@@ -371,6 +424,16 @@ def get_hosted_workspace_redemption_service() -> HostedWorkspaceRedemptionServic
 
     session_factory = get_hosted_session_factory(config.sqlalchemy_url)
     return HostedWorkspaceRedemptionService(session_factory)
+
+
+def get_hosted_workspace_game_session_service() -> HostedWorkspaceGameSessionService:
+    try:
+        config = load_hosted_backend_config(require_db_password=True)
+    except HostedConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    session_factory = get_hosted_session_factory(config.sqlalchemy_url)
+    return HostedWorkspaceGameSessionService(session_factory)
 
 
 def get_hosted_uploaded_sqlite_inspection_service() -> HostedUploadedSQLiteInspectionService:
@@ -1657,6 +1720,165 @@ def workspace_redemptions_bulk_mark_processed(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return {"updated_count": updated_count}
+
+
+# ── Game Sessions ──────────────────────────────────────────────
+
+
+@app.get("/v1/workspace/game-sessions")
+def workspace_game_sessions_list(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceGameSessionService = Depends(
+        get_hosted_workspace_game_session_service
+    ),
+) -> dict[str, object]:
+    try:
+        page = service.list_game_sessions_page(
+            supabase_user_id=session.user_id,
+            limit=limit,
+            offset=offset,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return {
+        "game_sessions": [
+            gs.as_dict() if hasattr(gs, "as_dict") else gs
+            for gs in page["game_sessions"]
+        ],
+        "offset": page["offset"],
+        "limit": page["limit"],
+        "next_offset": page["next_offset"],
+        "total_count": page["total_count"],
+        "has_more": page["has_more"],
+    }
+
+
+@app.post("/v1/workspace/game-sessions")
+def workspace_game_sessions_create(
+    payload: HostedWorkspaceGameSessionCreateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceGameSessionService = Depends(
+        get_hosted_workspace_game_session_service
+    ),
+) -> dict[str, object]:
+    try:
+        game_session = service.create_game_session(
+            supabase_user_id=session.user_id,
+            user_id=payload.user_id,
+            site_id=payload.site_id,
+            session_date=payload.session_date,
+            session_time=payload.session_time,
+            start_entry_time_zone=payload.start_entry_time_zone,
+            game_id=payload.game_id,
+            game_type_id=payload.game_type_id,
+            end_date=payload.end_date,
+            end_time=payload.end_time,
+            end_entry_time_zone=payload.end_entry_time_zone,
+            starting_balance=payload.starting_balance,
+            ending_balance=payload.ending_balance,
+            starting_redeemable=payload.starting_redeemable,
+            ending_redeemable=payload.ending_redeemable,
+            wager_amount=payload.wager_amount,
+            rtp=payload.rtp,
+            purchases_during=payload.purchases_during,
+            redemptions_during=payload.redemptions_during,
+            status_value=payload.status,
+            notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return game_session.as_dict() if hasattr(game_session, "as_dict") else game_session
+
+
+@app.patch("/v1/workspace/game-sessions/{game_session_id}")
+def workspace_game_sessions_update(
+    game_session_id: str = Path(...),
+    payload: HostedWorkspaceGameSessionUpdateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceGameSessionService = Depends(
+        get_hosted_workspace_game_session_service
+    ),
+) -> dict[str, object]:
+    try:
+        game_session = service.update_game_session(
+            supabase_user_id=session.user_id,
+            game_session_id=game_session_id,
+            user_id=payload.user_id,
+            site_id=payload.site_id,
+            session_date=payload.session_date,
+            session_time=payload.session_time,
+            start_entry_time_zone=payload.start_entry_time_zone,
+            game_id=payload.game_id,
+            game_type_id=payload.game_type_id,
+            end_date=payload.end_date,
+            end_time=payload.end_time,
+            end_entry_time_zone=payload.end_entry_time_zone,
+            starting_balance=payload.starting_balance,
+            ending_balance=payload.ending_balance,
+            starting_redeemable=payload.starting_redeemable,
+            ending_redeemable=payload.ending_redeemable,
+            wager_amount=payload.wager_amount,
+            rtp=payload.rtp,
+            purchases_during=payload.purchases_during,
+            redemptions_during=payload.redemptions_during,
+            status_value=payload.status,
+            notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return game_session.as_dict() if hasattr(game_session, "as_dict") else game_session
+
+
+@app.delete(
+    "/v1/workspace/game-sessions/{game_session_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def workspace_game_sessions_delete(
+    game_session_id: str = Path(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceGameSessionService = Depends(
+        get_hosted_workspace_game_session_service
+    ),
+) -> Response:
+    try:
+        service.delete_game_session(
+            supabase_user_id=session.user_id,
+            game_session_id=game_session_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/v1/workspace/game-sessions/batch-delete")
+def workspace_game_sessions_batch_delete(
+    payload: HostedWorkspaceGameSessionBatchDeleteRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceGameSessionService = Depends(
+        get_hosted_workspace_game_session_service
+    ),
+) -> dict[str, int]:
+    try:
+        deleted_count = service.delete_game_sessions(
+            supabase_user_id=session.user_id,
+            game_session_ids=payload.game_session_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"deleted_count": deleted_count}
 
 
 @app.get("/v1/workspace/import-plan")
