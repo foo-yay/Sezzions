@@ -1796,6 +1796,50 @@ def workspace_game_sessions_create(
     return game_session.as_dict() if hasattr(game_session, "as_dict") else game_session
 
 
+@app.get("/v1/workspace/game-sessions/expected-balances")
+def workspace_game_sessions_expected_balances(
+    user_id: str = Query(...),
+    site_id: str = Query(...),
+    session_date: str = Query(...),
+    session_time: str = Query("00:00:00"),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceGameSessionService = Depends(
+        get_hosted_workspace_game_session_service
+    ),
+) -> dict[str, str]:
+    try:
+        return service.compute_expected_balances(
+            supabase_user_id=session.user_id,
+            user_id=user_id,
+            site_id=site_id,
+            session_date=session_date,
+            session_time=session_time,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@app.post("/v1/workspace/game-sessions/batch-delete")
+def workspace_game_sessions_batch_delete(
+    payload: HostedWorkspaceGameSessionBatchDeleteRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceGameSessionService = Depends(
+        get_hosted_workspace_game_session_service
+    ),
+) -> dict[str, int]:
+    try:
+        deleted_count = service.delete_game_sessions(
+            supabase_user_id=session.user_id,
+            game_session_ids=payload.game_session_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"deleted_count": deleted_count}
+
+
 @app.patch("/v1/workspace/game-sessions/{game_session_id}")
 def workspace_game_sessions_update(
     game_session_id: str = Path(...),
@@ -1860,25 +1904,21 @@ def workspace_game_sessions_delete(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@app.post("/v1/workspace/game-sessions/batch-delete")
-def workspace_game_sessions_batch_delete(
-    payload: HostedWorkspaceGameSessionBatchDeleteRequest = Body(...),
+@app.get("/v1/workspace/game-sessions/{game_session_id}/deletion-impact")
+def workspace_game_sessions_deletion_impact(
+    game_session_id: str = Path(...),
     session: AuthenticatedSession = Depends(get_authenticated_session),
     service: HostedWorkspaceGameSessionService = Depends(
         get_hosted_workspace_game_session_service
     ),
-) -> dict[str, int]:
+) -> dict[str, object]:
     try:
-        deleted_count = service.delete_game_sessions(
+        return service.get_deletion_impact(
             supabase_user_id=session.user_id,
-            game_session_ids=payload.game_session_ids,
+            game_session_id=game_session_id,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-    return {"deleted_count": deleted_count}
 
 
 @app.get("/v1/workspace/import-plan")

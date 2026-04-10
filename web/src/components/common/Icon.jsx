@@ -140,6 +140,14 @@ export default function Icon({ name, className }) {
           <path d="M12 20v-8" />
         </svg>
       );
+    case "gameSessions":
+      return (
+        <svg {...svgProps}>
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M3 10h18" />
+          <path d="M10 4v16" />
+        </svg>
+      );
     case "upload":
       return (
         <svg {...svgProps}>

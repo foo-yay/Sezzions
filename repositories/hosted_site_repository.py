@@ -29,6 +29,23 @@ class HostedSiteRepository:
         records = session.scalars(query).all()
         return [self._record_to_model(record) for record in records]
 
+    def get_by_id_and_workspace_id(
+        self,
+        session,
+        *,
+        site_id: str,
+        workspace_id: str,
+    ) -> HostedSite | None:
+        record = session.scalar(
+            select(HostedSiteRecord).where(
+                HostedSiteRecord.id == site_id,
+                HostedSiteRecord.workspace_id == workspace_id,
+            )
+        )
+        if record is None:
+            return None
+        return self._record_to_model(record)
+
     def count_by_workspace_id(self, session, workspace_id: str) -> int:
         return session.scalar(
             select(func.count())

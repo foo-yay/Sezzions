@@ -59,6 +59,49 @@ class HostedRedemptionRepository:
         rows = session.execute(query).all()
         return [self._row_to_model(row) for row in rows]
 
+    def list_by_workspace_user_and_site(
+        self,
+        session,
+        workspace_id: str,
+        user_id: str,
+        site_id: str,
+    ) -> list[HostedRedemption]:
+        """Return redemptions for a user+site pair ordered chronologically (ASC)."""
+        user_alias = aliased(HostedUserRecord)
+        site_alias = aliased(HostedSiteRecord)
+        method_alias = aliased(HostedRedemptionMethodRecord)
+        rt_alias = aliased(HostedRealizedTransactionRecord)
+        query = (
+            select(
+                HostedRedemptionRecord,
+                user_alias.name.label("user_name"),
+                site_alias.name.label("site_name"),
+                method_alias.name.label("method_name"),
+                rt_alias.cost_basis.label("cost_basis"),
+                rt_alias.net_pl.label("net_pl"),
+            )
+            .join(user_alias, HostedRedemptionRecord.user_id == user_alias.id)
+            .join(site_alias, HostedRedemptionRecord.site_id == site_alias.id)
+            .outerjoin(method_alias, HostedRedemptionRecord.redemption_method_id == method_alias.id)
+            .outerjoin(
+                rt_alias,
+                (HostedRedemptionRecord.id == rt_alias.redemption_id)
+                & (HostedRedemptionRecord.workspace_id == rt_alias.workspace_id),
+            )
+            .where(
+                HostedRedemptionRecord.workspace_id == workspace_id,
+                HostedRedemptionRecord.user_id == user_id,
+                HostedRedemptionRecord.site_id == site_id,
+            )
+            .order_by(
+                HostedRedemptionRecord.redemption_date.asc(),
+                HostedRedemptionRecord.redemption_time.asc(),
+                HostedRedemptionRecord.id.asc(),
+            )
+        )
+        rows = session.execute(query).all()
+        return [self._row_to_model(row) for row in rows]
+
     def count_by_workspace_id(self, session, workspace_id: str) -> int:
         return session.scalar(
             select(func.count())
