@@ -974,6 +974,7 @@ export default function useEntityTable(config, { apiBaseUrl, hostedWorkspaceRead
       tone: "danger",
       onConfirm: async () => {
         setConfirmationState(null);
+        closeModalImmediately();
 
         try {
           setStatus(`Deleting ${itemsToDelete.length} hosted ${itemsToDelete.length === 1 ? entitySingular : entityName}...`);
@@ -1001,7 +1002,6 @@ export default function useEntityTable(config, { apiBaseUrl, hostedWorkspaceRead
           setItems((current) => current.filter((item) => !deletedIds.has(item.id)));
           setTotalCount((current) => (current === null ? null : Math.max(0, current - itemsToDelete.length)));
           clearSelection();
-          closeModalImmediately();
           setStatus(`Hosted ${entityName} ready.`);
         } catch (error) {
           setStatus(describeFetchFailure(error, `Hosted ${entityName} delete failed.`));
