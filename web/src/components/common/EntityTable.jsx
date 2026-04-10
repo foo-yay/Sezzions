@@ -55,6 +55,7 @@ export default function EntityTable({
     handleColumnResizeStart, handleColumnAutoFit,
     tableViewportRef, headerRef,
     cellAnchorRef, navCursorRef,
+    status,
   } = table;
 
   const singularCap = entitySingular.charAt(0).toUpperCase() + entitySingular.slice(1);
@@ -338,6 +339,7 @@ export default function EntityTable({
 
         <div className="users-summary-rail users-summary-rail-bottom" aria-label={`${singularCap} summary`}>
           <div className="users-page-metrics">
+            {status && status !== `Hosted ${entityName} ready.` ? <span className="users-metric-chip subdued">{status}</span> : null}
             <span className="users-metric-chip">{filteredCount} shown</span>
             <span className="users-metric-chip subdued">{totalCount} total</span>
             {selectedIds.length ? <span className="users-metric-chip accent">{selectedIds.length} selected</span> : null}
