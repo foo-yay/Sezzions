@@ -102,11 +102,18 @@ export default function GameSessionModal({
 
   // ── Balance Check (always-on, mirrors PurchaseModal pattern) ──────────────
   const [balanceCheck, setBalanceCheck] = useState(null); // { status, message }
+  const [redeemableCheck, setRedeemableCheck] = useState(null); // { status, message }
 
   useEffect(() => {
     if (readOnly) return;
-    if (!form.user_id || !form.site_id || !form.session_date || !form.starting_balance) {
+    if (!form.user_id || !form.site_id || !form.session_date) {
       setBalanceCheck(null);
+      setRedeemableCheck(null);
+      return;
+    }
+    if (!form.starting_balance && !form.starting_redeemable) {
+      setBalanceCheck(null);
+      setRedeemableCheck(null);
       return;
     }
 
@@ -127,31 +134,67 @@ export default function GameSessionModal({
         );
         if (!res.ok || controller.signal.aborted) {
           setBalanceCheck(null);
+          setRedeemableCheck(null);
           return;
         }
         const data = await res.json();
-        const expectedTotal = Number(data.expected_start_total);
-        const enteredTotal = Number(form.starting_balance);
-        const delta = enteredTotal - expectedTotal;
 
-        if (Math.abs(delta) <= 0.01) {
-          setBalanceCheck({
-            status: "match",
-            message: `Starting SC matches expected (${expectedTotal.toFixed(2)} SC)`,
-          });
-        } else if (delta > 0.01) {
-          setBalanceCheck({
-            status: "higher",
-            message: `+ ${delta.toFixed(2)} SC above expected (${expectedTotal.toFixed(2)} SC)`,
-          });
+        // ── Total SC check ──
+        if (form.starting_balance) {
+          const expectedTotal = Number(data.expected_start_total);
+          const enteredTotal = Number(form.starting_balance);
+          const delta = enteredTotal - expectedTotal;
+
+          if (Math.abs(delta) <= 0.01) {
+            setBalanceCheck({
+              status: "match",
+              message: `Starting SC matches expected (${expectedTotal.toFixed(2)} SC)`,
+            });
+          } else if (delta > 0.01) {
+            setBalanceCheck({
+              status: "higher",
+              message: `+ ${delta.toFixed(2)} SC above expected (${expectedTotal.toFixed(2)} SC)`,
+            });
+          } else {
+            setBalanceCheck({
+              status: "lower",
+              message: `WARNING: ${Math.abs(delta).toFixed(2)} SC below expected (${expectedTotal.toFixed(2)} SC)`,
+            });
+          }
         } else {
-          setBalanceCheck({
-            status: "lower",
-            message: `WARNING: ${Math.abs(delta).toFixed(2)} SC below expected (${expectedTotal.toFixed(2)} SC)`,
-          });
+          setBalanceCheck(null);
+        }
+
+        // ── Redeemable check ──
+        if (form.starting_redeemable) {
+          const expectedRedeem = Number(data.expected_start_redeemable);
+          const enteredRedeem = Number(form.starting_redeemable);
+          const deltaR = enteredRedeem - expectedRedeem;
+
+          if (Math.abs(deltaR) <= 0.01) {
+            setRedeemableCheck({
+              status: "match",
+              message: `Starting Redeemable matches expected (${expectedRedeem.toFixed(2)} SC)`,
+            });
+          } else if (deltaR > 0.01) {
+            setRedeemableCheck({
+              status: "higher",
+              message: `+ ${deltaR.toFixed(2)} SC above expected redeemable (${expectedRedeem.toFixed(2)} SC)`,
+            });
+          } else {
+            setRedeemableCheck({
+              status: "lower",
+              message: `WARNING: ${Math.abs(deltaR).toFixed(2)} SC below expected redeemable (${expectedRedeem.toFixed(2)} SC)`,
+            });
+          }
+        } else {
+          setRedeemableCheck(null);
         }
       } catch {
-        if (!controller.signal.aborted) setBalanceCheck(null);
+        if (!controller.signal.aborted) {
+          setBalanceCheck(null);
+          setRedeemableCheck(null);
+        }
       }
     }, 300);
 
@@ -159,7 +202,7 @@ export default function GameSessionModal({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [readOnly, form.user_id, form.site_id, form.session_date, form.session_time, form.starting_balance, apiBaseUrl]);
+  }, [readOnly, form.user_id, form.site_id, form.session_date, form.session_time, form.starting_balance, form.starting_redeemable, apiBaseUrl]);
 
   // ── P/L Preview (for Closed sessions) ─────────────────────────────────────
   const plPreview = (() => {
@@ -475,6 +518,11 @@ export default function GameSessionModal({
           {balanceCheck && (
             <div className={`pf-balance-check pf-balance-${balanceCheck.status}`}>
               {balanceCheck.message}
+            </div>
+          )}
+          {redeemableCheck && (
+            <div className={`pf-balance-check pf-balance-${redeemableCheck.status}`}>
+              {redeemableCheck.message}
             </div>
           )}
 
