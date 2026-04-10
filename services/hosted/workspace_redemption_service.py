@@ -10,6 +10,10 @@ from repositories.hosted_redemption_repository import HostedRedemptionRepository
 from repositories.hosted_workspace_repository import HostedWorkspaceRepository
 from services.hosted.hosted_recalculation_service import HostedRecalculationService
 from services.hosted.models import HostedRedemption, HostedWorkspace
+from services.hosted.persistence import (
+    HostedRedemptionAllocationRecord,
+    HostedRealizedTransactionRecord,
+)
 
 
 class HostedWorkspaceRedemptionService:
@@ -224,6 +228,15 @@ class HostedWorkspaceRedemptionService:
             if existing is None:
                 raise LookupError("Hosted redemption was not found in the authenticated workspace.")
 
+            # Clear derived records that reference this redemption
+            # (DB may lack ON DELETE CASCADE despite model declaration)
+            session.query(HostedRedemptionAllocationRecord).filter(
+                HostedRedemptionAllocationRecord.redemption_id == redemption_id,
+            ).delete(synchronize_session="fetch")
+            session.query(HostedRealizedTransactionRecord).filter(
+                HostedRealizedTransactionRecord.redemption_id == redemption_id,
+            ).delete(synchronize_session="fetch")
+
             deleted = self.redemption_repository.delete(
                 session,
                 redemption_id=redemption_id,
@@ -265,6 +278,15 @@ class HostedWorkspaceRedemptionService:
                         "One or more hosted redemptions were not found in the authenticated workspace."
                     )
                 affected_pairs.add((existing.user_id, existing.site_id))
+
+            # Clear derived records that reference these redemptions
+            # (DB may lack ON DELETE CASCADE despite model declaration)
+            session.query(HostedRedemptionAllocationRecord).filter(
+                HostedRedemptionAllocationRecord.redemption_id.in_(normalized_ids),
+            ).delete(synchronize_session="fetch")
+            session.query(HostedRealizedTransactionRecord).filter(
+                HostedRealizedTransactionRecord.redemption_id.in_(normalized_ids),
+            ).delete(synchronize_session="fetch")
 
             deleted_count = self.redemption_repository.delete_many(
                 session,

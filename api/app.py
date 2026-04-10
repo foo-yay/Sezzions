@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import Body, Depends, FastAPI, File, HTTPException, Path, Query, Response, UploadFile, status
+from fastapi import Body, Depends, FastAPI, File, HTTPException, Path, Query, Request, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from api.auth import AuthenticatedSession, get_authenticated_session
@@ -43,6 +44,17 @@ from services.hosted.workspace_game_session_service import (
 
 
 app = FastAPI(title="Sezzions Hosted API", version="0.1.0")
+
+
+@app.exception_handler(Exception)
+async def global_unhandled_exception_handler(request: Request, exc: Exception):
+    """Catch-all so unhandled errors still return JSON (with CORS headers)."""
+    import traceback
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"{type(exc).__name__}: {exc}"},
+    )
 
 
 class HostedWorkspaceUserCreateRequest(BaseModel):
@@ -1629,13 +1641,6 @@ def workspace_redemptions_batch_delete(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except Exception as exc:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unexpected error during redemption delete: {type(exc).__name__}: {exc}",
-        ) from exc
 
     return {"deleted_count": deleted_count}
 

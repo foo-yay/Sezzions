@@ -14,6 +14,7 @@ from services.hosted.hosted_event_link_service import HostedEventLinkService
 from services.hosted.hosted_recalculation_service import HostedRecalculationService
 from services.hosted.hosted_timestamp_service import HostedTimestampService
 from services.hosted.models import HostedGameSession, HostedWorkspace
+from services.hosted.persistence import HostedGameSessionEventLinkRecord
 
 
 class HostedWorkspaceGameSessionService:
@@ -393,6 +394,12 @@ class HostedWorkspaceGameSessionService:
                     "Game session was not found in the authenticated workspace."
                 )
 
+            # Clear derived records that reference this game session
+            # (DB may lack ON DELETE CASCADE despite model declaration)
+            session.query(HostedGameSessionEventLinkRecord).filter(
+                HostedGameSessionEventLinkRecord.game_session_id == game_session_id,
+            ).delete(synchronize_session="fetch")
+
             deleted = self.game_session_repository.delete(
                 session,
                 game_session_id=game_session_id,
@@ -443,6 +450,12 @@ class HostedWorkspaceGameSessionService:
                         "One or more game sessions were not found in the authenticated workspace."
                     )
                 affected_pairs.add((existing.user_id, existing.site_id))
+
+            # Clear derived records that reference these game sessions
+            # (DB may lack ON DELETE CASCADE despite model declaration)
+            session.query(HostedGameSessionEventLinkRecord).filter(
+                HostedGameSessionEventLinkRecord.game_session_id.in_(normalized_ids),
+            ).delete(synchronize_session="fetch")
 
             deleted_count = self.game_session_repository.delete_many(
                 session,
