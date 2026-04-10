@@ -39,6 +39,8 @@ export const initialGameSessionColumnFilters = {
   ending_balance: [],
   starting_redeemable: [],
   ending_redeemable: [],
+  delta_redeem: [],
+  basis_consumed: [],
   net_taxable_pl: [],
   notes: [],
 };
@@ -53,6 +55,8 @@ export const gameSessionTableColumns = [
   { key: "ending_balance", label: "End SC", sortable: true },
   { key: "starting_redeemable", label: "Start Redeem", sortable: true },
   { key: "ending_redeemable", label: "End Redeem", sortable: true },
+  { key: "delta_redeem", label: "\u0394 Redeem", sortable: true },
+  { key: "basis_consumed", label: "\u0394 Basis", sortable: true },
   { key: "net_taxable_pl", label: "Net P/L", sortable: true },
   { key: "notes", label: "Notes", sortable: true },
 ];

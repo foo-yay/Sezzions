@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import useEntityTable from "../../hooks/useEntityTable";
 import EntityTable from "../common/EntityTable";
 import HighlightMatch from "../common/HighlightMatch";
@@ -38,6 +38,7 @@ const gameSessionsConfig = {
   numericSortColumns: [
     "starting_balance", "ending_balance",
     "starting_redeemable", "ending_redeemable",
+    "delta_redeem", "basis_consumed",
     "net_taxable_pl", "wager_amount",
   ],
   getItemLabel: (gs) => `${gs.session_date || "unknown"} — ${gs.user_name || "unknown"} @ ${gs.site_name || "unknown"}`,
@@ -119,11 +120,22 @@ function renderGameSessionCell(gs, columnKey, search) {
   }
   if (columnKey === "net_taxable_pl") {
     const val = getGameSessionColumnValue(gs, columnKey);
+    if (gs.status === "Active") return <span className="subdued">—</span>;
     const num = Number(gs.net_taxable_pl);
     const cls = isNaN(num) ? "" : num >= 0 ? "pl-positive" : "pl-negative";
     return <span className={cls}>{val}</span>;
   }
-  if (["starting_balance", "ending_balance", "starting_redeemable", "ending_redeemable"].includes(columnKey)) {
+  if (columnKey === "delta_redeem" || columnKey === "basis_consumed") {
+    const val = getGameSessionColumnValue(gs, columnKey);
+    if (gs.status === "Active") return <span className="subdued">—</span>;
+    return <span>{val}</span>;
+  }
+  if (["ending_balance", "ending_redeemable"].includes(columnKey)) {
+    const val = getGameSessionColumnValue(gs, columnKey);
+    if (gs.status === "Active") return <span className="subdued">—</span>;
+    return <span>{val}</span>;
+  }
+  if (["starting_balance", "starting_redeemable"].includes(columnKey)) {
     return <span>{getGameSessionColumnValue(gs, columnKey)}</span>;
   }
   if (columnKey === "user_name" || columnKey === "site_name" || columnKey === "game_name") {
@@ -150,11 +162,21 @@ export default function GameSessionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
 
   const table = useEntityTable(gameSessionsConfig, { apiBaseUrl, hostedWorkspaceReady, quickFilter });
 
+  const activeCount = useMemo(
+    () => (table.items || []).filter((gs) => gs.status === "Active").length,
+    [table.items],
+  );
+
   const quickFilterRow = (
-    <label className="quick-filter-check" title="Show only active (open) sessions">
-      <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} />
-      Active Only
-    </label>
+    <div className="toolbar-row" style={{ gap: "12px", alignItems: "center" }}>
+      <label className="quick-filter-check" title="Show only active (open) sessions">
+        <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} />
+        Active Only
+      </label>
+      {activeCount > 0 && (
+        <span className="users-metric-chip subdued">Active Sessions: {activeCount}</span>
+      )}
+    </div>
   );
 
   return (
@@ -165,8 +187,8 @@ export default function GameSessionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
       columns={gameSessionTableColumns}
       getCellDisplayValue={getGameSessionColumnValue}
       renderCell={renderGameSessionCell}
-      defaultColumnWidths={["110px", "100px", "100px", "100px", "80px", "100px", "100px", "110px", "110px", "100px"]}
-      defaultHeaderGridTemplate="36px 110px 100px 100px 100px 80px 100px 100px 110px 110px 100px 1fr"
+      defaultColumnWidths={["110px", "100px", "100px", "100px", "80px", "90px", "90px", "100px", "100px", "90px", "90px", "100px", "100px"]}
+      defaultHeaderGridTemplate="36px 110px 100px 100px 100px 80px 90px 90px 100px 100px 90px 90px 100px 1fr"
       extraToolbarRow={quickFilterRow}
     >
       {table.modalMode ? (
@@ -187,13 +209,13 @@ export default function GameSessionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
           onSubmit={table.submitModal}
           onEndAndStartNew={(closedSession) => {
             // After closing the current session, open a "create" modal pre-filled
-            // with the closed session's ending state
+            // with the closed session's ending state (game cleared per desktop parity)
             table.openModal("create");
             table.setForm((prev) => ({
               ...prev,
               user_id: closedSession.user_id || "",
               site_id: closedSession.site_id || "",
-              game_id: closedSession.game_id || "",
+              game_id: "",
               game_type_id: closedSession.game_type_id || "",
               starting_balance: closedSession.ending_balance || "",
               starting_redeemable: closedSession.ending_redeemable || "",

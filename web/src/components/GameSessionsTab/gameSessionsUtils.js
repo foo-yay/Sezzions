@@ -48,10 +48,25 @@ export function getGameSessionColumnValue(session, columnKey) {
   if (columnKey === "site_name") return session.site_name || "—";
   if (columnKey === "game_name") return session.game_name || "—";
   if (columnKey === "starting_balance") return formatSC(session.starting_balance);
-  if (columnKey === "ending_balance") return formatSC(session.ending_balance);
+  if (columnKey === "ending_balance") {
+    if (session.status === "Active") return "—";
+    return formatSC(session.ending_balance);
+  }
   if (columnKey === "starting_redeemable") return formatSC(session.starting_redeemable);
-  if (columnKey === "ending_redeemable") return formatSC(session.ending_redeemable);
+  if (columnKey === "ending_redeemable") {
+    if (session.status === "Active") return "—";
+    return formatSC(session.ending_redeemable);
+  }
+  if (columnKey === "delta_redeem") {
+    if (session.status === "Active") return "—";
+    return formatSC(session.delta_redeem);
+  }
+  if (columnKey === "basis_consumed") {
+    if (session.status === "Active") return "—";
+    return formatCurrency(session.basis_consumed);
+  }
   if (columnKey === "net_taxable_pl") {
+    if (session.status === "Active") return "—";
     if (session.net_taxable_pl === null || session.net_taxable_pl === undefined) return "—";
     return formatCurrency(session.net_taxable_pl);
   }

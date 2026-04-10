@@ -331,6 +331,18 @@ export default function GameSessionModal({
               <div><dt>Ending Redeemable</dt><dd>{getGameSessionColumnValue(gameSession, "ending_redeemable")}</dd></div>
               <div><dt>Purchases During</dt><dd>{getGameSessionColumnValue(gameSession, "purchases_during") || "—"}</dd></div>
               <div><dt>Redemptions During</dt><dd>{getGameSessionColumnValue(gameSession, "redemptions_during") || "—"}</dd></div>
+              {gameSession.wager_amount != null && gameSession.wager_amount !== "" && (
+                <div><dt>Wager</dt><dd>{Number(gameSession.wager_amount).toFixed(2)} SC</dd></div>
+              )}
+              {gameSession.rtp != null && gameSession.rtp !== "" && (
+                <div><dt>RTP</dt><dd>{Number(gameSession.rtp).toFixed(2)}%</dd></div>
+              )}
+              {gameSession.status === "Closed" && gameSession.delta_redeem != null && (
+                <div><dt>Δ Redeem</dt><dd>{Number(gameSession.delta_redeem).toFixed(2)} SC</dd></div>
+              )}
+              {gameSession.status === "Closed" && gameSession.basis_consumed != null && (
+                <div><dt>Δ Basis</dt><dd>${Number(gameSession.basis_consumed).toFixed(2)}</dd></div>
+              )}
               {gameSession.net_taxable_pl != null && (
                 <div><dt>Net P/L</dt><dd>{getGameSessionColumnValue(gameSession, "net_taxable_pl")}</dd></div>
               )}
