@@ -588,3 +588,64 @@ class HostedGameSession:
             "status": self.status,
             "notes": self.notes,
         }
+
+
+@dataclass
+class HostedExpense:
+    """A business expense owned by a hosted workspace."""
+
+    expense_date: str
+    amount: str
+    vendor: str
+    workspace_id: Optional[str] = None
+    expense_time: str = "00:00:00"
+    expense_entry_time_zone: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    user_id: Optional[str] = None
+    notes: Optional[str] = None
+    id: Optional[str] = None
+    # Joined display names (read-only)
+    user_name: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if not self.expense_date or not self.expense_date.strip():
+            raise ValueError("Expense date is required")
+        self.expense_date = self.expense_date.strip()
+        if not self.vendor or not self.vendor.strip():
+            raise ValueError("Vendor is required")
+        self.vendor = self.vendor.strip()
+        if not self.amount:
+            raise ValueError("Amount is required")
+        from decimal import Decimal, InvalidOperation
+        try:
+            amt = Decimal(str(self.amount))
+        except (InvalidOperation, ValueError) as exc:
+            raise ValueError("Amount must be a valid number") from exc
+        if amt < 0:
+            raise ValueError("Amount cannot be negative")
+        self.amount = str(amt)
+        if self.expense_time is not None:
+            self.expense_time = self.expense_time.strip() or "00:00:00"
+        if self.description is not None:
+            self.description = self.description.strip() or None
+        if self.category is not None:
+            self.category = self.category.strip() or None
+        if self.notes is not None:
+            self.notes = self.notes.strip() or None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "workspace_id": self.workspace_id,
+            "expense_date": self.expense_date,
+            "expense_time": self.expense_time,
+            "expense_entry_time_zone": self.expense_entry_time_zone,
+            "amount": self.amount,
+            "vendor": self.vendor,
+            "description": self.description,
+            "category": self.category,
+            "user_id": self.user_id,
+            "user_name": self.user_name,
+            "notes": self.notes,
+        }

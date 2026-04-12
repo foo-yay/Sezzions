@@ -41,6 +41,9 @@ from services.hosted.workspace_redemption_service import (
 from services.hosted.workspace_game_session_service import (
     HostedWorkspaceGameSessionService,
 )
+from services.hosted.workspace_expense_service import (
+    HostedWorkspaceExpenseService,
+)
 
 
 app = FastAPI(title="Sezzions Hosted API", version="0.1.0")
@@ -315,6 +318,32 @@ class HostedWorkspaceGameSessionBatchDeleteRequest(BaseModel):
     game_session_ids: list[str]
 
 
+class HostedWorkspaceExpenseCreateRequest(BaseModel):
+    expense_date: str
+    amount: str
+    vendor: str
+    expense_time: str | None = None
+    description: str | None = None
+    category: str | None = None
+    user_id: str | None = None
+    notes: str | None = None
+
+
+class HostedWorkspaceExpenseUpdateRequest(BaseModel):
+    expense_date: str
+    amount: str
+    vendor: str
+    expense_time: str | None = None
+    description: str | None = None
+    category: str | None = None
+    user_id: str | None = None
+    notes: str | None = None
+
+
+class HostedWorkspaceExpenseBatchDeleteRequest(BaseModel):
+    expense_ids: list[str]
+
+
 cors_config = load_hosted_backend_config(required=False, require_db_password=False)
 app.add_middleware(
     CORSMiddleware,
@@ -446,6 +475,16 @@ def get_hosted_workspace_game_session_service() -> HostedWorkspaceGameSessionSer
 
     session_factory = get_hosted_session_factory(config.sqlalchemy_url)
     return HostedWorkspaceGameSessionService(session_factory)
+
+
+def get_hosted_workspace_expense_service() -> HostedWorkspaceExpenseService:
+    try:
+        config = load_hosted_backend_config(require_db_password=True)
+    except HostedConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    session_factory = get_hosted_session_factory(config.sqlalchemy_url)
+    return HostedWorkspaceExpenseService(session_factory)
 
 
 def get_hosted_uploaded_sqlite_inspection_service() -> HostedUploadedSQLiteInspectionService:
@@ -1931,6 +1970,141 @@ def workspace_game_sessions_deletion_impact(
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+# ── Expenses ─────────────────────────────────────────────────────────────────
+
+
+@app.get("/v1/workspace/expenses")
+def workspace_expenses_list(
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceExpenseService = Depends(
+        get_hosted_workspace_expense_service
+    ),
+) -> dict[str, object]:
+    try:
+        page = service.list_expenses_page(
+            supabase_user_id=session.user_id,
+            limit=limit,
+            offset=offset,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return {
+        "expenses": [
+            e.as_dict() if hasattr(e, "as_dict") else e
+            for e in page["expenses"]
+        ],
+        "offset": page["offset"],
+        "limit": page["limit"],
+        "next_offset": page["next_offset"],
+        "total_count": page["total_count"],
+        "has_more": page["has_more"],
+    }
+
+
+@app.post("/v1/workspace/expenses")
+def workspace_expenses_create(
+    payload: HostedWorkspaceExpenseCreateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceExpenseService = Depends(
+        get_hosted_workspace_expense_service
+    ),
+) -> dict[str, object]:
+    try:
+        expense = service.create_expense(
+            supabase_user_id=session.user_id,
+            expense_date=payload.expense_date,
+            expense_time=payload.expense_time,
+            amount=payload.amount,
+            vendor=payload.vendor,
+            description=payload.description,
+            category=payload.category,
+            user_id=payload.user_id,
+            notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return expense.as_dict() if hasattr(expense, "as_dict") else expense
+
+
+@app.patch("/v1/workspace/expenses/{expense_id}")
+def workspace_expenses_update(
+    expense_id: str = Path(...),
+    payload: HostedWorkspaceExpenseUpdateRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceExpenseService = Depends(
+        get_hosted_workspace_expense_service
+    ),
+) -> dict[str, object]:
+    try:
+        expense = service.update_expense(
+            supabase_user_id=session.user_id,
+            expense_id=expense_id,
+            expense_date=payload.expense_date,
+            expense_time=payload.expense_time,
+            amount=payload.amount,
+            vendor=payload.vendor,
+            description=payload.description,
+            category=payload.category,
+            user_id=payload.user_id,
+            notes=payload.notes,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return expense.as_dict() if hasattr(expense, "as_dict") else expense
+
+
+@app.delete(
+    "/v1/workspace/expenses/{expense_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def workspace_expenses_delete(
+    expense_id: str = Path(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceExpenseService = Depends(
+        get_hosted_workspace_expense_service
+    ),
+) -> Response:
+    try:
+        service.delete_expense(
+            supabase_user_id=session.user_id,
+            expense_id=expense_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/v1/workspace/expenses/batch-delete")
+def workspace_expenses_batch_delete(
+    payload: HostedWorkspaceExpenseBatchDeleteRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceExpenseService = Depends(
+        get_hosted_workspace_expense_service
+    ),
+) -> dict[str, int]:
+    try:
+        deleted_count = service.delete_expenses(
+            supabase_user_id=session.user_id,
+            expense_ids=payload.expense_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"deleted_count": deleted_count}
 
 
 @app.get("/v1/workspace/import-plan")
