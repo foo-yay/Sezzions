@@ -177,6 +177,7 @@ export default function ExpenseModal({
                   min="0"
                   step="0.01"
                   placeholder="0.00"
+                  tabIndex={1}
                   title={amountInvalid ? "Required" : undefined}
                   value={form.amount}
                   readOnly={readOnly}
@@ -187,6 +188,7 @@ export default function ExpenseModal({
               <div className="pf-cell" style={{gridRow: 1, gridColumn: 4}}>
                 <TypeaheadSelect
                   id="expense-category-input"
+                  tabIndex={3}
                   options={categoryOptions}
                   value={form.category}
                   onChange={(category) => setForm((current) => ({ ...current, category }))}
@@ -204,6 +206,7 @@ export default function ExpenseModal({
                   className={vendorInvalid ? "text-input invalid" : "text-input"}
                   type="text"
                   placeholder="Vendor name…"
+                  tabIndex={2}
                   title={vendorInvalid ? "Required" : undefined}
                   value={form.vendor}
                   readOnly={readOnly}
@@ -234,6 +237,7 @@ export default function ExpenseModal({
               <div className="pf-cell" style={{gridRow: 2, gridColumn: 4}}>
                 <TypeaheadSelect
                   id="expense-user-input"
+                  tabIndex={4}
                   options={(users || []).map((u) => ({ value: u.id, label: u.name }))}
                   value={form.user_id}
                   onChange={(userId) => setForm((current) => ({ ...current, user_id: userId }))}
@@ -253,6 +257,7 @@ export default function ExpenseModal({
               className="notes-input"
               placeholder="Optional"
               rows={2}
+              tabIndex={5}
               value={form.description}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
@@ -267,6 +272,7 @@ export default function ExpenseModal({
               className="notes-input"
               placeholder="Optional"
               rows={2}
+              tabIndex={6}
               value={form.notes}
               readOnly={readOnly}
               onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
