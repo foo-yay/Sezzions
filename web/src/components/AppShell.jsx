@@ -16,6 +16,7 @@ import GamesTab from "./GamesTab/GamesTab";
 import PurchasesTab from "./PurchasesTab/PurchasesTab";
 import RedemptionsTab from "./RedemptionsTab/RedemptionsTab";
 import GameSessionsTab from "./GameSessionsTab/GameSessionsTab";
+import ExpensesTab from "./ExpensesTab/ExpensesTab";
 
 const setupTabs = [
   { key: "users", label: "Users", icon: "users", enabled: true },
@@ -31,7 +32,8 @@ const setupTabs = [
 const topLevelTabs = [
   { key: "purchases", label: "Purchases", icon: "purchases" },
   { key: "redemptions", label: "Redemptions", icon: "redemptions" },
-  { key: "game-sessions", label: "Sessions", icon: "gameSessions" }
+  { key: "game-sessions", label: "Sessions", icon: "gameSessions" },
+  { key: "expenses", label: "Expenses", icon: "expenses" },
 ];
 
 const allValidKeys = new Set([...setupTabs.map((t) => t.key), ...topLevelTabs.map((t) => t.key)]);
@@ -278,6 +280,12 @@ export default function AppShell({ auth }) {
         ) : null}
         {activeTab === "game-sessions" ? (
           <GameSessionsTab
+            apiBaseUrl={auth.apiBaseUrl}
+            hostedWorkspaceReady={auth.hostedWorkspaceReady}
+          />
+        ) : null}
+        {activeTab === "expenses" ? (
+          <ExpensesTab
             apiBaseUrl={auth.apiBaseUrl}
             hostedWorkspaceReady={auth.hostedWorkspaceReady}
           />

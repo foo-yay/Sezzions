@@ -375,8 +375,9 @@ class HostedExpenseRecord(HostedBase):
     vendor: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    user_id: Mapped[str | None] = mapped_column(ForeignKey("hosted_users.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("hosted_users.id", ondelete="SET NULL"), nullable=True, index=True)
     expense_entry_time_zone: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
