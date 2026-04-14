@@ -1,5 +1,7 @@
 """Tests for HostedWorkspaceGameSessionService — CRUD, active guard, side effects."""
 
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -653,5 +655,168 @@ def test_dormant_purchases_not_reactivated_on_closed_session():
         with sf() as s:
             p = s.query(HostedPurchaseRecord).filter_by(id=purchase_id).one()
             assert p.status == "dormant"
+    finally:
+        engine.dispose()
+
+
+# ── Low-balance close ─────────────────────────────────────────────────────────
+
+
+def test_low_balance_prompt_returns_data_when_below_threshold():
+    """Balance < $1 should return prompt data."""
+    engine, sf = _session_factory()
+    user, site, _, _ = _bootstrap(sf)
+    service = HostedWorkspaceGameSessionService(sf)
+
+    try:
+        result = service.get_low_balance_close_prompt_data(
+            supabase_user_id=OWNER,
+            user_id=user.id,
+            site_id=site.id,
+            ending_total_sc="0.50",
+        )
+    finally:
+        engine.dispose()
+
+    assert result is not None
+    assert result["current_sc"] == "0.50"
+    assert result["user_id"] == user.id
+
+
+def test_low_balance_prompt_returns_none_when_above_threshold():
+    """Balance >= $1 should return None."""
+    engine, sf = _session_factory()
+    user, site, _, _ = _bootstrap(sf)
+    service = HostedWorkspaceGameSessionService(sf)
+
+    try:
+        result = service.get_low_balance_close_prompt_data(
+            supabase_user_id=OWNER,
+            user_id=user.id,
+            site_id=site.id,
+            ending_total_sc="5.00",
+        )
+    finally:
+        engine.dispose()
+
+    assert result is None
+
+
+def test_low_balance_prompt_returns_none_if_active_session():
+    """Active session present → no prompt."""
+    engine, sf = _session_factory()
+    user, site, _, _ = _bootstrap(sf)
+    service = HostedWorkspaceGameSessionService(sf)
+
+    try:
+        service.create_game_session(
+            supabase_user_id=OWNER,
+            user_id=user.id,
+            site_id=site.id,
+            session_date="2026-01-15",
+            status_value="Active",
+        )
+
+        result = service.get_low_balance_close_prompt_data(
+            supabase_user_id=OWNER,
+            user_id=user.id,
+            site_id=site.id,
+            ending_total_sc="0.00",
+        )
+    finally:
+        engine.dispose()
+
+    assert result is None
+
+
+def test_close_unrealized_position_creates_redemption():
+    """close_unrealized_position creates a $0 redemption with Net Loss notes."""
+    engine, sf = _session_factory()
+    user, site, _, _ = _bootstrap(sf)
+    service = HostedWorkspaceGameSessionService(sf)
+
+    try:
+        result = service.close_unrealized_position(
+            supabase_user_id=OWNER,
+            user_id=user.id,
+            site_id=site.id,
+            current_sc="0.50",
+            current_value="0.50",
+            total_basis="0.00",
+        )
+    finally:
+        engine.dispose()
+
+    assert result["redemption_id"] is not None
+    assert "Net Loss" in result["notes"]
+
+
+def test_close_unrealized_position_marks_purchases_dormant():
+    """When basis > 0, fully consumed purchases become dormant after close."""
+    engine, sf = _session_factory()
+    user, site, _, _ = _bootstrap(sf)
+    service = HostedWorkspaceGameSessionService(sf)
+    workspace_id = _get_workspace_id(sf)
+
+    try:
+        from uuid import uuid4
+        purchase_id = str(uuid4())
+        with sf() as s:
+            s.add(HostedPurchaseRecord(
+                id=purchase_id,
+                workspace_id=workspace_id,
+                user_id=user.id,
+                site_id=site.id,
+                amount="50.00",
+                sc_received="50.00",
+                remaining_amount="50.00",
+                purchase_date="2026-01-10",
+                purchase_time="12:00:00",
+                status="active",
+            ))
+            s.commit()
+
+        result = service.close_unrealized_position(
+            supabase_user_id=OWNER,
+            user_id=user.id,
+            site_id=site.id,
+            current_sc="0.50",
+            current_value="0.50",
+            total_basis="50.00",
+        )
+
+        with sf() as s:
+            p = s.query(HostedPurchaseRecord).filter_by(id=purchase_id).one()
+            # After FIFO consumes all basis, remaining → 0, status → dormant
+            assert Decimal(p.remaining_amount) == 0
+            assert p.status == "dormant"
+    finally:
+        engine.dispose()
+
+
+def test_close_unrealized_position_blocked_by_active_session():
+    """Cannot close position while an active session exists."""
+    engine, sf = _session_factory()
+    user, site, _, _ = _bootstrap(sf)
+    service = HostedWorkspaceGameSessionService(sf)
+
+    try:
+        service.create_game_session(
+            supabase_user_id=OWNER,
+            user_id=user.id,
+            site_id=site.id,
+            session_date="2026-01-15",
+            status_value="Active",
+        )
+
+        with pytest.raises(ValueError, match="active session"):
+            service.close_unrealized_position(
+                supabase_user_id=OWNER,
+                user_id=user.id,
+                site_id=site.id,
+                current_sc="0.00",
+                current_value="0.00",
+                total_basis="0.00",
+            )
     finally:
         engine.dispose()
