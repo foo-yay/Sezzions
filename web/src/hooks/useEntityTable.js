@@ -907,10 +907,11 @@ export default function useEntityTable(config, { apiBaseUrl, hostedWorkspaceRead
     }
 
     const payload = formToPayload(form, modalMode);
-    const url = modalMode === "edit" && selectedItem
+    const isUpdate = (modalMode === "edit" || modalMode === "close") && selectedItem;
+    const url = isUpdate
       ? `${apiBaseUrl}${apiEndpoint}/${selectedItem.id}`
       : `${apiBaseUrl}${apiEndpoint}`;
-    const method = modalMode === "edit" ? "PATCH" : "POST";
+    const method = isUpdate ? "PATCH" : "POST";
 
     try {
       const response = await fetch(url, {
@@ -925,7 +926,7 @@ export default function useEntityTable(config, { apiBaseUrl, hostedWorkspaceRead
 
       if (!response.ok) {
         setSubmitError(data.detail || `Hosted ${entityName} save failed (${response.status}).`);
-        return;
+        return false;
       }
 
       setItems((current) => mergeById(current, [data]));
@@ -934,8 +935,10 @@ export default function useEntityTable(config, { apiBaseUrl, hostedWorkspaceRead
       setSelectionAnchorId(data.id);
       setStatus(`Hosted ${entityName} ready.`);
       closeModalImmediately();
+      return true;
     } catch (error) {
       setSubmitError(describeFetchFailure(error, `Hosted ${entityName} save failed.`));
+      return false;
     }
   }
 
