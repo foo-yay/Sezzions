@@ -9,6 +9,27 @@ Rules:
 
 ---
 
+## 2026-04-14
+
+```yaml
+id: 2026-04-14-01
+type: feature
+areas: [api, services]
+issue: "#280"
+pr: "#281"
+summary: "Game Sessions: Session P/L calculation, low-balance close, validations"
+details: >
+  Feature Group A: Added rebuild_sessions_for_pair() to HostedRecalculationService
+  that computes all session P/L fields (expected_start_total, expected_start_redeemable,
+  discoverable_sc, delta_total, delta_redeem, session_basis, basis_consumed,
+  net_taxable_pl, purchases_during, redemptions_during) after FIFO rebuild.
+  Feature Group B: Added low-balance close prompt endpoint (GET) and close-position
+  endpoint (POST) that creates a $0 redemption, FIFO allocation, and marks
+  purchases dormant. Feature Group C: Added end-after-start datetime validation
+  and dormant purchase reactivation on Active session create/update.
+  22 new tests across 2 test files. All 1363 tests pass.
+```
+
 ## 2026-04-06
 
 ```yaml
