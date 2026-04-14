@@ -80,7 +80,7 @@ const gameSessionsConfig = {
     rtp: form.rtp ? parseFloat(form.rtp) : null,
     purchases_during: form.purchases_during || "0.00",
     redemptions_during: form.redemptions_during || "0.00",
-    status: form.status || "Active",
+    status: mode === "close" ? "Closed" : (form.status || "Active"),
     notes: form.notes || null,
   }),
   buildFilterOptions: (items) => {
@@ -205,6 +205,7 @@ export default function GameSessionsTab({ apiBaseUrl, hostedWorkspaceReady }) {
           apiBaseUrl={apiBaseUrl}
           onClose={table.requestCloseModal}
           onRequestEdit={() => table.selectedItem && table.openModal("edit", table.selectedItem)}
+          onRequestClose={() => table.selectedItem && table.openModal("close", table.selectedItem)}
           onRequestDelete={() => table.selectedItem && table.handleDelete([table.selectedItem])}
           onSubmit={table.submitModal}
           onEndAndStartNew={(closedSession) => {

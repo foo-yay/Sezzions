@@ -11,6 +11,7 @@ export default function GameSessionModal({
   onClose,
   onSubmit,
   onRequestEdit,
+  onRequestClose,
   onRequestDelete,
   onEndAndStartNew,
   submitError,
@@ -23,36 +24,51 @@ export default function GameSessionModal({
   const readOnly = mode === "view";
   const isCreate = mode === "create";
   const isEdit = mode === "edit";
+  const isClose = mode === "close";
   const isActive = form.status === "Active";
   const isClosed = form.status === "Closed";
 
   const title = isCreate
     ? "Start Session"
-    : isEdit
-      ? isActive ? "Edit Active Session" : "Edit Closed Session"
-      : "View Session";
+    : isClose
+      ? "Close Session"
+      : isEdit
+        ? isActive ? "Edit Active Session" : "Edit Closed Session"
+        : "View Session";
 
   // Validation
   const userInvalid = !form.user_id;
   const siteInvalid = !form.site_id;
   const dateInvalid = !form.session_date;
   const startBalInvalid = form.starting_balance === "" || isNaN(Number(form.starting_balance));
-  const endDateInvalid = isClosed && !form.end_date;
-  const endBalInvalid = isClosed && (form.ending_balance === "" || isNaN(Number(form.ending_balance)));
+  const endDateInvalid = (isClosed || isClose) && !form.end_date;
+  const endBalInvalid = (isClosed || isClose) && (form.ending_balance === "" || isNaN(Number(form.ending_balance)));
 
   const formInvalid = userInvalid || siteInvalid || dateInvalid || startBalInvalid
-    || (isClosed && (endDateInvalid || endBalInvalid));
+    || ((isClosed || isClose) && (endDateInvalid || endBalInvalid));
 
   const closeLabel = readOnly ? "Close" : "Cancel";
 
   // Auto-focus User field
   const userRef = useRef(null);
   useEffect(() => {
-    if (!readOnly && userRef.current) {
+    if (!readOnly && !isClose && userRef.current) {
       const input = userRef.current.querySelector ? userRef.current.querySelector("input") : userRef.current;
       if (input) input.focus();
     }
-  }, [readOnly]);
+  }, [readOnly, isClose]);
+
+  // ── Close-mode defaults (pre-fill end date/time) ───────────────────────
+  const closeModeInit = useRef(false);
+  useEffect(() => {
+    if (!isClose || closeModeInit.current) return;
+    closeModeInit.current = true;
+    setForm((prev) => ({
+      ...prev,
+      end_date: prev.end_date || prev.session_date,
+      end_time: prev.end_time || new Date().toTimeString().slice(0, 8),
+    }));
+  }, [isClose, setForm]);
 
   // Filter games by game_type
   const filteredGames = form.game_type_id
@@ -204,59 +220,41 @@ export default function GameSessionModal({
     };
   }, [readOnly, form.user_id, form.site_id, form.session_date, form.session_time, form.starting_balance, form.starting_redeemable, apiBaseUrl]);
 
-  // ── P/L Preview (for Closed sessions) ─────────────────────────────────────
+  // ── P/L Preview (for Closed sessions or close mode) ────────────────────
   const plPreview = (() => {
-    if (!isClosed) return null;
+    if (!isClosed && !isClose) return null;
     const startBal = Number(form.starting_balance || 0);
     const endBal = Number(form.ending_balance || 0);
     const startRedeem = Number(form.starting_redeemable || 0);
     const endRedeem = Number(form.ending_redeemable || 0);
     const purchases = Number(form.purchases_during || 0);
     const redemptions = Number(form.redemptions_during || 0);
+    // delta_total = ending_balance - starting_balance
+    const deltaTotal = endBal - startBal;
     // discoverable_sc = ending - starting - purchases + redemptions
     const discoverableSC = endBal - startBal - purchases + redemptions;
     // delta_redeem = ending_redeemable - starting_redeemable
     const deltaRedeem = endRedeem - startRedeem;
     // Simplified P/L = discoverable_sc + delta_redeem (sc_rate=1 for preview)
     const netPL = discoverableSC + deltaRedeem;
-    return { discoverableSC, deltaRedeem, netPL };
+    return { deltaTotal, discoverableSC, deltaRedeem, netPL };
   })();
 
   // ── End & Start New ───────────────────────────────────────────────────────
   const [endAndStartPending, setEndAndStartPending] = useState(false);
 
   const handleEndAndStartNew = useCallback(async () => {
-    if (!isEdit || !isActive) return;
-    // First close the current session by submitting with Closed status
+    if (!isClose) return;
     setEndAndStartPending(true);
-
-    // Build the close payload
-    setForm((prev) => ({
-      ...prev,
-      status: "Closed",
-      end_date: prev.end_date || prev.session_date,
-      end_time: prev.end_time || new Date().toTimeString().slice(0, 8),
-    }));
-  }, [isEdit, isActive, setForm]);
-
-  // Once the form is set to Closed and endAndStartPending, trigger submit
-  useEffect(() => {
-    if (!endAndStartPending || form.status !== "Closed") return;
-    // Submit the close, then trigger the End & Start New callback
-    const doSubmit = async () => {
-      try {
-        await onSubmit();
-        if (onEndAndStartNew) {
-          onEndAndStartNew(form);
-        }
-      } catch {
-        // submitError will be shown in the modal
-      } finally {
-        setEndAndStartPending(false);
+    try {
+      const ok = await onSubmit();
+      if (ok && onEndAndStartNew) {
+        onEndAndStartNew(form);
       }
-    };
-    doSubmit();
-  }, [endAndStartPending, form.status]); // eslint-disable-line react-hooks/exhaustive-deps
+    } finally {
+      setEndAndStartPending(false);
+    }
+  }, [isClose, onSubmit, onEndAndStartNew, form]);
 
   // ── Deletion Impact ───────────────────────────────────────────────────────
   const [deletionImpact, setDeletionImpact] = useState(null);
@@ -359,6 +357,9 @@ export default function GameSessionModal({
               <button className="ghost-button" type="button" onClick={handleDeleteWithImpactCheck}>Delete</button>
             </div>
             <div className="toolbar-row">
+              {gameSession.status === "Active" && (
+                <button className="ghost-button" type="button" onClick={onRequestClose}>Close Session</button>
+              )}
               <button className="primary-button" type="button" onClick={onRequestEdit}>Edit Session</button>
             </div>
           </div>
@@ -393,6 +394,220 @@ export default function GameSessionModal({
               </section>
             </div>
           )}
+        </section>
+      </div>
+    );
+  }
+
+  // ── Close mode ─────────────────────────────────────────────────────────
+  if (isClose && gameSession) {
+    const startBal = Number(gameSession.starting_balance || 0);
+    const startRedeem = Number(gameSession.starting_redeemable || 0);
+    const hasEnding = form.ending_balance !== "" && form.ending_balance !== undefined;
+
+    // Find RTP from the game if present
+    const sessionGame = gameSession.game_id
+      ? games.find((g) => g.id === gameSession.game_id)
+      : null;
+    const sessionRtp = sessionGame?.rtp;
+
+    return (
+      <div className="modal-backdrop" role="presentation" onClick={onClose}>
+        <section
+          className="modal-card entity-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="gs-modal-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="modal-header">
+            <div>
+              <h2 id="gs-modal-title">Close Session</h2>
+            </div>
+            <button className="ghost-button" type="button" onClick={onClose}>Cancel</button>
+          </div>
+
+          <div className="purchase-form">
+            {/* ── Date / Time ── */}
+            <div className="pf-section">
+              <div className="pf-grid">
+                <label className="field-label" style={{ gridRow: 1, gridColumn: 1 }}>Start Date</label>
+                <div className="pf-cell" style={{ gridRow: 1, gridColumn: 2 }}>
+                  <span className="text-input" style={{ opacity: 0.7 }}>{gameSession.session_date}</span>
+                </div>
+                <label className="field-label" style={{ gridRow: 1, gridColumn: 3 }}>Start Time</label>
+                <div className="pf-cell" style={{ gridRow: 1, gridColumn: 4 }}>
+                  <span className="text-input" style={{ opacity: 0.7 }}>{gameSession.session_time || "—"}</span>
+                </div>
+                <label className="field-label" htmlFor="gs-end-date-input" style={{ gridRow: 2, gridColumn: 1 }}>End Date</label>
+                <div className="pf-cell" style={{ gridRow: 2, gridColumn: 2 }}>
+                  <input
+                    id="gs-end-date-input"
+                    className={endDateInvalid ? "text-input invalid" : "text-input"}
+                    type="date"
+                    value={form.end_date}
+                    onChange={(e) => setForm((c) => ({ ...c, end_date: e.target.value }))}
+                  />
+                </div>
+                <label className="field-label" htmlFor="gs-end-time-input" style={{ gridRow: 2, gridColumn: 3 }}>End Time</label>
+                <div className="pf-cell" style={{ gridRow: 2, gridColumn: 4 }}>
+                  <input
+                    id="gs-end-time-input"
+                    className="text-input"
+                    type="time"
+                    step="1"
+                    value={form.end_time}
+                    onChange={(e) => setForm((c) => ({ ...c, end_time: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* ── Balances ── */}
+            <div className="pf-section">
+              <p className="pf-section-title"><span>💰</span> Balances</p>
+              <div className="pf-grid">
+                <label className="field-label" htmlFor="gs-end-bal-input" style={{ gridRow: 1, gridColumn: 1 }}>End Total SC</label>
+                <div className="pf-cell" style={{ gridRow: 1, gridColumn: 2 }}>
+                  <input
+                    id="gs-end-bal-input"
+                    className={endBalInvalid ? "text-input invalid" : "text-input"}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    title={endBalInvalid ? "Required" : undefined}
+                    value={form.ending_balance}
+                    onChange={(e) => setForm((c) => ({ ...c, ending_balance: e.target.value }))}
+                  />
+                </div>
+                <label className="field-label" htmlFor="gs-end-redeem-input" style={{ gridRow: 1, gridColumn: 3 }}>End Redeemable SC</label>
+                <div className="pf-cell" style={{ gridRow: 1, gridColumn: 4 }}>
+                  <input
+                    id="gs-end-redeem-input"
+                    className="text-input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={form.ending_redeemable}
+                    onChange={(e) => setForm((c) => ({ ...c, ending_redeemable: e.target.value }))}
+                  />
+                </div>
+                <label className="field-label" htmlFor="gs-wager-input" style={{ gridRow: 2, gridColumn: 1 }}>Wager Amount</label>
+                <div className="pf-cell" style={{ gridRow: 2, gridColumn: 2 }}>
+                  <input
+                    id="gs-wager-input"
+                    className="text-input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={form.wager_amount}
+                    onChange={(e) => setForm((c) => ({ ...c, wager_amount: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* ── Session Details (read-only computed stats) ── */}
+            <div className="pf-section">
+              <p className="pf-section-title"><span>📊</span> Session Details</p>
+              <div className="pf-grid">
+                <span className="field-label" style={{ gridRow: 1, gridColumn: 1 }}>Start SC</span>
+                <div className="pf-cell" style={{ gridRow: 1, gridColumn: 2 }}>
+                  <span className="text-input" style={{ opacity: 0.7 }}>{startBal.toFixed(2)}</span>
+                </div>
+                <span className="field-label" style={{ gridRow: 1, gridColumn: 3 }}>Start Redeemable</span>
+                <div className="pf-cell" style={{ gridRow: 1, gridColumn: 4 }}>
+                  <span className="text-input" style={{ opacity: 0.7 }}>{startRedeem.toFixed(2)}</span>
+                </div>
+
+                <span className="field-label" style={{ gridRow: 2, gridColumn: 1 }}>Δ Total</span>
+                <div className="pf-cell" style={{ gridRow: 2, gridColumn: 2 }}>
+                  <span className="text-input" style={{ opacity: 0.7 }}>
+                    {hasEnding ? plPreview.deltaTotal.toFixed(2) : "—"}
+                  </span>
+                </div>
+                <span className="field-label" style={{ gridRow: 2, gridColumn: 3 }}>Δ Basis</span>
+                <div className="pf-cell" style={{ gridRow: 2, gridColumn: 4 }}>
+                  <span className="text-input" style={{ opacity: 0.7 }}>—</span>
+                </div>
+
+                <span className="field-label" style={{ gridRow: 3, gridColumn: 1 }}>Δ Redeemable</span>
+                <div className="pf-cell" style={{ gridRow: 3, gridColumn: 2 }}>
+                  <span className="text-input" style={{ opacity: 0.7 }}>
+                    {hasEnding ? plPreview.deltaRedeem.toFixed(2) : "—"}
+                  </span>
+                </div>
+                <span className="field-label" style={{ gridRow: 3, gridColumn: 3 }}>Net P/L</span>
+                <div className="pf-cell" style={{ gridRow: 3, gridColumn: 4 }}>
+                  <span className="text-input" style={{ opacity: 0.7 }}>
+                    {hasEnding ? (
+                      <span className={plPreview.netPL >= 0 ? "pl-positive" : "pl-negative"}>
+                        {plPreview.netPL >= 0 ? "+" : ""}{plPreview.netPL.toFixed(2)}
+                      </span>
+                    ) : "—"}
+                  </span>
+                </div>
+
+                <span className="field-label" style={{ gridRow: 4, gridColumn: 1 }}>Game Type</span>
+                <div className="pf-cell" style={{ gridRow: 4, gridColumn: 2 }}>
+                  <span className="text-input" style={{ opacity: 0.7 }}>{gameSession.game_type_name || "—"}</span>
+                </div>
+                <span className="field-label" style={{ gridRow: 4, gridColumn: 3 }}>Game</span>
+                <div className="pf-cell" style={{ gridRow: 4, gridColumn: 4 }}>
+                  <span className="text-input" style={{ opacity: 0.7 }}>{gameSession.game_name || "—"}</span>
+                </div>
+
+                <span className="field-label" style={{ gridRow: 5, gridColumn: 1 }}>RTP</span>
+                <div className="pf-cell" style={{ gridRow: 5, gridColumn: 2 }}>
+                  <span className="text-input" style={{ opacity: 0.7 }}>
+                    {sessionRtp != null ? `${Number(sessionRtp).toFixed(2)}%` : "—"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Notes ── */}
+            <div className="pf-notes-row">
+              <label className="field-label" htmlFor="gs-notes-input">Notes</label>
+              <textarea
+                id="gs-notes-input"
+                className="notes-input"
+                placeholder="Optional"
+                rows={2}
+                value={form.notes}
+                onChange={(e) => setForm((c) => ({ ...c, notes: e.target.value }))}
+              />
+            </div>
+          </div>
+
+          {submitError ? <p className="submit-error">{submitError}</p> : null}
+
+          <div className="modal-actions modal-actions-split">
+            <div className="toolbar-row">
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={handleEndAndStartNew}
+                disabled={endAndStartPending || !form.ending_balance}
+                title="Close this session and immediately start a new one"
+              >
+                End &amp; Start New
+              </button>
+            </div>
+            <div className="toolbar-row">
+              <button
+                className="primary-button"
+                type="button"
+                onClick={onSubmit}
+                disabled={formInvalid || endAndStartPending}
+              >
+                End Session
+              </button>
+            </div>
+          </div>
         </section>
       </div>
     );
@@ -538,10 +753,10 @@ export default function GameSessionModal({
             </div>
           )}
 
-          {/* ── End Session Section (Closed or being closed) ── */}
-          {(isClosed || (isEdit && isActive)) && (
+          {/* ── End Session Section (Closed sessions only) ── */}
+          {isClosed && (
             <div className="pf-section">
-              <p className="pf-section-title"><span>🏁</span> {isActive ? "Close Session" : "Session End"}</p>
+              <p className="pf-section-title"><span>🏁</span> Session End</p>
               <div className="pf-grid">
                 <label className="field-label" htmlFor="gs-end-date-input" style={{ gridRow: 1, gridColumn: 1 }}>End Date</label>
                 <div className="pf-cell" style={{ gridRow: 1, gridColumn: 2 }}>
@@ -663,41 +878,13 @@ export default function GameSessionModal({
         {submitError ? <p className="submit-error">{submitError}</p> : null}
 
         <div className="modal-actions modal-actions-split">
+          <div className="toolbar-row" />
           <div className="toolbar-row">
-            {isEdit && isActive && (
-              <button
-                className="ghost-button"
-                type="button"
-                onClick={handleEndAndStartNew}
-                disabled={endAndStartPending || !form.ending_balance}
-                title="Close this session and immediately start a new one"
-              >
-                End &amp; Start New
-              </button>
-            )}
-          </div>
-          <div className="toolbar-row">
-            {isEdit && isActive && (
-              <button
-                className="ghost-button"
-                type="button"
-                onClick={() => {
-                  setForm((c) => ({
-                    ...c,
-                    status: "Closed",
-                    end_date: c.end_date || c.session_date,
-                    end_time: c.end_time || new Date().toTimeString().slice(0, 8),
-                  }));
-                }}
-              >
-                Close Session
-              </button>
-            )}
             <button
               className="primary-button"
               type="button"
               onClick={onSubmit}
-              disabled={formInvalid || endAndStartPending}
+              disabled={formInvalid}
             >
               {isCreate ? "Start Session" : "Save Session"}
             </button>
