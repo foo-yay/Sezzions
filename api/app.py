@@ -1972,6 +1972,60 @@ def workspace_game_sessions_deletion_impact(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
+@app.get("/v1/workspace/game-sessions/low-balance-check")
+def workspace_game_sessions_low_balance_check(
+    user_id: str = Query(...),
+    site_id: str = Query(...),
+    ending_total_sc: str = Query(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceGameSessionService = Depends(
+        get_hosted_workspace_game_session_service
+    ),
+) -> dict[str, object]:
+    try:
+        result = service.get_low_balance_close_prompt_data(
+            supabase_user_id=session.user_id,
+            user_id=user_id,
+            site_id=site_id,
+            ending_total_sc=ending_total_sc,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    return {"prompt": result}
+
+
+class HostedClosePositionRequest(BaseModel):
+    user_id: str
+    site_id: str
+    current_sc: str
+    current_value: str
+    total_basis: str
+
+
+@app.post("/v1/workspace/game-sessions/close-position")
+def workspace_game_sessions_close_position(
+    payload: HostedClosePositionRequest = Body(...),
+    session: AuthenticatedSession = Depends(get_authenticated_session),
+    service: HostedWorkspaceGameSessionService = Depends(
+        get_hosted_workspace_game_session_service
+    ),
+) -> dict[str, object]:
+    try:
+        return service.close_unrealized_position(
+            supabase_user_id=session.user_id,
+            user_id=payload.user_id,
+            site_id=payload.site_id,
+            current_sc=payload.current_sc,
+            current_value=payload.current_value,
+            total_basis=payload.total_basis,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
 # ── Expenses ─────────────────────────────────────────────────────────────────
 
 

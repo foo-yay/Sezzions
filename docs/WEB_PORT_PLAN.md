@@ -396,6 +396,48 @@ These are read-only projections over transaction data.
 **Model**: amount, date, category, description, receipt_url, notes
 **Web notes**: Straightforward EntityTable. No FIFO involvement. Can be deferred or prioritized based on user need.
 
+### 6f. Entity Cross-Reference Tabs ("Related" Tabs)
+
+**What it is**: Read-only tabs on transaction entity view/edit dialogs that display linked records from other tables. The desktop app has 5 distinct Related tabs across its dialogs. These are critical for users who need to understand how their transactions connect (FIFO allocations, event links, checkpoint windows).
+
+**Desktop parity inventory:**
+
+| Entity Dialog | Tab Name | Content | Desktop Code |
+|---|---|---|---|
+| Purchase | Basis Period Purchases | All purchases in the same balance-checkpoint window for that (user, site) | `_load_related_tab()` in `ViewPurchaseDialog` |
+| Redemption | Allocated Purchases (FIFO) + Linked Sessions | FIFO allocation breakdown (which purchases were consumed, how much each) + event-linked game sessions | `_load_related_tab()` in `ViewRedemptionDialog` |
+| Game Session | Contributing Purchases + Linked Redemptions | Purchases/redemptions linked via event links, grouped by relation type (BEFORE / DURING / AFTER) | `_load_related_tab()` in `ViewGameSessionDialog` |
+| Realized Position | Allocated Purchases + Linked Sessions | Same as Redemption Related tab, but accessed from the Realized Transactions view | `ViewRealizedPositionDialog` |
+| Unrealized Position | Related Purchases + Sessions | Open FIFO lots and any overlapping sessions for the (user, site) | `ViewUnrealizedPositionDialog` |
+
+**Desktop also has** a conditional **Adjustments tab** on Purchase, Redemption, and Game Session dialogs — visible only when adjustments (basis adjustments or balance checkpoints) affect that entity.
+
+**Backend data availability:**
+- FIFO allocations (`redemption_allocations` table) — already populated by the hosted FIFO service on every redemption create/update
+- Event links (`game_session_event_links` table) — already populated by the hosted event link service on recalculation
+- Checkpoint-window queries — existing `purchase_repo` methods can filter by date range
+- All data is **read-only** from the Related tab perspective
+
+**Web implementation:**
+- **API endpoints** (new): One endpoint per cross-reference type, e.g.:
+  - `GET /v1/workspace/purchases/{id}/related` — basis-period purchases
+  - `GET /v1/workspace/redemptions/{id}/allocations` — FIFO allocation detail
+  - `GET /v1/workspace/redemptions/{id}/linked-sessions` — event-linked sessions
+  - `GET /v1/workspace/game-sessions/{id}/linked-transactions` — event-linked purchases & redemptions
+- **Frontend**: Reusable `RelatedTab` component (read-only table rendered inside entity modals as a tab). Each entity modal adds its specific Related tab config.
+- **Navigation**: Clicking a row in a Related tab should open the linked entity's view dialog (drill-down).
+
+**Dependencies**: Requires Phase 3 transaction tabs (for the parent dialogs) and Phase 2 accounting engine (for the data). Realized/Unrealized Related tabs additionally require Phase 4a-4c.
+
+**Implementation order:**
+1. Purchase → Basis Period Purchases (simplest — just a date-range query)
+2. Redemption → FIFO Allocations (uses existing allocations table)
+3. Game Session → Linked Transactions (uses existing event links table)
+4. Redemption → Linked Sessions (event links, similar to #3)
+5. Realized Position → Related (after Phase 4b)
+6. Unrealized Position → Related (after Phase 4c)
+7. Adjustments tab (after Phase 5d Adjustments)
+
 ---
 
 ## 7. Phase 5 — Tools & Data Operations
@@ -806,6 +848,12 @@ PHASE 4 — DERIVED VIEWS
   [ ] Realized transactions view
   [ ] Unrealized positions view
   [ ] Reports: user summary, site summary, tax report, session P/L
+  [ ] Related tab: Purchase → Basis Period Purchases
+  [ ] Related tab: Redemption → FIFO Allocations + Linked Sessions
+  [ ] Related tab: Game Session → Linked Transactions (BEFORE/DURING/AFTER)
+  [ ] Related tab: Realized Position → Allocations + Sessions (after 4b)
+  [ ] Related tab: Unrealized Position → Purchases + Sessions (after 4c)
+  [ ] Adjustments tab on entity dialogs (after Phase 5 Adjustments)
 
 PHASE 5 — TOOLS
   [ ] Recalculation tools (scoped + full)

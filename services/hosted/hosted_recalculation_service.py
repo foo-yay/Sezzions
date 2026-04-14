@@ -22,17 +22,27 @@ from sqlalchemy.orm import Session
 
 from services.hosted.persistence import (
     HostedAccountAdjustmentRecord,
+    HostedGameSessionEventLinkRecord,
     HostedGameSessionRecord,
     HostedPurchaseRecord,
     HostedRedemptionAllocationRecord,
     HostedRedemptionRecord,
     HostedRealizedTransactionRecord,
+    HostedSiteRecord,
 )
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+_TWO_PLACES = Decimal("0.01")
+
+
+def _fmt(val: Decimal) -> str:
+    """Format a Decimal to 2 decimal places."""
+    return str(val.quantize(_TWO_PLACES))
+
 
 def _normalize_time(value: Optional[str]) -> str:
     if not value:
@@ -310,11 +320,20 @@ class HostedRecalculationService:
 
         session.flush()
 
+        # --- Session P/L recalc ---
+        gs_count = self.rebuild_sessions_for_pair(
+            session,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            site_id=site_id,
+        )
+
         return HostedRebuildResult(
             pairs_processed=1,
             redemptions_processed=len(redemption_rows),
             allocations_written=len(allocations_to_write),
             purchases_updated=purchases_updated,
+            game_sessions_processed=gs_count,
         )
 
     # ------------------------------------------------------------------
@@ -521,11 +540,20 @@ class HostedRecalculationService:
 
         session.flush()
 
+        # --- Session P/L recalc ---
+        gs_count = self.rebuild_sessions_for_pair(
+            session,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            site_id=site_id,
+        )
+
         return HostedRebuildResult(
             pairs_processed=1,
             redemptions_processed=len(suffix_redemptions),
             allocations_written=len(allocations_to_write),
             purchases_updated=purchases_updated,
+            game_sessions_processed=gs_count,
         )
 
     # ------------------------------------------------------------------
@@ -565,8 +593,233 @@ class HostedRecalculationService:
         )
 
     # ------------------------------------------------------------------
+    # Session P/L recalculation
+    # ------------------------------------------------------------------
+
+    def rebuild_sessions_for_pair(
+        self,
+        session: Session,
+        *,
+        workspace_id: str,
+        user_id: str,
+        site_id: str,
+    ) -> int:
+        """Recalculate P/L fields for all closed sessions of a (user, site) pair.
+
+        Walks sessions in chronological order, computing expected start
+        balances, discoverable SC, basis consumed, and net taxable P/L
+        for each closed session.  Active sessions are skipped.
+
+        Returns the number of sessions processed.
+        """
+        # --- sc_rate ---
+        site = session.query(HostedSiteRecord).filter(
+            HostedSiteRecord.id == site_id,
+            HostedSiteRecord.workspace_id == workspace_id,
+        ).first()
+        sc_rate = Decimal(str(site.sc_rate)) if site else Decimal("1.00")
+
+        # --- Load all sessions (chronological) ---
+        all_sessions = (
+            session.query(HostedGameSessionRecord)
+            .filter(
+                HostedGameSessionRecord.workspace_id == workspace_id,
+                HostedGameSessionRecord.user_id == user_id,
+                HostedGameSessionRecord.site_id == site_id,
+                HostedGameSessionRecord.deleted_at.is_(None),
+            )
+            .order_by(
+                asc(HostedGameSessionRecord.session_date),
+                asc(func.coalesce(HostedGameSessionRecord.session_time, "00:00:00")),
+                asc(HostedGameSessionRecord.id),
+            )
+            .all()
+        )
+
+        # --- Load all purchases for the pair ---
+        purchase_rows = (
+            session.query(HostedPurchaseRecord)
+            .filter(
+                HostedPurchaseRecord.workspace_id == workspace_id,
+                HostedPurchaseRecord.user_id == user_id,
+                HostedPurchaseRecord.site_id == site_id,
+                HostedPurchaseRecord.deleted_at.is_(None),
+            )
+            .order_by(
+                asc(HostedPurchaseRecord.purchase_date),
+                asc(func.coalesce(HostedPurchaseRecord.purchase_time, "00:00:00")),
+            )
+            .all()
+        )
+        # (datetime, cash_amount, sc_amount)
+        purchases = [
+            (_to_dt(p.purchase_date, p.purchase_time), Decimal(str(p.amount)), Decimal(str(p.sc_received)))
+            for p in purchase_rows
+        ]
+
+        # --- Load non-canceled redemptions ---
+        redemption_rows = (
+            session.query(HostedRedemptionRecord)
+            .filter(
+                HostedRedemptionRecord.workspace_id == workspace_id,
+                HostedRedemptionRecord.user_id == user_id,
+                HostedRedemptionRecord.site_id == site_id,
+                HostedRedemptionRecord.deleted_at.is_(None),
+                HostedRedemptionRecord.status.notin_(["CANCELED", "PENDING_CANCEL"]),
+            )
+            .order_by(
+                asc(HostedRedemptionRecord.redemption_date),
+                asc(func.coalesce(HostedRedemptionRecord.redemption_time, "00:00:00")),
+            )
+            .all()
+        )
+        # Convert redemption dollar amounts to SC: amount_sc = dollars / sc_rate
+        redemptions = [
+            (_to_dt(r.redemption_date, r.redemption_time), Decimal(str(r.amount)) / sc_rate)
+            for r in redemption_rows
+        ]
+
+        # --- Walk sessions ---
+        last_end_total = Decimal("0.00")
+        last_end_redeem = Decimal("0.00")
+        checkpoint_end_dt = None
+        pending_basis_pool = Decimal("0.00")
+        count = 0
+
+        def _in_window(dt, start_exclusive, end_exclusive):
+            if dt is None:
+                return False
+            if start_exclusive is not None and dt <= start_exclusive:
+                return False
+            if end_exclusive is not None and dt >= end_exclusive:
+                return False
+            return True
+
+        for sess in all_sessions:
+            if sess.status != "Closed":
+                continue
+
+            start_dt = _to_dt(sess.session_date, sess.session_time)
+            end_dt = _to_dt(
+                sess.end_date or sess.session_date,
+                sess.end_time or sess.session_time,
+            )
+            if end_dt is None:
+                end_dt = start_dt
+
+            # Events between checkpoint and this session's start / end
+            red_between = sum(
+                (amt for dt, amt in redemptions if _in_window(dt, checkpoint_end_dt, start_dt)),
+                Decimal("0.00"),
+            )
+            pur_sc_to_start = sum(
+                (sc for dt, cash, sc in purchases if _in_window(dt, checkpoint_end_dt, start_dt)),
+                Decimal("0.00"),
+            )
+            pur_cash_to_end = sum(
+                (cash for dt, cash, sc in purchases if _in_window(dt, checkpoint_end_dt, end_dt)),
+                Decimal("0.00"),
+            )
+
+            expected_start_total = max(Decimal("0.00"), (last_end_total - red_between) + pur_sc_to_start)
+            expected_start_redeem = max(Decimal("0.00"), last_end_redeem - red_between)
+
+            start_total = Decimal(str(sess.starting_balance))
+            end_total = Decimal(str(sess.ending_balance))
+            start_red = Decimal(str(sess.starting_redeemable))
+            end_red = Decimal(str(sess.ending_redeemable))
+
+            delta_total = end_total - start_total
+            delta_redeem = end_red - start_red
+
+            # session_basis = all purchases (cash) from checkpoint to session end
+            session_basis = pur_cash_to_end
+            pending_basis_pool += session_basis
+            if pending_basis_pool < 0:
+                pending_basis_pool = Decimal("0.00")
+
+            discoverable_sc = max(Decimal("0.00"), start_red - expected_start_redeem)
+            locked_start = max(Decimal("0.00"), start_total - start_red)
+            locked_end = max(Decimal("0.00"), end_total - end_red)
+
+            # DURING-linked purchases (SC) and redemptions (dollars)
+            purchases_during_sc = self._sum_linked_purchases_during_sc(session, sess.id)
+            redemptions_during_total = self._sum_linked_redemptions_during_total(session, sess.id)
+
+            locked_processed_sc = max(Decimal("0.00"), locked_start + purchases_during_sc - locked_end)
+            locked_processed_value = locked_processed_sc * sc_rate
+            basis_consumed = min(pending_basis_pool, locked_processed_value)
+            pending_basis_pool = max(Decimal("0.00"), pending_basis_pool - basis_consumed)
+
+            net_taxable_pl = ((discoverable_sc + delta_redeem) * sc_rate) - basis_consumed
+
+            # Write all P/L fields
+            sess.expected_start_total = _fmt(expected_start_total)
+            sess.expected_start_redeemable = _fmt(expected_start_redeem)
+            sess.discoverable_sc = _fmt(discoverable_sc)
+            sess.delta_total = _fmt(delta_total)
+            sess.delta_redeem = _fmt(delta_redeem)
+            sess.session_basis = _fmt(session_basis)
+            sess.basis_consumed = _fmt(basis_consumed)
+            sess.net_taxable_pl = _fmt(net_taxable_pl)
+            sess.purchases_during = _fmt(purchases_during_sc)
+            sess.redemptions_during = _fmt(redemptions_during_total)
+
+            last_end_total = end_total
+            last_end_redeem = end_red
+            checkpoint_end_dt = end_dt
+            count += 1
+
+        return count
+
+    # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _sum_linked_purchases_during_sc(
+        self,
+        session: Session,
+        game_session_id: str,
+    ) -> Decimal:
+        """Sum sc_received from purchases linked as DURING to this session."""
+        row = (
+            session.query(func.coalesce(func.sum(HostedPurchaseRecord.sc_received), "0"))
+            .join(
+                HostedGameSessionEventLinkRecord,
+                HostedPurchaseRecord.id == HostedGameSessionEventLinkRecord.event_id,
+            )
+            .filter(
+                HostedGameSessionEventLinkRecord.game_session_id == game_session_id,
+                HostedGameSessionEventLinkRecord.event_type == "purchase",
+                HostedGameSessionEventLinkRecord.relation == "DURING",
+                HostedPurchaseRecord.deleted_at.is_(None),
+            )
+            .scalar()
+        )
+        return Decimal(str(row)) if row else Decimal("0.00")
+
+    def _sum_linked_redemptions_during_total(
+        self,
+        session: Session,
+        game_session_id: str,
+    ) -> Decimal:
+        """Sum amounts from redemptions linked as DURING to this session."""
+        row = (
+            session.query(func.coalesce(func.sum(HostedRedemptionRecord.amount), "0"))
+            .join(
+                HostedGameSessionEventLinkRecord,
+                HostedRedemptionRecord.id == HostedGameSessionEventLinkRecord.event_id,
+            )
+            .filter(
+                HostedGameSessionEventLinkRecord.game_session_id == game_session_id,
+                HostedGameSessionEventLinkRecord.event_type == "redemption",
+                HostedGameSessionEventLinkRecord.relation == "DURING",
+                HostedRedemptionRecord.deleted_at.is_(None),
+                HostedRedemptionRecord.status.notin_(["CANCELED", "PENDING_CANCEL"]),
+            )
+            .scalar()
+        )
+        return Decimal(str(row)) if row else Decimal("0.00")
 
     def _clear_derived_for_pair(
         self,

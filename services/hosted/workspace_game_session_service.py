@@ -115,6 +115,9 @@ class HostedWorkspaceGameSessionService:
         with self.session_factory() as session:
             workspace = self._require_workspace(session, supabase_user_id)
 
+            # End datetime must be strictly after start
+            self._validate_end_after_start(candidate)
+
             # Active session guard: only one active session per user+site
             if candidate.status == "Active":
                 existing_active = self.game_session_repository.get_active_session(
@@ -180,6 +183,15 @@ class HostedWorkspaceGameSessionService:
                 status=candidate.status,
                 notes=candidate.notes,
             )
+
+            # Reactivate dormant purchases when starting a new Active session
+            if candidate.status == "Active":
+                self._reactivate_dormant_purchases(
+                    session,
+                    workspace_id=workspace.id,
+                    user_id=candidate.user_id,
+                    site_id=candidate.site_id,
+                )
 
             # Rebuild event links and FIFO for the affected (user, site) pair
             self.event_link_service.rebuild_links_for_pair(
@@ -254,6 +266,9 @@ class HostedWorkspaceGameSessionService:
 
         with self.session_factory() as session:
             workspace = self._require_workspace(session, supabase_user_id)
+
+            # End datetime must be strictly after start
+            self._validate_end_after_start(candidate)
 
             existing = self.game_session_repository.get_by_id_and_workspace_id(
                 session, game_session_id=game_session_id, workspace_id=workspace.id
@@ -665,6 +680,167 @@ class HostedWorkspaceGameSessionService:
             )
             return {"has_impact": True, "message": msg}
 
+    # ---------------------------------------------------------- low-balance close
+
+    _CLOSE_THRESHOLD = Decimal("1.00")
+
+    def get_low_balance_close_prompt_data(
+        self,
+        *,
+        supabase_user_id: str,
+        user_id: str,
+        site_id: str,
+        ending_total_sc: str,
+    ) -> dict | None:
+        """Check if a low-balance close prompt should be shown.
+
+        Returns prompt data dict if the ending balance is below the threshold,
+        or ``None`` if no prompt is needed.
+        """
+        with self.session_factory() as session:
+            workspace = self._require_workspace(session, supabase_user_id)
+
+            site = self.site_repository.get_by_id_and_workspace_id(
+                session, site_id=site_id, workspace_id=workspace.id,
+            )
+            sc_rate = Decimal(str(site.sc_rate)) if site else Decimal("1.00")
+
+            current_sc = Decimal(str(ending_total_sc or "0"))
+            current_value = current_sc * sc_rate
+
+            if current_value >= self._CLOSE_THRESHOLD:
+                return None
+
+            # Check for active session — can't close while active
+            active = self.game_session_repository.get_active_session(
+                session,
+                workspace_id=workspace.id,
+                user_id=user_id,
+                site_id=site_id,
+            )
+            if active is not None:
+                return None
+
+            # Compute remaining purchase basis
+            from services.hosted.persistence import HostedPurchaseRecord as _PR
+            from sqlalchemy import func as _func
+
+            row = (
+                session.query(
+                    _func.coalesce(
+                        _func.sum(_PR.remaining_amount), "0"
+                    )
+                )
+                .filter(
+                    _PR.workspace_id == workspace.id,
+                    _PR.user_id == user_id,
+                    _PR.site_id == site_id,
+                    _PR.deleted_at.is_(None),
+                    _PR.status.in_(["active", None]),
+                )
+                .scalar()
+            )
+            total_basis = Decimal(str(row)) if row else Decimal("0.00")
+
+            return {
+                "user_id": user_id,
+                "site_id": site_id,
+                "current_sc": str(current_sc),
+                "current_value": str(current_value),
+                "total_basis": str(total_basis),
+                "close_threshold": str(self._CLOSE_THRESHOLD),
+            }
+
+    def close_unrealized_position(
+        self,
+        *,
+        supabase_user_id: str,
+        user_id: str,
+        site_id: str,
+        current_sc: str,
+        current_value: str,
+        total_basis: str,
+    ) -> dict:
+        """Execute a low-balance close: create a $0 redemption and mark SC dormant.
+
+        The $0 redemption with "Net Loss: $X.XX" in the notes triggers
+        the FIFO close-balance allocation path during rebuild.
+        """
+        from datetime import date, datetime
+
+        basis = Decimal(str(total_basis or "0"))
+        sc = Decimal(str(current_sc or "0"))
+        net_loss = basis
+        notes = (
+            f"Balance Closed - Net Loss: ${net_loss:.2f} "
+            f"({sc:.2f} SC marked dormant)"
+        )
+
+        with self.session_factory() as session:
+            workspace = self._require_workspace(session, supabase_user_id)
+
+            # Guard: no active session allowed
+            active = self.game_session_repository.get_active_session(
+                session,
+                workspace_id=workspace.id,
+                user_id=user_id,
+                site_id=site_id,
+            )
+            if active is not None:
+                raise ValueError(
+                    "Cannot close balance while an active session exists. "
+                    "Close the session first."
+                )
+
+            now = datetime.now()
+            red = self.redemption_repository.create(
+                session,
+                workspace_id=workspace.id,
+                user_id=user_id,
+                site_id=site_id,
+                amount="0.00",
+                redemption_date=date.today().isoformat(),
+                redemption_time=now.strftime("%H:%M:%S"),
+                processed=True,
+                more_remaining=(basis <= Decimal("0.00")),
+                notes=notes,
+                status="COMPLETED",
+            )
+
+            # Rebuild FIFO (handles the close-balance allocation path)
+            self.recalculation_service.rebuild_fifo_for_pair(
+                session,
+                workspace_id=workspace.id,
+                user_id=user_id,
+                site_id=site_id,
+            )
+
+            # Mark fully consumed purchases as dormant
+            if basis > Decimal("0.00"):
+                from services.hosted.persistence import HostedPurchaseRecord as _PR
+                active_purchases = (
+                    session.query(_PR)
+                    .filter(
+                        _PR.workspace_id == workspace.id,
+                        _PR.user_id == user_id,
+                        _PR.site_id == site_id,
+                        _PR.deleted_at.is_(None),
+                        _PR.status.in_(["active", None]),
+                    )
+                    .all()
+                )
+                for p in active_purchases:
+                    if Decimal(str(p.remaining_amount or "0")) == 0:
+                        p.status = "dormant"
+
+            session.commit()
+
+            return {
+                "redemption_id": red.id if red else None,
+                "net_loss": str(net_loss),
+                "notes": notes,
+            }
+
     # ------------------------------------------------------------------ helpers
 
     def _require_workspace(self, session, supabase_user_id: str) -> HostedWorkspace:
@@ -681,3 +857,40 @@ class HostedWorkspaceGameSessionService:
             )
 
         return workspace
+
+    @staticmethod
+    def _validate_end_after_start(candidate: HostedGameSession) -> None:
+        """Raise if end datetime is not strictly after start datetime."""
+        if not candidate.end_date or not candidate.end_time:
+            return
+        start = f"{candidate.session_date}T{candidate.session_time or '00:00:00'}"
+        end = f"{candidate.end_date}T{candidate.end_time}"
+        if end <= start:
+            raise ValueError(
+                f"Session end ({candidate.end_date} {candidate.end_time}) "
+                f"is before or equal to start ({candidate.session_date} {candidate.session_time}). "
+                "Please correct the end date/time."
+            )
+
+    def _reactivate_dormant_purchases(
+        self,
+        session,
+        workspace_id: str,
+        user_id: str,
+        site_id: str,
+    ) -> None:
+        """Reactivate dormant purchases for a user+site when a new Active session starts."""
+        from services.hosted.persistence import HostedPurchaseRecord as _PR
+        dormant = (
+            session.query(_PR)
+            .filter(
+                _PR.workspace_id == workspace_id,
+                _PR.user_id == user_id,
+                _PR.site_id == site_id,
+                _PR.status == "dormant",
+                _PR.deleted_at.is_(None),
+            )
+            .all()
+        )
+        for p in dormant:
+            p.status = "active"
