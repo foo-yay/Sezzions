@@ -115,6 +115,9 @@ class HostedWorkspaceGameSessionService:
         with self.session_factory() as session:
             workspace = self._require_workspace(session, supabase_user_id)
 
+            # End datetime must be strictly after start
+            self._validate_end_after_start(candidate)
+
             # Active session guard: only one active session per user+site
             if candidate.status == "Active":
                 existing_active = self.game_session_repository.get_active_session(
@@ -180,6 +183,15 @@ class HostedWorkspaceGameSessionService:
                 status=candidate.status,
                 notes=candidate.notes,
             )
+
+            # Reactivate dormant purchases when starting a new Active session
+            if candidate.status == "Active":
+                self._reactivate_dormant_purchases(
+                    session,
+                    workspace_id=workspace.id,
+                    user_id=candidate.user_id,
+                    site_id=candidate.site_id,
+                )
 
             # Rebuild event links and FIFO for the affected (user, site) pair
             self.event_link_service.rebuild_links_for_pair(
@@ -254,6 +266,9 @@ class HostedWorkspaceGameSessionService:
 
         with self.session_factory() as session:
             workspace = self._require_workspace(session, supabase_user_id)
+
+            # End datetime must be strictly after start
+            self._validate_end_after_start(candidate)
 
             existing = self.game_session_repository.get_by_id_and_workspace_id(
                 session, game_session_id=game_session_id, workspace_id=workspace.id
@@ -681,3 +696,40 @@ class HostedWorkspaceGameSessionService:
             )
 
         return workspace
+
+    @staticmethod
+    def _validate_end_after_start(candidate: HostedGameSession) -> None:
+        """Raise if end datetime is not strictly after start datetime."""
+        if not candidate.end_date or not candidate.end_time:
+            return
+        start = f"{candidate.session_date}T{candidate.session_time or '00:00:00'}"
+        end = f"{candidate.end_date}T{candidate.end_time}"
+        if end <= start:
+            raise ValueError(
+                f"Session end ({candidate.end_date} {candidate.end_time}) "
+                f"is before or equal to start ({candidate.session_date} {candidate.session_time}). "
+                "Please correct the end date/time."
+            )
+
+    def _reactivate_dormant_purchases(
+        self,
+        session,
+        workspace_id: str,
+        user_id: str,
+        site_id: str,
+    ) -> None:
+        """Reactivate dormant purchases for a user+site when a new Active session starts."""
+        from services.hosted.persistence import HostedPurchaseRecord as _PR
+        dormant = (
+            session.query(_PR)
+            .filter(
+                _PR.workspace_id == workspace_id,
+                _PR.user_id == user_id,
+                _PR.site_id == site_id,
+                _PR.status == "dormant",
+                _PR.deleted_at.is_(None),
+            )
+            .all()
+        )
+        for p in dormant:
+            p.status = "active"

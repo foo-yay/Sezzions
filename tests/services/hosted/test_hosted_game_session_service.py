@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from services.hosted.account_bootstrap_service import HostedAccountBootstrapService
-from services.hosted.persistence import HostedBase
+from services.hosted.persistence import HostedBase, HostedPurchaseRecord
 from services.hosted.workspace_game_session_service import HostedWorkspaceGameSessionService
 from services.hosted.workspace_game_service import HostedWorkspaceGameService
 from services.hosted.workspace_game_type_service import HostedWorkspaceGameTypeService
@@ -455,3 +455,203 @@ def test_timestamp_dedup_on_create():
         (gs2.session_date, gs2.session_time),
     }
     assert len(timestamps) == 2  # both must be unique
+
+
+# ── UTC end > start validation ───────────────────────────────────────────────
+
+
+def test_create_end_before_start_raises():
+    """Creating a session whose end datetime is before/equal to start should fail."""
+    engine, sf = _session_factory()
+    user, site, _, _ = _bootstrap(sf)
+    service = HostedWorkspaceGameSessionService(sf)
+
+    try:
+        with pytest.raises(ValueError, match="end.*before.*start"):
+            service.create_game_session(
+                supabase_user_id=OWNER,
+                user_id=user.id,
+                site_id=site.id,
+                session_date="2026-01-15",
+                session_time="14:00:00",
+                end_date="2026-01-15",
+                end_time="12:00:00",
+                status_value="Closed",
+            )
+    finally:
+        engine.dispose()
+
+
+def test_update_end_before_start_raises():
+    """Updating a session so end datetime is before start should fail."""
+    engine, sf = _session_factory()
+    user, site, _, _ = _bootstrap(sf)
+    service = HostedWorkspaceGameSessionService(sf)
+
+    try:
+        gs = service.create_game_session(
+            supabase_user_id=OWNER,
+            user_id=user.id,
+            site_id=site.id,
+            session_date="2026-01-15",
+            session_time="14:00:00",
+        )
+
+        with pytest.raises(ValueError, match="end.*before.*start"):
+            service.update_game_session(
+                supabase_user_id=OWNER,
+                game_session_id=gs.id,
+                user_id=user.id,
+                site_id=site.id,
+                session_date="2026-01-15",
+                session_time="14:00:00",
+                end_date="2026-01-15",
+                end_time="12:00:00",
+                status_value="Closed",
+            )
+    finally:
+        engine.dispose()
+
+
+def test_create_end_equals_start_raises():
+    """End time equal to start time should also be rejected."""
+    engine, sf = _session_factory()
+    user, site, _, _ = _bootstrap(sf)
+    service = HostedWorkspaceGameSessionService(sf)
+
+    try:
+        with pytest.raises(ValueError, match="end.*before.*start"):
+            service.create_game_session(
+                supabase_user_id=OWNER,
+                user_id=user.id,
+                site_id=site.id,
+                session_date="2026-01-15",
+                session_time="14:00:00",
+                end_date="2026-01-15",
+                end_time="14:00:00",
+                status_value="Closed",
+            )
+    finally:
+        engine.dispose()
+
+
+def test_create_end_after_start_succeeds():
+    """End datetime after start datetime should succeed."""
+    engine, sf = _session_factory()
+    user, site, _, _ = _bootstrap(sf)
+    service = HostedWorkspaceGameSessionService(sf)
+
+    try:
+        gs = service.create_game_session(
+            supabase_user_id=OWNER,
+            user_id=user.id,
+            site_id=site.id,
+            session_date="2026-01-15",
+            session_time="14:00:00",
+            end_date="2026-01-15",
+            end_time="18:00:00",
+            status_value="Closed",
+        )
+    finally:
+        engine.dispose()
+
+    assert gs.status == "Closed"
+    assert gs.end_time == "18:00:00"
+
+
+# ── Dormant purchase reactivation ────────────────────────────────────────────
+
+
+def _get_workspace_id(sf):
+    """Get the workspace ID from the bootstrapped environment."""
+    from services.hosted.persistence import HostedWorkspaceRecord
+    with sf() as s:
+        ws = s.query(HostedWorkspaceRecord).first()
+        return ws.id if ws else None
+
+
+def test_dormant_purchases_reactivated_on_active_session():
+    """Creating an Active session reactivates dormant purchases for that user+site."""
+    engine, sf = _session_factory()
+    user, site, _, _ = _bootstrap(sf)
+    service = HostedWorkspaceGameSessionService(sf)
+    workspace_id = _get_workspace_id(sf)
+
+    try:
+        # Insert a dormant purchase directly
+        from uuid import uuid4
+        purchase_id = str(uuid4())
+        with sf() as s:
+            s.add(HostedPurchaseRecord(
+                id=purchase_id,
+                workspace_id=workspace_id,
+                user_id=user.id,
+                site_id=site.id,
+                amount="50.00",
+                sc_received="50.00",
+                remaining_amount="50.00",
+                purchase_date="2026-01-10",
+                purchase_time="12:00:00",
+                status="dormant",
+            ))
+            s.commit()
+
+        # Create an Active session
+        service.create_game_session(
+            supabase_user_id=OWNER,
+            user_id=user.id,
+            site_id=site.id,
+            session_date="2026-01-15",
+            session_time="10:00:00",
+            status_value="Active",
+        )
+
+        # Verify the purchase is now active
+        with sf() as s:
+            p = s.query(HostedPurchaseRecord).filter_by(id=purchase_id).one()
+            assert p.status == "active"
+    finally:
+        engine.dispose()
+
+
+def test_dormant_purchases_not_reactivated_on_closed_session():
+    """Creating a Closed session should NOT reactivate dormant purchases."""
+    engine, sf = _session_factory()
+    user, site, _, _ = _bootstrap(sf)
+    service = HostedWorkspaceGameSessionService(sf)
+    workspace_id = _get_workspace_id(sf)
+
+    try:
+        from uuid import uuid4
+        purchase_id = str(uuid4())
+        with sf() as s:
+            s.add(HostedPurchaseRecord(
+                id=purchase_id,
+                workspace_id=workspace_id,
+                user_id=user.id,
+                site_id=site.id,
+                amount="50.00",
+                sc_received="50.00",
+                remaining_amount="50.00",
+                purchase_date="2026-01-10",
+                purchase_time="12:00:00",
+                status="dormant",
+            ))
+            s.commit()
+
+        service.create_game_session(
+            supabase_user_id=OWNER,
+            user_id=user.id,
+            site_id=site.id,
+            session_date="2026-01-15",
+            session_time="10:00:00",
+            status_value="Closed",
+            end_date="2026-01-15",
+            end_time="14:00:00",
+        )
+
+        with sf() as s:
+            p = s.query(HostedPurchaseRecord).filter_by(id=purchase_id).one()
+            assert p.status == "dormant"
+    finally:
+        engine.dispose()
