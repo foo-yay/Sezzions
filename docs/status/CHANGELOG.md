@@ -9,6 +9,22 @@ Rules:
 
 ---
 
+## 2026-04-23
+
+```yaml
+id: 2026-04-23-01
+type: fix
+areas: [desktop, ui]
+summary: "Desktop Daily Sessions tab: CSV export respects collapsed/expanded state"
+details: >
+  _export_csv() in DailySessionsTab previously iterated all tree items
+  unconditionally, dumping every child row regardless of collapse state.
+  Fixed iter_items() to only recurse into a node's children when that node
+  is expanded, so the exported CSV matches exactly what is visually displayed.
+files_changed:
+  - desktop/ui/tabs/daily_sessions_tab.py
+```
+
 ## 2026-04-14
 
 ```yaml

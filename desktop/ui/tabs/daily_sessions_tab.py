@@ -907,12 +907,14 @@ class DailySessionsTab(QtWidgets.QWidget):
                         for i in range(self.tree.topLevelItemCount()):
                             item = self.tree.topLevelItem(i)
                             yield item
-                            yield from iter_items(item)
+                            if item.isExpanded():
+                                yield from iter_items(item)
                     else:
                         for i in range(parent.childCount()):
                             child = parent.child(i)
                             yield child
-                            yield from iter_items(child)
+                            if child.isExpanded():
+                                yield from iter_items(child)
 
                 with open(filename, 'w', newline='') as f:
                     writer = csv.writer(f)
