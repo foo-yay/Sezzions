@@ -902,6 +902,13 @@ class DailySessionsTab(QtWidgets.QWidget):
         if filename:
             try:
                 import csv
+                import re as _re
+                _emoji_re = _re.compile(
+                    "[\U00002000-\U0001FFFF]", flags=_re.UNICODE
+                )
+                def _strip(s):
+                    return _emoji_re.sub("", s).strip()
+
                 def iter_items(parent=None):
                     if parent is None:
                         for i in range(self.tree.topLevelItemCount()):
@@ -918,11 +925,11 @@ class DailySessionsTab(QtWidgets.QWidget):
 
                 with open(filename, 'w', newline='') as f:
                     writer = csv.writer(f)
-                    writer.writerow(self.columns)
+                    writer.writerow([_strip(c) for c in self.columns])
                     for item in iter_items():
                         row_data = []
                         for col in range(len(self.columns)):
-                            text = item.text(col)
+                            text = _strip(item.text(col))
                             if text.startswith('$') or text.startswith('-$'):
                                 text = text.replace('$', '').replace(',', '')
                             row_data.append(text)
