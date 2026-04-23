@@ -915,7 +915,7 @@ class AppFacade:
             )
             return purchase
     
-    def update_purchase(self, purchase_id: int, force_site_user_change: bool = False, **kwargs) -> Purchase:
+    def update_purchase(self, purchase_id: int, force_site_user_change: bool = False, force_amount_change: bool = False, **kwargs) -> Purchase:
         """
         Update purchase and trigger scoped rebuild when needed with atomic transaction.
 
@@ -959,6 +959,7 @@ class AppFacade:
             updated = self.purchase_service.update_purchase(
                 purchase_id,
                 force_site_user_change=force_site_user_change,
+                force_amount_change=force_amount_change,
                 **kwargs,
             )
 

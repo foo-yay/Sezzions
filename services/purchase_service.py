@@ -128,12 +128,13 @@ class PurchaseService:
         
         return purchase
     
-    def update_purchase(self, purchase_id: int, force_site_user_change: bool = False, **kwargs) -> Purchase:
+    def update_purchase(self, purchase_id: int, force_site_user_change: bool = False, force_amount_change: bool = False, **kwargs) -> Purchase:
         """Update purchase with business rules validation.
 
         Legacy parity notes:
         - If a purchase has been consumed, amount and purchase_date remain protected.
         - Site/user changes require explicit force (downstream rebuild will clear/recompute allocations).
+        - force_amount_change=True bypasses the amount/date guard (Repair Mode only).
         """
         purchase = self.purchase_repo.get_by_id(purchase_id)
         if not purchase:
@@ -144,13 +145,14 @@ class PurchaseService:
         
         # Check if purchase has been consumed
         if purchase.consumed_amount > 0:
-            # Always protect amount/date when consumed
-            for field in ("amount", "purchase_date"):
-                if field in kwargs and getattr(purchase, field) != kwargs[field]:
-                    raise ValueError(
-                        f"Cannot change {field} on a purchase that has been consumed. "
-                        f"Consumed: ${purchase.consumed_amount}"
-                    )
+            # Protect amount/date when consumed, unless Repair Mode bypass is active
+            if not force_amount_change:
+                for field in ("amount", "purchase_date"):
+                    if field in kwargs and getattr(purchase, field) != kwargs[field]:
+                        raise ValueError(
+                            f"Cannot change {field} on a purchase that has been consumed. "
+                            f"Consumed: ${purchase.consumed_amount}"
+                        )
 
             # Site/user changes require explicit force
             for field in ("user_id", "site_id"):

@@ -652,18 +652,41 @@ class PurchasesTab(QtWidgets.QWidget):
         while dialog.exec():
             try:
                 force_site_user_change = False
+                force_amount_change = False
 
                 if purchase.consumed_amount > 0:
-                    # Legacy parity: amount cannot change once consumed.
+                    # Protect amount from being changed once consumed, unless Repair Mode is active.
                     new_amount = dialog.get_amount()
                     if new_amount != purchase.amount:
-                        QtWidgets.QMessageBox.warning(
-                            self,
-                            "Cannot Change Amount",
-                            f"This purchase has ${float(purchase.consumed_amount):.2f} consumed.\n\n"
-                            "You cannot change the purchase amount once it has allocations."
+                        in_repair_mode = (
+                            hasattr(self, "main_window")
+                            and self.main_window is not None
+                            and getattr(self.main_window, "repair_mode", False)
                         )
-                        break  # Exit the loop
+                        if not in_repair_mode:
+                            QtWidgets.QMessageBox.warning(
+                                self,
+                                "Cannot Change Amount",
+                                f"This purchase has ${float(purchase.consumed_amount):.2f} consumed.\n\n"
+                                "You cannot change the purchase amount once it has allocations.\n\n"
+                                "Enable Repair Mode (Tools tab) to override this protection."
+                            )
+                            break  # Exit the loop
+                        else:
+                            reply = QtWidgets.QMessageBox.warning(
+                                self,
+                                "Repair Mode: Override Amount Protection",
+                                f"This purchase has ${float(purchase.consumed_amount):.2f} already consumed "
+                                f"by FIFO allocations.\n\n"
+                                "Changing the amount bypasses normal protection. "
+                                "FIFO allocations will be rebuilt when you run Recalculate.\n\n"
+                                "Proceed?",
+                                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                                QtWidgets.QMessageBox.No,
+                            )
+                            if reply != QtWidgets.QMessageBox.Yes:
+                                break
+                            force_amount_change = True
 
                     # Site/user changes are allowed only with explicit user confirmation.
                     if dialog.user_id != purchase.user_id or dialog.site_id != purchase.site_id:
@@ -826,6 +849,7 @@ class PurchasesTab(QtWidgets.QWidget):
 
                 update_kwargs = {
                     "force_site_user_change": force_site_user_change,
+                    "force_amount_change": force_amount_change,
                     "user_id": dialog.user_id,
                     "site_id": dialog.site_id,
                     "amount": dialog.get_amount(),
