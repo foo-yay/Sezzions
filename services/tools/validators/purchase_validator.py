@@ -31,8 +31,8 @@ class PurchaseValidator(BaseValidator):
         errors.extend(self.validate_required_field(record, 'amount', row))
         errors.extend(self.validate_required_field(record, 'sc_received', row))
         
-        # Amount must be positive
-        errors.extend(self.validate_positive_number(record, 'amount', row, allow_zero=False))
+        # Amount must be non-negative (zero is allowed for $0 basis purchases)
+        errors.extend(self.validate_positive_number(record, 'amount', row, allow_zero=True))
         
         # SC received must be >= 0
         errors.extend(self.validate_positive_number(record, 'sc_received', row, allow_zero=True))

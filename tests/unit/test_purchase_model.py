@@ -76,7 +76,7 @@ def test_purchase_validation_site_id():
 
 def test_purchase_validation_negative_amount():
     """Test that negative amount raises error"""
-    with pytest.raises(ValueError, match="Purchase amount must be positive"):
+    with pytest.raises(ValueError, match="Purchase amount cannot be negative"):
         Purchase(user_id=1, site_id=1, amount=-100, purchase_date=date.today())
 
 

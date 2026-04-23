@@ -1706,8 +1706,8 @@ class PurchaseDialog(QtWidgets.QDialog):
         else:
             try:
                 amount_val = Decimal(amount_text)
-                if amount_val <= 0:
-                    raise ValueError("non-positive")
+                if amount_val < 0:
+                    raise ValueError("negative")
                 self._set_valid(self.amount_edit)
             except Exception:
                 self._set_invalid(self.amount_edit, "Enter a valid amount (max 2 decimals).")
@@ -2212,9 +2212,9 @@ class PurchaseDialog(QtWidgets.QDialog):
         
         try:
             amount = Decimal(amount_str)
-            if amount <= 0:
+            if amount < 0:
                 QtWidgets.QMessageBox.warning(
-                    self, "Validation Error", "Amount must be greater than zero"
+                    self, "Validation Error", "Amount cannot be negative"
                 )
                 return
         except:

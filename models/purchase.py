@@ -45,8 +45,8 @@ class Purchase:
         # Validate amount
         if isinstance(self.amount, (int, float)):
             self.amount = Decimal(str(self.amount))
-        if self.amount <= 0:
-            raise ValueError("Purchase amount must be positive")
+        if self.amount < 0:
+            raise ValueError("Purchase amount cannot be negative")
 
         # Convert and validate SC/cashback fields
         for field_name in ["sc_received", "starting_sc_balance", "starting_redeemable_balance", "cashback_earned"]:

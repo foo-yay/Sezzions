@@ -24,7 +24,7 @@ def test_create_purchase_service(purchase_service, sample_user, sample_site):
 
 def test_create_purchase_validation(purchase_service, sample_user, sample_site):
     """Test service validates purchase data"""
-    with pytest.raises(ValueError, match="Purchase amount must be positive"):
+    with pytest.raises(ValueError, match="Purchase amount cannot be negative"):
         purchase_service.create_purchase(
             user_id=sample_user.id,
             site_id=sample_site.id,
