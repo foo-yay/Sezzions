@@ -95,6 +95,30 @@ def test_tools_tab_has_audit_log_section(main_window):
     assert tools_tab is not None
 
 
+def test_setup_reports_tab_exists(main_window):
+    """Test that Setup includes the Reports sub-tab."""
+    assert hasattr(main_window.setup_tab, "reports_tab")
+    assert main_window.setup_tab.reports_tab is not None
+
+
+def test_reports_tab_runs_initial_report(qapp, main_window):
+    """Test that the Reports tab can render its initial report without crashing."""
+    setup_idx = main_window._tab_index.get("setup", 0)
+    main_window.tab_bar.setCurrentIndex(setup_idx)
+    qapp.processEvents()
+
+    reports_scroll = main_window.setup_tab.sub_tabs.widget(main_window.setup_tab.sub_tabs.count() - 1)
+    main_window.setup_tab.sub_tabs.setCurrentWidget(reports_scroll)
+    qapp.processEvents()
+
+    reports_tab = main_window.setup_tab.reports_tab
+    reports_tab.run_selected_report()
+    qapp.processEvents()
+
+    assert reports_tab.results_table.rowCount() > 0
+    assert reports_tab.report_title.text() == "Session P/L Summary"
+
+
 def test_perform_undo_handler_exists(main_window):
     """Test that undo handler exists"""
     assert hasattr(main_window, '_perform_undo')

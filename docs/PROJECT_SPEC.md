@@ -858,6 +858,13 @@ Excel-like undo/redo: strictly in-order (LIFO for undo, FIFO for redo). New oper
 - **Audit Log section**: Collapsible section with description of audit capabilities
 - **Open Audit Log…** button: Opens viewer dialog
 
+**Reports Tab (Setup → Reports):**
+- Lives to the right of Tools in the Setup sub-tab strip.
+- Matches the standard Setup sub-tab header/layout conventions.
+- Uses a dropdown selector plus explicit run action so future reports can reuse the same surface.
+- The first shipped report is a Session P/L Summary backed by the existing reporting service.
+- Renders report output directly below the selector inside the same tab.
+
 **Audit Log Viewer Dialog:**
 - Date range presets: All Time, Today, Last 7 Days, Last 30 Days, This Month, This Year, Custom
 - Filters: Date range (via presets or custom dates), table name, action type, limit
