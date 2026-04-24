@@ -10,6 +10,7 @@ from desktop.ui.tabs.redemption_methods_tab import RedemptionMethodsTab
 from desktop.ui.tabs.redemption_method_types_tab import RedemptionMethodTypesTab
 from desktop.ui.tabs.game_types_tab import GameTypesTab
 from desktop.ui.tabs.games_tab import GamesTab
+from desktop.ui.tabs.reports_tab import ReportsTab
 from desktop.ui.tabs.tools_tab import ToolsTab
 
 
@@ -59,6 +60,7 @@ class SetupTab(QtWidgets.QWidget):
         self.games_tab = GamesTab(facade)
         # Pass settings to ToolsTab for section state persistence
         self.tools_tab = ToolsTab(facade, settings=self.settings)
+        self.reports_tab = ReportsTab(facade)
 
         # Keep Setup data views consistent after DB restore/reset from Tools.
         # ToolsTab emits data_changed after destructive DB operations.
@@ -78,6 +80,12 @@ class SetupTab(QtWidgets.QWidget):
         tools_scroll.setWidgetResizable(True)
         tools_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.sub_tabs.addTab(tools_scroll, "🔧 Tools")
+
+        reports_scroll = QtWidgets.QScrollArea()
+        reports_scroll.setWidget(self.reports_tab)
+        reports_scroll.setWidgetResizable(True)
+        reports_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.sub_tabs.addTab(reports_scroll, "📊 Reports")
         
         card = QtWidgets.QFrame()
         card.setObjectName("SetupCard")
@@ -96,6 +104,7 @@ class SetupTab(QtWidgets.QWidget):
         self.redemption_methods_tab.refresh_data()
         self.game_types_tab.refresh_data()
         self.games_tab.refresh_data()
+        self.reports_tab.refresh_data()
 
     def refresh_data(self):
         """Alias for refresh_all (used by generic refresh flows)."""

@@ -2369,6 +2369,10 @@ class AppFacade:
         return self.report_service.get_session_profit_loss_report(
             user_id, site_id, start_date, end_date
         )
+
+    def get_bridge_reconciliation_report(self) -> Dict[str, Any]:
+        """Get site-level basis and bridge reconciliation summary."""
+        return self.report_service.get_bridge_reconciliation_report()
     
     # ==========================================================================
     # Validation Operations

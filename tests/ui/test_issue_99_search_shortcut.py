@@ -149,3 +149,19 @@ def test_find_shortcut_handler_routes_to_setup_subtab(qapp, main_window):
     
     # In headless mode, focus behavior is not fully simulated
     # We verify the handler runs without error, which is sufficient for smoke testing
+
+
+def test_reports_tab_supports_find_shortcut(qapp, main_window):
+    """Test that Setup > Reports handles Cmd+F/Ctrl+F without error."""
+    setup_idx = main_window._tab_index.get("setup", 0)
+    main_window.tab_bar.setCurrentIndex(setup_idx)
+    qapp.processEvents()
+
+    reports_scroll = main_window.setup_tab.sub_tabs.widget(main_window.setup_tab.sub_tabs.count() - 1)
+    main_window.setup_tab.sub_tabs.setCurrentWidget(reports_scroll)
+    qapp.processEvents()
+
+    main_window._on_find_shortcut()
+    qapp.processEvents()
+
+    assert main_window.setup_tab.reports_tab.report_selector is not None

@@ -1,7 +1,7 @@
 """
 Report service for aggregating and analyzing data
 """
-from typing import List, Dict, Optional, Tuple
+from typing import Any, List, Dict, Optional, Tuple
 from decimal import Decimal
 from datetime import date
 from dataclasses import dataclass
@@ -313,4 +313,113 @@ class ReportService:
             "win_rate": (result["winning_sessions"] / result["total_sessions"] * 100) if result["total_sessions"] > 0 else 0,
             "best_session": Decimal(str(result["best_session"])) if result["best_session"] else Decimal("0"),
             "worst_session": Decimal(str(result["worst_session"])) if result["worst_session"] else Decimal("0")
+        }
+
+    def get_bridge_reconciliation_report(self) -> Dict[str, Any]:
+        """Summarize basis roll-forward and economic-vs-session bridge figures by site."""
+        purchase_rows = self.db.fetch_all(
+            """
+            SELECT
+                site_id,
+                COALESCE(SUM(CAST(amount AS REAL)), 0) as total_purchases,
+                COALESCE(SUM(CAST(remaining_amount AS REAL)), 0) as open_basis
+            FROM purchases
+            WHERE deleted_at IS NULL
+            GROUP BY site_id
+            """
+        )
+        realized_rows = self.db.fetch_all(
+            """
+            SELECT
+                site_id,
+                COALESCE(SUM(CAST(cost_basis AS REAL)), 0) as redeemed_basis,
+                COALESCE(SUM(CAST(net_pl AS REAL)), 0) as realized_pl
+            FROM realized_transactions
+            GROUP BY site_id
+            """
+        )
+        session_rows = self.db.fetch_all(
+            """
+            SELECT
+                site_id,
+                COALESCE(SUM(CAST(net_taxable_pl AS REAL)), 0) as session_pl
+            FROM game_sessions
+            WHERE deleted_at IS NULL AND net_taxable_pl IS NOT NULL
+            GROUP BY site_id
+            """
+        )
+        site_rows = self.db.fetch_all("SELECT id, name FROM sites")
+
+        site_names = {row["id"]: row["name"] for row in site_rows}
+
+        purchases_by_site: Dict[int, Dict[str, Decimal]] = {}
+        for row in purchase_rows:
+            purchases_by_site[row["site_id"]] = {
+                "total_purchases": Decimal(str(row["total_purchases"])),
+                "open_basis": Decimal(str(row["open_basis"])),
+            }
+
+        realized_by_site: Dict[int, Dict[str, Decimal]] = {}
+        for row in realized_rows:
+            realized_by_site[row["site_id"]] = {
+                "redeemed_basis": Decimal(str(row["redeemed_basis"])),
+                "realized_pl": Decimal(str(row["realized_pl"])),
+            }
+
+        session_by_site: Dict[int, Decimal] = {}
+        for row in session_rows:
+            session_by_site[row["site_id"]] = Decimal(str(row["session_pl"]))
+
+        site_ids = set(purchases_by_site) | set(realized_by_site) | set(session_by_site)
+
+        totals = {
+            "total_purchases": Decimal("0.00"),
+            "redeemed_basis": Decimal("0.00"),
+            "open_basis": Decimal("0.00"),
+            "basis_delta": Decimal("0.00"),
+            "realized_pl": Decimal("0.00"),
+            "economic_pl": Decimal("0.00"),
+            "session_pl": Decimal("0.00"),
+            "bridge_gap": Decimal("0.00"),
+        }
+        report_rows = []
+
+        for site_id in sorted(site_ids, key=lambda value: site_names.get(value, f"Site {value}").lower()):
+            purchase_data = purchases_by_site.get(
+                site_id,
+                {"total_purchases": Decimal("0.00"), "open_basis": Decimal("0.00")},
+            )
+            realized_data = realized_by_site.get(
+                site_id,
+                {"redeemed_basis": Decimal("0.00"), "realized_pl": Decimal("0.00")},
+            )
+            session_pl = session_by_site.get(site_id, Decimal("0.00"))
+
+            basis_delta = (
+                purchase_data["total_purchases"]
+                - realized_data["redeemed_basis"]
+                - purchase_data["open_basis"]
+            )
+            economic_pl = realized_data["realized_pl"]
+            bridge_gap = economic_pl - session_pl
+
+            row = {
+                "site_name": site_names.get(site_id, f"Site {site_id}"),
+                "total_purchases": purchase_data["total_purchases"],
+                "redeemed_basis": realized_data["redeemed_basis"],
+                "open_basis": purchase_data["open_basis"],
+                "basis_delta": basis_delta,
+                "realized_pl": realized_data["realized_pl"],
+                "economic_pl": economic_pl,
+                "session_pl": session_pl,
+                "bridge_gap": bridge_gap,
+            }
+            report_rows.append(row)
+
+            for key in totals:
+                totals[key] += row[key]
+
+        return {
+            "site_rows": report_rows,
+            "totals": totals,
         }

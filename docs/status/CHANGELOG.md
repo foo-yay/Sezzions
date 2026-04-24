@@ -9,6 +9,27 @@ Rules:
 
 ---
 
+## 2026-04-24
+
+```yaml
+id: 2026-04-24-01
+type: feature
+areas: [desktop, ui, reports]
+issue: "#282"
+summary: "Setup tab: add Reports sub-tab with Session P/L summary"
+details: >
+  Added a new Reports sub-tab to Setup, positioned after Tools and styled to
+  match the existing Setup sub-tab header pattern. The tab now includes a
+  Bridge / Reconciliation Summary plus a Session P/L Summary, both exposed
+  through a reusable dropdown + run button pattern with in-place output
+  rendering below. Report tables stretch to fill the available tab width.
+files_changed:
+  - desktop/ui/tabs/reports_tab.py
+  - desktop/ui/tabs/setup_tab.py
+  - tests/ui/test_issue_92_ui_smoke.py
+  - tests/ui/test_issue_99_search_shortcut.py
+```
+
 ## 2026-04-23
 
 ```yaml
