@@ -19,9 +19,10 @@ issue: "#282"
 summary: "Setup tab: add Reports sub-tab with Session P/L summary"
 details: >
   Added a new Reports sub-tab to Setup, positioned after Tools and styled to
-  match the existing Setup sub-tab header pattern. The first report is a
-  Session P/L Summary backed by the existing report service, exposed through a
-  reusable dropdown + run button pattern with in-place output rendering below.
+  match the existing Setup sub-tab header pattern. The tab now includes a
+  Bridge / Reconciliation Summary plus a Session P/L Summary, both exposed
+  through a reusable dropdown + run button pattern with in-place output
+  rendering below. Report tables stretch to fill the available tab width.
 files_changed:
   - desktop/ui/tabs/reports_tab.py
   - desktop/ui/tabs/setup_tab.py

@@ -115,8 +115,11 @@ def test_reports_tab_runs_initial_report(qapp, main_window):
     reports_tab.run_selected_report()
     qapp.processEvents()
 
+    assert reports_tab.report_selector.findText("Bridge / Reconciliation Summary") != -1
+    assert reports_tab.report_selector.findText("Session P/L Summary") != -1
     assert reports_tab.results_table.rowCount() > 0
-    assert reports_tab.report_title.text() == "Session P/L Summary"
+    assert reports_tab.results_table.columnCount() == 9
+    assert reports_tab.report_title.text() == "Bridge / Reconciliation Summary"
 
 
 def test_perform_undo_handler_exists(main_window):

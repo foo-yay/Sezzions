@@ -862,8 +862,9 @@ Excel-like undo/redo: strictly in-order (LIFO for undo, FIFO for redo). New oper
 - Lives to the right of Tools in the Setup sub-tab strip.
 - Matches the standard Setup sub-tab header/layout conventions.
 - Uses a dropdown selector plus explicit run action so future reports can reuse the same surface.
-- The first shipped report is a Session P/L Summary backed by the existing reporting service.
+- Ships with a Bridge / Reconciliation Summary and a Session P/L Summary backed by the existing reporting service.
 - Renders report output directly below the selector inside the same tab.
+- Report tables stretch to use the available tab width rather than staying fixed to content size.
 
 **Audit Log Viewer Dialog:**
 - Date range presets: All Time, Today, Last 7 Days, Last 30 Days, This Month, This Year, Custom

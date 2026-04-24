@@ -401,6 +401,64 @@ def test_get_session_profit_loss_report_no_sessions(test_db, sample_user):
     assert pl_report["win_rate"] == 0
 
 
+def test_get_bridge_reconciliation_report(test_db, sample_user, sample_site, purchase_repo):
+    """Test bridge/reconciliation report aggregates site roll-forward values."""
+    from models.purchase import Purchase
+
+    purchase = purchase_repo.create(Purchase(
+        user_id=sample_user.id,
+        site_id=sample_site.id,
+        amount=Decimal("100.00"),
+        purchase_date=date(2026, 1, 1)
+    ))
+    test_db.execute(
+        "UPDATE purchases SET remaining_amount = ? WHERE id = ?",
+        ("40.00", purchase.id),
+    )
+
+    redemption_id = test_db.execute(
+        """
+        INSERT INTO redemptions (user_id, site_id, amount, redemption_date, redemption_time)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (sample_user.id, sample_site.id, "80.00", "2026-01-05", "12:00:00"),
+    )
+    test_db.execute(
+        """
+        INSERT INTO realized_transactions
+            (redemption_date, site_id, user_id, redemption_id, cost_basis, payout, net_pl)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("2026-01-05", sample_site.id, sample_user.id, redemption_id, "60.00", "80.00", "20.00"),
+    )
+    test_db.execute(
+        """
+        INSERT INTO game_sessions (user_id, site_id, session_date, session_time, net_taxable_pl, status)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (sample_user.id, sample_site.id, "2026-01-10", "23:59:59", "15.00", "Closed"),
+    )
+
+    report_service = ReportService(test_db)
+    report = report_service.get_bridge_reconciliation_report()
+
+    assert len(report["site_rows"]) == 1
+    site_row = report["site_rows"][0]
+    assert site_row["site_name"] == sample_site.name
+    assert site_row["total_purchases"] == Decimal("100.00")
+    assert site_row["redeemed_basis"] == Decimal("60.00")
+    assert site_row["open_basis"] == Decimal("40.00")
+    assert site_row["basis_delta"] == Decimal("0.00")
+    assert site_row["realized_pl"] == Decimal("20.00")
+    assert site_row["economic_pl"] == Decimal("20.00")
+    assert site_row["session_pl"] == Decimal("15.00")
+    assert site_row["bridge_gap"] == Decimal("5.00")
+
+    totals = report["totals"]
+    assert totals["basis_delta"] == Decimal("0.00")
+    assert totals["bridge_gap"] == Decimal("5.00")
+
+
 def test_get_all_user_summaries_with_site_filter(test_db, sample_user, sample_site, purchase_repo):
     """Test getting all user summaries filtered by site"""
     from models.purchase import Purchase
