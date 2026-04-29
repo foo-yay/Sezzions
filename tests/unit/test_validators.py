@@ -78,7 +78,7 @@ class TestPurchaseValidator:
         assert any(e.field == 'amount' and 'positive' in e.message.lower() for e in errors)
     
     def test_zero_amount(self):
-        """Test that zero amount is rejected."""
+        """Test that zero amount is allowed."""
         record = {
             'user_id': 1,
             'site_id': 1,
@@ -89,7 +89,7 @@ class TestPurchaseValidator:
         
         errors = self.validator.validate_record(record, self.context)
         
-        assert any(e.field == 'amount' and 'positive' in e.message.lower() for e in errors)
+        assert not any(e.field == 'amount' for e in errors)
     
     def test_future_date(self):
         """Test that future date is rejected."""

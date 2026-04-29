@@ -480,6 +480,7 @@ When editing a purchase or creating/editing a game session, the system computes 
 **Chronological timeline invariant (Issue #169, 2026-03-12):**
 - Expected balances must represent the most recent effective state at the cutoff by applying event effects in timestamp order, regardless of event type.
 - Purchase snapshots are authoritative at their purchase timestamp (`starting_sc_balance` and, when present, `starting_redeemable_balance`).
+- If an earlier closed session is edited after later purchases already exist, the app must refresh those later purchases' stored redeemable checkpoints so future expected-balance checks use the corrected session-end redeemable value instead of stale purchase snapshots.
 - Redemptions that occur **after** a purchase and **before** the cutoff must reduce the expected balances and must not be erased by later non-chronological overwrite behavior.
 - Deterministic same-timestamp ordering is required:
   - Purchases are ordered by `(timestamp, purchase_id)` for edit/exclusion stability.
@@ -857,6 +858,28 @@ Excel-like undo/redo: strictly in-order (LIFO for undo, FIFO for redo). New oper
 **Tools Tab (Setup → Tools):**
 - **Audit Log section**: Collapsible section with description of audit capabilities
 - **Open Audit Log…** button: Opens viewer dialog
+
+**Reports Tab (Setup → Reports):**
+- Lives to the right of Tools in the Setup sub-tab strip.
+- Matches the standard Setup sub-tab header/layout conventions.
+- Uses a dropdown selector plus explicit run action so future reports can reuse the same surface.
+- Ships with a Bridge / Reconciliation Summary and a Session P/L Summary backed by the existing reporting service.
+- Renders report output directly below the selector inside the same tab.
+- Includes the same spreadsheet-style affordances used elsewhere in the desktop app: search, Clear, Clear All Filters, header sort/filter menus, copy, Copy With Headers, CSV export, and selection statistics.
+- The Bridge / Reconciliation Summary lists one row per user/site pair, matching the Unrealized tab's reconciliation scope.
+- The Bridge / Reconciliation Summary includes a Status column where green "Checks Out" means Purchases = Redeemed Basis + Open Basis for that user/site row; Current Gap remains informational rather than pass/fail.
+- The Bridge / Reconciliation Summary intentionally omits a synthetic "All Sites" row; users can sort, filter, and summarize the visible rows through the table tools and selection stats instead.
+- The Bridge / Reconciliation Summary is a current-state audit view. Its Current Gap suppresses historical close-marker residue once later session activity has reactivated that same user/site pair.
+- The Bridge / Reconciliation Summary includes an Explanation column whose listed amounts must add up to the Current Gap for that user/site row. Double-clicking an Explanation cell opens a wrapped audit narrative that explains the specific session, redemption, or close-marker events behind those amounts and separates non-additive context such as dormant basis, Unrealized state, pending redemptions, and suppressed historical residue.
+- The Explanation summary uses accounting-local dates, and the wrapped audit detail uses the same accounting-local date/time shown in the app for those events rather than raw stored UTC timestamps.
+- FULL redemptions (`more_remaining=0`) that close a position while leaving sub-dollar redeemable cents on site must be explained as dormant/on-site SC remainder, not as an accounting error. When many ordinary redemption/session timing items mostly offset each other, the Explanation should compress them to a short net line instead of listing a long history of swings.
+- PARTIAL redemptions (`more_remaining=1`) that leave redeemable balance on site must be explained as still redeemable/on-site carry-forward, using the amount still left on site rather than generic redemption-vs-session wording.
+- If a later session reactivates previously dormant cents and a new FULL redemption closes the position again, the Current Gap should use the total redeemable remaining at that latest close, not only the redeemable added during the latest session.
+- Historical close-marker residue should not be suppressed blindly once later play exists. If that dormant carry-forward is subsequently consumed into a later redemption and creates an equal-and-opposite redemption timing difference, both sides of that carry-forward effect should be excluded from the Current Gap so the report shows only the still-actionable remainder.
+- When a newer unresolved remainder exists for the same user/site pair, older remainder-style items from earlier full redemptions, partial redemptions, or close markers should be treated as historical context rather than added into the Current Gap.
+- When a partial-redemption remainder is later fully cleared by follow-up redemption(s), that resolved chain should drop out of Current Gap entirely rather than resurfacing as offsetting redemption-timing noise.
+- Currency presentation must normalize near-zero values so `$0.00` and `-$0.00` are treated equivalently in the UI.
+- Report tables use the standard desktop table presentation with content-sized columns, a stretching final column, and footer notes/totals beneath the grid.
 
 **Audit Log Viewer Dialog:**
 - Date range presets: All Time, Today, Last 7 Days, Last 30 Days, This Month, This Year, Custom

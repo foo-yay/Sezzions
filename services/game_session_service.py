@@ -52,6 +52,73 @@ class GameSessionService:
     def _rounded_money(value: Decimal) -> Decimal:
         return Decimal(str(value or 0)).quantize(Decimal("0.01"))
 
+    def _refresh_purchase_redeemable_checkpoints_from(
+        self,
+        user_id: int,
+        site_id: int,
+        from_date: date,
+        from_time: Optional[str],
+    ) -> None:
+        """Refresh purchase redeemable snapshots after a closed-session chronology change."""
+        if self.purchase_repo is None:
+            return
+
+        cutoff_time = from_time or "00:00:00"
+        if len(cutoff_time) == 5:
+            cutoff_time = f"{cutoff_time}:00"
+        cutoff_date_utc, cutoff_time_utc = local_date_time_to_utc(
+            from_date,
+            cutoff_time,
+            get_entry_timezone_name() or get_accounting_timezone_name(),
+        )
+        cutoff_dt = datetime.strptime(
+            f"{cutoff_date_utc} {cutoff_time_utc}",
+            "%Y-%m-%d %H:%M:%S",
+        )
+
+        purchases = self.purchase_repo.get_by_user_and_site(user_id, site_id)
+        purchases_sorted = sorted(
+            purchases,
+            key=lambda purchase: (
+                datetime.strptime(
+                    "%s %s" % local_date_time_to_utc(
+                        purchase.purchase_date,
+                        purchase.purchase_time,
+                        purchase.purchase_entry_time_zone or get_accounting_timezone_name(),
+                    ),
+                    "%Y-%m-%d %H:%M:%S",
+                ),
+                int(purchase.id or 0),
+            ),
+        )
+
+        for purchase in purchases_sorted:
+            purchase_date_utc, purchase_time_utc = local_date_time_to_utc(
+                purchase.purchase_date,
+                purchase.purchase_time,
+                purchase.purchase_entry_time_zone or get_accounting_timezone_name(),
+            )
+            purchase_dt = datetime.strptime(
+                f"{purchase_date_utc} {purchase_time_utc}",
+                "%Y-%m-%d %H:%M:%S",
+            )
+            if purchase_dt < cutoff_dt:
+                continue
+
+            _, expected_redeemable = self.compute_expected_balances(
+                user_id=user_id,
+                site_id=site_id,
+                session_date=purchase.purchase_date,
+                session_time=purchase.purchase_time or "00:00:00",
+                exclude_purchase_id=purchase.id,
+                entry_time_zone=purchase.purchase_entry_time_zone or get_accounting_timezone_name(),
+            )
+            if self._rounded_money(purchase.starting_redeemable_balance) == self._rounded_money(expected_redeemable):
+                continue
+
+            purchase.starting_redeemable_balance = expected_redeemable
+            self.purchase_repo.update(purchase)
+
     def _validate_start_balance_consistency_on_close(self, session: GameSession) -> None:
         """Block closing a session whose recorded start no longer matches chronology.
 
@@ -298,6 +365,24 @@ class GameSessionService:
                 description=f"Update session #{session.id}",
                 timestamp=datetime.now().isoformat()
             )
+
+        refresh_purchase_checkpoints = self.purchase_repo is not None and (
+            target_status == "Closed" or old_status == "Closed"
+        )
+        if refresh_purchase_checkpoints:
+            self._refresh_purchase_redeemable_checkpoints_from(
+                session.user_id,
+                session.site_id,
+                session.session_date,
+                session.session_time,
+            )
+            if old_user_id != session.user_id or old_site_id != session.site_id:
+                self._refresh_purchase_redeemable_checkpoints_from(
+                    old_user_id,
+                    old_site_id,
+                    old_session_date,
+                    old_session_time,
+                )
 
         # Recalculate P/L if requested
         if recalculate_pl:
