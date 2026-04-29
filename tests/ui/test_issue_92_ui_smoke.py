@@ -117,9 +117,14 @@ def test_reports_tab_runs_initial_report(qapp, main_window):
 
     assert reports_tab.report_selector.findText("Bridge / Reconciliation Summary") != -1
     assert reports_tab.report_selector.findText("Session P/L Summary") != -1
-    assert reports_tab.results_table.rowCount() > 0
-    assert reports_tab.results_table.columnCount() == 9
+    assert reports_tab.results_table.columnCount() == 12
+    headers = [
+        reports_tab.results_table.horizontalHeaderItem(column).text()
+        for column in range(reports_tab.results_table.columnCount())
+    ]
+    assert headers[:3] == ["Status", "Site", "User"]
     assert reports_tab.report_title.text() == "Bridge / Reconciliation Summary"
+    assert reports_tab.report_status.text() != "Select a report and click Run Report."
 
 
 def test_perform_undo_handler_exists(main_window):

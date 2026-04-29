@@ -9,7 +9,65 @@ Rules:
 
 ---
 
+## 2026-04-25
+
+```yaml
+id: 2026-04-25-01
+type: fix
+areas: [desktop, services, accounting]
+issue: "#282"
+summary: "Closed session edits refresh later purchase redeemable checkpoints"
+details: >
+  Editing a closed session's ending redeemable balance now refreshes later
+  purchase redeemable checkpoints for that same user/site pair, so subsequent
+  expected-balance checks in the desktop app no longer keep using stale
+  purchase snapshot values. This fixes cases where the next active session
+  still expected an old redeemable amount even after the prior closed session
+  had been corrected.
+files_changed:
+  - services/game_session_service.py
+  - tests/integration/test_issue_130_purchase_redeemable_checkpoint.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+```
+
 ## 2026-04-24
+
+```yaml
+id: 2026-04-24-02
+type: fix
+areas: [desktop, ui, reports, accounting]
+issue: "#282"
+summary: "Scope bridge reconciliation rows to user/site pairs"
+details: >
+  Corrected the Bridge / Reconciliation Summary to reconcile one user/site pair
+  per row instead of aggregating all users into a single site row. The report
+  now matches the Unrealized tab's scope, shows an explicit User column, and
+  keeps explanation popups keyed to the same user/site identity so multi-user
+  sites such as Fortune Coins no longer merge unrelated activity into one
+  reconciliation story. Follow-up: explanation text now uses the same
+  accounting-local dates and times shown in the app instead of raw stored UTC
+  timestamps, so bridge audit rows no longer shift late-evening events into
+  the next day. Follow-up: dormant carry-forward from an older close marker is
+  no longer suppressed on only one side; if a later redemption absorbs that
+  dormant residue and creates an equal-and-opposite timing difference, both
+  sides are removed from Current Gap so the remaining explanation stays
+  actionable. Follow-up: partial redemptions that leave redeemable balance on
+  site now explain that remaining on-site amount directly, and once a newer
+  unresolved remainder exists the report suppresses older remainder-style
+  history so rows like Sixty6 no longer stack stale carry-forward into the
+  present-state gap. Follow-up: resolved max-limit partial chains now drop out
+  of Current Gap entirely once a later redemption clears the remainder, which
+  fixes synthetic zero-raw-gap errors on rows like Stake and Rolling Riches.
+files_changed:
+  - services/report_service.py
+  - desktop/ui/tabs/reports_tab.py
+  - app_facade.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+  - tests/unit/test_report_service.py
+  - tests/ui/test_issue_92_ui_smoke.py
+```
 
 ```yaml
 id: 2026-04-24-01
@@ -22,10 +80,33 @@ details: >
   match the existing Setup sub-tab header pattern. The tab now includes a
   Bridge / Reconciliation Summary plus a Session P/L Summary, both exposed
   through a reusable dropdown + run button pattern with in-place output
-  rendering below. Report tables stretch to fill the available tab width.
+  rendering below. Report tables now use the same searchable, filterable,
+  copyable spreadsheet-style layout as other desktop tables, including footer
+  notes, selection stats, and green/red bridge-status cues. Near-zero basis
+  deltas are normalized so `$0.00` and `-$0.00` display consistently. The
+  bridge report now omits the synthetic "All Sites" row and instead adds an
+  Explanation column whose amounts add up to the current actionable gap for
+  each row. The grid returned to a normal-sized layout, and double-clicking
+  an Explanation cell now opens a wrapped audit narrative that explains the
+  specific session, redemption, and close-marker events behind those amounts.
+  The report now suppresses historical close-marker residue from the main
+  Current Gap once later play has reactivated that site, and the popup stays
+  focused on the current actionable gap plus directly relevant context. FULL
+  redemptions that close a position while leaving sub-dollar redeemable cents
+  now read as dormant/on-site SC remainder instead of generic redemption
+  variance, and long redemption-timing histories are compressed to their net
+  effect so rows like Zoot explain the actionable gap concisely. Follow-up:
+  when dormant cents are later reactivated and a newer FULL redemption closes
+  the position again, the report now uses the total redeemable left at that
+  latest close, so Zoot correctly shows $0.53 dormant on site instead of the
+  earlier undercounted $0.38.
 files_changed:
   - desktop/ui/tabs/reports_tab.py
+  - services/report_service.py
   - desktop/ui/tabs/setup_tab.py
+  - docs/PROJECT_SPEC.md
+  - docs/status/CHANGELOG.md
+  - tests/unit/test_report_service.py
   - tests/ui/test_issue_92_ui_smoke.py
   - tests/ui/test_issue_99_search_shortcut.py
 ```

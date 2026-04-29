@@ -323,3 +323,80 @@ def test_balance_checkpoint_takes_priority():
 
     assert purchase2.starting_redeemable_balance == Decimal("75.00"), \
         f"Purchase should use balance checkpoint (75), not session (100), got {purchase2.starting_redeemable_balance}"
+
+
+def test_editing_closed_session_refreshes_later_purchase_redeemable_snapshots():
+    """Editing a closed session should refresh later purchase redeemable checkpoints."""
+    facade = AppFacade(":memory:")
+
+    site = facade.create_site(name="Test Site")
+    user = facade.create_user(name="Test User")
+    game_type = facade.create_game_type(name="Slots")
+    game = facade.create_game(name="Test Slots", game_type_id=game_type.id)
+
+    session = facade.create_game_session(
+        site_id=site.id,
+        user_id=user.id,
+        game_id=game.id,
+        session_date=date(2025, 1, 1),
+        session_time="10:00:00",
+        starting_balance=Decimal("400.00"),
+        starting_redeemable=Decimal("317.00"),
+        ending_balance=Decimal("1090.19"),
+        ending_redeemable=Decimal("371.45"),
+        calculate_pl=False,
+    )
+
+    facade.update_game_session(
+        session_id=session.id,
+        ending_balance=Decimal("1090.19"),
+        ending_redeemable=Decimal("371.45"),
+        end_date=date(2025, 1, 1),
+        end_time="12:04:43",
+        status="Closed",
+    )
+
+    purchase1 = facade.create_purchase(
+        site_id=site.id,
+        user_id=user.id,
+        purchase_date=date(2025, 1, 2),
+        purchase_time="14:04:38",
+        amount=Decimal("79.99"),
+        sc_received=Decimal("79.99"),
+        starting_sc_balance=Decimal("1090.19"),
+    )
+    purchase2 = facade.create_purchase(
+        site_id=site.id,
+        user_id=user.id,
+        purchase_date=date(2025, 1, 2),
+        purchase_time="14:05:26",
+        amount=Decimal("74.99"),
+        sc_received=Decimal("74.99"),
+        starting_sc_balance=Decimal("1165.18"),
+    )
+
+    assert purchase1.starting_redeemable_balance == Decimal("371.45")
+    assert purchase2.starting_redeemable_balance == Decimal("371.45")
+
+    facade.update_game_session(
+        session_id=session.id,
+        ending_balance=Decimal("1090.19"),
+        ending_redeemable=Decimal("371.54"),
+        end_date=date(2025, 1, 1),
+        end_time="12:04:43",
+        status="Closed",
+    )
+
+    refreshed_purchase1 = facade.purchase_repo.get_by_id(purchase1.id)
+    refreshed_purchase2 = facade.purchase_repo.get_by_id(purchase2.id)
+    assert refreshed_purchase1.starting_redeemable_balance == Decimal("371.54")
+    assert refreshed_purchase2.starting_redeemable_balance == Decimal("371.54")
+
+    expected_total, expected_redeemable = facade.compute_expected_balances(
+        user_id=user.id,
+        site_id=site.id,
+        session_date=date(2025, 1, 2),
+        session_time="15:00:00",
+    )
+    assert expected_total == Decimal("1165.18")
+    assert expected_redeemable == Decimal("371.54")

@@ -2371,7 +2371,7 @@ class AppFacade:
         )
 
     def get_bridge_reconciliation_report(self) -> Dict[str, Any]:
-        """Get site-level basis and bridge reconciliation summary."""
+        """Get user/site basis and bridge reconciliation summary."""
         return self.report_service.get_bridge_reconciliation_report()
     
     # ==========================================================================
