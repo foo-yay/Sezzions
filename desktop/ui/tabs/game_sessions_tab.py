@@ -1825,7 +1825,7 @@ class StartSessionDialog(QDialog):
     def _format_time_for_input(self, time_str):
         if not time_str:
             return ""
-        return str(time_str)[:5]
+        return str(time_str)
 
     def _lookup_ids(self, site_name, user_name):
         site = self._site_lookup.get(site_name.lower())

@@ -9,6 +9,22 @@ Rules:
 
 ---
 
+## 2026-05-07
+
+```yaml
+id: 2026-05-07-01
+type: fix
+areas: [desktop, ui]
+summary: "Edit Session dialog now retains full HH:MM:SS start time instead of truncating to HH:MM"
+details: >
+  _format_time_for_input in StartSessionDialog was slicing session_time to [:5],
+  stripping seconds. Editing a session would show HH:MM in the time field and
+  save HH:MM:00 on confirm. Removed the slice so the full HH:MM:SS value is
+  preserved in the edit dialog.
+files_changed:
+  - desktop/ui/tabs/game_sessions_tab.py
+```
+
 ## 2026-04-25
 
 ```yaml
