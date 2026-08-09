@@ -282,9 +282,67 @@ class DailySessionsService:
             (session_date, notes if notes else None),
         )
 
-    def group_sessions(self, sessions: List[Dict], daily_tax_data: Optional[Dict] = None) -> List[Dict]:
+    def fetch_cashback_by_date_user(
+        self,
+        start_date: Optional[date_type] = None,
+        end_date: Optional[date_type] = None,
+        selected_users: Optional[Iterable[str]] = None,
+        selected_sites: Optional[Iterable[str]] = None,
+    ) -> Dict:
+        """Return {(purchase_date_str, user_id): total_cashback} for the given filters.
+
+        Used to display daily CC cashback earned per user alongside session P/L.
+        """
+        if not self._table_exists("purchases"):
+            return {}
+
+        query = """
+            SELECT
+                p.purchase_date,
+                p.user_id,
+                SUM(CAST(COALESCE(p.cashback_earned, '0') AS REAL)) AS total_cashback
+            FROM purchases p
+            JOIN users u ON p.user_id = u.id
+            JOIN sites s ON p.site_id = s.id
+            WHERE p.deleted_at IS NULL
+              AND CAST(COALESCE(p.cashback_earned, '0') AS REAL) > 0
+        """
+        params: List = []
+
+        if selected_users:
+            users = sorted({name for name in selected_users if name})
+            if users:
+                placeholders = ",".join("?" * len(users))
+                query += f" AND u.name IN ({placeholders})"
+                params.extend(users)
+
+        if selected_sites:
+            sites = sorted({name for name in selected_sites if name})
+            if sites:
+                placeholders = ",".join("?" * len(sites))
+                query += f" AND s.name IN ({placeholders})"
+                params.extend(sites)
+
+        if start_date:
+            query += " AND p.purchase_date >= ?"
+            params.append(str(start_date))
+        if end_date:
+            query += " AND p.purchase_date <= ?"
+            params.append(str(end_date))
+
+        query += " GROUP BY p.purchase_date, p.user_id"
+
+        rows = self.db.fetch_all(query, tuple(params))
+        result = {}
+        for row in rows:
+            key = (str(row["purchase_date"]), row["user_id"])
+            result[key] = float(row["total_cashback"] or 0.0)
+        return result
+
+    def group_sessions(self, sessions: List[Dict], daily_tax_data: Optional[Dict] = None, cashback_by_date_user: Optional[Dict] = None) -> List[Dict]:
         from collections import defaultdict
         daily_tax_data = daily_tax_data or {}
+        cashback_by_date_user = cashback_by_date_user or {}
 
         dates = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         for sess in sessions:
@@ -316,6 +374,9 @@ class DailySessionsService:
                 
                 # Tax withholding is date-level (net of all users), don't show per-user
                 user_tax_withholding = 0.0
+
+                # CC cashback is per-user per-date (from purchases)
+                user_cashback = cashback_by_date_user.get((str(session_date), user_id), 0.0)
                 
                 # Build sites list with grouped sessions
                 sites = []
@@ -349,6 +410,7 @@ class DailySessionsService:
                         "basis": user_basis,
                         "total": user_total,
                         "tax_withholding": user_tax_withholding,
+                        "cashback": user_cashback,
                         "status": "Win" if user_total >= 0 else "Loss",
                         "sites": sites,
                     }
@@ -358,6 +420,7 @@ class DailySessionsService:
             date_delta_redeem = sum(user["delta_redeem"] for user in users)
             date_basis = sum(user["basis"] for user in users)
             date_total = sum(user["total"] for user in users)
+            date_cashback = sum(user["cashback"] for user in users)
             # Use date-level tax from daily_date_tax table (net of all users)
             # date_tax_withholding already fetched from daily_tax_data on line 283
             total_sessions = sum(len(site["sessions"]) for user in users for site in user["sites"])
@@ -368,6 +431,7 @@ class DailySessionsService:
                     "date_delta_redeem": date_delta_redeem,
                     "date_basis": date_basis,
                     "date_total": date_total,
+                    "date_cashback": date_cashback,
                     "date_tax_withholding": date_tax_withholding,
                     "status": "Win" if date_total >= 0 else "Loss",
                     "users": users,
