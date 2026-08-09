@@ -288,20 +288,33 @@ class DailySessionsService:
         end_date: Optional[date_type] = None,
         selected_users: Optional[Iterable[str]] = None,
     ) -> Dict:
-        """Return {(purchase_date_str, user_id): total_cashback} for the given filters.
+        """Return {(local_date_str, user_id): total_cashback} for the given filters.
 
-        Cashback is a user+date metric independent of which site the purchase was at,
-        so no site filter is applied here. The user filter is respected so that
-        per-user views show only that user's cashback.
+        Purchases are stored in UTC (purchase_date + purchase_time + purchase_entry_time_zone).
+        Each row is converted to its local accounting date before grouping, mirroring
+        how purchase_repository._row_to_model works. A one-day buffer is applied to
+        the SQL date filter to catch timezone boundary cases before Python filtering.
+
+        No site filter — cashback is a user+date metric independent of purchase site.
         """
         if not self._table_exists("purchases"):
             return {}
 
+        from datetime import timedelta
+        from tools.timezone_utils import utc_date_time_to_local
+        try:
+            from tools.settings_utils import get_accounting_timezone_name
+        except ImportError:
+            def get_accounting_timezone_name():
+                return "UTC"
+
         query = """
             SELECT
                 p.purchase_date,
+                p.purchase_time,
+                p.purchase_entry_time_zone,
                 p.user_id,
-                SUM(CAST(COALESCE(p.cashback_earned, '0') AS REAL)) AS total_cashback
+                CAST(COALESCE(p.cashback_earned, '0') AS REAL) AS cashback
             FROM purchases p
             JOIN users u ON p.user_id = u.id
             WHERE p.deleted_at IS NULL
@@ -316,20 +329,32 @@ class DailySessionsService:
                 query += f" AND u.name IN ({placeholders})"
                 params.extend(users)
 
+        # Use a 1-day buffer so timezone-shifted purchases near midnight aren't excluded
         if start_date:
             query += " AND p.purchase_date >= ?"
-            params.append(str(start_date))
+            params.append(str(start_date - timedelta(days=1)))
         if end_date:
             query += " AND p.purchase_date <= ?"
-            params.append(str(end_date))
-
-        query += " GROUP BY p.purchase_date, p.user_id"
+            params.append(str(end_date + timedelta(days=1)))
 
         rows = self.db.fetch_all(query, tuple(params))
-        result = {}
+
+        result: Dict = {}
         for row in rows:
-            key = (str(row["purchase_date"]), row["user_id"])
-            result[key] = float(row["total_cashback"] or 0.0)
+            entry_tz = row.get("purchase_entry_time_zone") or get_accounting_timezone_name()
+            local_date, _ = utc_date_time_to_local(
+                row["purchase_date"],
+                row.get("purchase_time"),
+                entry_tz,
+            )
+            # Apply the real date bounds after timezone conversion
+            if start_date and local_date < start_date:
+                continue
+            if end_date and local_date > end_date:
+                continue
+            key = (str(local_date), row["user_id"])
+            result[key] = result.get(key, 0.0) + float(row["cashback"] or 0.0)
+
         return result
 
     def group_sessions(self, sessions: List[Dict], daily_tax_data: Optional[Dict] = None, cashback_by_date_user: Optional[Dict] = None) -> List[Dict]:
