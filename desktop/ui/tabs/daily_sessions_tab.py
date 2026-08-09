@@ -286,7 +286,7 @@ class DailySessionsTab(QtWidgets.QWidget):
             except Exception as e:
                 print(f"Warning: Could not fetch daily tax data: {e}")
 
-        # Fetch CC cashback totals per (date, user)
+        # Fetch CC cashback totals per (date, user) — no site filter, cashback is site-agnostic
         cashback_by_date_user = {}
         if hasattr(self.facade, 'daily_sessions_service'):
             try:
@@ -294,7 +294,6 @@ class DailySessionsTab(QtWidgets.QWidget):
                     start_date=start_date,
                     end_date=end_date,
                     selected_users=sorted(self.selected_users) if self.selected_users else None,
-                    selected_sites=sorted(self.selected_sites) if self.selected_sites else None,
                 )
             except Exception as e:
                 print(f"Warning: Could not fetch cashback data: {e}")

@@ -287,11 +287,12 @@ class DailySessionsService:
         start_date: Optional[date_type] = None,
         end_date: Optional[date_type] = None,
         selected_users: Optional[Iterable[str]] = None,
-        selected_sites: Optional[Iterable[str]] = None,
     ) -> Dict:
         """Return {(purchase_date_str, user_id): total_cashback} for the given filters.
 
-        Used to display daily CC cashback earned per user alongside session P/L.
+        Cashback is a user+date metric independent of which site the purchase was at,
+        so no site filter is applied here. The user filter is respected so that
+        per-user views show only that user's cashback.
         """
         if not self._table_exists("purchases"):
             return {}
@@ -303,7 +304,6 @@ class DailySessionsService:
                 SUM(CAST(COALESCE(p.cashback_earned, '0') AS REAL)) AS total_cashback
             FROM purchases p
             JOIN users u ON p.user_id = u.id
-            JOIN sites s ON p.site_id = s.id
             WHERE p.deleted_at IS NULL
               AND CAST(COALESCE(p.cashback_earned, '0') AS REAL) > 0
         """
@@ -315,13 +315,6 @@ class DailySessionsService:
                 placeholders = ",".join("?" * len(users))
                 query += f" AND u.name IN ({placeholders})"
                 params.extend(users)
-
-        if selected_sites:
-            sites = sorted({name for name in selected_sites if name})
-            if sites:
-                placeholders = ",".join("?" * len(sites))
-                query += f" AND s.name IN ({placeholders})"
-                params.extend(sites)
 
         if start_date:
             query += " AND p.purchase_date >= ?"
