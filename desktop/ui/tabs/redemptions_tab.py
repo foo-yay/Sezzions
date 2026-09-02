@@ -540,8 +540,10 @@ class RedemptionsTab(QtWidgets.QWidget):
                 r_status = getattr(r, 'status', 'PENDING') or 'PENDING'
                 if bool(r.receipt_date) or r_status in ('CANCELED', 'PENDING_CANCEL'):
                     continue
-            if unprocessed_only and bool(r.processed):
-                continue
+            if unprocessed_only:
+                r_status = getattr(r, 'status', 'PENDING') or 'PENDING'
+                if bool(r.processed) or r_status == 'CANCELED':
+                    continue
             quick_filtered.append(r)
 
         if search_text:

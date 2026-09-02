@@ -126,10 +126,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self._settings_gear.clicked.connect(self._show_settings_dialog)
         self._settings_gear.raise_()
 
+        # Refresh button overlay (pinned to the left of the notification bell)
+        self._refresh_btn = QtWidgets.QToolButton(self.main_content)
+        self._refresh_btn.setObjectName("HeaderIconButton")
+        self._refresh_btn.setText("↻")
+        self._refresh_btn.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self._refresh_btn.setAutoRaise(True)
+        self._refresh_btn.setFixedSize(32, 32)
+        self._refresh_btn.setToolTip("Refresh all tabs")
+        refresh_font = QtGui.QFont("Apple Color Emoji")
+        refresh_font.setPixelSize(18)
+        self._refresh_btn.setFont(refresh_font)
+        self._refresh_btn.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        self._refresh_btn.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._refresh_btn.clicked.connect(self.refresh_all_tabs)
+        self._refresh_btn.raise_()
+
         # Reserve vertical space so the overlay bell doesn't sit on top of the tab bar.
         self._notification_bell_margin_top = 6
         self._notification_bell_margin_right = 6
-        reserved_height = max(self._notification_bell.height(), self._settings_gear.height())
+        reserved_height = max(self._notification_bell.height(), self._settings_gear.height(), self._refresh_btn.height())
         self._notification_reserved_top = int(self._notification_bell_margin_top + reserved_height + main_layout.spacing())
         main_layout.setContentsMargins(0, self._notification_reserved_top, 0, 0)
 
@@ -285,22 +301,33 @@ class MainWindow(QtWidgets.QMainWindow):
         margin_top = getattr(self, "_notification_bell_margin_top", 6)
         margin_right = getattr(self, "_notification_bell_margin_right", 6)
         inset = getattr(self, "_content_inset", 0)
-        
-        # Position bell at top-right (but with space for gear to its right)
-        gear_spacing = 6  # space between bell and gear
+        icon_spacing = 6  # space between each icon button
+
         gear_width = self._settings_gear.width() if hasattr(self, "_settings_gear") and self._settings_gear is not None else 0
-        bell_x = max(0, parent.width() - inset - bell.width() - gear_spacing - gear_width - margin_right)
+        refresh_width = self._refresh_btn.width() if hasattr(self, "_refresh_btn") and self._refresh_btn is not None else 0
+
+        # Order right-to-left: gear | bell | refresh
+        gear_x = max(0, parent.width() - inset - gear_width - margin_right)
+        bell_x = max(0, gear_x - icon_spacing - bell.width())
+        refresh_x = max(0, bell_x - icon_spacing - refresh_width)
         bell_y = max(0, margin_top)
+
         bell.move(bell_x, bell_y)
         bell.raise_()
-        
+
         # Position gear to the right of the bell
         if hasattr(self, "_settings_gear") and self._settings_gear is not None:
             gear = self._settings_gear
-            gear_x = bell_x + bell.width() + gear_spacing
             gear_y = bell_y + max(0, int((bell.height() - gear.height()) / 2))
             gear.move(gear_x, gear_y)
             gear.raise_()
+
+        # Position refresh button to the left of the bell
+        if hasattr(self, "_refresh_btn") and self._refresh_btn is not None:
+            refresh = self._refresh_btn
+            refresh_y = bell_y + max(0, int((bell.height() - refresh.height()) / 2))
+            refresh.move(refresh_x, refresh_y)
+            refresh.raise_()
 
         # Keep the unread badge on top of both header buttons.
         if hasattr(bell, "raise_badge_overlay"):

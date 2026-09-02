@@ -282,9 +282,85 @@ class DailySessionsService:
             (session_date, notes if notes else None),
         )
 
-    def group_sessions(self, sessions: List[Dict], daily_tax_data: Optional[Dict] = None) -> List[Dict]:
+    def fetch_cashback_by_date_user(
+        self,
+        start_date: Optional[date_type] = None,
+        end_date: Optional[date_type] = None,
+        selected_users: Optional[Iterable[str]] = None,
+    ) -> Dict:
+        """Return {(local_date_str, user_id): total_cashback} for the given filters.
+
+        Purchases are stored in UTC (purchase_date + purchase_time + purchase_entry_time_zone).
+        Each row is converted to its local accounting date before grouping, mirroring
+        how purchase_repository._row_to_model works. A one-day buffer is applied to
+        the SQL date filter to catch timezone boundary cases before Python filtering.
+
+        No site filter — cashback is a user+date metric independent of purchase site.
+        """
+        if not self._table_exists("purchases"):
+            return {}
+
+        from datetime import timedelta
+        from tools.timezone_utils import utc_date_time_to_local
+        try:
+            from tools.settings_utils import get_accounting_timezone_name
+        except ImportError:
+            def get_accounting_timezone_name():
+                return "UTC"
+
+        query = """
+            SELECT
+                p.purchase_date,
+                p.purchase_time,
+                p.purchase_entry_time_zone,
+                p.user_id,
+                CAST(COALESCE(p.cashback_earned, '0') AS REAL) AS cashback
+            FROM purchases p
+            JOIN users u ON p.user_id = u.id
+            WHERE p.deleted_at IS NULL
+              AND CAST(COALESCE(p.cashback_earned, '0') AS REAL) > 0
+        """
+        params: List = []
+
+        if selected_users:
+            users = sorted({name for name in selected_users if name})
+            if users:
+                placeholders = ",".join("?" * len(users))
+                query += f" AND u.name IN ({placeholders})"
+                params.extend(users)
+
+        # Use a 1-day buffer so timezone-shifted purchases near midnight aren't excluded
+        if start_date:
+            query += " AND p.purchase_date >= ?"
+            params.append(str(start_date - timedelta(days=1)))
+        if end_date:
+            query += " AND p.purchase_date <= ?"
+            params.append(str(end_date + timedelta(days=1)))
+
+        rows = self.db.fetch_all(query, tuple(params))
+
+        result: Dict = {}
+        for row in rows:
+            entry_tz = row.get("purchase_entry_time_zone") or get_accounting_timezone_name()
+            local_date, _ = utc_date_time_to_local(
+                row["purchase_date"],
+                row.get("purchase_time"),
+                entry_tz,
+            )
+            # Apply the real date bounds after timezone conversion
+            if start_date and local_date < start_date:
+                continue
+            if end_date and local_date > end_date:
+                continue
+            key = (str(local_date), row["user_id"])
+            result[key] = result.get(key, 0.0) + float(row["cashback"] or 0.0)
+
+        return result
+
+    def group_sessions(self, sessions: List[Dict], daily_tax_data: Optional[Dict] = None, cashback_by_date_user: Optional[Dict] = None) -> List[Dict]:
         from collections import defaultdict
         daily_tax_data = daily_tax_data or {}
+        cashback_by_date_user = cashback_by_date_user or {}
 
         dates = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         for sess in sessions:
@@ -316,6 +392,9 @@ class DailySessionsService:
                 
                 # Tax withholding is date-level (net of all users), don't show per-user
                 user_tax_withholding = 0.0
+
+                # CC cashback is per-user per-date (from purchases)
+                user_cashback = cashback_by_date_user.get((str(session_date), user_id), 0.0)
                 
                 # Build sites list with grouped sessions
                 sites = []
@@ -349,6 +428,7 @@ class DailySessionsService:
                         "basis": user_basis,
                         "total": user_total,
                         "tax_withholding": user_tax_withholding,
+                        "cashback": user_cashback,
                         "status": "Win" if user_total >= 0 else "Loss",
                         "sites": sites,
                     }
@@ -358,6 +438,7 @@ class DailySessionsService:
             date_delta_redeem = sum(user["delta_redeem"] for user in users)
             date_basis = sum(user["basis"] for user in users)
             date_total = sum(user["total"] for user in users)
+            date_cashback = sum(user["cashback"] for user in users)
             # Use date-level tax from daily_date_tax table (net of all users)
             # date_tax_withholding already fetched from daily_tax_data on line 283
             total_sessions = sum(len(site["sessions"]) for user in users for site in user["sites"])
@@ -368,6 +449,7 @@ class DailySessionsService:
                     "date_delta_redeem": date_delta_redeem,
                     "date_basis": date_basis,
                     "date_total": date_total,
+                    "date_cashback": date_cashback,
                     "date_tax_withholding": date_tax_withholding,
                     "status": "Win" if date_total >= 0 else "Loss",
                     "users": users,

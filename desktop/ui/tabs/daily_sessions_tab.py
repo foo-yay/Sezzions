@@ -45,6 +45,7 @@ class DailySessionsTab(QtWidgets.QWidget):
             "Δ Basis",
             "Δ Total (SC)",
             "Net P/L",
+            "CC Cashback",
         ]
         
         # Add Tax Set-Aside column only if feature is enabled
@@ -284,8 +285,20 @@ class DailySessionsTab(QtWidgets.QWidget):
                 )
             except Exception as e:
                 print(f"Warning: Could not fetch daily tax data: {e}")
-        
-        data = self.facade.daily_sessions_service.group_sessions(sessions, daily_tax_data)
+
+        # Fetch CC cashback totals per (date, user) — no site filter, cashback is site-agnostic
+        cashback_by_date_user = {}
+        if hasattr(self.facade, 'daily_sessions_service'):
+            try:
+                cashback_by_date_user = self.facade.daily_sessions_service.fetch_cashback_by_date_user(
+                    start_date=start_date,
+                    end_date=end_date,
+                    selected_users=sorted(self.selected_users) if self.selected_users else None,
+                )
+            except Exception as e:
+                print(f"Warning: Could not fetch cashback data: {e}")
+
+        data = self.facade.daily_sessions_service.group_sessions(sessions, daily_tax_data, cashback_by_date_user)
         data = self._sort_data(data)
         self._render_tree(data)
         self._update_action_buttons()
@@ -313,6 +326,7 @@ class DailySessionsTab(QtWidgets.QWidget):
             "Δ Basis",
             "Δ Total (SC)",
             "Net P/L",
+            "CC Cashback",
         ]
         
         # Check current tax withholding feature state
@@ -352,6 +366,7 @@ class DailySessionsTab(QtWidgets.QWidget):
                 self._format_currency_or_dash(day["date_basis"]),
                 self._format_delta(day["date_gameplay"]),
                 self._format_signed_currency(day["date_total"]),
+                self._format_cashback(day.get("date_cashback", 0.0)),
             ]
             
             # Add tax column only if enabled
@@ -376,6 +391,7 @@ class DailySessionsTab(QtWidgets.QWidget):
                     self._format_currency_or_dash(user["basis"]),
                     self._format_delta(user["gameplay"]),
                     self._format_signed_currency(user["total"]),
+                    self._format_cashback(user.get("cashback", 0.0)),
                 ]
                 
                 # Add tax column only if enabled
@@ -400,6 +416,7 @@ class DailySessionsTab(QtWidgets.QWidget):
                         self._format_currency_or_dash(site["basis"]),
                         self._format_delta(site["gameplay"]),
                         self._format_signed_currency(site["total"]),
+                        "—",  # CC Cashback not tracked at site level
                     ]
                     
                     # Tax withholding is not shown at site level
@@ -448,6 +465,7 @@ class DailySessionsTab(QtWidgets.QWidget):
                             self._format_currency_or_dash(sess["basis_consumed"]),
                             self._format_delta(sess["delta_total"]),
                             self._format_signed_currency(sess["total_taxable"]),
+                            "—",  # CC Cashback not tracked at session level
                         ]
                         
                         # Tax withholding is not shown at individual session level
@@ -471,6 +489,15 @@ class DailySessionsTab(QtWidgets.QWidget):
                         )
                         self._apply_status_color(sess_item, sess["total_taxable"])
                         site_item.addChild(sess_item)
+
+    def _format_cashback(self, value):
+        if not value:
+            return "—"
+        try:
+            v = float(value)
+            return f"${v:,.2f}" if v > 0 else "—"
+        except Exception:
+            return "—"
 
     def _format_delta(self, value):
         if value is None:
@@ -529,16 +556,19 @@ class DailySessionsTab(QtWidgets.QWidget):
             return self._format_delta(sess["delta_total"])
         if col_index == 5:
             return self._format_signed_currency(sess["total_taxable"])
+        if col_index == 6:
+            # CC Cashback — not tracked at session level
+            return "—"
         
-        # Tax column (index 6) only if feature enabled
-        if self.tax_column_enabled and col_index == 6:
+        # Tax column (index 7) only if feature enabled
+        if self.tax_column_enabled and col_index == 7:
             amount = sess.get("tax_withholding_amount")
             if amount is not None and amount > 0:
                 return f"${float(amount):,.2f}"
             return "—"
         
         # Adjust Details column index based on whether tax column is present
-        details_col = 7 if self.tax_column_enabled else 6
+        details_col = 8 if self.tax_column_enabled else 7
         if col_index == details_col:
             # Check if session spans multiple days
             is_multi_day = sess.get("end_date") and sess.get("end_date") != sess.get("session_date")
@@ -561,7 +591,7 @@ class DailySessionsTab(QtWidgets.QWidget):
                 return f"{start_time} → Active"
         
         # Notes column (last column, index varies based on tax column)
-        notes_col = 8 if self.tax_column_enabled else 7
+        notes_col = 9 if self.tax_column_enabled else 8
         if col_index == notes_col:
             return sess["notes"] or ""
         return ""
@@ -622,18 +652,20 @@ class DailySessionsTab(QtWidgets.QWidget):
                 return item["date_gameplay"]
             if self.sort_column == 5:
                 return item["date_total"]
+            if self.sort_column == 6:
+                return item.get("date_cashback", 0)
             
-            # Tax column (6) only if enabled
-            if self.tax_column_enabled and self.sort_column == 6:
+            # Tax column (7) only if enabled
+            if self.tax_column_enabled and self.sort_column == 7:
                 return item.get("date_tax_withholding", 0)
             
             # Details column (varies based on tax column)
-            details_col = 7 if self.tax_column_enabled else 6
+            details_col = 8 if self.tax_column_enabled else 7
             if self.sort_column == details_col:
                 return item["session_count"]
             
             # Notes column (last, varies based on tax column)
-            notes_col = 8 if self.tax_column_enabled else 7
+            notes_col = 9 if self.tax_column_enabled else 8
             if self.sort_column == notes_col:
                 return 1 if item["notes"] else 0
             
